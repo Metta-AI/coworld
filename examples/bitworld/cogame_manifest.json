@@ -1,22 +1,13 @@
 {
   "$schema": "../../cogame_manifest_schema.json",
   "name": "among_them",
-  "version": "0.1.0",
-  "description": "A social deduction BitWorld game with crewmates, imposters, tasks, voting, and betrayal.",
+  "version": "1",
+  "description": "A BitWorld social deduction game with crewmates, imposters, tasks, voting, and betrayal.",
   "owner": "cogames@softmax.com",
   "config_schema": {
     "type": "object",
     "additionalProperties": false,
-    "required": [
-      "tokens",
-      "seed",
-      "min_players",
-      "max_ticks",
-      "tasks_per_player",
-      "imposter_count",
-      "imposter_cooldown_ticks",
-      "vote_timer_ticks"
-    ],
+    "required": ["tokens"],
     "properties": {
       "tokens": {
         "description": "One connection token per player slot, indexed by slot.",
@@ -24,34 +15,212 @@
         "items": {
           "type": "string"
         },
-        "minItems": 1
+        "minItems": 1,
+        "maxItems": 16
+      },
+      "slots": {
+        "description": "Optional fixed player slot metadata. The tokens array fills or validates slot tokens by index.",
+        "type": "array",
+        "maxItems": 16,
+        "items": {
+          "$ref": "#/$defs/playerSlot"
+        }
+      },
+      "motionScale": {
+        "type": "integer",
+        "minimum": 1,
+        "default": 256
+      },
+      "accel": {
+        "type": "integer",
+        "default": 76
+      },
+      "frictionNum": {
+        "type": "integer",
+        "default": 144
+      },
+      "frictionDen": {
+        "type": "integer",
+        "minimum": 1,
+        "default": 256
+      },
+      "maxSpeed": {
+        "type": "integer",
+        "default": 704
+      },
+      "stopThreshold": {
+        "type": "integer",
+        "default": 8
       },
       "seed": {
-        "type": "integer"
-      },
-      "min_players": {
         "type": "integer",
-        "minimum": 5
+        "default": 679961
       },
-      "max_ticks": {
+      "killRange": {
         "type": "integer",
-        "minimum": 1
+        "minimum": 0,
+        "default": 20
       },
-      "tasks_per_player": {
+      "killCooldownTicks": {
+        "description": "Kill cooldown in ticks.",
         "type": "integer",
-        "minimum": 0
+        "minimum": 0,
+        "default": 1200
       },
-      "imposter_count": {
+      "imposterCooldownTicks": {
+        "description": "Alias for killCooldownTicks used by the current Among Them config examples.",
         "type": "integer",
-        "minimum": 1
+        "minimum": 0,
+        "default": 1200
       },
-      "imposter_cooldown_ticks": {
+      "roleRevealTicks": {
         "type": "integer",
-        "minimum": 0
+        "minimum": 0,
+        "default": 120
       },
-      "vote_timer_ticks": {
+      "taskCompleteTicks": {
         "type": "integer",
-        "minimum": 1
+        "minimum": 0,
+        "default": 72
+      },
+      "ventRange": {
+        "type": "integer",
+        "minimum": 0,
+        "default": 16
+      },
+      "reportRange": {
+        "type": "integer",
+        "minimum": 0,
+        "default": 20
+      },
+      "voteResultTicks": {
+        "type": "integer",
+        "minimum": 0,
+        "default": 72
+      },
+      "minPlayers": {
+        "type": "integer",
+        "minimum": 1,
+        "maximum": 16,
+        "default": 8
+      },
+      "imposterCount": {
+        "type": "integer",
+        "minimum": 0,
+        "default": 2
+      },
+      "autoImposterCount": {
+        "description": "When true, imposter count is derived from player count.",
+        "type": "boolean",
+        "default": true
+      },
+      "imposterRatio": {
+        "description": "Alias for autoImposterCount accepted by sim.nim.",
+        "type": "boolean",
+        "default": true
+      },
+      "startWaitTicks": {
+        "type": "integer",
+        "minimum": 0,
+        "default": 120
+      },
+      "gameStartWaitTicks": {
+        "description": "Alias for startWaitTicks accepted by sim.nim.",
+        "type": "integer",
+        "minimum": 0,
+        "default": 120
+      },
+      "voteTimerTicks": {
+        "type": "integer",
+        "minimum": 1,
+        "default": 6000
+      },
+      "messageCooldownTicks": {
+        "type": "integer",
+        "minimum": 0,
+        "default": 100
+      },
+      "gameOverTicks": {
+        "type": "integer",
+        "minimum": 0,
+        "default": 360
+      },
+      "maxTicks": {
+        "description": "Maximum live gameplay ticks before time-limit game over. Zero disables the limit.",
+        "type": "integer",
+        "minimum": 0,
+        "default": 10000
+      },
+      "maxGameTicks": {
+        "description": "Alias for maxTicks accepted by sim.nim.",
+        "type": "integer",
+        "minimum": 0,
+        "default": 10000
+      },
+      "maxGames": {
+        "description": "Number of completed games before the server exits and writes results. Zero runs indefinitely.",
+        "type": "integer",
+        "minimum": 0,
+        "default": 0
+      },
+      "tasksPerPlayer": {
+        "type": "integer",
+        "minimum": 0,
+        "default": 8
+      },
+      "buttonCalls": {
+        "type": "integer",
+        "minimum": 0,
+        "default": 1
+      },
+      "numberOfButtonCalls": {
+        "description": "Alias for buttonCalls accepted by sim.nim.",
+        "type": "integer",
+        "minimum": 0,
+        "default": 1
+      },
+      "showTaskArrows": {
+        "type": "boolean",
+        "default": true
+      },
+      "showTaskBubbles": {
+        "type": "boolean",
+        "default": true
+      },
+      "showPlayerLabels": {
+        "type": "boolean",
+        "default": true
+      },
+      "map": {
+        "description": "Alias for mapPath accepted by sim.nim.",
+        "type": "string",
+        "default": "map.json"
+      },
+      "mapPath": {
+        "type": "string",
+        "default": "map.json"
+      }
+    },
+    "$defs": {
+      "playerSlot": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "token": {
+            "type": "string"
+          },
+          "role": {
+            "type": "string",
+            "enum": ["crew", "crewmate", "imp", "imposter", "impostor"]
+          },
+          "color": {
+            "description": "Player color name accepted by sim.nim, such as red, orange, yellow, light blue, cyan, blue, green, gray, or black.",
+            "type": "string"
+          }
+        }
       }
     }
   },
@@ -76,7 +245,7 @@
     "global": "docs/global_protocol_spec.md"
   },
   "clients": {
-    "player": "player_client/index.html",
-    "global": "global_client/index.html"
+    "player": "/client/player.html",
+    "global": "/client/global.html"
   }
 }

@@ -37,6 +37,30 @@
         "$ref": "#/$defs/NamedImage"
       }
     },
+    "commissioner": {
+      "description": "Base commissioner policies that run tournaments and produce rankings.",
+      "type": "array",
+      "minItems": 0,
+      "items": {
+        "$ref": "#/$defs/NamedImage"
+      }
+    },
+    "diagnoser": {
+      "description": "Base diagnoser policies that assess basic competence across important mechanics and gameplay situations.",
+      "type": "array",
+      "minItems": 0,
+      "items": {
+        "$ref": "#/$defs/NamedImage"
+      }
+    },
+    "optimizer": {
+      "description": "Base optimizer policies or agents that improve players and graders.",
+      "type": "array",
+      "minItems": 0,
+      "items": {
+        "$ref": "#/$defs/NamedImage"
+      }
+    },
     "variants": {
       "description": "Targeted game configs that factorize the game into mechanics for training and evaluation.",
       "type": "array",
