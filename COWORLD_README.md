@@ -41,42 +41,25 @@ a single upload artifact, a bundling step can inline resolved files mechanically
 
 ## Certification
 
-Coworld certification is a platform-owned integration test. Games do not receive or implement a per-game runtime contract
-file. Instead, the certifier loads `coworld_manifest.json`, loads the referenced Cogame manifest, and runs the hardcoded
+Coworld certification is the platform smoke test for a Coworld. The `certification` block uses the `EpisodeInput` shape
+from [episode_request_schema.json](episode_request_schema.json); the certifier supplies artifact destinations and runs the
 Cogame lifecycle described in [COGAME_README.md](COGAME_README.md).
 
-The `certification` block is the reusable episode input shape from
-[episode_request_schema.json](episode_request_schema.json). It is not a separate DSL. It omits artifact destinations
-because the certifier supplies temporary `results_uri`, `replay_uri`, and `logs_uri` destinations when it runs.
+To run certification locally:
 
-```json
-{
-  "certification": {
-    "game_config": {
-      "seed": 1,
-      "maxGames": 1,
-      "maxTicks": 200
-    },
-    "players": [
-      { "image": "ghcr.io/metta-ai/example-player@sha256:0000000000000000000000000000000000000000000000000000000000000000" },
-      { "image": "ghcr.io/metta-ai/example-player@sha256:0000000000000000000000000000000000000000000000000000000000000000" }
-    ]
-  }
-}
+```bash
+uv run --package coworld coworld certify path/to/coworld_manifest.json
 ```
 
-The JSON Schema validates the local shape of the fixture.
+Facts to know:
 
-Certification then:
+- The certifier does not build images; referenced images must already be available locally or in a reachable registry.
+- Local images are checked with `docker image inspect`; remote images are checked with `docker manifest inspect`.
+- Private registries such as GHCR or ECR require the local Docker client to be logged in first.
+- Successful runs print artifact, result, replay, and log paths under `tmp/coworld-cert-*`.
 
-1. validates `coworld_manifest.json` against [coworld_manifest_schema.json](coworld_manifest_schema.json),
-2. loads `game.manifest_uri` and validates it against [cogame_manifest_schema.json](cogame_manifest_schema.json),
-3. validates `certification.game_config` against the Cogame `config_schema` after runner-generated tokens are added,
-4. starts the Cogame image and waits for `GET /healthz`,
-5. starts the player images declared in `certification.players`, using array index as the player slot,
-6. attaches a global viewer during the episode,
-7. verifies player token rejection, valid player connections, reconnect behavior, global mid-episode join behavior,
-   result writing, and result schema validation.
+Certification validates the Coworld and Cogame manifests, checks referenced files and images, runs one smoke episode
+through Docker, and verifies the produced results and replay artifacts.
 
 ## Details
 

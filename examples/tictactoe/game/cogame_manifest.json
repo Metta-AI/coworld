@@ -1,0 +1,60 @@
+{
+  "$schema": "../../../cogame_manifest_schema.json",
+  "name": "tictactoe",
+  "version": "0.1.0",
+  "description": "Tiny deterministic tic-tac-toe Cogame used to certify the Coworld contract.",
+  "owner": "cogames@softmax.com",
+  "image_uri": "coworld-tictactoe-game:latest",
+  "config_schema": {
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "type": "object",
+    "additionalProperties": false,
+    "required": ["tokens", "max_turns"],
+    "properties": {
+      "tokens": {
+        "type": "array",
+        "minItems": 2,
+        "maxItems": 2,
+        "items": {
+          "type": "string",
+          "minLength": 1
+        }
+      },
+      "max_turns": {
+        "type": "integer",
+        "minimum": 1,
+        "maximum": 9
+      }
+    }
+  },
+  "results_schema": {
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "type": "object",
+    "additionalProperties": false,
+    "required": ["scores", "winner", "moves"],
+    "properties": {
+      "scores": {
+        "type": "array",
+        "minItems": 2,
+        "maxItems": 2,
+        "items": {
+          "type": "number"
+        }
+      },
+      "winner": {
+        "type": "integer",
+        "minimum": -1,
+        "maximum": 1
+      },
+      "moves": {
+        "type": "integer",
+        "minimum": 0,
+        "maximum": 9
+      }
+    }
+  },
+  "protocols": {
+    "player": "docs/player_protocol_spec.md",
+    "global": "docs/global_protocol_spec.md"
+  }
+}

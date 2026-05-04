@@ -1,0 +1,25 @@
+[build-system]
+requires = ["setuptools==80.9.0", "wheel==0.45.1"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "coworld"
+version = "0.1.0"
+description = "Coworld contract validation and certification tools"
+requires-python = ">=3.12,<3.13"
+dependencies = ["httpx>=0.28.1", "jsonschema>=4.25.1", "typer>=0.19.2", "websockets>=15.0.1"]
+
+[project.scripts]
+coworld = "coworld.cli:app"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+include = ["coworld*"]
+
+[tool.pytest.ini_options]
+pythonpath = ["src"]
+testpaths = ["tests"]
+markers = ["slow: marks tests as slow"]
+
+[tool.ruff]
+extend = "../../.ruff.toml"

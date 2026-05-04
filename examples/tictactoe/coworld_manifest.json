@@ -1,0 +1,33 @@
+{
+  "$schema": "../../coworld_manifest_schema.json",
+  "game": {
+    "manifest_uri": "game/cogame_manifest.json"
+  },
+  "clients": {
+    "player": "clients/player.html",
+    "global": "clients/global.html"
+  },
+  "player": [
+    {
+      "name": "first-empty-player",
+      "image_uri": "coworld-tictactoe-player:latest",
+      "description": "Deterministic player that chooses the first empty tic-tac-toe square."
+    }
+  ],
+  "certification": {
+    "game_config": {
+      "max_turns": 9
+    },
+    "players": [
+      {
+        "image": "coworld-tictactoe-player:latest",
+        "initial_params": {
+          "strategy": "first"
+        }
+      },
+      {
+        "image": "coworld-tictactoe-player:latest"
+      }
+    ]
+  }
+}
