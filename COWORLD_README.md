@@ -19,6 +19,8 @@ validatable while allowing the Coworld to compose that game with players, varian
 Entities:
 
 - the cogame (a reference to a Cogame manifest)
+- the player client (a static browser client for connecting to one player slot)
+- the global client (a static browser client for watching or replaying the whole episode)
 - the player (one or more executables that play the game competently)
 - the grader (one or more executables for estimating expected score or probability of winning)
 - the reporter (one or more executables for summarizing game experience)
@@ -32,6 +34,7 @@ Entities:
 
 `game.manifest_uri` MUST resolve relative to the directory containing `coworld_manifest.json`. Paths inside the referenced
 `cogame_manifest.json` MUST resolve relative to the directory containing that Cogame manifest.
+`clients.player` and `clients.global` MUST resolve relative to the directory containing `coworld_manifest.json`.
 
 Source manifests should use references rather than inlining Cogame manifests into Coworld manifests. If the platform needs
 a single upload artifact, a bundling step can inline resolved files mechanically without changing the source format.
@@ -79,7 +82,9 @@ Certification then:
 
 - the game: there must be a game referenced by `game.manifest_uri` that validates against
   [cogame_manifest_schema.json](cogame_manifest_schema.json). For the core Cogame manifest, container runtime API,
-  websocket endpoints, config/results formats, browser client requirements, and episode lifecycle, see [COGAME_README.md](COGAME_README.md).
+  websocket endpoints, config/results formats, and episode lifecycle, see [COGAME_README.md](COGAME_README.md).
+- The player client: there must be a static browser client at `clients.player` that connects to one player slot.
+- The global client: there must be a static browser client at `clients.global` that watches live episodes and replays.
 - The player: there must be a base player policy that can competently play the game. See [COGAME_README.md](COGAME_README.md) for how a player should be implemented.
 - The grader: there must be a base grader policy that can predict expected probability of winning, or score if the game
   does not have win/loss, during the course of a game for a player.

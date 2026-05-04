@@ -4,17 +4,7 @@
   "description": "Manifest for a cogame.",
   "type": "object",
   "additionalProperties": false,
-  "required": [
-    "name",
-    "version",
-    "description",
-    "owner",
-    "config_schema",
-    "results_schema",
-    "image_uri",
-    "protocols",
-    "clients"
-  ],
+  "required": ["name", "version", "description", "owner", "config_schema", "results_schema", "image_uri", "protocols"],
   "properties": {
     "$schema": {
       "type": "string"
@@ -51,9 +41,6 @@
     },
     "protocols": {
       "$ref": "#/$defs/GameProtocolDocs"
-    },
-    "clients": {
-      "$ref": "#/$defs/GameClientPaths"
     }
   },
   "$defs": {
@@ -69,23 +56,6 @@
         },
         "global": {
           "description": "Documentation about the global protocol served over /global, including mid-episode viewer joins.",
-          "type": "string",
-          "minLength": 1
-        }
-      }
-    },
-    "GameClientPaths": {
-      "type": "object",
-      "additionalProperties": false,
-      "required": ["player", "global"],
-      "properties": {
-        "player": {
-          "description": "Path to the static player client.",
-          "type": "string",
-          "minLength": 1
-        },
-        "global": {
-          "description": "Path to the static global client.",
           "type": "string",
           "minLength": 1
         }

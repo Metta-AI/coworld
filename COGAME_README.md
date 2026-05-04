@@ -1,8 +1,7 @@
 # Cogame Spec
 
 `cogame` is the contract package for Cogame repositories: it defines the manifest schemas, container runtime API,
-websocket endpoints, config/results formats, browser client requirements, and episode lifecycle a game must provide to
-run on the CoGames platform.
+websocket endpoints, config/results formats, and episode lifecycle a game must provide to run on the CoGames platform.
 
 Short version:
 
@@ -21,9 +20,7 @@ The manifest contains:
 - `config_schema`: JSON Schema for the config file supplied to the container,
 - `results_schema`: JSON Schema for the results file written by the container,
 - `protocols.player`: documentation for the player websocket protocol,
-- `protocols.global`: documentation for the global websocket protocol,
-- `clients.player`: path to the static player browser client,
-- `clients.global`: path to the static global browser client.
+- `protocols.global`: documentation for the global websocket protocol.
 
 The `config_schema` must require `tokens`, one token per player slot, and may define additional game-specific
 config fields. The `results_schema` must require `scores`, one scalar score per player slot, and may define additional

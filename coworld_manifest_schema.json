@@ -4,7 +4,7 @@
   "description": "Schema for a complete game world in the Softmax universe.",
   "type": "object",
   "additionalProperties": false,
-  "required": ["game", "certification"],
+  "required": ["game", "clients", "certification"],
   "properties": {
     "$schema": {
       "type": "string"
@@ -12,6 +12,10 @@
     "game": {
       "description": "The Cogame for this world. manifest_uri points to a cogame_manifest.json that validates against cogame_manifest_schema.json.",
       "$ref": "#/$defs/CogameManifestRef"
+    },
+    "clients": {
+      "description": "Static browser clients for player and global episode views. Paths resolve relative to coworld_manifest.json.",
+      "$ref": "#/$defs/CoworldClientPaths"
     },
     "player": {
       "description": "Base player policies that users can fork from and that can competently play the game.",
@@ -82,6 +86,23 @@
       "properties": {
         "manifest_uri": {
           "description": "Path or URI to a cogame_manifest.json instance.",
+          "type": "string",
+          "minLength": 1
+        }
+      }
+    },
+    "CoworldClientPaths": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["player", "global"],
+      "properties": {
+        "player": {
+          "description": "Path to the static player browser client.",
+          "type": "string",
+          "minLength": 1
+        },
+        "global": {
+          "description": "Path to the static global browser client.",
           "type": "string",
           "minLength": 1
         }

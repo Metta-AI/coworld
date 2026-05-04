@@ -243,9 +243,5 @@
   "protocols": {
     "player": "docs/player_protocol_spec.md",
     "global": "docs/global_protocol_spec.md"
-  },
-  "clients": {
-    "player": "/client/player.html",
-    "global": "/client/global.html"
   }
 }
