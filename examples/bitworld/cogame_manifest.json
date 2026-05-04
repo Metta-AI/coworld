@@ -1,0 +1,82 @@
+{
+  "$schema": "../../cogame_manifest_schema.json",
+  "name": "among_them",
+  "version": "0.1.0",
+  "description": "A social deduction BitWorld game with crewmates, imposters, tasks, voting, and betrayal.",
+  "owner": "cogames@softmax.com",
+  "config_schema": {
+    "type": "object",
+    "additionalProperties": false,
+    "required": [
+      "tokens",
+      "seed",
+      "min_players",
+      "max_ticks",
+      "tasks_per_player",
+      "imposter_count",
+      "imposter_cooldown_ticks",
+      "vote_timer_ticks"
+    ],
+    "properties": {
+      "tokens": {
+        "description": "One connection token per player slot, indexed by slot.",
+        "type": "array",
+        "items": {
+          "type": "string"
+        },
+        "minItems": 1
+      },
+      "seed": {
+        "type": "integer"
+      },
+      "min_players": {
+        "type": "integer",
+        "minimum": 5
+      },
+      "max_ticks": {
+        "type": "integer",
+        "minimum": 1
+      },
+      "tasks_per_player": {
+        "type": "integer",
+        "minimum": 0
+      },
+      "imposter_count": {
+        "type": "integer",
+        "minimum": 1
+      },
+      "imposter_cooldown_ticks": {
+        "type": "integer",
+        "minimum": 0
+      },
+      "vote_timer_ticks": {
+        "type": "integer",
+        "minimum": 1
+      }
+    }
+  },
+  "results_schema": {
+    "type": "object",
+    "additionalProperties": true,
+    "required": ["scores"],
+    "properties": {
+      "scores": {
+        "description": "One scalar score per player slot, indexed by slot.",
+        "type": "array",
+        "items": {
+          "type": "number"
+        },
+        "minItems": 1
+      }
+    }
+  },
+  "image_uri": "ghcr.io/metta-ai/among-them-server:sha-7203d529",
+  "protocols": {
+    "player": "docs/player_protocol_spec.md",
+    "global": "docs/global_protocol_spec.md"
+  },
+  "clients": {
+    "player": "player_client/index.html",
+    "global": "global_client/index.html"
+  }
+}

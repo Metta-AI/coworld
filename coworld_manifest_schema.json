@@ -1,0 +1,104 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Coworld Manifest",
+  "description": "Schema for a complete game world in the Softmax universe.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["game"],
+  "properties": {
+    "$schema": {
+      "type": "string"
+    },
+    "game": {
+      "description": "The Cogame for this world. manifest_uri points to a cogame_manifest.json that validates against cogame_manifest_schema.json.",
+      "$ref": "#/$defs/CogameManifestRef"
+    },
+    "player": {
+      "description": "Base player policies that users can fork from and that can competently play the game.",
+      "type": "array",
+      "minItems": 0,
+      "items": {
+        "$ref": "#/$defs/NamedImage"
+      }
+    },
+    "grader": {
+      "description": "Base grader policies that estimate expected probability of winning, or score for games without win/loss outcomes.",
+      "type": "array",
+      "minItems": 0,
+      "items": {
+        "$ref": "#/$defs/NamedImage"
+      }
+    },
+    "reporter": {
+      "description": "Base reporter policies that summarize logs from game experience into high-level descriptions of important events.",
+      "type": "array",
+      "minItems": 0,
+      "items": {
+        "$ref": "#/$defs/NamedImage"
+      }
+    },
+    "variants": {
+      "description": "Targeted game configs that factorize the game into mechanics for training and evaluation.",
+      "type": "array",
+      "minItems": 0,
+      "items": {
+        "$ref": "#/$defs/Variant"
+      }
+    }
+  },
+  "$defs": {
+    "CogameManifestRef": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["manifest_uri"],
+      "properties": {
+        "manifest_uri": {
+          "description": "Path or URI to a cogame_manifest.json instance.",
+          "type": "string",
+          "minLength": 1
+        }
+      }
+    },
+    "NamedImage": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name", "image_uri", "description"],
+      "properties": {
+        "name": {
+          "type": "string",
+          "minLength": 1
+        },
+        "image_uri": {
+          "type": "string",
+          "minLength": 1
+        },
+        "description": {
+          "type": "string",
+          "minLength": 1
+        }
+      }
+    },
+    "Variant": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name", "game_config", "parent_id", "description"],
+      "properties": {
+        "name": {
+          "type": "string",
+          "minLength": 1
+        },
+        "game_config": {
+          "type": "object"
+        },
+        "parent_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "description": {
+          "type": "string",
+          "minLength": 1
+        }
+      }
+    }
+  }
+}
