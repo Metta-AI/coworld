@@ -4,7 +4,7 @@
   "description": "Schema for a complete game world in the Softmax universe.",
   "type": "object",
   "additionalProperties": false,
-  "required": ["game"],
+  "required": ["game", "certification"],
   "properties": {
     "$schema": {
       "type": "string"
@@ -68,6 +68,10 @@
       "items": {
         "$ref": "#/$defs/Variant"
       }
+    },
+    "certification": {
+      "description": "Coworld-level smoke episode used by the platform certifier. The certifier supplies artifact destinations.",
+      "$ref": "episode_request_schema.json#/$defs/EpisodeInput"
     }
   },
   "$defs": {

@@ -33,6 +33,9 @@ game-specific result fields.
 
 The container referenced by `image_uri` must implement the runtime contract below.
 
+This contract is platform-owned and hardcoded in the runner and certifier. A game container does not receive a runtime
+contract file; it implements this behavior directly.
+
 The runner supplies:
 
 - `COGAME_CONFIG_PATH`: path to the config JSON file,
@@ -63,6 +66,9 @@ not need to produce a replay file itself.
 
 A Coworld references exactly one Cogame through `game.manifest_uri` in `coworld_manifest.json`. That URI points to a
 `cogame_manifest.json` instance that validates against `cogame_manifest_schema.json`.
+
+Coworld certification uses the referenced Cogame and the Coworld's declared certification episode input to run one
+end-to-end smoke episode.
 
 ## Episode Config
 

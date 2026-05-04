@@ -3,23 +3,16 @@
   "title": "CoGame Episode Request",
   "description": "Runner-facing request for one cogame episode.",
   "type": "object",
+  "allOf": [
+    {
+      "$ref": "#/$defs/EpisodeInput"
+    }
+  ],
   "additionalProperties": true,
-  "required": ["game_config", "players", "results_uri"],
+  "required": ["results_uri"],
   "properties": {
     "$schema": {
       "type": "string"
-    },
-    "game_config": {
-      "description": "Game-specific config before runner-generated tokens are inserted.",
-      "type": "object"
-    },
-    "players": {
-      "description": "One player slot per entry, indexed by slot.",
-      "type": "array",
-      "minItems": 1,
-      "items": {
-        "$ref": "#/$defs/Player"
-      }
     },
     "results_uri": {
       "description": "Destination URI where the runner uploads COGAME_RESULTS_PATH.",
@@ -38,6 +31,26 @@
     }
   },
   "$defs": {
+    "EpisodeInput": {
+      "description": "Reusable episode inputs before artifact destinations are assigned by a runner or certifier.",
+      "type": "object",
+      "additionalProperties": true,
+      "required": ["game_config", "players"],
+      "properties": {
+        "game_config": {
+          "description": "Game-specific config before runner-generated tokens are inserted.",
+          "type": "object"
+        },
+        "players": {
+          "description": "One player slot per entry, indexed by slot.",
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "$ref": "#/$defs/Player"
+          }
+        }
+      }
+    },
     "Player": {
       "type": "object",
       "additionalProperties": true,
