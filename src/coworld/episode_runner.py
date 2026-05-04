@@ -33,8 +33,8 @@ class EpisodeArtifacts:
     game_stderr_path: Path
 
     @classmethod
-    def create(cls, workspace: Path | None = None) -> EpisodeArtifacts:
-        workspace = workspace or _new_workspace()
+    def create(cls, workspace: Path | None = None, *, prefix: str = "coworld-cert-") -> EpisodeArtifacts:
+        workspace = workspace or _new_workspace(prefix)
         workspace.mkdir(parents=True, exist_ok=True)
         logs_dir = workspace / "logs"
         logs_dir.mkdir(parents=True, exist_ok=True)
@@ -246,10 +246,10 @@ def _free_local_port() -> int:
         return int(sock.getsockname()[1])
 
 
-def _new_workspace() -> Path:
+def _new_workspace(prefix: str) -> Path:
     temp_root = REPO_ROOT / "tmp"
     temp_root.mkdir(exist_ok=True)
-    return Path(tempfile.mkdtemp(prefix="coworld-cert-", dir=temp_root))
+    return Path(tempfile.mkdtemp(prefix=prefix, dir=temp_root))
 
 
 def _tail(path: Path, limit: int = 4000) -> str:

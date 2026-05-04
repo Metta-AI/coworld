@@ -36,8 +36,22 @@ Entities:
 `cogame_manifest.json` MUST resolve relative to the directory containing that Cogame manifest.
 `clients.player` and `clients.global` MUST resolve relative to the directory containing `coworld_manifest.json`.
 
+The player and global clients MUST accept an `address` query parameter. `address` is the complete websocket URI the
+client should connect to, including all URI query parameters such as player slot, token, and initial params.
+
 Source manifests should use references rather than inlining Cogame manifests into Coworld manifests. If the platform needs
 a single upload artifact, a bundling step can inline resolved files mechanically without changing the source format.
+
+## Play
+
+To start a local game for browser play:
+
+```bash
+uv run coworld play path/to/coworld_manifest.json
+```
+
+The command uses the certification fixture for game config and player slots, then prints player and global client links.
+Each link passes the target websocket URI through `?address=...`.
 
 ## Certification
 
@@ -48,7 +62,7 @@ Cogame lifecycle described in [COGAME_README.md](COGAME_README.md).
 To run certification locally:
 
 ```bash
-uv run --package coworld coworld certify path/to/coworld_manifest.json
+uv run coworld certify path/to/coworld_manifest.json
 ```
 
 Facts to know:
@@ -66,8 +80,10 @@ through Docker, and verifies the produced results and replay artifacts.
 - the game: there must be a game referenced by `game.manifest_uri` that validates against
   [cogame_manifest_schema.json](cogame_manifest_schema.json). For the core Cogame manifest, container runtime API,
   websocket endpoints, config/results formats, and episode lifecycle, see [COGAME_README.md](COGAME_README.md).
-- The player client: there must be a static browser client at `clients.player` that connects to one player slot.
-- The global client: there must be a static browser client at `clients.global` that watches live episodes and replays.
+- The player client: there must be a static browser client at `clients.player` that connects to one player slot using
+  `?address=...`.
+- The global client: there must be a static browser client at `clients.global` that watches live episodes and replays
+  using `?address=...`.
 - The player: there must be a base player policy that can competently play the game. See [COGAME_README.md](COGAME_README.md) for how a player should be implemented.
 - The grader: there must be a base grader policy that can predict expected probability of winning, or score if the game
   does not have win/loss, during the course of a game for a player.

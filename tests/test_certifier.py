@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import subprocess
 from pathlib import Path
+from urllib.parse import parse_qs, urlparse
 
 import pytest
 from jsonschema.exceptions import ValidationError
@@ -10,12 +11,14 @@ from jsonschema.exceptions import ValidationError
 from coworld.certifier import (
     build_episode_request,
     build_game_config,
+    build_player_launch_specs,
     certify_coworld,
     load_coworld_package,
     load_results,
     resolve_manifest_uri,
 )
 from coworld.episode_runner import EpisodeArtifacts, assert_docker_image_reachable
+from coworld.play import build_play_links
 
 
 def test_resolve_manifest_uri_relative_to_coworld_manifest(tmp_path: Path) -> None:
@@ -142,6 +145,45 @@ def test_build_episode_request_adds_artifact_destinations(tmp_path: Path) -> Non
     assert episode_request["results_uri"] == artifacts.results_path.as_uri()
     assert episode_request["replay_uri"] == artifacts.replay_path.as_uri()
     assert episode_request["logs_uri"] == artifacts.logs_dir.as_uri()
+
+
+def test_build_play_links_pass_complete_address_to_clients(tmp_path: Path) -> None:
+    package = _write_package(
+        tmp_path,
+        certification={
+            "game_config": {},
+            "players": [
+                {
+                    "image": "unit-test-player:latest",
+                    "initial_params": {"strategy": "manual", "difficulty": 2, "debug": True},
+                }
+            ],
+        },
+    )
+    artifacts = EpisodeArtifacts.create(tmp_path / "cert")
+    episode_request = build_episode_request(package, artifacts)
+    players = build_player_launch_specs(episode_request)
+
+    links = build_play_links(package, players, ["token-0"], game_port=1234, client_port=5678)
+
+    player_link = urlparse(links.players[0])
+    player_link_query = parse_qs(player_link.query)
+    player_address = urlparse(player_link_query["address"][0])
+    player_address_query = parse_qs(player_address.query)
+    assert player_link.path == "/clients/player.html"
+    assert player_address.geturl().startswith("ws://127.0.0.1:1234/player?")
+    assert player_address_query == {
+        "slot": ["0"],
+        "token": ["token-0"],
+        "strategy": ["manual"],
+        "difficulty": ["2"],
+        "debug": ["True"],
+    }
+
+    global_link = urlparse(links.global_)
+    global_address = parse_qs(global_link.query)["address"][0]
+    assert global_link.path == "/clients/global.html"
+    assert global_address == "ws://127.0.0.1:1234/global"
 
 
 def test_example_coworld_manifest_validates() -> None:

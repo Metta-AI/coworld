@@ -14,7 +14,7 @@
       "$ref": "#/$defs/CogameManifestRef"
     },
     "clients": {
-      "description": "Static browser clients for player and global episode views. Paths resolve relative to coworld_manifest.json.",
+      "description": "Static browser clients for player and global episode views. Paths resolve relative to coworld_manifest.json. Each client must accept an address query param containing the complete websocket URI to connect to.",
       "$ref": "#/$defs/CoworldClientPaths"
     },
     "player": {
@@ -97,12 +97,12 @@
       "required": ["player", "global"],
       "properties": {
         "player": {
-          "description": "Path to the static player browser client.",
+          "description": "Path to the static player browser client. The client must accept ?address=<websocket URI>, including slot, token, and any other query params.",
           "type": "string",
           "minLength": 1
         },
         "global": {
-          "description": "Path to the static global browser client.",
+          "description": "Path to the static global browser client. The client must accept ?address=<websocket URI>.",
           "type": "string",
           "minLength": 1
         }
