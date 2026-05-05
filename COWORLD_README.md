@@ -14,6 +14,25 @@ A viable coworld package provides a `coworld_manifest.json` at its root that adh
 uv run coworld certify path/to/coworld_manifest.json
 ```
 
+The schema provides a full description for what it requires. A summary of the required elements:
+
+- [Cogame](#cogame)
+- [Player client](#player-client)
+- [Global client](#global-client)
+- [Player](#player)
+- [Certification fixture](#certification-fixture)
+
+Currently optional elements that will soon be required:
+
+- [Grader](#grader)
+- [Reporter](#reporter)
+- [Commissioner](#commissioner)
+- [Diagnoser](#diagnoser)
+- [Optimizer](#optimizer)
+- [Variants](#variants)
+
+For a complete small implementation, see [examples/tictactoe/](examples/tictactoe/).
+
 ### Reference Resolution
 
 `game.manifest_uri` MUST resolve relative to the directory containing `coworld_manifest.json`. Paths inside the referenced
@@ -23,22 +42,6 @@ uv run coworld certify path/to/coworld_manifest.json
 Source manifests should use references rather than inlining Cogame manifests into Coworld manifests. If the platform needs
 a single upload artifact, a bundling step can inline resolved files mechanically without changing the source format.
 
-Required elements of the manifest:
-
-- [Cogame](#cogame)
-- [Player client](#player-client)
-- [Global client](#global-client)
-- [Player](#player)
-- [Certification fixture](#certification-fixture)
-
-Optional:
-
-- [Grader](#grader)
-- [Reporter](#reporter)
-- [Commissioner](#commissioner)
-- [Diagnoser](#diagnoser)
-- [Optimizer](#optimizer)
-- [Variants](#variants)
 
 ### Cogame
 
@@ -69,29 +72,41 @@ A short deterministic episode input proves that the Coworld works end to end.
 
 An executable that attaches to the `/global` stream on a game and outputs a scalar reflecting game quality.
 
+_Contract to be specified._
+
 ### Reporter
 
 An executable that attaches to the `/global` stream and emits text about important or interesting game events.
 
+_Contract to be specified._
+
 ### Commissioner
 
 An executable that runs tournaments for the game and produces valid rankings.
+
+_Contract to be specified._
 
 ### Diagnoser
 
 An executable that takes a player as input, runs targeted episodes, and uses the `/global` stream or episode outputs to
 assess player competence.
 
+_Contract to be specified._
+
 ### Optimizer
 
 An executable that improves the player and grader. This is often a documentation file or coding-agent image that
 describes how the player and grader work.
+
+_Contract to be specified._
 
 ### Variants
 
 A graph of game configurations, each of which adheres to the game's config schema. It factorizes the game into mechanics,
 so walking the tree generates experience targeted at learning different aspects of the game independently for training
 purposes.
+
+_Contract to be specified._
 
 ## Play
 
