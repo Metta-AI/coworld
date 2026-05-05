@@ -1,0 +1,35 @@
+<!doctype html>
+<title>Coworld Paint Arena Admin</title>
+<style>
+  body { color: #172033; font-family: system-ui, sans-serif; margin: 24px; }
+  button { background: white; border: 1px solid #9aa8bd; border-radius: 6px; margin-right: 8px; padding: 8px 12px; }
+  input { margin-left: 8px; width: 80px; }
+  pre { background: #f5f5f5; padding: 12px; width: min(720px, 100%); }
+</style>
+<h1>Paint Arena Admin</h1>
+<div id="status"></div>
+<button id="pause">Pause</button>
+<button id="resume">Resume</button>
+<label>Tick rate <input id="tickRate" min="1" max="60" step="1" type="number" value="30"></label>
+<pre id="state"></pre>
+<script>
+  const websocketUrl = new URL(window.location.href);
+  websocketUrl.protocol = websocketUrl.protocol === "https:" ? "wss:" : "ws:";
+
+  const status = document.getElementById("status");
+  const state = document.getElementById("state");
+  const tickRate = document.getElementById("tickRate");
+  const socket = new WebSocket(websocketUrl);
+
+  socket.onopen = () => { status.textContent = "Connected"; };
+  socket.onmessage = (event) => {
+    const message = JSON.parse(event.data);
+    tickRate.value = message.tick_rate;
+    state.textContent = JSON.stringify(message, null, 2);
+  };
+  socket.onclose = () => { status.textContent = "Disconnected"; };
+
+  document.getElementById("pause").onclick = () => socket.send(JSON.stringify({ command: "pause" }));
+  document.getElementById("resume").onclick = () => socket.send(JSON.stringify({ command: "resume" }));
+  tickRate.onchange = () => socket.send(JSON.stringify({ command: "tick_rate", tick_rate: Number(tickRate.value) }));
+</script>

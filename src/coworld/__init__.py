@@ -21,7 +21,15 @@ from coworld.episode_runner import (
     assert_docker_image_reachable,
     run_cogame_episode,
 )
-from coworld.play import PlayLinks, PlayResult, PlaySession, build_play_links, play_coworld
+from coworld.play import (
+    PlayLinks,
+    PlayResult,
+    PlaySession,
+    ReplaySession,
+    build_play_links,
+    play_coworld,
+    replay_coworld,
+)
 
 __all__ = [
     "CertificationResult",
@@ -32,6 +40,7 @@ __all__ = [
     "PlayLinks",
     "PlayResult",
     "PlaySession",
+    "ReplaySession",
     "assert_docker_image_reachable",
     "build_episode_request",
     "build_episode_run_spec",
@@ -42,6 +51,7 @@ __all__ = [
     "load_results",
     "load_coworld_package",
     "play_coworld",
+    "replay_coworld",
     "resolve_manifest_uri",
     "run_cogame_episode",
     "validate_image_references",

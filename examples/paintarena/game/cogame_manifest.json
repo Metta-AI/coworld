@@ -1,15 +1,15 @@
 {
   "$schema": "../../../cogame_manifest_schema.json",
-  "name": "tictactoe",
+  "name": "paintarena",
   "version": "0.1.0",
-  "description": "Tiny deterministic tic-tac-toe Cogame used to certify the Coworld contract.",
+  "description": "Continuous tick-based territory painting Cogame used to certify the Coworld contract.",
   "owner": "cogames@softmax.com",
-  "image_uri": "coworld-tictactoe-game:latest",
+  "image_uri": "coworld-paintarena-game:latest",
   "config_schema": {
     "$schema": "https://json-schema.org/draft/2020-12/schema",
     "type": "object",
     "additionalProperties": false,
-    "required": ["tokens", "max_turns"],
+    "required": ["tokens", "width", "height", "max_ticks", "tick_rate"],
     "properties": {
       "tokens": {
         "type": "array",
@@ -20,10 +20,25 @@
           "minLength": 1
         }
       },
-      "max_turns": {
+      "width": {
+        "type": "integer",
+        "minimum": 4,
+        "maximum": 40
+      },
+      "height": {
+        "type": "integer",
+        "minimum": 4,
+        "maximum": 40
+      },
+      "max_ticks": {
         "type": "integer",
         "minimum": 1,
-        "maximum": 9
+        "maximum": 10000
+      },
+      "tick_rate": {
+        "type": "number",
+        "exclusiveMinimum": 0,
+        "maximum": 60
       }
     }
   },
@@ -31,25 +46,28 @@
     "$schema": "https://json-schema.org/draft/2020-12/schema",
     "type": "object",
     "additionalProperties": false,
-    "required": ["scores", "winner", "moves"],
+    "required": ["scores", "painted_tiles", "ticks"],
     "properties": {
       "scores": {
         "type": "array",
-        "minItems": 2,
-        "maxItems": 2,
+        "minItems": 1,
+        "maxItems": 4,
         "items": {
           "type": "number"
         }
       },
-      "winner": {
-        "type": "integer",
-        "minimum": -1,
-        "maximum": 1
+      "painted_tiles": {
+        "type": "array",
+        "minItems": 1,
+        "maxItems": 4,
+        "items": {
+          "type": "integer",
+          "minimum": 0
+        }
       },
-      "moves": {
+      "ticks": {
         "type": "integer",
-        "minimum": 0,
-        "maximum": 9
+        "minimum": 0
       }
     }
   },

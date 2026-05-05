@@ -18,10 +18,12 @@ from coworld.certifier import (
 )
 from coworld.episode_runner import (
     CONTAINER_WORKDIR,
+    REPLAY_LOAD_ENV_VAR,
     REPLAY_SAVE_ENV_VAR,
     EpisodeArtifacts,
     PlayerLaunchSpec,
     _free_local_port,
+    _replay_client_url,
     _tail,
     _wait_for_health,
     assert_docker_image_reachable,
@@ -33,6 +35,7 @@ from coworld.schema_validation import JsonObject
 class PlayLinks:
     players: list[str]
     global_: str
+    admin: str
 
 
 @dataclass(frozen=True)
@@ -46,6 +49,14 @@ class PlaySession:
 class PlayResult:
     session: PlaySession
     results: JsonObject
+
+
+@dataclass(frozen=True)
+class ReplaySession:
+    package: CoworldPackage
+    artifacts: EpisodeArtifacts
+    replay_path: Path
+    link: str
 
 
 def play_coworld(
@@ -110,6 +121,66 @@ def play_coworld(
     return PlayResult(session=session, results=load_results(package, artifacts))
 
 
+def replay_coworld(
+    manifest_path: Path,
+    replay_path: Path,
+    *,
+    workspace: Path | None = None,
+    timeout_seconds: float = 60.0,
+    on_ready: Callable[[ReplaySession], None],
+) -> ReplaySession:
+    package = load_coworld_package(manifest_path)
+    assert_docker_image_reachable(package.cogame_image, label="Cogame image_uri")
+    replay_path = replay_path.resolve()
+    if not replay_path.is_file():
+        raise FileNotFoundError(f"Replay file does not exist or is not a file: {replay_path}")
+
+    artifacts = EpisodeArtifacts.create(workspace, prefix="coworld-replay-")
+    replay_port = _free_local_port()
+    session = ReplaySession(
+        package=package,
+        artifacts=artifacts,
+        replay_path=replay_path,
+        link=_replay_client_url(replay_port),
+    )
+
+    replay_container = f"coworld-replay-game-{secrets.token_hex(8)}"
+    container_replay_path = f"/coworld-replay/{replay_path.name}"
+    try:
+        with artifacts.game_stdout_path.open("w") as game_stdout, artifacts.game_stderr_path.open("w") as game_stderr:
+            replay_process = subprocess.Popen(
+                [
+                    "docker",
+                    "run",
+                    "--rm",
+                    "--name",
+                    replay_container,
+                    "-p",
+                    f"127.0.0.1:{replay_port}:8080",
+                    "-e",
+                    f"{REPLAY_LOAD_ENV_VAR}={container_replay_path}",
+                    "-v",
+                    f"{replay_path.parent}:/coworld-replay:ro",
+                    package.cogame_image,
+                ],
+                stdout=game_stdout,
+                stderr=game_stderr,
+                text=True,
+            )
+
+            _wait_for_health(replay_port, replay_process, artifacts.game_stderr_path, timeout_seconds=timeout_seconds)
+            on_ready(session)
+            return_code = replay_process.wait()
+            if return_code != 0:
+                raise RuntimeError(
+                    f"Replay container exited with status {return_code}.\n{_tail(artifacts.game_stderr_path)}"
+                )
+    finally:
+        subprocess.run(["docker", "rm", "-f", replay_container], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+
+    return session
+
+
 def build_play_links(
     players: list[PlayerLaunchSpec],
     tokens: list[str],
@@ -123,6 +194,7 @@ def build_play_links(
     return PlayLinks(
         players=player_links,
         global_=f"http://127.0.0.1:{game_port}/global",
+        admin=f"http://127.0.0.1:{game_port}/admin",
     )
 
 

@@ -29,7 +29,7 @@ Currently optional elements that will soon be required:
 - [Diagnoser](#diagnoser)
 - [Optimizer](#optimizer)
 
-For a complete small implementation, see [examples/tictactoe/](examples/tictactoe/).
+For a complete small implementation, see [examples/paintarena/](examples/paintarena/).
 
 ### Reference Resolution
 

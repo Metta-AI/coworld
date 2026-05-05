@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import importlib.util
 import json
 import subprocess
 from pathlib import Path
@@ -24,7 +25,7 @@ from coworld.episode_runner import (
     _replay_client_url,
     assert_docker_image_reachable,
 )
-from coworld.play import build_play_links
+from coworld.play import ReplaySession, build_play_links, replay_coworld
 from coworld.schema_validation import validate_episode_request
 
 
@@ -229,6 +230,12 @@ def test_build_play_links_point_directly_at_engine_client_routes(tmp_path: Path)
     assert global_link.path == "/global"
     assert global_link.query == ""
 
+    admin_link = urlparse(links.admin)
+    assert admin_link.scheme == "http"
+    assert admin_link.netloc == "127.0.0.1:1234"
+    assert admin_link.path == "/admin"
+    assert admin_link.query == ""
+
 
 def test_replay_client_url_points_at_engine_replay_route() -> None:
     replay_link = urlparse(_replay_client_url(1234))
@@ -241,16 +248,92 @@ def test_replay_client_url_points_at_engine_replay_route() -> None:
     assert replay_link.query == ""
 
 
+def test_replay_coworld_starts_replay_container_and_reports_link(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    coworld_manifest_path = _write_package_files(tmp_path)
+    replay_path = tmp_path / "replay.json"
+    replay_path.write_text("{}")
+    ready_sessions: list[ReplaySession] = []
+    popen_commands: list[list[str]] = []
+
+    class FakeProcess:
+        def wait(self) -> int:
+            return 0
+
+    def fake_popen(cmd, **kwargs):
+        popen_commands.append(cmd)
+        return FakeProcess()
+
+    monkeypatch.setattr("coworld.play.assert_docker_image_reachable", lambda image, *, label: None)
+    monkeypatch.setattr("coworld.play._free_local_port", lambda: 1234)
+    monkeypatch.setattr("coworld.play._wait_for_health", lambda port, process, stderr_path, *, timeout_seconds: None)
+    monkeypatch.setattr("coworld.play.subprocess.Popen", fake_popen)
+    monkeypatch.setattr("coworld.play.subprocess.run", lambda cmd, **kwargs: subprocess.CompletedProcess(cmd, 0))
+
+    session = replay_coworld(
+        coworld_manifest_path,
+        replay_path,
+        workspace=tmp_path / "replay-workspace",
+        on_ready=ready_sessions.append,
+    )
+
+    assert session.link == "http://127.0.0.1:1234/replay"
+    assert ready_sessions == [session]
+    command = popen_commands[0]
+    assert f"{REPLAY_LOAD_ENV_VAR}=/coworld-replay/replay.json" in command
+    assert f"{tmp_path}:/coworld-replay:ro" in command
+    assert "unit-test-game:latest" in command
+
+
 def test_example_coworld_manifest_validates() -> None:
     package = load_coworld_package(_example_root() / "coworld_manifest.json")
     config = build_game_config(package, ["token-0", "token-1"])
 
-    assert package.cogame_manifest["image_uri"] == "coworld-tictactoe-game:latest"
+    assert package.cogame_manifest["image_uri"] == "coworld-paintarena-game:latest"
     assert package.cogame_manifest["protocols"] == {
         "player": "docs/player_protocol_spec.md",
         "global": "docs/global_protocol_spec.md",
     }
     assert config["tokens"] == ["token-0", "token-1"]
+
+
+def test_paintarena_snapshots_are_independent(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    config_path = tmp_path / "config.json"
+    config_path.write_text(
+        json.dumps(
+            {
+                "tokens": ["token-0", "token-1"],
+                "width": 12,
+                "height": 8,
+                "max_ticks": 100,
+                "tick_rate": 5,
+            }
+        )
+    )
+    monkeypatch.setenv("COGAME_CONFIG_PATH", str(config_path))
+    monkeypatch.setenv("COGAME_RESULTS_PATH", str(tmp_path / "results.json"))
+    monkeypatch.setenv("COGAME_SAVE_REPLAY_PATH", str(tmp_path / "replay.json"))
+    monkeypatch.delenv("COGAME_LOAD_REPLAY_PATH", raising=False)
+
+    spec = importlib.util.spec_from_file_location("paintarena_server_test", _example_root() / "game" / "server.py")
+    assert spec is not None
+    assert spec.loader is not None
+    server_module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(server_module)
+
+    first_snapshot = server_module._snapshot()
+    server_module._step()
+    second_snapshot = server_module._snapshot()
+    server_module._step()
+
+    assert first_snapshot["positions"] == [[0, 0], [11, 7]]
+    assert first_snapshot["tile_owners"] == [-1 for _ in range(96)]
+    assert first_snapshot["scores"] == [0, 0]
+    assert second_snapshot["positions"] == [[0, 0], [11, 7]]
+    assert second_snapshot["tile_owners"][0] == 0
+    assert second_snapshot["tile_owners"][-1] == 1
+    assert second_snapshot["scores"] == [1, 1]
 
 
 def _docker_available() -> bool:
@@ -263,16 +346,16 @@ def _docker_available() -> bool:
 
 @pytest.mark.slow
 @pytest.mark.skipif(not _docker_available(), reason="Docker not available")
-def test_tictactoe_example_certifies_with_docker(tmp_path: Path) -> None:
+def test_paintarena_example_certifies_with_docker(tmp_path: Path) -> None:
     example_root = _example_root()
     subprocess.run(
-        ["docker", "build", "-t", "coworld-tictactoe-game:latest", "game"],
+        ["docker", "build", "-t", "coworld-paintarena-game:latest", "game"],
         cwd=example_root,
         check=True,
         timeout=300,
     )
     subprocess.run(
-        ["docker", "build", "-t", "coworld-tictactoe-player:latest", "player"],
+        ["docker", "build", "-t", "coworld-paintarena-player:latest", "player"],
         cwd=example_root,
         check=True,
         timeout=300,
@@ -280,7 +363,7 @@ def test_tictactoe_example_certifies_with_docker(tmp_path: Path) -> None:
 
     result = certify_coworld(example_root / "coworld_manifest.json", workspace=tmp_path / "cert", timeout_seconds=60)
 
-    assert result.results["scores"] == [1.0, 0.0]
+    assert sum(result.results["scores"]) > 0
     assert result.artifacts.replay_path.exists()
     assert result.artifacts.game_stdout_path.exists()
     assert result.artifacts.game_stderr_path.exists()
@@ -387,4 +470,4 @@ def _cogame_manifest(*, config_schema_required: list[str] | None = None) -> dict
 
 
 def _example_root() -> Path:
-    return Path(__file__).resolve().parents[1] / "examples" / "tictactoe"
+    return Path(__file__).resolve().parents[1] / "examples" / "paintarena"

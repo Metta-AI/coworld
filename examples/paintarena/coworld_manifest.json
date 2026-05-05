@@ -1,0 +1,38 @@
+{
+  "$schema": "../../coworld_manifest_schema.json",
+  "game": {
+    "manifest_uri": "game/cogame_manifest.json"
+  },
+  "player": [
+    {
+      "id": "sweep-painter",
+      "name": "Sweep Painter",
+      "image_uri": "coworld-paintarena-player:latest",
+      "description": "Deterministic player that sweeps across the arena repainting tiles."
+    }
+  ],
+  "variants": [
+    {
+      "id": "default",
+      "name": "Default",
+      "game_config": {
+        "width": 12,
+        "height": 8,
+        "max_ticks": 100,
+        "tick_rate": 5
+      },
+      "description": "Short two-player territory painting smoke-test configuration."
+    }
+  ],
+  "certification": {
+    "variant_id": "default",
+    "players": [
+      {
+        "player_id": "sweep-painter"
+      },
+      {
+        "player_id": "sweep-painter"
+      }
+    ]
+  }
+}
