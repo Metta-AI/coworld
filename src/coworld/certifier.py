@@ -26,12 +26,6 @@ from coworld.schema_validation import (
 
 
 @dataclass(frozen=True)
-class CoworldClientPaths:
-    player: str
-    global_: str
-
-
-@dataclass(frozen=True)
 class CogameProtocolDocs:
     player: str
     global_: str
@@ -43,7 +37,6 @@ class CoworldPackage:
     manifest: JsonObject
     cogame_manifest_path: Path
     cogame_manifest: JsonObject
-    clients: CoworldClientPaths
     certification: JsonObject
     cogame_image: str
     config_schema: JsonSchema
@@ -78,7 +71,6 @@ def load_coworld_package(manifest_path: Path) -> CoworldPackage:
     cogame_manifest = load_json_object(cogame_manifest_path)
     validate_cogame_manifest(cogame_manifest)
 
-    clients = cast(JsonObject, manifest["clients"])
     certification = cast(JsonObject, manifest["certification"])
     protocols = cast(JsonObject, cogame_manifest["protocols"])
 
@@ -87,7 +79,6 @@ def load_coworld_package(manifest_path: Path) -> CoworldPackage:
         manifest=manifest,
         cogame_manifest_path=cogame_manifest_path,
         cogame_manifest=cogame_manifest,
-        clients=CoworldClientPaths(player=cast(str, clients["player"]), global_=cast(str, clients["global"])),
         certification=certification,
         cogame_image=cast(str, cogame_manifest["image_uri"]),
         config_schema=cast(JsonSchema, cogame_manifest["config_schema"]),
@@ -193,11 +184,8 @@ def certify_coworld(
 
 
 def _referenced_file_paths(package: CoworldPackage) -> list[tuple[str, Path]]:
-    coworld_dir = package.manifest_path.parent
     cogame_dir = package.cogame_manifest_path.parent
     return [
-        ("Coworld clients.player", resolve_manifest_uri(coworld_dir, package.clients.player)),
-        ("Coworld clients.global", resolve_manifest_uri(coworld_dir, package.clients.global_)),
         ("Cogame protocols.player", resolve_manifest_uri(cogame_dir, package.protocols.player)),
         ("Cogame protocols.global", resolve_manifest_uri(cogame_dir, package.protocols.global_)),
     ]

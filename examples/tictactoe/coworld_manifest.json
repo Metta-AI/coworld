@@ -3,10 +3,6 @@
   "game": {
     "manifest_uri": "game/cogame_manifest.json"
   },
-  "clients": {
-    "player": "clients/player.html",
-    "global": "clients/global.html"
-  },
   "player": [
     {
       "id": "first-empty-player",

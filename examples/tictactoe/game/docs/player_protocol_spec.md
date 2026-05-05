@@ -1,6 +1,7 @@
 # Tic-Tac-Toe Player Protocol
 
-Players connect to `/player?slot=<slot>&token=<token>`.
+Browsers request `GET /player?slot=<slot>&token=<token>` to load the player client. The client forwards the same query
+params when it opens the `/player?slot=<slot>&token=<token>` websocket.
 
 The server sends a JSON turn message:
 

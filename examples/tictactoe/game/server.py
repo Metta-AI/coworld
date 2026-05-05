@@ -7,7 +7,9 @@ from pathlib import Path
 
 import uvicorn
 from fastapi import FastAPI, WebSocket
+from fastapi.responses import HTMLResponse
 
+CLIENTS_DIR = Path(__file__).parent / "clients"
 CONFIG = json.loads(Path(os.environ["COGAME_CONFIG_PATH"]).read_text())
 RESULTS_PATH = Path(os.environ["COGAME_RESULTS_PATH"])
 REPLAY_PATH = os.environ.get("COGAME_SAVE_REPLAY_PATH")
@@ -44,6 +46,16 @@ state = GameState()
 @app.get("/healthz")
 def healthz() -> dict[str, bool]:
     return {"ok": True}
+
+
+@app.get("/global")
+def global_client() -> HTMLResponse:
+    return HTMLResponse((CLIENTS_DIR / "global.html").read_text())
+
+
+@app.get("/player")
+def player_client() -> HTMLResponse:
+    return HTMLResponse((CLIENTS_DIR / "player.html").read_text())
 
 
 @app.websocket("/global")

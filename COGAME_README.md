@@ -42,22 +42,31 @@ The runner supplies:
 The game container listens on `0.0.0.0:8080` and exposes:
 
 - `GET /healthz`
-- `/player?slot=0&token=...`
-- `/global`
+- `GET /player?slot=0&token=...&...`
+- `WEBSOCKET /player?slot=0&token=...&...`
+- `GET /global?...`
+- `WEBSOCKET /global?...`
 
-The `/global` endpoint must accept viewer connections after an episode has already started. A viewer that connects
-mid-episode must receive enough state over the global protocol to render from its join point without requiring the
-episode to restart.
+HTTP `GET /player` must serve a browser client for one player slot. HTTP `GET /global` must serve a browser client for
+live episode viewing and replay viewing. The served clients read the complete URL query string and forward every query
+param when opening their websocket connection on the same route. For example,
+`http://<engine-host>/player?slot=0&token=...&initial_params=...` serves the player client, and that client opens
+`ws://<engine-host>/player?slot=0&token=...&initial_params=...`. The same convention applies to
+`http://<engine-host>/global?...`, whose client opens `ws://<engine-host>/global?...`.
 
-The `/player` endpoint must allow a player to reconnect to the same slot with the same token while the episode is still
-running. The slot's game state survives disconnects. During a disconnect, the game may advance that slot with no-op
-actions or another documented disconnected-player behavior until the player reconnects.
+The `/global` websocket endpoint must accept viewer connections after an episode has already started. A viewer that
+connects mid-episode must receive enough state over the global protocol to render from its join point without requiring
+the episode to restart.
+
+The `/player` websocket endpoint must allow a player to reconnect to the same slot with the same token while the episode
+is still running. The slot's game state survives disconnects. During a disconnect, the game may advance that slot with
+no-op actions or another documented disconnected-player behavior until the player reconnects.
 
 Replay production is an open question. The current spec requires the game to write a replay artifact to
 `COGAME_SAVE_REPLAY_PATH` when that environment variable is present. An alternative valid design is that the runner
-consumes and records everything served on `/global` while the episode is rolling out, writes that stream to the replay
-file, and replays it later by sending the recorded stream to a global viewer. In that design, the game container does
-not need to produce a replay file itself.
+consumes and records everything served on the `/global` websocket while the episode is rolling out, writes that stream to
+the replay file, and replays it later by sending the recorded stream to a global viewer. In that design, the game
+container does not need to produce a replay file itself.
 
 ## Coworld Contract
 
@@ -87,12 +96,16 @@ player container images and initial params, and output destinations.
 8. For each player, the runner:
    - decides which policy image corresponds to which slot,
    - starts one container per policy image,
-   - supplies `COGAMES_ENGINE_WS_URL=/player?slot=<slot>&token=<token>&...` to the policy container,
+   - supplies `COGAMES_ENGINE_WS_URL=ws://<engine-host>/player?slot=<slot>&token=<token>&...` to the policy container,
    - appends each player's `initial_params` to that URL as query params.
 9. The game rejects player connections whose `token` does not match the token for that slot.
-10. Global viewers may connect before or during the episode through `/global`.
-11. Players may disconnect and reconnect to the same slot with the same token.
-12. The game engine progresses the game after each player connects.
-13. When the game ends, it writes results to `COGAME_RESULTS_PATH`. The results file is JSON matching `results_schema`.
+10. Browser player clients may request `GET /player?slot=<slot>&token=<token>&...`; the served client opens the
+    `/player` websocket with the same query params.
+11. Browser global clients may request `GET /global?...`; the served client opens the `/global` websocket with the same
+    query params.
+12. Global websocket viewers may connect before or during the episode through `/global`.
+13. Players may disconnect and reconnect to the same slot with the same token.
+14. The game engine progresses the game after each player connects.
+15. When the game ends, it writes results to `COGAME_RESULTS_PATH`. The results file is JSON matching `results_schema`.
     If `COGAME_SAVE_REPLAY_PATH` is present, the game also writes a replay file there.
-14. The runner uploads results, replay, and logs to the episode config output URIs.
+16. The runner uploads results, replay, and logs to the episode config output URIs.

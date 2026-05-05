@@ -4,12 +4,9 @@ import json
 import secrets
 import subprocess
 from dataclasses import dataclass
-from functools import partial
-from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
-from threading import Thread
 from typing import Callable, cast
-from urllib.parse import quote, urlencode
+from urllib.parse import urlencode
 
 from coworld.certifier import (
     CoworldPackage,
@@ -66,14 +63,12 @@ def play_coworld(
     episode_request = build_episode_request(package, artifacts)
     players = build_player_launch_specs(episode_request)
     game_port = _free_local_port()
-    client_port = _free_local_port()
     session = PlaySession(
         package=package,
         artifacts=artifacts,
-        links=build_play_links(package, players, tokens, game_port=game_port, client_port=client_port),
+        links=build_play_links(players, tokens, game_port=game_port),
     )
 
-    client_server = _start_client_server(package.manifest_path.parent, client_port)
     game_container = f"coworld-play-game-{secrets.token_hex(8)}"
     try:
         with artifacts.game_stdout_path.open("w") as game_stdout, artifacts.game_stderr_path.open("w") as game_stderr:
@@ -109,49 +104,28 @@ def play_coworld(
                     f"Game container exited with status {return_code}.\n{_tail(artifacts.game_stderr_path)}"
                 )
     finally:
-        client_server.shutdown()
-        client_server.server_close()
         subprocess.run(["docker", "rm", "-f", game_container], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
 
     return PlayResult(session=session, results=load_results(package, artifacts))
 
 
 def build_play_links(
-    package: CoworldPackage,
     players: list[PlayerLaunchSpec],
     tokens: list[str],
     *,
     game_port: int,
-    client_port: int,
 ) -> PlayLinks:
     player_links = [
-        _client_url(package.clients.player, _player_address(game_port, slot, tokens[slot], player), client_port)
+        f"http://127.0.0.1:{game_port}/player?{_player_query(slot, tokens[slot], player)}"
         for slot, player in enumerate(players)
     ]
     return PlayLinks(
         players=player_links,
-        global_=_client_url(package.clients.global_, f"ws://127.0.0.1:{game_port}/global", client_port),
+        global_=f"http://127.0.0.1:{game_port}/global",
     )
 
 
-def _player_address(port: int, slot: int, token: str, player: PlayerLaunchSpec) -> str:
+def _player_query(slot: int, token: str, player: PlayerLaunchSpec) -> str:
     query = {"slot": slot, "token": token}
     query.update(player.initial_params)
-    return f"ws://127.0.0.1:{port}/player?{urlencode(query)}"
-
-
-def _client_url(client_path: str, address: str, port: int) -> str:
-    return f"http://127.0.0.1:{port}/{quote(client_path, safe='/')}?address={quote(address, safe='')}"
-
-
-def _start_client_server(root: Path, port: int) -> ThreadingHTTPServer:
-    handler = partial(_ClientRequestHandler, directory=str(root))
-    server = ThreadingHTTPServer(("127.0.0.1", port), handler)
-    thread = Thread(target=server.serve_forever, daemon=True)
-    thread.start()
-    return server
-
-
-class _ClientRequestHandler(SimpleHTTPRequestHandler):
-    def log_message(self, format: str, *args: object) -> None:
-        pass
+    return urlencode(query)

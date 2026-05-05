@@ -10,8 +10,9 @@
 <div id="status"></div>
 <div id="board"></div>
 <script>
-  const params = new URLSearchParams(window.location.search);
-  const address = params.get("address");
+  const websocketUrl = new URL(window.location.href);
+  websocketUrl.protocol = websocketUrl.protocol === "https:" ? "wss:" : "ws:";
+
   const board = document.getElementById("board");
   const status = document.getElementById("status");
   let socket;
@@ -32,24 +33,20 @@
     }));
   }
 
-  if (address) {
-    socket = new WebSocket(address);
-    socket.onopen = () => { status.textContent = "Connected"; };
-    socket.onmessage = (event) => {
-      const message = JSON.parse(event.data);
-      if (message.board) {
-        canMove = message.type === "turn";
-        draw(message.board);
-      }
-      if (message.type === "turn") {
-        status.textContent = "Your move";
-      }
-      if (message.done) {
-        status.textContent = `Done. Winner: ${message.winner}`;
-      }
-    };
-    socket.onclose = () => { status.textContent = "Disconnected"; };
-  } else {
-    status.textContent = "Missing address";
-  }
+  socket = new WebSocket(websocketUrl);
+  socket.onopen = () => { status.textContent = "Connected"; };
+  socket.onmessage = (event) => {
+    const message = JSON.parse(event.data);
+    if (message.board) {
+      canMove = message.type === "turn";
+      draw(message.board);
+    }
+    if (message.type === "turn") {
+      status.textContent = "Your move";
+    }
+    if (message.done) {
+      status.textContent = `Done. Winner: ${message.winner}`;
+    }
+  };
+  socket.onclose = () => { status.textContent = "Disconnected"; };
 </script>

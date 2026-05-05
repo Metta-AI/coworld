@@ -17,8 +17,6 @@ uv run coworld certify path/to/coworld_manifest.json
 The schema provides a full description for what it requires. A summary of the required elements:
 
 - [Cogame](#cogame)
-- [Player client](#player-client)
-- [Global client](#global-client)
 - [Certification fixture](#certification-fixture)
 - [Player](#player)
 - [Variants](#variants)
@@ -37,7 +35,6 @@ For a complete small implementation, see [examples/tictactoe/](examples/tictacto
 
 `game.manifest_uri` MUST resolve relative to the directory containing `coworld_manifest.json`. Paths inside the referenced
 `cogame_manifest.json` MUST resolve relative to the directory containing that Cogame manifest.
-`clients.player` and `clients.global` MUST resolve relative to the directory containing `coworld_manifest.json`.
 
 Source manifests should use references rather than inlining Cogame manifests into Coworld manifests. If the platform needs
 a single upload artifact, a bundling step can inline resolved files mechanically without changing the source format.
@@ -46,18 +43,24 @@ a single upload artifact, a bundling step can inline resolved files mechanically
 ### Cogame
 
 A Cogame is the game service referenced by `game.manifest_uri`. It validates against
-[cogame_manifest_schema.json](cogame_manifest_schema.json) and defines the container runtime API, websocket endpoints,
-config/results formats, and episode lifecycle described in [COGAME_README.md](COGAME_README.md).
+[cogame_manifest_schema.json](cogame_manifest_schema.json) and defines the container runtime API, browser client routes,
+websocket endpoints, config/results formats, and episode lifecycle described in [COGAME_README.md](COGAME_README.md).
 
 ### Player Client
 
-A static browser client at `clients.player` connects to one player slot. It accepts `?address=...`, where `address` is
-the complete player websocket URI including slot, token, and initial params.
+The Cogame serves its player browser client from `GET /player?...`. A browser can request a link such as
+`/player?slot=<slot>&token=<token>&initial_params=<value>` over HTTP and receive the player client.
+
+By convention, the client reads the complete URL query string and forwards every query param when it opens the player
+websocket on the same route, for example `ws://<engine-host>/player?slot=<slot>&token=<token>&initial_params=<value>`.
 
 ### Global Client
 
-A static browser client at `clients.global` watches live episodes and replays. It accepts `?address=...`, where `address`
-is the complete global websocket URI.
+The Cogame serves its global browser client from `GET /global?...`. A browser can request a link such as
+`/global?initial_params=<value>` over HTTP and receive the global client.
+
+By convention, the client reads the complete URL query string and forwards every query param when it opens the global
+websocket on the same route, for example `ws://<engine-host>/global?initial_params=<value>`.
 
 ### Player
 
@@ -127,7 +130,8 @@ uv run coworld play path/to/coworld_manifest.json
 ```
 
 The command uses the certification fixture for game config and player slots, then prints player and global client links.
-Each link passes the target websocket URI through `?address=...`.
+Each link points directly at the Cogame's HTTP client route. The served client forwards the link's query params when it
+connects back to the Cogame over websocket.
 
 ## Certification
 
@@ -142,5 +146,6 @@ Operational details:
 - Private registries such as GHCR or ECR require the local Docker client to be logged in first.
 - Successful runs print artifact, result, replay, and log paths under `tmp/coworld-cert-*`.
 
-Certification validates the Coworld and Cogame manifests, checks referenced files and images, runs one smoke episode
-through Docker, and verifies the produced results and replay artifacts.
+Certification validates the Coworld and Cogame manifests, checks referenced files and images, verifies the Cogame serves
+its player and global browser clients over HTTP, runs one smoke episode through Docker, and verifies the produced results
+and replay artifacts.

@@ -123,6 +123,8 @@ def run_cogame_episode(spec: EpisodeRunSpec) -> None:
             )
 
             _wait_for_health(port, game_process, spec.artifacts.game_stderr_path, timeout_seconds=spec.timeout_seconds)
+            _require_http_ok(_player_client_url(port, 0, spec.tokens[0], spec.players[0]))
+            _require_http_ok(f"http://127.0.0.1:{port}/global")
             asyncio.run(_require_bad_player_rejected(f"ws://127.0.0.1:{port}/player?slot=0&token=bad"))
 
             for slot, player in enumerate(spec.players):
@@ -168,9 +170,22 @@ def run_cogame_episode(spec: EpisodeRunSpec) -> None:
 
 
 def _player_container_ws_url(port: int, slot: int, token: str, player: PlayerLaunchSpec) -> str:
+    return f"ws://host.docker.internal:{port}/player?{_player_query(slot, token, player)}"
+
+
+def _player_client_url(port: int, slot: int, token: str, player: PlayerLaunchSpec) -> str:
+    return f"http://127.0.0.1:{port}/player?{_player_query(slot, token, player)}"
+
+
+def _player_query(slot: int, token: str, player: PlayerLaunchSpec) -> str:
     query: dict[str, QueryParamValue] = {"slot": slot, "token": token}
     query.update(player.initial_params)
-    return f"ws://host.docker.internal:{port}/player?{urlencode(query)}"
+    return urlencode(query)
+
+
+def _require_http_ok(url: str) -> None:
+    response = httpx.get(url, timeout=5.0)
+    response.raise_for_status()
 
 
 async def _require_bad_player_rejected(url: str) -> None:

@@ -46,13 +46,6 @@ def test_load_coworld_package_requires_protocol_doc_files(tmp_path: Path) -> Non
         load_coworld_package(coworld_manifest_path)
 
 
-def test_load_coworld_package_requires_client_files(tmp_path: Path) -> None:
-    coworld_manifest_path = _write_package_files(tmp_path, write_clients=False)
-
-    with pytest.raises(FileNotFoundError, match="Coworld clients.player"):
-        load_coworld_package(coworld_manifest_path)
-
-
 def test_load_coworld_package_rejects_invalid_certification_player_entry(tmp_path: Path) -> None:
     coworld_manifest_path = _write_package_files(
         tmp_path,
@@ -175,7 +168,7 @@ def test_build_episode_request_adds_artifact_destinations(tmp_path: Path) -> Non
     assert episode_request["logs_uri"] == artifacts.logs_dir.as_uri()
 
 
-def test_build_play_links_pass_complete_address_to_clients(tmp_path: Path) -> None:
+def test_build_play_links_point_directly_at_engine_client_routes(tmp_path: Path) -> None:
     package = _write_package(
         tmp_path,
         certification={
@@ -192,15 +185,13 @@ def test_build_play_links_pass_complete_address_to_clients(tmp_path: Path) -> No
     episode_request = build_episode_request(package, artifacts)
     players = build_player_launch_specs(episode_request)
 
-    links = build_play_links(package, players, ["token-0"], game_port=1234, client_port=5678)
+    links = build_play_links(players, ["token-0"], game_port=1234)
 
     player_link = urlparse(links.players[0])
-    player_link_query = parse_qs(player_link.query)
-    player_address = urlparse(player_link_query["address"][0])
-    player_address_query = parse_qs(player_address.query)
-    assert player_link.path == "/clients/player.html"
-    assert player_address.geturl().startswith("ws://127.0.0.1:1234/player?")
-    assert player_address_query == {
+    assert player_link.scheme == "http"
+    assert player_link.netloc == "127.0.0.1:1234"
+    assert player_link.path == "/player"
+    assert parse_qs(player_link.query) == {
         "slot": ["0"],
         "token": ["token-0"],
         "role": ["x"],
@@ -209,9 +200,10 @@ def test_build_play_links_pass_complete_address_to_clients(tmp_path: Path) -> No
     }
 
     global_link = urlparse(links.global_)
-    global_address = parse_qs(global_link.query)["address"][0]
-    assert global_link.path == "/clients/global.html"
-    assert global_address == "ws://127.0.0.1:1234/global"
+    assert global_link.scheme == "http"
+    assert global_link.netloc == "127.0.0.1:1234"
+    assert global_link.path == "/global"
+    assert global_link.query == ""
 
 
 def test_example_coworld_manifest_validates() -> None:
@@ -279,21 +271,15 @@ def _write_package_files(
     *,
     config_schema_required: list[str] | None = None,
     certification: dict[str, object] | None = None,
-    write_clients: bool = True,
     write_protocol_docs: bool = True,
 ) -> Path:
     world_dir = tmp_path / "world"
     game_dir = world_dir / "game"
-    clients_dir = world_dir / "clients"
     docs_dir = game_dir / "docs"
     docs_dir.mkdir(parents=True)
-    clients_dir.mkdir(parents=True)
     (game_dir / "cogame_manifest.json").write_text(
         json.dumps(_cogame_manifest(config_schema_required=config_schema_required or ["tokens"]))
     )
-    if write_clients:
-        (clients_dir / "player.html").write_text("<!doctype html>")
-        (clients_dir / "global.html").write_text("<!doctype html>")
     if write_protocol_docs:
         (docs_dir / "player_protocol_spec.md").write_text("# Player Protocol\n")
         (docs_dir / "global_protocol_spec.md").write_text("# Global Protocol\n")
@@ -310,10 +296,6 @@ def _coworld_manifest(*, certification: dict[str, object] | None = None) -> dict
         }
     return {
         "game": {"manifest_uri": "game/cogame_manifest.json"},
-        "clients": {
-            "player": "clients/player.html",
-            "global": "clients/global.html",
-        },
         "player": [
             {
                 "id": "unit-test-player",

@@ -1,6 +1,7 @@
 # Tic-Tac-Toe Global Protocol
 
-Viewers connect to `/global`.
+Browsers request `GET /global` to load the global client. The client forwards the same query params when it opens the
+`/global` websocket.
 
 The server sends a JSON state snapshot immediately on connect:
 
