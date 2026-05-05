@@ -9,24 +9,30 @@
   },
   "player": [
     {
+      "id": "first-empty-player",
       "name": "first-empty-player",
       "image_uri": "coworld-tictactoe-player:latest",
       "description": "Deterministic player that chooses the first empty tic-tac-toe square."
     }
   ],
+  "variants": [
+    {
+      "id": "default",
+      "name": "Default",
+      "game_config": {
+        "max_turns": 9
+      },
+      "description": "Standard 2-player tic-tac-toe smoke-test configuration."
+    }
+  ],
   "certification": {
-    "game_config": {
-      "max_turns": 9
-    },
+    "variant_id": "default",
     "players": [
       {
-        "image": "coworld-tictactoe-player:latest",
-        "initial_params": {
-          "strategy": "first"
-        }
+        "player_id": "first-empty-player"
       },
       {
-        "image": "coworld-tictactoe-player:latest"
+        "player_id": "first-empty-player"
       }
     ]
   }

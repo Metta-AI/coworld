@@ -57,12 +57,12 @@ def test_load_coworld_package_rejects_invalid_certification_player_entry(tmp_pat
     coworld_manifest_path = _write_package_files(
         tmp_path,
         certification={
-            "game_config": {},
+            "variant_id": "default",
             "players": [{"initial_params": {"difficulty": "easy"}}],
         },
     )
 
-    with pytest.raises(ValidationError, match="'image' is a required property"):
+    with pytest.raises(ValidationError, match="'player_id' is a required property"):
         load_coworld_package(coworld_manifest_path)
 
 
@@ -70,12 +70,38 @@ def test_load_coworld_package_rejects_invalid_initial_params(tmp_path: Path) -> 
     coworld_manifest_path = _write_package_files(
         tmp_path,
         certification={
-            "game_config": {},
-            "players": [{"image": "unit-test-player:latest", "initial_params": {"bad": ["nested"]}}],
+            "variant_id": "default",
+            "players": [{"player_id": "unit-test-player", "initial_params": {"bad": ["nested"]}}],
         },
     )
 
     with pytest.raises(ValidationError, match="is not of type"):
+        load_coworld_package(coworld_manifest_path)
+
+
+def test_load_coworld_package_rejects_unknown_certification_variant(tmp_path: Path) -> None:
+    coworld_manifest_path = _write_package_files(
+        tmp_path,
+        certification={
+            "variant_id": "missing",
+            "players": [{"player_id": "unit-test-player"}],
+        },
+    )
+
+    with pytest.raises(ValueError, match="unknown certification variant_id"):
+        load_coworld_package(coworld_manifest_path)
+
+
+def test_load_coworld_package_rejects_unknown_certification_player(tmp_path: Path) -> None:
+    coworld_manifest_path = _write_package_files(
+        tmp_path,
+        certification={
+            "variant_id": "default",
+            "players": [{"player_id": "missing"}],
+        },
+    )
+
+    with pytest.raises(ValueError, match="unknown certification player_id"):
         load_coworld_package(coworld_manifest_path)
 
 
@@ -121,7 +147,7 @@ def test_assert_docker_image_reachable_rejects_missing_image(monkeypatch: pytest
 
 
 def test_build_game_config_validates_after_tokens_are_injected_via_json_schema(tmp_path: Path) -> None:
-    package = _write_package(tmp_path, config_schema_required=["tokens", "difficulty"])
+    package = _write_package(tmp_path, config_schema_required=["tokens", "missing"])
 
     with pytest.raises(ValidationError):
         build_game_config(package, ["token-0"])
@@ -142,6 +168,8 @@ def test_build_episode_request_adds_artifact_destinations(tmp_path: Path) -> Non
 
     episode_request = build_episode_request(package, artifacts)
 
+    assert episode_request["game_config"] == {"difficulty": "easy"}
+    assert episode_request["players"] == [{"image": "unit-test-player:latest"}]
     assert episode_request["results_uri"] == artifacts.results_path.as_uri()
     assert episode_request["replay_uri"] == artifacts.replay_path.as_uri()
     assert episode_request["logs_uri"] == artifacts.logs_dir.as_uri()
@@ -151,11 +179,11 @@ def test_build_play_links_pass_complete_address_to_clients(tmp_path: Path) -> No
     package = _write_package(
         tmp_path,
         certification={
-            "game_config": {},
+            "variant_id": "default",
             "players": [
                 {
-                    "image": "unit-test-player:latest",
-                    "initial_params": {"strategy": "manual", "difficulty": 2, "debug": True},
+                    "player_id": "unit-test-player",
+                    "initial_params": {"role": "x", "difficulty": 2, "debug": True},
                 }
             ],
         },
@@ -175,7 +203,7 @@ def test_build_play_links_pass_complete_address_to_clients(tmp_path: Path) -> No
     assert player_address_query == {
         "slot": ["0"],
         "token": ["token-0"],
-        "strategy": ["manual"],
+        "role": ["x"],
         "difficulty": ["2"],
         "debug": ["True"],
     }
@@ -277,8 +305,8 @@ def _write_package_files(
 def _coworld_manifest(*, certification: dict[str, object] | None = None) -> dict[str, object]:
     if certification is None:
         certification = {
-            "game_config": {},
-            "players": [{"image": "unit-test-player:latest"}],
+            "variant_id": "default",
+            "players": [{"player_id": "unit-test-player"}],
         }
     return {
         "game": {"manifest_uri": "game/cogame_manifest.json"},
@@ -286,6 +314,22 @@ def _coworld_manifest(*, certification: dict[str, object] | None = None) -> dict
             "player": "clients/player.html",
             "global": "clients/global.html",
         },
+        "player": [
+            {
+                "id": "unit-test-player",
+                "name": "Unit Test Player",
+                "image_uri": "unit-test-player:latest",
+                "description": "Unit test player.",
+            }
+        ],
+        "variants": [
+            {
+                "id": "default",
+                "name": "Default",
+                "game_config": {"difficulty": "easy"},
+                "description": "Default test variant.",
+            }
+        ],
         "certification": certification,
     }
 

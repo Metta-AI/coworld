@@ -4,7 +4,7 @@
   "description": "Schema for a complete game world in the Softmax universe.",
   "type": "object",
   "additionalProperties": false,
-  "required": ["game", "clients", "certification"],
+  "required": ["game", "clients", "player", "variants", "certification"],
   "properties": {
     "$schema": {
       "type": "string"
@@ -20,7 +20,7 @@
     "player": {
       "description": "Base player policies that users can fork from and that can competently play the game.",
       "type": "array",
-      "minItems": 0,
+      "minItems": 1,
       "items": {
         "$ref": "#/$defs/NamedImage"
       }
@@ -68,14 +68,14 @@
     "variants": {
       "description": "Targeted game configs that factorize the game into mechanics for training and evaluation.",
       "type": "array",
-      "minItems": 0,
+      "minItems": 1,
       "items": {
         "$ref": "#/$defs/Variant"
       }
     },
     "certification": {
-      "description": "Coworld-level smoke episode used by the platform certifier. The certifier supplies artifact destinations.",
-      "$ref": "episode_request_schema.json#/$defs/EpisodeInput"
+      "description": "Coworld-level smoke episode used by the platform certifier. References declared variant and player IDs; the certifier supplies artifact destinations.",
+      "$ref": "#/$defs/CertificationFixture"
     }
   },
   "$defs": {
@@ -111,8 +111,12 @@
     "NamedImage": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["name", "image_uri", "description"],
+      "required": ["id", "name", "image_uri", "description"],
       "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 1
+        },
         "name": {
           "type": "string",
           "minLength": 1
@@ -130,8 +134,12 @@
     "Variant": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["name", "game_config", "parent_id", "description"],
+      "required": ["id", "name", "game_config", "description"],
       "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 1
+        },
         "name": {
           "type": "string",
           "minLength": 1
@@ -146,6 +154,44 @@
         "description": {
           "type": "string",
           "minLength": 1
+        }
+      }
+    },
+    "CertificationFixture": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["variant_id", "players"],
+      "properties": {
+        "variant_id": {
+          "description": "ID of the declared variant used for the smoke episode.",
+          "type": "string",
+          "minLength": 1
+        },
+        "players": {
+          "description": "Player slots for the smoke episode, each referencing a declared player by ID.",
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "$ref": "#/$defs/CertificationPlayer"
+          }
+        }
+      }
+    },
+    "CertificationPlayer": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["player_id"],
+      "properties": {
+        "player_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "initial_params": {
+          "description": "Optional query params appended to the player's websocket URL.",
+          "type": "object",
+          "additionalProperties": {
+            "type": ["string", "number", "integer", "boolean"]
+          }
         }
       }
     }

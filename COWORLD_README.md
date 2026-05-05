@@ -19,8 +19,9 @@ The schema provides a full description for what it requires. A summary of the re
 - [Cogame](#cogame)
 - [Player client](#player-client)
 - [Global client](#global-client)
-- [Player](#player)
 - [Certification fixture](#certification-fixture)
+- [Player](#player)
+- [Variants](#variants)
 
 Currently optional elements that will soon be required:
 
@@ -29,7 +30,6 @@ Currently optional elements that will soon be required:
 - [Commissioner](#commissioner)
 - [Diagnoser](#diagnoser)
 - [Optimizer](#optimizer)
-- [Variants](#variants)
 
 For a complete small implementation, see [examples/tictactoe/](examples/tictactoe/).
 
@@ -66,7 +66,19 @@ implemented.
 
 ### Certification Fixture
 
-A short deterministic episode input proves that the Coworld works end to end.
+A short deterministic smoke episode proves that the Coworld works end to end.
+
+```json
+{
+  "certification": {
+    "variant_id": "default",
+    "players": [
+      { "player_id": "first-empty-player" },
+      { "player_id": "first-empty-player" }
+    ]
+  }
+}
+```
 
 ### Grader
 
@@ -106,8 +118,6 @@ A graph of game configurations, each of which adheres to the game's config schem
 so walking the tree generates experience targeted at learning different aspects of the game independently for training
 purposes.
 
-_Contract to be specified._
-
 ## Play
 
 To start a local game for browser play:
@@ -121,9 +131,9 @@ Each link passes the target websocket URI through `?address=...`.
 
 ## Certification
 
-Coworld certification is the platform smoke test for a Coworld. The `certification` block uses the `EpisodeInput` shape
-from [episode_request_schema.json](episode_request_schema.json); the certifier supplies artifact destinations and runs the
-Cogame lifecycle described in [COGAME_README.md](COGAME_README.md).
+Coworld certification resolves the fixture into an `EpisodeInput` from
+[episode_request_schema.json](episode_request_schema.json), supplies artifact destinations, and runs the Cogame lifecycle
+described in [COGAME_README.md](COGAME_README.md).
 
 Operational details:
 

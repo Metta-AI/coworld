@@ -64,8 +64,7 @@ not need to produce a replay file itself.
 A Coworld references exactly one Cogame through `game.manifest_uri` in `coworld_manifest.json`. That URI points to a
 `cogame_manifest.json` instance that validates against `cogame_manifest_schema.json`.
 
-Coworld certification uses the referenced Cogame and the Coworld's declared certification episode input to run one
-end-to-end smoke episode.
+Coworld certification resolves the Coworld's fixture into one end-to-end smoke episode for the referenced Cogame.
 
 ## Episode Config
 
