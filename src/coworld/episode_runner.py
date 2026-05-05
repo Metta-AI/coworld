@@ -19,7 +19,8 @@ from websockets.exceptions import InvalidHandshake, InvalidStatus
 PACKAGE_ROOT = Path(__file__).resolve().parents[2]
 REPO_ROOT = PACKAGE_ROOT.parents[1]
 CONTAINER_WORKDIR = "/coworld"
-REPLAY_ENV_VAR = "COGAME_SAVE_REPLAY_PATH"
+REPLAY_SAVE_ENV_VAR = "COGAME_SAVE_REPLAY_PATH"
+REPLAY_LOAD_ENV_VAR = "COGAME_LOAD_REPLAY_PATH"
 QueryParamValue: TypeAlias = str | int | float | bool
 
 
@@ -92,6 +93,7 @@ def run_cogame_episode(spec: EpisodeRunSpec) -> None:
     port = _free_local_port()
     run_id = secrets.token_hex(8)
     game_container = f"coworld-cert-game-{run_id}"
+    replay_container = f"coworld-cert-replay-{run_id}"
     player_containers: list[str] = []
     player_processes: list[tuple[subprocess.Popen[str], Path]] = []
 
@@ -113,7 +115,7 @@ def run_cogame_episode(spec: EpisodeRunSpec) -> None:
                     "-e",
                     f"COGAME_RESULTS_PATH={CONTAINER_WORKDIR}/results.json",
                     "-e",
-                    f"{REPLAY_ENV_VAR}={CONTAINER_WORKDIR}/replay.json",
+                    f"{REPLAY_SAVE_ENV_VAR}={CONTAINER_WORKDIR}/replay.json",
                     "-v",
                     f"{spec.artifacts.workspace.resolve()}:{CONTAINER_WORKDIR}:rw",
                     spec.cogame_image,
@@ -124,10 +126,10 @@ def run_cogame_episode(spec: EpisodeRunSpec) -> None:
             )
 
             _wait_for_health(port, game_process, spec.artifacts.game_stderr_path, timeout_seconds=spec.timeout_seconds)
-            _require_http_ok(_player_client_url(port, 0, spec.tokens[0], spec.players[0]))
+            if spec.players:
+                _require_http_ok(_player_client_url(port, 0, spec.tokens[0], spec.players[0]))
+                asyncio.run(_require_bad_player_rejected(f"ws://127.0.0.1:{port}/player?slot=0&token=bad"))
             _require_http_ok(f"http://127.0.0.1:{port}/global")
-            _require_http_ok(_replay_client_url(port, spec.artifacts.replay_path.as_uri()))
-            asyncio.run(_require_bad_player_rejected(f"ws://127.0.0.1:{port}/player?slot=0&token=bad"))
 
             for slot, player in enumerate(spec.players):
                 container_name = f"coworld-cert-player-{run_id}-{slot}"
@@ -165,10 +167,42 @@ def run_cogame_episode(spec: EpisodeRunSpec) -> None:
 
             for player_process, player_stderr_path in player_processes:
                 _wait_for_player_exit(player_process, player_stderr_path)
+
+            replay_port = _free_local_port()
+            replay_process = subprocess.Popen(
+                [
+                    "docker",
+                    "run",
+                    "--rm",
+                    "--name",
+                    replay_container,
+                    "-p",
+                    f"127.0.0.1:{replay_port}:8080",
+                    "-e",
+                    f"{REPLAY_LOAD_ENV_VAR}={CONTAINER_WORKDIR}/replay.json",
+                    "-v",
+                    f"{spec.artifacts.workspace.resolve()}:{CONTAINER_WORKDIR}:rw",
+                    spec.cogame_image,
+                ],
+                stdout=game_stdout,
+                stderr=game_stderr,
+                text=True,
+            )
+            _wait_for_health(
+                replay_port,
+                replay_process,
+                spec.artifacts.game_stderr_path,
+                timeout_seconds=spec.timeout_seconds,
+            )
+            _require_http_ok(_replay_client_url(replay_port))
+            asyncio.run(
+                _require_replay_message(f"ws://127.0.0.1:{replay_port}/replay", timeout_seconds=spec.timeout_seconds)
+            )
     finally:
         for container_name in player_containers:
             subprocess.run(["docker", "rm", "-f", container_name], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
         subprocess.run(["docker", "rm", "-f", game_container], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        subprocess.run(["docker", "rm", "-f", replay_container], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
 
 
 def _player_container_ws_url(port: int, slot: int, token: str, player: PlayerLaunchSpec) -> str:
@@ -179,8 +213,8 @@ def _player_client_url(port: int, slot: int, token: str, player: PlayerLaunchSpe
     return f"http://127.0.0.1:{port}/player?{_player_query(slot, token, player)}"
 
 
-def _replay_client_url(port: int, replay_uri: str) -> str:
-    return f"http://127.0.0.1:{port}/replay?{urlencode({'uri': replay_uri})}"
+def _replay_client_url(port: int) -> str:
+    return f"http://127.0.0.1:{port}/replay"
 
 
 def _player_query(slot: int, token: str, player: PlayerLaunchSpec) -> str:
@@ -214,6 +248,13 @@ async def _require_global_message(url: str, *, timeout_seconds: float) -> None:
         message = await asyncio.wait_for(websocket.recv(), timeout=min(timeout_seconds, 10.0))
         if not message:
             raise AssertionError(f"Global viewer received an empty message from {url}")
+
+
+async def _require_replay_message(url: str, *, timeout_seconds: float) -> None:
+    async with websockets.connect(url, open_timeout=5) as websocket:
+        message = await asyncio.wait_for(websocket.recv(), timeout=min(timeout_seconds, 10.0))
+        if not message:
+            raise AssertionError(f"Replay viewer received an empty message from {url}")
 
 
 def _wait_for_health(

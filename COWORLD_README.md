@@ -147,5 +147,5 @@ Operational details:
 - Successful runs print artifact, result, replay, and log paths under `tmp/coworld-cert-*`.
 
 Certification validates the Coworld and Cogame manifests, checks referenced files and images, verifies the Cogame serves
-its player, global, and replay browser clients over HTTP, runs one smoke episode through Docker, and verifies the
-produced results and replay artifacts.
+its player and global browser clients in rollout mode, verifies the Cogame serves its replay browser client in replay
+mode, runs one smoke episode through Docker, and verifies the produced results and replay artifacts.

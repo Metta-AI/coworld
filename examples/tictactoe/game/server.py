@@ -10,9 +10,17 @@ from fastapi import FastAPI, WebSocket
 from fastapi.responses import HTMLResponse
 
 CLIENTS_DIR = Path(__file__).parent / "clients"
-CONFIG = json.loads(Path(os.environ["COGAME_CONFIG_PATH"]).read_text())
-RESULTS_PATH = Path(os.environ["COGAME_RESULTS_PATH"])
-REPLAY_PATH = Path(os.environ["COGAME_SAVE_REPLAY_PATH"])
+REPLAY_MODE = "COGAME_LOAD_REPLAY_PATH" in os.environ
+if REPLAY_MODE:
+    REPLAY_DATA = json.loads(Path(os.environ["COGAME_LOAD_REPLAY_PATH"]).read_text())
+    CONFIG = {"tokens": [], "max_turns": 0}
+    RESULTS_PATH = Path(os.environ["COGAME_LOAD_REPLAY_PATH"])
+    REPLAY_PATH = Path(os.environ["COGAME_LOAD_REPLAY_PATH"])
+else:
+    REPLAY_DATA = {}
+    CONFIG = json.loads(Path(os.environ["COGAME_CONFIG_PATH"]).read_text())
+    RESULTS_PATH = Path(os.environ["COGAME_RESULTS_PATH"])
+    REPLAY_PATH = Path(os.environ["COGAME_SAVE_REPLAY_PATH"])
 TOKENS = CONFIG["tokens"]
 MAX_TURNS = CONFIG["max_turns"]
 WIN_LINES = [
@@ -69,6 +77,15 @@ async def global_viewer(websocket: WebSocket) -> None:
     await websocket.send_json(_snapshot())
     while not state.done:
         await asyncio.sleep(0.05)
+
+
+@app.websocket("/replay")
+async def replay_viewer(websocket: WebSocket) -> None:
+    await websocket.accept()
+    await websocket.send_json({"type": "replay", **REPLAY_DATA})
+    while True:
+        command = await websocket.receive_json()
+        await websocket.send_json({"type": "control", "command": command})
 
 
 @app.websocket("/player")

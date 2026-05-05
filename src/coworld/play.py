@@ -18,7 +18,7 @@ from coworld.certifier import (
 )
 from coworld.episode_runner import (
     CONTAINER_WORKDIR,
-    REPLAY_ENV_VAR,
+    REPLAY_SAVE_ENV_VAR,
     EpisodeArtifacts,
     PlayerLaunchSpec,
     _free_local_port,
@@ -87,7 +87,7 @@ def play_coworld(
                     "-e",
                     f"COGAME_RESULTS_PATH={CONTAINER_WORKDIR}/results.json",
                     "-e",
-                    f"{REPLAY_ENV_VAR}={CONTAINER_WORKDIR}/replay.json",
+                    f"{REPLAY_SAVE_ENV_VAR}={CONTAINER_WORKDIR}/replay.json",
                     "-v",
                     f"{artifacts.workspace.resolve()}:{CONTAINER_WORKDIR}:rw",
                     package.cogame_image,

@@ -40,14 +40,14 @@ The runner supplies:
 - `COGAME_RESULTS_PATH`: path where the game writes final results,
 - `COGAME_SAVE_REPLAY_PATH`: path where the game writes its replay artifact.
 
-The game container listens on `0.0.0.0:8080` and exposes:
+These environment variables put the container in rollout mode. In rollout mode, the game container listens on
+`0.0.0.0:8080` and exposes:
 
 - `GET /healthz`
 - `GET /player?slot=0&token=...&...`
 - `WEBSOCKET /player?slot=0&token=...&...`
 - `GET /global`
 - `WEBSOCKET /global`
-- `GET /replay?uri=...`
 
 HTTP `GET /player` must serve a browser client for one player slot. HTTP `GET /global` must serve a browser client for
 live episode viewing. The served clients read the complete URL query string and forward every query param when opening
@@ -55,9 +55,6 @@ their websocket connection on the same route. For example,
 `http://<engine-host>/player?slot=0&token=...&initial_params=...` serves the player client, and that client opens
 `ws://<engine-host>/player?slot=0&token=...&initial_params=...`. The same convention applies to
 `http://<engine-host>/global`, whose client opens `ws://<engine-host>/global`.
-
-HTTP `GET /replay?uri=<replay-uri>` must serve a browser replay viewer. The `uri` query param is a publicly accessible
-URI for a replay artifact produced by the same game. The replay viewer uses that URI to load and render the replay.
 
 Games may implement local development admin controls however they want. By convention, `GET /admin` serves the browser
 admin UI and `WEBSOCKET /admin?...` accepts admin commands such as pausing, unpausing, or changing tick rate. The admin
@@ -71,8 +68,19 @@ The `/player` websocket endpoint must allow a player to reconnect to the same sl
 is still running. The slot's game state survives disconnects. During a disconnect, the game may advance that slot with
 no-op actions or another documented disconnected-player behavior until the player reconnects.
 
-The replay artifact format is game-owned. The same Cogame image that writes the replay artifact must be able to serve a
-viewer for that artifact through `GET /replay?uri=...`.
+To view a replay, the runner starts the same Cogame image in replay mode and supplies:
+
+- `COGAME_LOAD_REPLAY_PATH`: path to a replay artifact produced by the game.
+
+In replay mode, the game container listens on `0.0.0.0:8080` and exposes:
+
+- `GET /healthz`
+- `GET /replay`
+- `WEBSOCKET /replay`
+
+HTTP `GET /replay` must serve a browser replay viewer. The replay viewer opens `WEBSOCKET /replay` to receive replay
+state and send game-owned control commands such as start, stop, seek, or speed changes. The replay artifact format and
+replay websocket protocol are game-owned.
 
 ## Coworld Contract
 
@@ -110,11 +118,17 @@ player container images and initial params, and output destinations.
     `/player` websocket with the same query params.
 11. Browser global clients may request `GET /global`; the served client opens the `/global` websocket with the same
     query params.
-12. Replay viewers may request `GET /replay?uri=<public replay uri>`; the served client loads and renders that replay
-    artifact.
-13. Global websocket viewers may connect before or during the episode through `/global`.
-14. Players may disconnect and reconnect to the same slot with the same token.
-15. The game engine progresses the game after each player connects.
-16. When the game ends, it writes results to `COGAME_RESULTS_PATH` and a replay artifact to `COGAME_SAVE_REPLAY_PATH`.
+12. Global websocket viewers may connect before or during the episode through `/global`.
+13. Players may disconnect and reconnect to the same slot with the same token.
+14. The game engine progresses the game after each player connects.
+15. When the game ends, it writes results to `COGAME_RESULTS_PATH` and a replay artifact to `COGAME_SAVE_REPLAY_PATH`.
     The results file is JSON matching `results_schema`.
-17. The runner uploads results, replay, and logs to the episode config output URIs.
+16. The runner uploads results, replay, and logs to the episode config output URIs.
+
+## Replay Lifecycle
+
+1. The runner downloads or otherwise materializes a replay artifact produced by the same Cogame.
+2. The runner starts the game engine container with `COGAME_LOAD_REPLAY_PATH` pointing at that local replay file.
+3. The container boots in replay mode and exposes `GET /healthz`, `GET /replay`, and `WEBSOCKET /replay`.
+4. A browser requests `GET /replay`; the served client opens `WEBSOCKET /replay`.
+5. Replay playback and controls are implemented by the game-owned replay websocket protocol.

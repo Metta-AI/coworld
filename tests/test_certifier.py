@@ -17,7 +17,13 @@ from coworld.certifier import (
     load_results,
     resolve_manifest_uri,
 )
-from coworld.episode_runner import REPLAY_ENV_VAR, EpisodeArtifacts, _replay_client_url, assert_docker_image_reachable
+from coworld.episode_runner import (
+    REPLAY_LOAD_ENV_VAR,
+    REPLAY_SAVE_ENV_VAR,
+    EpisodeArtifacts,
+    _replay_client_url,
+    assert_docker_image_reachable,
+)
 from coworld.play import build_play_links
 from coworld.schema_validation import validate_episode_request
 
@@ -225,15 +231,14 @@ def test_build_play_links_point_directly_at_engine_client_routes(tmp_path: Path)
 
 
 def test_replay_client_url_points_at_engine_replay_route() -> None:
-    replay_uri = "https://example.com/replays/game.json?signature=a b"
+    replay_link = urlparse(_replay_client_url(1234))
 
-    replay_link = urlparse(_replay_client_url(1234, replay_uri))
-
-    assert REPLAY_ENV_VAR == "COGAME_SAVE_REPLAY_PATH"
+    assert REPLAY_SAVE_ENV_VAR == "COGAME_SAVE_REPLAY_PATH"
+    assert REPLAY_LOAD_ENV_VAR == "COGAME_LOAD_REPLAY_PATH"
     assert replay_link.scheme == "http"
     assert replay_link.netloc == "127.0.0.1:1234"
     assert replay_link.path == "/replay"
-    assert parse_qs(replay_link.query) == {"uri": [replay_uri]}
+    assert replay_link.query == ""
 
 
 def test_example_coworld_manifest_validates() -> None:

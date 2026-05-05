@@ -8,13 +8,22 @@
 </style>
 <h1>Tic-Tac-Toe Replay</h1>
 <div id="status"></div>
+<button id="play">Play</button>
+<button id="pause">Pause</button>
+<button id="faster">Faster</button>
 <div id="board"></div>
 <pre id="moves"></pre>
 <script type="module">
-  const replayUri = new URL(window.location.href).searchParams.get("uri");
+  const websocketUrl = new URL(window.location.href);
+  websocketUrl.protocol = websocketUrl.protocol === "https:" ? "wss:" : "ws:";
+
   const board = document.getElementById("board");
   const status = document.getElementById("status");
   const moves = document.getElementById("moves");
+  const play = document.getElementById("play");
+  const pause = document.getElementById("pause");
+  const faster = document.getElementById("faster");
+  let speed = 1;
 
   function draw(cells) {
     board.replaceChildren(...cells.map((value) => {
@@ -25,8 +34,25 @@
     }));
   }
 
-  const replay = await fetch(replayUri).then((response) => response.json());
-  draw(replay.board);
-  status.textContent = `Winner: ${replay.results.winner}`;
-  moves.textContent = JSON.stringify(replay.moves, null, 2);
+  const socket = new WebSocket(websocketUrl);
+  socket.onopen = () => { status.textContent = "Connected"; };
+  socket.onmessage = (event) => {
+    const message = JSON.parse(event.data);
+    if (message.type === "replay") {
+      draw(message.board);
+      status.textContent = `Winner: ${message.results.winner}`;
+      moves.textContent = JSON.stringify(message.moves, null, 2);
+    }
+    if (message.type === "control") {
+      status.textContent = `Control: ${JSON.stringify(message.command)}`;
+    }
+  };
+  socket.onclose = () => { status.textContent = "Disconnected"; };
+
+  play.onclick = () => socket.send(JSON.stringify({ command: "play" }));
+  pause.onclick = () => socket.send(JSON.stringify({ command: "pause" }));
+  faster.onclick = () => {
+    speed *= 2;
+    socket.send(JSON.stringify({ command: "speed", speed }));
+  };
 </script>

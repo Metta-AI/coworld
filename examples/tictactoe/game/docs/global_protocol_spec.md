@@ -3,7 +3,8 @@
 Browsers request `GET /global` to load the global client. The client forwards the same query params when it opens the
 `/global` websocket.
 
-Browsers request `GET /replay?uri=<replay-uri>` to load the replay client for a saved replay artifact.
+When the server is started with `COGAME_LOAD_REPLAY_PATH`, browsers request `GET /replay` to load the replay client.
+The replay client opens the `/replay` websocket to receive replay data and send control commands.
 
 The server sends a JSON state snapshot immediately on connect:
 
