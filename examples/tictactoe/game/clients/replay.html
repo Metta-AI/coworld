@@ -1,0 +1,32 @@
+<!doctype html>
+<title>Coworld Tic-Tac-Toe Replay Client</title>
+<style>
+  body { font-family: system-ui, sans-serif; margin: 24px; }
+  #board { display: grid; grid-template-columns: repeat(3, 64px); gap: 6px; margin: 16px 0; }
+  .cell { align-items: center; border: 1px solid #999; display: flex; font-size: 28px; height: 64px; justify-content: center; }
+  pre { background: #f5f5f5; padding: 12px; width: min(640px, 100%); }
+</style>
+<h1>Tic-Tac-Toe Replay</h1>
+<div id="status"></div>
+<div id="board"></div>
+<pre id="moves"></pre>
+<script type="module">
+  const replayUri = new URL(window.location.href).searchParams.get("uri");
+  const board = document.getElementById("board");
+  const status = document.getElementById("status");
+  const moves = document.getElementById("moves");
+
+  function draw(cells) {
+    board.replaceChildren(...cells.map((value) => {
+      const cell = document.createElement("div");
+      cell.className = "cell";
+      cell.textContent = value;
+      return cell;
+    }));
+  }
+
+  const replay = await fetch(replayUri).then((response) => response.json());
+  draw(replay.board);
+  status.textContent = `Winner: ${replay.results.winner}`;
+  moves.textContent = JSON.stringify(replay.moves, null, 2);
+</script>

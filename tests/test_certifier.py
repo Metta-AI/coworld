@@ -17,8 +17,9 @@ from coworld.certifier import (
     load_results,
     resolve_manifest_uri,
 )
-from coworld.episode_runner import EpisodeArtifacts, assert_docker_image_reachable
+from coworld.episode_runner import REPLAY_ENV_VAR, EpisodeArtifacts, _replay_client_url, assert_docker_image_reachable
 from coworld.play import build_play_links
+from coworld.schema_validation import validate_episode_request
 
 
 def test_resolve_manifest_uri_relative_to_coworld_manifest(tmp_path: Path) -> None:
@@ -146,6 +147,12 @@ def test_build_game_config_validates_after_tokens_are_injected_via_json_schema(t
         build_game_config(package, ["token-0"])
 
 
+def test_build_game_config_allows_empty_tokens_when_game_schema_does(tmp_path: Path) -> None:
+    package = _write_package(tmp_path)
+
+    assert build_game_config(package, [])["tokens"] == []
+
+
 def test_load_results_validates_against_cogame_results_schema(tmp_path: Path) -> None:
     package = _write_package(tmp_path)
     artifacts = EpisodeArtifacts.create(tmp_path / "cert")
@@ -166,6 +173,17 @@ def test_build_episode_request_adds_artifact_destinations(tmp_path: Path) -> Non
     assert episode_request["results_uri"] == artifacts.results_path.as_uri()
     assert episode_request["replay_uri"] == artifacts.replay_path.as_uri()
     assert episode_request["logs_uri"] == artifacts.logs_dir.as_uri()
+
+
+def test_episode_request_allows_no_runner_managed_players() -> None:
+    episode_request = {
+        "game_config": {"difficulty": "easy"},
+        "players": [],
+        "results_uri": "file:///tmp/results.json",
+    }
+
+    validate_episode_request(episode_request)
+    assert build_player_launch_specs(episode_request) == []
 
 
 def test_build_play_links_point_directly_at_engine_client_routes(tmp_path: Path) -> None:
@@ -204,6 +222,18 @@ def test_build_play_links_point_directly_at_engine_client_routes(tmp_path: Path)
     assert global_link.netloc == "127.0.0.1:1234"
     assert global_link.path == "/global"
     assert global_link.query == ""
+
+
+def test_replay_client_url_points_at_engine_replay_route() -> None:
+    replay_uri = "https://example.com/replays/game.json?signature=a b"
+
+    replay_link = urlparse(_replay_client_url(1234, replay_uri))
+
+    assert REPLAY_ENV_VAR == "COGAME_SAVE_REPLAY_PATH"
+    assert replay_link.scheme == "http"
+    assert replay_link.netloc == "127.0.0.1:1234"
+    assert replay_link.path == "/replay"
+    assert parse_qs(replay_link.query) == {"uri": [replay_uri]}
 
 
 def test_example_coworld_manifest_validates() -> None:
@@ -332,7 +362,7 @@ def _cogame_manifest(*, config_schema_required: list[str] | None = None) -> dict
             "properties": {
                 "tokens": {
                     "type": "array",
-                    "minItems": 1,
+                    "minItems": 0,
                     "items": {"type": "string", "minLength": 1},
                 },
                 "difficulty": {"type": "string"},

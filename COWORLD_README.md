@@ -56,11 +56,11 @@ websocket on the same route, for example `ws://<engine-host>/player?slot=<slot>&
 
 ### Global Client
 
-The Cogame serves its global browser client from `GET /global?...`. A browser can request a link such as
-`/global?initial_params=<value>` over HTTP and receive the global client.
+The Cogame serves its global browser client from `GET /global`. A browser can request `/global` over HTTP and receive
+the global client.
 
 By convention, the client reads the complete URL query string and forwards every query param when it opens the global
-websocket on the same route, for example `ws://<engine-host>/global?initial_params=<value>`.
+websocket on the same route, for example `ws://<engine-host>/global`.
 
 ### Player
 
@@ -147,5 +147,5 @@ Operational details:
 - Successful runs print artifact, result, replay, and log paths under `tmp/coworld-cert-*`.
 
 Certification validates the Coworld and Cogame manifests, checks referenced files and images, verifies the Cogame serves
-its player and global browser clients over HTTP, runs one smoke episode through Docker, and verifies the produced results
-and replay artifacts.
+its player, global, and replay browser clients over HTTP, runs one smoke episode through Docker, and verifies the
+produced results and replay artifacts.

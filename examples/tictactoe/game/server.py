@@ -12,7 +12,7 @@ from fastapi.responses import HTMLResponse
 CLIENTS_DIR = Path(__file__).parent / "clients"
 CONFIG = json.loads(Path(os.environ["COGAME_CONFIG_PATH"]).read_text())
 RESULTS_PATH = Path(os.environ["COGAME_RESULTS_PATH"])
-REPLAY_PATH = os.environ.get("COGAME_SAVE_REPLAY_PATH")
+REPLAY_PATH = Path(os.environ["COGAME_SAVE_REPLAY_PATH"])
 TOKENS = CONFIG["tokens"]
 MAX_TURNS = CONFIG["max_turns"]
 WIN_LINES = [
@@ -51,6 +51,11 @@ def healthz() -> dict[str, bool]:
 @app.get("/global")
 def global_client() -> HTMLResponse:
     return HTMLResponse((CLIENTS_DIR / "global.html").read_text())
+
+
+@app.get("/replay")
+def replay_client() -> HTMLResponse:
+    return HTMLResponse((CLIENTS_DIR / "replay.html").read_text())
 
 
 @app.get("/player")
@@ -107,8 +112,7 @@ async def _play_game() -> None:
 
     results = _results()
     RESULTS_PATH.write_text(json.dumps(results))
-    if REPLAY_PATH:
-        Path(REPLAY_PATH).write_text(json.dumps({"board": state.board, "moves": state.moves, "results": results}))
+    REPLAY_PATH.write_text(json.dumps({"board": state.board, "moves": state.moves, "results": results}))
 
     final_snapshot = {**_snapshot(), "done": True}
     for websocket in state.players.values():

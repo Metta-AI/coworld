@@ -19,6 +19,7 @@ from websockets.exceptions import InvalidHandshake, InvalidStatus
 PACKAGE_ROOT = Path(__file__).resolve().parents[2]
 REPO_ROOT = PACKAGE_ROOT.parents[1]
 CONTAINER_WORKDIR = "/coworld"
+REPLAY_ENV_VAR = "COGAME_SAVE_REPLAY_PATH"
 QueryParamValue: TypeAlias = str | int | float | bool
 
 
@@ -112,7 +113,7 @@ def run_cogame_episode(spec: EpisodeRunSpec) -> None:
                     "-e",
                     f"COGAME_RESULTS_PATH={CONTAINER_WORKDIR}/results.json",
                     "-e",
-                    f"COGAME_SAVE_REPLAY_PATH={CONTAINER_WORKDIR}/replay.json",
+                    f"{REPLAY_ENV_VAR}={CONTAINER_WORKDIR}/replay.json",
                     "-v",
                     f"{spec.artifacts.workspace.resolve()}:{CONTAINER_WORKDIR}:rw",
                     spec.cogame_image,
@@ -125,6 +126,7 @@ def run_cogame_episode(spec: EpisodeRunSpec) -> None:
             _wait_for_health(port, game_process, spec.artifacts.game_stderr_path, timeout_seconds=spec.timeout_seconds)
             _require_http_ok(_player_client_url(port, 0, spec.tokens[0], spec.players[0]))
             _require_http_ok(f"http://127.0.0.1:{port}/global")
+            _require_http_ok(_replay_client_url(port, spec.artifacts.replay_path.as_uri()))
             asyncio.run(_require_bad_player_rejected(f"ws://127.0.0.1:{port}/player?slot=0&token=bad"))
 
             for slot, player in enumerate(spec.players):
@@ -175,6 +177,10 @@ def _player_container_ws_url(port: int, slot: int, token: str, player: PlayerLau
 
 def _player_client_url(port: int, slot: int, token: str, player: PlayerLaunchSpec) -> str:
     return f"http://127.0.0.1:{port}/player?{_player_query(slot, token, player)}"
+
+
+def _replay_client_url(port: int, replay_uri: str) -> str:
+    return f"http://127.0.0.1:{port}/replay?{urlencode({'uri': replay_uri})}"
 
 
 def _player_query(slot: int, token: str, player: PlayerLaunchSpec) -> str:

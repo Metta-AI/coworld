@@ -28,7 +28,7 @@
       "minLength": 1
     },
     "config_schema": {
-      "description": "JSON Schema for the game config. Must require tokens.",
+      "description": "JSON Schema for the game config. Must require tokens. The tokens array may allow zero items for games that support free play without runner-managed policy slots.",
       "type": "object"
     },
     "results_schema": {
