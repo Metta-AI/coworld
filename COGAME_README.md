@@ -9,14 +9,14 @@ Short version:
 
 ## Package Contract
 
-At the base of a game package there must be a `cogame_manifest.json` file that adheres to `cogame_manifest_schema.json`; see that
-schema for exact validation requirements.
+At the base of a Coworld package there must be a `coworld_manifest.json` file that adheres to
+`coworld_manifest_schema.json`; its inline `game` object declares the Cogame.
 
-The manifest contains:
+The `game` object contains:
 
 - `name`, `version`, and `description`,
 - `owner`: the game owner's contact email,
-- `image_uri`: the game engine container image,
+- `runnable`: the game engine runnable with `type`, `image`, optional `run`, and optional public `env`,
 - `config_schema`: JSON Schema for the config file supplied to the container,
 - `results_schema`: JSON Schema for the results file written by the container,
 - `protocols.player`: documentation for the player websocket protocol,
@@ -29,7 +29,7 @@ player slot, and may define additional game-specific result fields.
 
 ## Container Contract
 
-The container referenced by `image_uri` must implement the runtime contract below.
+The container referenced by `runnable.image` must implement the runtime contract below.
 
 This contract is platform-owned and hardcoded in the runner and certifier. A game container does not receive a runtime
 contract file; it implements this behavior directly.
@@ -84,15 +84,14 @@ replay websocket protocol are game-owned.
 
 ## Coworld Contract
 
-A Coworld references exactly one Cogame through `game.manifest_uri` in `coworld_manifest.json`. That URI points to a
-`cogame_manifest.json` instance that validates against `cogame_manifest_schema.json`.
+A Coworld declares exactly one Cogame through the inline `game` object in `coworld_manifest.json`.
 
 Coworld certification resolves the Coworld's fixture into one end-to-end smoke episode for the referenced Cogame.
 
 ## Episode Config
 
-The runner receives an episode request that adheres to `episode_request_schema.json`. It has the game config,
-player container images and initial params, and output destinations.
+The runner receives an episode request that adheres to `episode_request_schema.json`. It has the game config, player
+runnables and initial params, and output destinations.
 
 ## Episode Lifecycle
 
@@ -110,7 +109,7 @@ player container images and initial params, and output destinations.
 7. The game engine exposes `GET /healthz`, which returns `200` when the container is ready to accept connections.
 8. For each player, the runner:
    - decides which policy image corresponds to which slot,
-   - starts one container per policy image,
+   - starts one container per policy runnable,
    - supplies `COGAMES_ENGINE_WS_URL=ws://<engine-host>/player?slot=<slot>&token=<token>&...` to the policy container,
    - appends each player's `initial_params` to that URL as query params.
 9. The game rejects player connections whose `token` does not match the token for that slot.

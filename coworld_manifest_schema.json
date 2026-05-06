@@ -10,15 +10,15 @@
       "type": "string"
     },
     "game": {
-      "description": "The Cogame for this world. manifest_uri points to a cogame_manifest.json that validates against cogame_manifest_schema.json.",
-      "$ref": "#/$defs/CogameManifestRef"
+      "description": "The Cogame for this world.",
+      "$ref": "#/$defs/CogameManifest"
     },
     "player": {
       "description": "Base player policies that users can fork from and that can competently play the game.",
       "type": "array",
       "minItems": 1,
       "items": {
-        "$ref": "#/$defs/NamedImage"
+        "$ref": "#/$defs/PlayerRunnable"
       }
     },
     "grader": {
@@ -26,7 +26,7 @@
       "type": "array",
       "minItems": 0,
       "items": {
-        "$ref": "#/$defs/NamedImage"
+        "$ref": "#/$defs/GraderRunnable"
       }
     },
     "reporter": {
@@ -34,7 +34,7 @@
       "type": "array",
       "minItems": 0,
       "items": {
-        "$ref": "#/$defs/NamedImage"
+        "$ref": "#/$defs/ReporterRunnable"
       }
     },
     "commissioner": {
@@ -42,7 +42,7 @@
       "type": "array",
       "minItems": 0,
       "items": {
-        "$ref": "#/$defs/NamedImage"
+        "$ref": "#/$defs/CommissionerRunnable"
       }
     },
     "diagnoser": {
@@ -50,7 +50,7 @@
       "type": "array",
       "minItems": 0,
       "items": {
-        "$ref": "#/$defs/NamedImage"
+        "$ref": "#/$defs/DiagnoserRunnable"
       }
     },
     "optimizer": {
@@ -58,7 +58,7 @@
       "type": "array",
       "minItems": 0,
       "items": {
-        "$ref": "#/$defs/NamedImage"
+        "$ref": "#/$defs/OptimizerRunnable"
       }
     },
     "variants": {
@@ -75,40 +75,224 @@
     }
   },
   "$defs": {
-    "CogameManifestRef": {
+    "CogameManifest": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["manifest_uri"],
+      "required": [
+        "name",
+        "version",
+        "description",
+        "owner",
+        "config_schema",
+        "results_schema",
+        "runnable",
+        "protocols"
+      ],
       "properties": {
-        "manifest_uri": {
-          "description": "Path or URI to a cogame_manifest.json instance.",
-          "type": "string",
-          "minLength": 1
-        }
-      }
-    },
-    "NamedImage": {
-      "type": "object",
-      "additionalProperties": false,
-      "required": ["id", "name", "image_uri", "description"],
-      "properties": {
-        "id": {
-          "type": "string",
-          "minLength": 1
-        },
         "name": {
           "type": "string",
           "minLength": 1
         },
-        "image_uri": {
+        "version": {
           "type": "string",
           "minLength": 1
         },
         "description": {
           "type": "string",
           "minLength": 1
+        },
+        "owner": {
+          "description": "Contact email for the game owner.",
+          "type": "string",
+          "format": "email",
+          "minLength": 1
+        },
+        "config_schema": {
+          "description": "JSON Schema for the game config. Must require tokens. The tokens array may allow zero items for games that support free play without runner-managed policy slots.",
+          "type": "object"
+        },
+        "results_schema": {
+          "description": "JSON Schema for the game results. Must require scores.",
+          "type": "object"
+        },
+        "runnable": {
+          "description": "Runnable definition for the Cogame engine container.",
+          "$ref": "#/$defs/GameRunnable"
+        },
+        "protocols": {
+          "$ref": "#/$defs/GameProtocolDocs"
         }
       }
+    },
+    "GameProtocolDocs": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["player", "global"],
+      "properties": {
+        "player": {
+          "description": "Documentation about the engine-player protocol served over /player?slot=0&token=..., including reconnect behavior.",
+          "type": "string",
+          "minLength": 1
+        },
+        "global": {
+          "description": "Documentation about the global protocol served over /global, including mid-episode viewer joins.",
+          "type": "string",
+          "minLength": 1
+        }
+      }
+    },
+    "Runnable": {
+      "type": "object",
+      "required": ["type", "image"],
+      "properties": {
+        "type": {
+          "enum": ["game", "player", "grader", "reporter", "commissioner", "diagnoser", "optimizer"]
+        },
+        "image": {
+          "type": "string",
+          "minLength": 1
+        },
+        "run": {
+          "description": "Complete argv to execute. Omit to use the image ENTRYPOINT/CMD.",
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "string"
+          }
+        },
+        "env": {
+          "description": "Public, reproducible environment variables for the runnable.",
+          "type": "object",
+          "additionalProperties": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    "DeclaredRunnable": {
+      "allOf": [
+        {
+          "$ref": "#/$defs/Runnable"
+        },
+        {
+          "type": "object",
+          "required": ["id", "name", "description"],
+          "properties": {
+            "id": {
+              "type": "string",
+              "minLength": 1
+            },
+            "name": {
+              "type": "string",
+              "minLength": 1
+            },
+            "description": {
+              "type": "string",
+              "minLength": 1
+            }
+          }
+        }
+      ],
+      "unevaluatedProperties": false
+    },
+    "GameRunnable": {
+      "allOf": [
+        {
+          "$ref": "#/$defs/Runnable"
+        },
+        {
+          "properties": {
+            "type": {
+              "const": "game"
+            }
+          }
+        }
+      ],
+      "unevaluatedProperties": false
+    },
+    "PlayerRunnable": {
+      "allOf": [
+        {
+          "$ref": "#/$defs/DeclaredRunnable"
+        },
+        {
+          "properties": {
+            "type": {
+              "const": "player"
+            }
+          }
+        }
+      ]
+    },
+    "GraderRunnable": {
+      "allOf": [
+        {
+          "$ref": "#/$defs/DeclaredRunnable"
+        },
+        {
+          "properties": {
+            "type": {
+              "const": "grader"
+            }
+          }
+        }
+      ]
+    },
+    "ReporterRunnable": {
+      "allOf": [
+        {
+          "$ref": "#/$defs/DeclaredRunnable"
+        },
+        {
+          "properties": {
+            "type": {
+              "const": "reporter"
+            }
+          }
+        }
+      ]
+    },
+    "CommissionerRunnable": {
+      "allOf": [
+        {
+          "$ref": "#/$defs/DeclaredRunnable"
+        },
+        {
+          "properties": {
+            "type": {
+              "const": "commissioner"
+            }
+          }
+        }
+      ]
+    },
+    "DiagnoserRunnable": {
+      "allOf": [
+        {
+          "$ref": "#/$defs/DeclaredRunnable"
+        },
+        {
+          "properties": {
+            "type": {
+              "const": "diagnoser"
+            }
+          }
+        }
+      ]
+    },
+    "OptimizerRunnable": {
+      "allOf": [
+        {
+          "$ref": "#/$defs/DeclaredRunnable"
+        },
+        {
+          "properties": {
+            "type": {
+              "const": "optimizer"
+            }
+          }
+        }
+      ]
     },
     "Variant": {
       "type": "object",

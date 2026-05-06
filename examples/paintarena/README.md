@@ -9,15 +9,13 @@ color.
 From this directory:
 
 ```bash
-docker build -t coworld-paintarena-game:latest game
-docker build -t coworld-paintarena-player:latest player
+docker build -t coworld-paintarena:latest .
 ```
 
 From the Coworld package root (`packages/coworld`):
 
 ```bash
-docker build -t coworld-paintarena-game:latest examples/paintarena/game
-docker build -t coworld-paintarena-player:latest examples/paintarena/player
+docker build -t coworld-paintarena:latest examples/paintarena
 ```
 
 ## Play Locally

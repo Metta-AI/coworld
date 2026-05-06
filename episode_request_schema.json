@@ -61,6 +61,21 @@
           "type": "string",
           "minLength": 1
         },
+        "run": {
+          "description": "Complete argv to execute. Omit to use the image ENTRYPOINT/CMD.",
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "string"
+          }
+        },
+        "env": {
+          "description": "Public, reproducible environment variables for the runnable.",
+          "type": "object",
+          "additionalProperties": {
+            "type": "string"
+          }
+        },
         "initial_params": {
           "description": "Optional query params appended to the player's websocket URL.",
           "type": "object",

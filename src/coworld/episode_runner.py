@@ -53,7 +53,7 @@ class EpisodeArtifacts:
 
 @dataclass(frozen=True)
 class EpisodeRunSpec:
-    cogame_image: str
+    cogame: RunnableLaunchSpec
     players: list[PlayerLaunchSpec]
     tokens: list[str]
     artifacts: EpisodeArtifacts
@@ -61,8 +61,24 @@ class EpisodeRunSpec:
 
 
 @dataclass(frozen=True)
-class PlayerLaunchSpec:
+class RunnableLaunchSpec:
     image: str
+    run: tuple[str, ...] = ()
+    env: Mapping[str, str] = field(default_factory=dict)
+
+    @classmethod
+    def from_runnable(cls, runnable: Mapping[str, object]) -> RunnableLaunchSpec:
+        run: tuple[str, ...] = ()
+        env: Mapping[str, str] = {}
+        if "run" in runnable:
+            run = tuple(cast(list[str], runnable["run"]))
+        if "env" in runnable:
+            env = cast(Mapping[str, str], runnable["env"])
+        return cls(image=cast(str, runnable["image"]), run=run, env=env)
+
+
+@dataclass(frozen=True)
+class PlayerLaunchSpec(RunnableLaunchSpec):
     initial_params: Mapping[str, QueryParamValue] = field(default_factory=dict)
 
     @classmethod
@@ -70,7 +86,13 @@ class PlayerLaunchSpec:
         initial_params: Mapping[str, QueryParamValue] = {}
         if "initial_params" in player:
             initial_params = cast(Mapping[str, QueryParamValue], player["initial_params"])
-        return cls(image=cast(str, player["image"]), initial_params=initial_params)
+        runnable = RunnableLaunchSpec.from_runnable(player)
+        return cls(
+            image=runnable.image,
+            run=runnable.run,
+            env=runnable.env,
+            initial_params=initial_params,
+        )
 
 
 def assert_docker_image_reachable(image: str, *, label: str = "Docker image") -> None:
@@ -110,6 +132,7 @@ def run_cogame_episode(spec: EpisodeRunSpec) -> None:
                     game_container,
                     "-p",
                     f"127.0.0.1:{port}:8080",
+                    *_env_args(spec.cogame.env),
                     "-e",
                     f"COGAME_CONFIG_PATH={CONTAINER_WORKDIR}/config.json",
                     "-e",
@@ -118,7 +141,7 @@ def run_cogame_episode(spec: EpisodeRunSpec) -> None:
                     f"{REPLAY_SAVE_ENV_VAR}={CONTAINER_WORKDIR}/replay.json",
                     "-v",
                     f"{spec.artifacts.workspace.resolve()}:{CONTAINER_WORKDIR}:rw",
-                    spec.cogame_image,
+                    *_image_command(spec.cogame),
                 ],
                 stdout=game_stdout,
                 stderr=game_stderr,
@@ -150,9 +173,10 @@ def run_cogame_episode(spec: EpisodeRunSpec) -> None:
                                 container_name,
                                 "--add-host",
                                 "host.docker.internal:host-gateway",
+                                *_env_args(player.env),
                                 "-e",
                                 f"COGAMES_ENGINE_WS_URL={engine_ws_url}",
-                                player.image,
+                                *_image_command(player),
                             ],
                             stdout=player_stdout,
                             stderr=player_stderr,
@@ -178,11 +202,12 @@ def run_cogame_episode(spec: EpisodeRunSpec) -> None:
                     replay_container,
                     "-p",
                     f"127.0.0.1:{replay_port}:8080",
+                    *_env_args(spec.cogame.env),
                     "-e",
                     f"{REPLAY_LOAD_ENV_VAR}={CONTAINER_WORKDIR}/replay.json",
                     "-v",
                     f"{spec.artifacts.workspace.resolve()}:{CONTAINER_WORKDIR}:rw",
-                    spec.cogame_image,
+                    *_image_command(spec.cogame),
                 ],
                 stdout=game_stdout,
                 stderr=game_stderr,
@@ -221,6 +246,19 @@ def _player_query(slot: int, token: str, player: PlayerLaunchSpec) -> str:
     query: dict[str, QueryParamValue] = {"slot": slot, "token": token}
     query.update(player.initial_params)
     return urlencode(query)
+
+
+def _env_args(env: Mapping[str, str]) -> list[str]:
+    args: list[str] = []
+    for key, value in env.items():
+        args.extend(["-e", f"{key}={value}"])
+    return args
+
+
+def _image_command(runnable: RunnableLaunchSpec) -> list[str]:
+    if not runnable.run:
+        return [runnable.image]
+    return ["--entrypoint", runnable.run[0], runnable.image, *runnable.run[1:]]
 
 
 def _require_http_ok(url: str) -> None:

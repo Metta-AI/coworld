@@ -33,18 +33,14 @@ For a complete small implementation, see [examples/paintarena/](examples/paintar
 
 ### Reference Resolution
 
-`game.manifest_uri` MUST resolve relative to the directory containing `coworld_manifest.json`. Paths inside the referenced
-`cogame_manifest.json` MUST resolve relative to the directory containing that Cogame manifest.
-
-Source manifests should use references rather than inlining Cogame manifests into Coworld manifests. If the platform needs
-a single upload artifact, a bundling step can inline resolved files mechanically without changing the source format.
-
+Paths inside the inline `game` manifest, such as `game.protocols.player` and `game.protocols.global`, MUST resolve
+relative to the directory containing `coworld_manifest.json`.
 
 ### Cogame
 
-A Cogame is the game service referenced by `game.manifest_uri`. It validates against
-[cogame_manifest_schema.json](cogame_manifest_schema.json) and defines the container runtime API, browser client routes,
-websocket endpoints, config/results formats, and episode lifecycle described in [COGAME_README.md](COGAME_README.md).
+A Cogame is the game service declared by the inline `game` object in `coworld_manifest.json`. It defines the container
+runtime API, browser client routes, websocket endpoints, config/results formats, and episode lifecycle described in
+[COGAME_README.md](COGAME_README.md).
 
 ### Player Client
 
@@ -66,6 +62,10 @@ websocket on the same route, for example `ws://<engine-host>/global`.
 
 A base player policy competently plays the game. See [COGAME_README.md](COGAME_README.md) for how a player should be
 implemented.
+
+The game, player, grader, reporter, commissioner, diagnoser, and optimizer entries are runnables. A runnable names a
+container image plus an optional complete `run` argv and public `env`, so one image can implement multiple Coworld roles
+with different commands.
 
 ### Certification Fixture
 
@@ -146,6 +146,6 @@ Operational details:
 - Private registries such as GHCR or ECR require the local Docker client to be logged in first.
 - Successful runs print artifact, result, replay, and log paths under `tmp/coworld-cert-*`.
 
-Certification validates the Coworld and Cogame manifests, checks referenced files and images, verifies the Cogame serves
-its player and global browser clients in rollout mode, verifies the Cogame serves its replay browser client in replay
-mode, runs one smoke episode through Docker, and verifies the produced results and replay artifacts.
+Certification validates the Coworld manifest, checks referenced files and images, verifies the Cogame serves its player
+and global browser clients in rollout mode, verifies the Cogame serves its replay browser client in replay mode, runs one
+smoke episode through Docker, and verifies the produced results and replay artifacts.

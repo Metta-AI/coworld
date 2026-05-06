@@ -22,6 +22,7 @@ from coworld.episode_runner import (
     REPLAY_LOAD_ENV_VAR,
     REPLAY_SAVE_ENV_VAR,
     EpisodeArtifacts,
+    _image_command,
     _replay_client_url,
     assert_docker_image_reachable,
 )
@@ -33,18 +34,19 @@ def test_resolve_manifest_uri_relative_to_coworld_manifest(tmp_path: Path) -> No
     base_dir = tmp_path / "world"
     game_dir = base_dir / "game"
     game_dir.mkdir(parents=True)
-    assert resolve_manifest_uri(base_dir, "game/cogame_manifest.json") == (game_dir / "cogame_manifest.json").resolve()
+    assert (
+        resolve_manifest_uri(base_dir, "game/docs/player_protocol_spec.md")
+        == (game_dir / "docs" / "player_protocol_spec.md").resolve()
+    )
 
 
-def test_load_coworld_package_validates_and_resolves_game_manifest(tmp_path: Path) -> None:
+def test_load_coworld_package_validates_inline_game_manifest(tmp_path: Path) -> None:
     coworld_manifest_path = _write_package_files(tmp_path)
-    cogame_manifest_path = coworld_manifest_path.parent / "game" / "cogame_manifest.json"
 
     package = load_coworld_package(coworld_manifest_path)
 
     assert package.manifest_path == coworld_manifest_path.resolve()
-    assert package.cogame_manifest_path == cogame_manifest_path.resolve()
-    assert package.cogame_manifest["name"] == "unit-test-game"
+    assert package.manifest["game"]["name"] == "unit-test-game"
 
 
 def test_load_coworld_package_requires_protocol_doc_files(tmp_path: Path) -> None:
@@ -176,7 +178,13 @@ def test_build_episode_request_adds_artifact_destinations(tmp_path: Path) -> Non
     episode_request = build_episode_request(package, artifacts)
 
     assert episode_request["game_config"] == {"difficulty": "easy"}
-    assert episode_request["players"] == [{"image": "unit-test-player:latest"}]
+    assert episode_request["players"] == [
+        {
+            "image": "unit-test-runtime:latest",
+            "run": ["python", "-m", "unit_test.player"],
+            "env": {"PLAYER_MODE": "test"},
+        }
+    ]
     assert episode_request["results_uri"] == artifacts.results_path.as_uri()
     assert episode_request["replay_uri"] == artifacts.replay_path.as_uri()
     assert episode_request["logs_uri"] == artifacts.logs_dir.as_uri()
@@ -283,18 +291,37 @@ def test_replay_coworld_starts_replay_container_and_reports_link(
     command = popen_commands[0]
     assert f"{REPLAY_LOAD_ENV_VAR}=/coworld-replay/replay.json" in command
     assert f"{tmp_path}:/coworld-replay:ro" in command
-    assert "unit-test-game:latest" in command
+    assert _image_command_slice(command) == [
+        "--entrypoint",
+        "python",
+        "unit-test-runtime:latest",
+        "-m",
+        "unit_test.game",
+    ]
+
+
+def test_runnable_run_overrides_docker_entrypoint(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    package = _write_package(tmp_path)
+    game_command = _image_command(package.cogame)
+    player = build_player_launch_specs(build_episode_request(package, EpisodeArtifacts.create(tmp_path / "cert")))[0]
+    player_command = _image_command(player)
+
+    assert game_command == ["--entrypoint", "python", "unit-test-runtime:latest", "-m", "unit_test.game"]
+    assert player_command == ["--entrypoint", "python", "unit-test-runtime:latest", "-m", "unit_test.player"]
 
 
 def test_example_coworld_manifest_validates() -> None:
     package = load_coworld_package(_example_root() / "coworld_manifest.json")
     config = build_game_config(package, ["token-0", "token-1"])
 
-    assert package.cogame_manifest["image_uri"] == "coworld-paintarena-game:latest"
-    assert package.cogame_manifest["protocols"] == {
-        "player": "docs/player_protocol_spec.md",
-        "global": "docs/global_protocol_spec.md",
+    assert package.cogame.image == "coworld-paintarena:latest"
+    assert package.cogame.run == ("python", "/app/game/server.py")
+    assert package.manifest["game"]["protocols"] == {
+        "player": "game/docs/player_protocol_spec.md",
+        "global": "game/docs/global_protocol_spec.md",
     }
+    assert package.manifest["player"][0]["image"] == "coworld-paintarena:latest"
+    assert package.manifest["player"][0]["run"] == ["python", "/app/player/player.py"]
     assert config["tokens"] == ["token-0", "token-1"]
 
 
@@ -349,13 +376,7 @@ def _docker_available() -> bool:
 def test_paintarena_example_certifies_with_docker(tmp_path: Path) -> None:
     example_root = _example_root()
     subprocess.run(
-        ["docker", "build", "-t", "coworld-paintarena-game:latest", "game"],
-        cwd=example_root,
-        check=True,
-        timeout=300,
-    )
-    subprocess.run(
-        ["docker", "build", "-t", "coworld-paintarena-player:latest", "player"],
+        ["docker", "build", "-t", "coworld-paintarena:latest", "."],
         cwd=example_root,
         check=True,
         timeout=300,
@@ -395,30 +416,41 @@ def _write_package_files(
     game_dir = world_dir / "game"
     docs_dir = game_dir / "docs"
     docs_dir.mkdir(parents=True)
-    (game_dir / "cogame_manifest.json").write_text(
-        json.dumps(_cogame_manifest(config_schema_required=config_schema_required or ["tokens"]))
-    )
     if write_protocol_docs:
         (docs_dir / "player_protocol_spec.md").write_text("# Player Protocol\n")
         (docs_dir / "global_protocol_spec.md").write_text("# Global Protocol\n")
     coworld_manifest_path = world_dir / "coworld_manifest.json"
-    coworld_manifest_path.write_text(json.dumps(_coworld_manifest(certification=certification)))
+    coworld_manifest_path.write_text(
+        json.dumps(
+            _coworld_manifest(
+                config_schema_required=config_schema_required or ["tokens"],
+                certification=certification,
+            )
+        )
+    )
     return coworld_manifest_path
 
 
-def _coworld_manifest(*, certification: dict[str, object] | None = None) -> dict[str, object]:
+def _coworld_manifest(
+    *,
+    config_schema_required: list[str] | None = None,
+    certification: dict[str, object] | None = None,
+) -> dict[str, object]:
     if certification is None:
         certification = {
             "variant_id": "default",
             "players": [{"player_id": "unit-test-player"}],
         }
     return {
-        "game": {"manifest_uri": "game/cogame_manifest.json"},
+        "game": _game_manifest(config_schema_required=config_schema_required or ["tokens"]),
         "player": [
             {
                 "id": "unit-test-player",
                 "name": "Unit Test Player",
-                "image_uri": "unit-test-player:latest",
+                "type": "player",
+                "image": "unit-test-runtime:latest",
+                "run": ["python", "-m", "unit_test.player"],
+                "env": {"PLAYER_MODE": "test"},
                 "description": "Unit test player.",
             }
         ],
@@ -434,14 +466,19 @@ def _coworld_manifest(*, certification: dict[str, object] | None = None) -> dict
     }
 
 
-def _cogame_manifest(*, config_schema_required: list[str] | None = None) -> dict[str, object]:
+def _game_manifest(*, config_schema_required: list[str] | None = None) -> dict[str, object]:
     required = config_schema_required or ["tokens"]
     return {
         "name": "unit-test-game",
         "version": "0.1.0",
         "description": "Unit test Cogame manifest.",
         "owner": "cogames@softmax.com",
-        "image_uri": "unit-test-game:latest",
+        "runnable": {
+            "type": "game",
+            "image": "unit-test-runtime:latest",
+            "run": ["python", "-m", "unit_test.game"],
+            "env": {"GAME_MODE": "test"},
+        },
         "config_schema": {
             "$schema": "https://json-schema.org/draft/2020-12/schema",
             "type": "object",
@@ -463,11 +500,16 @@ def _cogame_manifest(*, config_schema_required: list[str] | None = None) -> dict
             "properties": {"scores": {"type": "array", "items": {"type": "number"}}},
         },
         "protocols": {
-            "player": "docs/player_protocol_spec.md",
-            "global": "docs/global_protocol_spec.md",
+            "player": "game/docs/player_protocol_spec.md",
+            "global": "game/docs/global_protocol_spec.md",
         },
     }
 
 
 def _example_root() -> Path:
     return Path(__file__).resolve().parents[1] / "examples" / "paintarena"
+
+
+def _image_command_slice(command: list[str]) -> list[str]:
+    entrypoint_index = command.index("--entrypoint")
+    return command[entrypoint_index:]

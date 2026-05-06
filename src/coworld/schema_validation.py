@@ -14,9 +14,8 @@ JsonSchema: TypeAlias = dict[str, object]
 
 PACKAGE_ROOT = Path(__file__).resolve().parents[2]
 COWORLD_SCHEMA_PATH = PACKAGE_ROOT / "coworld_manifest_schema.json"
-COGAME_SCHEMA_PATH = PACKAGE_ROOT / "cogame_manifest_schema.json"
 EPISODE_SCHEMA_PATH = PACKAGE_ROOT / "episode_request_schema.json"
-SCHEMA_PATHS = (COWORLD_SCHEMA_PATH, COGAME_SCHEMA_PATH, EPISODE_SCHEMA_PATH)
+SCHEMA_PATHS = (COWORLD_SCHEMA_PATH, EPISODE_SCHEMA_PATH)
 
 
 def load_json_object(path: Path) -> JsonObject:
@@ -28,10 +27,6 @@ def load_json_object(path: Path) -> JsonObject:
 
 def validate_coworld_manifest(instance: object) -> None:
     validate_repo_schema(instance, COWORLD_SCHEMA_PATH)
-
-
-def validate_cogame_manifest(instance: object) -> None:
-    validate_repo_schema(instance, COGAME_SCHEMA_PATH)
 
 
 def validate_episode_request(instance: object) -> None:

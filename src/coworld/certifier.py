@@ -11,6 +11,7 @@ from coworld.episode_runner import (
     EpisodeArtifacts,
     EpisodeRunSpec,
     PlayerLaunchSpec,
+    RunnableLaunchSpec,
     assert_docker_image_reachable,
     run_cogame_episode,
 )
@@ -18,7 +19,6 @@ from coworld.schema_validation import (
     JsonObject,
     JsonSchema,
     load_json_object,
-    validate_cogame_manifest,
     validate_coworld_manifest,
     validate_episode_request,
     validate_json_schema,
@@ -35,10 +35,8 @@ class CogameProtocolDocs:
 class CoworldPackage:
     manifest_path: Path
     manifest: JsonObject
-    cogame_manifest_path: Path
-    cogame_manifest: JsonObject
     certification: JsonObject
-    cogame_image: str
+    cogame: RunnableLaunchSpec
     config_schema: JsonSchema
     results_schema: JsonSchema
     protocols: CogameProtocolDocs
@@ -67,22 +65,16 @@ def load_coworld_package(manifest_path: Path) -> CoworldPackage:
     validate_coworld_manifest(manifest)
 
     game = cast(JsonObject, manifest["game"])
-    cogame_manifest_path = resolve_manifest_uri(manifest_path.parent, cast(str, game["manifest_uri"]))
-    cogame_manifest = load_json_object(cogame_manifest_path)
-    validate_cogame_manifest(cogame_manifest)
-
     certification = cast(JsonObject, manifest["certification"])
-    protocols = cast(JsonObject, cogame_manifest["protocols"])
+    protocols = cast(JsonObject, game["protocols"])
 
     package = CoworldPackage(
         manifest_path=manifest_path,
         manifest=manifest,
-        cogame_manifest_path=cogame_manifest_path,
-        cogame_manifest=cogame_manifest,
         certification=certification,
-        cogame_image=cast(str, cogame_manifest["image_uri"]),
-        config_schema=cast(JsonSchema, cogame_manifest["config_schema"]),
-        results_schema=cast(JsonSchema, cogame_manifest["results_schema"]),
+        cogame=RunnableLaunchSpec.from_runnable(cast(JsonObject, game["runnable"])),
+        config_schema=cast(JsonSchema, game["config_schema"]),
+        results_schema=cast(JsonSchema, game["results_schema"]),
         protocols=CogameProtocolDocs(player=cast(str, protocols["player"]), global_=cast(str, protocols["global"])),
     )
     validate_certification_references(package)
@@ -141,7 +133,7 @@ def build_episode_run_spec(
     timeout_seconds: float,
 ) -> EpisodeRunSpec:
     return EpisodeRunSpec(
-        cogame_image=package.cogame_image,
+        cogame=package.cogame,
         players=build_player_launch_specs(episode_request),
         tokens=tokens,
         artifacts=artifacts,
@@ -184,15 +176,14 @@ def certify_coworld(
 
 
 def _referenced_file_paths(package: CoworldPackage) -> list[tuple[str, Path]]:
-    cogame_dir = package.cogame_manifest_path.parent
     return [
-        ("Cogame protocols.player", resolve_manifest_uri(cogame_dir, package.protocols.player)),
-        ("Cogame protocols.global", resolve_manifest_uri(cogame_dir, package.protocols.global_)),
+        ("Cogame protocols.player", resolve_manifest_uri(package.manifest_path.parent, package.protocols.player)),
+        ("Cogame protocols.global", resolve_manifest_uri(package.manifest_path.parent, package.protocols.global_)),
     ]
 
 
 def _image_references(package: CoworldPackage) -> list[tuple[str, str]]:
-    references = [("Cogame image_uri", package.cogame_image)]
+    references = [("Cogame runnable.image", package.cogame.image)]
     references.extend(
         (f"Certification players[{slot}].image", player.image)
         for slot, player in enumerate(_certification_player_launch_specs(package))
@@ -200,8 +191,8 @@ def _image_references(package: CoworldPackage) -> list[tuple[str, str]]:
     for section in ("player", "grader", "reporter", "commissioner", "diagnoser", "optimizer"):
         if section in package.manifest:
             references.extend(
-                (f"Coworld {section}[{index}].image_uri", cast(str, image["image_uri"]))
-                for index, image in enumerate(cast(list[JsonObject], package.manifest[section]))
+                (f"Coworld {section}[{index}].image", cast(str, runnable["image"]))
+                for index, runnable in enumerate(cast(list[JsonObject], package.manifest[section]))
             )
     return list(dict.fromkeys(references))
 
@@ -216,7 +207,7 @@ def _certification_player_launch_specs(package: CoworldPackage) -> list[PlayerLa
         if player_id not in declared_players:
             raise ValueError(f"unknown certification player_id for slot {slot}: {player_id!r}")
         declared_player = declared_players[player_id]
-        episode_player: JsonObject = {"image": cast(str, declared_player["image_uri"])}
+        episode_player: JsonObject = _episode_request_runnable(declared_player)
         if "initial_params" in certification_player:
             episode_player["initial_params"] = certification_player["initial_params"]
         specs.append(PlayerLaunchSpec.from_episode_player(episode_player))
@@ -244,6 +235,19 @@ def _manifest_items_by_id(package: CoworldPackage, section: str) -> dict[str, Js
 
 def _episode_request_player(player_spec: PlayerLaunchSpec) -> JsonObject:
     player: JsonObject = {"image": player_spec.image}
+    if player_spec.run:
+        player["run"] = list(player_spec.run)
+    if player_spec.env:
+        player["env"] = dict(player_spec.env)
     if player_spec.initial_params:
         player["initial_params"] = dict(player_spec.initial_params)
     return player
+
+
+def _episode_request_runnable(runnable: JsonObject) -> JsonObject:
+    episode_runnable: JsonObject = {"image": cast(str, runnable["image"])}
+    if "run" in runnable:
+        episode_runnable["run"] = cast(list[str], runnable["run"])
+    if "env" in runnable:
+        episode_runnable["env"] = cast(JsonObject, runnable["env"])
+    return episode_runnable
