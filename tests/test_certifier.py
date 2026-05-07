@@ -430,6 +430,55 @@ def test_cogs_vs_clips_send_to_players_disconnects_failed_websocket() -> None:
     assert game.players == {}
 
 
+def test_cogs_vs_clips_global_baseline_includes_walls_and_agents(tmp_path: Path) -> None:
+    server_module = _load_cogs_vs_clips_server_module()
+    game = server_module.CogsVsClipsGame(
+        {
+            "mission": "machina_1",
+            "tokens": ["token-0", "token-1"],
+            "max_steps": 3,
+            "seed": 0,
+            "step_seconds": 0.02,
+        },
+        results_path=tmp_path / "results.json",
+        replay_path=None,
+        request_shutdown=lambda: None,
+    )
+
+    message = game.global_baseline_message()
+
+    assert message["type"] == "step"
+    type_names = {obj["type_name"] for obj in message["objects"]}
+    assert "wall" in type_names
+    agent_ids = {obj["agent_id"] for obj in message["objects"] if obj.get("is_agent")}
+    assert agent_ids == {0, 1}
+    assert not hasattr(game, "walls_message")
+
+
+def test_cogs_vs_clips_global_delta_omits_walls(tmp_path: Path) -> None:
+    server_module = _load_cogs_vs_clips_server_module()
+    game = server_module.CogsVsClipsGame(
+        {
+            "mission": "machina_1",
+            "tokens": ["token-0", "token-1"],
+            "max_steps": 3,
+            "seed": 0,
+            "step_seconds": 0.02,
+        },
+        results_path=tmp_path / "results.json",
+        replay_path=None,
+        request_shutdown=lambda: None,
+    )
+
+    message = game.global_delta_message()
+
+    assert message["type"] == "step"
+    type_names = {obj["type_name"] for obj in message["objects"]}
+    assert "wall" not in type_names
+    agent_ids = {obj["agent_id"] for obj in message["objects"] if obj.get("is_agent")}
+    assert agent_ids == {0, 1}
+
+
 def _docker_available() -> bool:
     try:
         subprocess.run(["docker", "info"], capture_output=True, check=True, timeout=10)

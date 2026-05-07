@@ -43,21 +43,31 @@ The next message assigns the global viewer to the live replay:
 }
 ```
 
-The `hello` and `assign` frames intentionally keep status metadata under `status` without a nested `step` key. This keeps
-older Emscripten MettaScope builds from mistaking those pre-replay envelopes for replay step frames.
+The `hello` and `assign` frames intentionally keep status metadata under `status` without a nested `step` key. This
+keeps older Emscripten MettaScope builds from mistaking those pre-replay envelopes for replay step frames.
 
-The server then sends a one-time static wall frame:
+Each viewer receives a baseline MettaGrid replay step containing static walls and the current agent/object state:
 
 ```json
 {
-  "type": "walls",
+  "type": "step",
   "protocol": "mettagrid.mettascope.live.v1",
   "step": 0,
-  "objects": [{"id": 1, "type_name": "wall", "location": [0, 0], "alive": true}]
+  "objects": [
+    { "id": 1, "type_name": "wall", "location": [0, 0], "alive": true },
+    { "id": 10, "type_name": "agent", "location": [6, 6], "agent_id": 0, "is_agent": true }
+  ],
+  "episode_stats": {},
+  "state": {
+    "type": "state",
+    "scores": [0.0, 0.0],
+    "paused": false,
+    "done": false
+  }
 }
 ```
 
-Subsequent messages are MettaGrid replay step frames for dynamic objects:
+Subsequent delta steps use the same replay frame shape, but may omit static walls:
 
 ```json
 {
@@ -85,7 +95,8 @@ Subsequent messages are MettaGrid replay step frames for dynamic objects:
 
 The HTTP `/global` client loads the bundled websocket-capable MettaScope from `/mettascope/mettascope.html?ws=...` when
 the Docker image includes it, and keeps a lightweight canvas fallback connected to the same `/global` websocket. A
-mid-episode viewer receives a fresh `assign` frame and the latest step frame, so it can render from its join point.
+mid-episode viewer receives a fresh `assign` frame and a step frame containing static walls plus the latest dynamic
+objects, so it can render from its join point.
 
 When the episode completes, the server sends a terminal frame:
 

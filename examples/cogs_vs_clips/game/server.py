@@ -60,14 +60,12 @@ def build_step_replay(
     action_indices: list[int],
     capacity_names: list[str],
     resource_to_capacity_id: dict[int, int],
-    *,
-    include_walls: bool = False,
+    ignored_object_types: list[str] | None = None,
 ) -> dict[str, Any]:
     actions = np.asarray(action_indices, dtype=np.int32)
     rewards = np.zeros(sim.num_agents)
     objects = []
-    ignore_types = [] if include_walls else ["wall"]
-    for grid_object in sim.grid_objects(ignore_types=ignore_types).values():
+    for grid_object in sim.grid_objects(ignore_types=ignored_object_types or []).values():
         formatted = format_grid_object(
             grid_object,
             actions,
@@ -88,31 +86,6 @@ def build_step_replay(
         "objects": objects,
         "episode_stats": sim._c_sim.get_episode_stats(),
         "capacity_names": capacity_names,
-    }
-
-
-def build_walls_message(sim) -> dict[str, Any]:
-    return {
-        "type": "walls",
-        "protocol": GLOBAL_PROTOCOL,
-        "step": 0,
-        "objects": [
-            {
-                "id": grid_object["id"],
-                "alive": True,
-                "type_name": "wall",
-                "location": grid_object["location"],
-                "orientation": 0,
-                "inventory": [],
-                "inventory_max": 0,
-                "color": 0,
-                "tag_ids": [],
-                "vibe_id": 0,
-                "inventory_capacities": [],
-            }
-            for grid_object in sim.grid_objects(ignore_types=[]).values()
-            if grid_object["type_name"] == "wall"
-        ],
     }
 
 
@@ -150,8 +123,7 @@ class CogsVsClipsGame:
             self.capacity_names,
             self.resource_to_capacity_id,
         ) = build_initial_replay(self.sim)
-        self.walls_message = build_walls_message(self.sim)
-        self.replay_events: list[dict[str, Any]] = [self.walls_message, self.global_step_message()]
+        self.replay_events: list[dict[str, Any]] = [self.global_baseline_message()]
 
     async def connect_player(self, slot: int, websocket: WebSocket) -> None:
         self.players[slot] = websocket
@@ -223,7 +195,7 @@ class CogsVsClipsGame:
             await asyncio.sleep(self.step_seconds)
             self._apply_actions()
             self.sim.step()
-            self.replay_events.append(self.global_step_message())
+            self.replay_events.append(self.global_delta_message())
 
         self.done = True
         results = self.results()
@@ -307,7 +279,13 @@ class CogsVsClipsGame:
             "status": self.global_status(),
         }
 
-    def global_step_message(self) -> dict[str, Any]:
+    def global_baseline_message(self) -> dict[str, Any]:
+        return self._global_step_message()
+
+    def global_delta_message(self) -> dict[str, Any]:
+        return self._global_step_message(ignored_object_types=["wall"])
+
+    def _global_step_message(self, *, ignored_object_types: list[str] | None = None) -> dict[str, Any]:
         return {
             "type": "step",
             "protocol": GLOBAL_PROTOCOL,
@@ -316,6 +294,7 @@ class CogsVsClipsGame:
                 self.latest_action_indices,
                 self.capacity_names,
                 self.resource_to_capacity_id,
+                ignored_object_types,
             ),
             "state": self.snapshot(),
         }
@@ -420,11 +399,10 @@ def create_app(
     async def _send_global_snapshots(websocket: WebSocket) -> None:
         await websocket.send_json(game.global_hello_message())
         await websocket.send_json(game.global_assign_message())
-        await websocket.send_json(game.walls_message)
-        await websocket.send_json(game.global_step_message())
+        await websocket.send_json(game.global_baseline_message())
         while not game.done:
             await asyncio.sleep(game.step_seconds)
-            await websocket.send_json(game.global_step_message())
+            await websocket.send_json(game.global_delta_message())
         await websocket.send_json(
             {
                 "type": "done",

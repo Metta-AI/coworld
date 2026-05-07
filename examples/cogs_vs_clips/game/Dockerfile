@@ -23,9 +23,15 @@ ENV PATH="/root/.nimby/nim/bin:${PATH}"
 WORKDIR /mettascope
 COPY packages/mettagrid/nim/mettascope/mettascope.nimble /mettascope/mettascope.nimble
 COPY packages/mettagrid/nim/mettascope/nimby.lock /mettascope/nimby.lock
+RUN nimby sync -g nimby.lock
 COPY packages/mettagrid/nim/mettascope/src /mettascope/src
 COPY packages/mettagrid/nim/mettascope/data /mettascope/data
-RUN nimble wasm
+RUN nim c -d:emscripten -d:release src/mettascope.nim && \
+    test -f dist/mettascope.html && \
+    test -f dist/mettascope.js && \
+    test -f dist/mettascope.wasm && \
+    test -f dist/mettascope.data && \
+    ls -lh dist/
 
 FROM python:3.12-slim
 
