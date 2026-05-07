@@ -1,0 +1,122 @@
+{
+  "$schema": "../../coworld_manifest_schema.json",
+  "game": {
+    "name": "cogs_vs_clips",
+    "version": "0.1.0",
+    "description": "Cogs vs Clips packaged as a Coworld Cogame backed by Cogsguard and MettaGrid.",
+    "owner": "cogames@softmax.com",
+    "runnable": {
+      "type": "game",
+      "image": "coworld-cogs-vs-clips-game:latest",
+      "run": ["python", "/app/server.py"]
+    },
+    "config_schema": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["tokens", "mission", "max_steps", "seed", "step_seconds"],
+      "properties": {
+        "tokens": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 32,
+          "items": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "mission": {
+          "type": "string",
+          "enum": ["machina_1", "cogsguard"]
+        },
+        "max_steps": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 10000
+        },
+        "seed": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "step_seconds": {
+          "type": "number",
+          "exclusiveMinimum": 0,
+          "maximum": 1
+        }
+      }
+    },
+    "results_schema": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["scores", "steps", "mission"],
+      "properties": {
+        "scores": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 32,
+          "items": {
+            "type": "number"
+          }
+        },
+        "steps": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "mission": {
+          "type": "string",
+          "enum": ["machina_1", "cogsguard"]
+        }
+      }
+    },
+    "protocols": {
+      "player": "game/docs/player_protocol_spec.md",
+      "global": "game/docs/global_protocol_spec.md"
+    }
+  },
+  "player": [
+    {
+      "id": "noop-player",
+      "name": "Noop Player",
+      "type": "player",
+      "image": "coworld-cogs-vs-clips-noop-player:latest",
+      "run": ["python", "/app/player.py"],
+      "description": "Minimal certification player that connects to Cogs vs Clips and submits noop actions."
+    }
+  ],
+  "variants": [
+    {
+      "id": "machina-1-smoke",
+      "name": "Machina 1 Smoke",
+      "game_config": {
+        "mission": "machina_1",
+        "max_steps": 3,
+        "seed": 0,
+        "step_seconds": 0.02
+      },
+      "description": "Short deterministic Cogs vs Clips smoke episode backed by the Cogsguard Machina 1 mission."
+    },
+    {
+      "id": "cogsguard-smoke",
+      "name": "Cogsguard Smoke",
+      "game_config": {
+        "mission": "cogsguard",
+        "max_steps": 3,
+        "seed": 0,
+        "step_seconds": 0.02
+      },
+      "description": "Short deterministic smoke episode using the current Cogsguard mission defaults."
+    }
+  ],
+  "certification": {
+    "variant_id": "cogsguard-smoke",
+    "players": [
+      {
+        "player_id": "noop-player"
+      },
+      {
+        "player_id": "noop-player"
+      }
+    ]
+  }
+}

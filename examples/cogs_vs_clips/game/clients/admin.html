@@ -1,0 +1,42 @@
+<!doctype html>
+<title>Cogs vs Clips Admin Client</title>
+<style>
+  body { font-family: system-ui, sans-serif; margin: 24px; }
+  button { background: white; border: 1px solid #999; border-radius: 4px; padding: 8px 10px; }
+  input { vertical-align: middle; }
+  pre { background: #f5f5f5; padding: 12px; width: min(960px, 100%); white-space: pre-wrap; }
+</style>
+<h1>Cogs vs Clips Admin</h1>
+<div id="status"></div>
+<button id="pause" type="button">Pause</button>
+<button id="resume" type="button">Resume</button>
+<label>
+  Step seconds
+  <input id="stepSeconds" min="0.01" step="0.01" type="number" value="0.05" />
+</label>
+<button id="applySpeed" type="button">Apply</button>
+<pre id="latest"></pre>
+<script>
+  const websocketUrl = new URL(window.location.href);
+  websocketUrl.protocol = websocketUrl.protocol === "https:" ? "wss:" : "ws:";
+
+  const status = document.getElementById("status");
+  const latest = document.getElementById("latest");
+  const stepSeconds = document.getElementById("stepSeconds");
+  const socket = new WebSocket(websocketUrl);
+
+  socket.onopen = () => { status.textContent = "Connected"; };
+  socket.onmessage = (event) => {
+    const message = JSON.parse(event.data);
+    latest.textContent = JSON.stringify(message, null, 2);
+    status.textContent = message.paused ? "Paused" : `Step ${message.step}`;
+    stepSeconds.value = message.step_seconds;
+  };
+  socket.onclose = () => { status.textContent = "Disconnected"; };
+
+  document.getElementById("pause").onclick = () => socket.send(JSON.stringify({ command: "pause" }));
+  document.getElementById("resume").onclick = () => socket.send(JSON.stringify({ command: "resume" }));
+  document.getElementById("applySpeed").onclick = () => {
+    socket.send(JSON.stringify({ command: "step_seconds", step_seconds: Number(stepSeconds.value) }));
+  };
+</script>

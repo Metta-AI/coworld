@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import importlib.util
 import json
 import subprocess
@@ -7,7 +8,9 @@ from pathlib import Path
 from urllib.parse import parse_qs, urlparse
 
 import pytest
+from fastapi.testclient import TestClient
 from jsonschema.exceptions import ValidationError
+from starlette.websockets import WebSocketDisconnect
 
 from coworld.certifier import (
     build_episode_request,
@@ -363,6 +366,70 @@ def test_paintarena_snapshots_are_independent(tmp_path: Path, monkeypatch: pytes
     assert second_snapshot["scores"] == [1, 1]
 
 
+def test_cogs_vs_clips_coworld_manifest_validates() -> None:
+    package = load_coworld_package(_cogs_vs_clips_root() / "coworld_manifest.json")
+    config = build_game_config(package, ["token-0", "token-1"])
+
+    game = package.manifest["game"]
+    assert game["name"] == "cogs_vs_clips"
+    assert package.cogame.image == "coworld-cogs-vs-clips-game:latest"
+    assert package.cogame.run == ("python", "/app/server.py")
+    assert game["protocols"] == {
+        "player": "game/docs/player_protocol_spec.md",
+        "global": "game/docs/global_protocol_spec.md",
+    }
+    assert package.manifest["player"][0]["image"] == "coworld-cogs-vs-clips-noop-player:latest"
+    assert package.manifest["player"][0]["run"] == ["python", "/app/player.py"]
+    assert config == {
+        "mission": "cogsguard",
+        "max_steps": 3,
+        "seed": 0,
+        "step_seconds": 0.02,
+        "tokens": ["token-0", "token-1"],
+    }
+
+
+def test_cogs_vs_clips_player_websocket_rejects_missing_query_params(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    server_module = _load_cogs_vs_clips_server_module()
+
+    class FakeGame:
+        def __init__(self, *args: object, **kwargs: object) -> None:
+            self.tokens = ["token-0"]
+
+    monkeypatch.setattr(server_module, "CogsVsClipsGame", FakeGame)
+    app = server_module.create_app(
+        {
+            "mission": "cogsguard",
+            "tokens": ["token-0"],
+            "max_steps": 3,
+            "seed": 0,
+            "step_seconds": 0.02,
+        },
+        results_path=tmp_path / "results.json",
+        replay_path=None,
+    )
+
+    client = TestClient(app)
+    with pytest.raises(WebSocketDisconnect) as exc_info:
+        with client.websocket_connect("/player"):
+            pass
+
+    assert exc_info.value.code == 1008
+
+
+def test_cogs_vs_clips_send_to_players_disconnects_failed_websocket() -> None:
+    server_module = _load_cogs_vs_clips_server_module()
+    game = server_module.CogsVsClipsGame.__new__(server_module.CogsVsClipsGame)
+    websocket = DisconnectingWebSocket()
+    game.players = {0: websocket}
+
+    asyncio.run(game._send_to_players({0: {"type": "step"}}))
+
+    assert game.players == {}
+
+
 def _docker_available() -> bool:
     try:
         subprocess.run(["docker", "info"], capture_output=True, check=True, timeout=10)
@@ -513,3 +580,24 @@ def _example_root() -> Path:
 def _image_command_slice(command: list[str]) -> list[str]:
     entrypoint_index = command.index("--entrypoint")
     return command[entrypoint_index:]
+
+
+def _cogs_vs_clips_root() -> Path:
+    return Path(__file__).resolve().parents[1] / "examples" / "cogs_vs_clips"
+
+
+def _load_cogs_vs_clips_server_module():
+    spec = importlib.util.spec_from_file_location(
+        "cogs_vs_clips_server_test",
+        _cogs_vs_clips_root() / "game" / "server.py",
+    )
+    assert spec is not None
+    assert spec.loader is not None
+    server_module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(server_module)
+    return server_module
+
+
+class DisconnectingWebSocket:
+    async def send_json(self, message: dict[str, object]) -> None:
+        raise WebSocketDisconnect(code=1006)

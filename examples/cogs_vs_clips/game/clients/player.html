@@ -1,0 +1,196 @@
+<!doctype html>
+<title>Cogs vs Clips Player Client</title>
+<style>
+  :root { color: #172033; font-family: system-ui, sans-serif; }
+  body { margin: 0; background: #f6f7f9; }
+  header { align-items: center; background: #ffffff; border-bottom: 1px solid #d7dde7; display: flex; gap: 16px; padding: 12px 18px; }
+  h1 { font-size: 18px; line-height: 1.2; margin: 0; }
+  #status { color: #4a5568; font-size: 13px; }
+  main { display: grid; gap: 14px; grid-template-columns: minmax(360px, 1fr) 340px; padding: 14px; }
+  #obs { background: #ffffff; border: 1px solid #d7dde7; display: grid; gap: 2px; width: min(86vh, 100%); }
+  .cell { align-items: center; aspect-ratio: 1; background: #f8fafc; border: 1px solid #e2e8f0; display: flex; flex-direction: column; font-size: 10px; justify-content: center; line-height: 1.05; min-width: 0; overflow: hidden; padding: 2px; text-align: center; }
+  .center { box-shadow: inset 0 0 0 2px #111827; }
+  .agent { background: #dbeafe; border-color: #2563eb; color: #1d4ed8; font-weight: 700; }
+  .wall { background: #334155; border-color: #1e293b; color: #ffffff; }
+  .object { background: #fef3c7; border-color: #d97706; color: #92400e; }
+  .empty { color: #98a2b3; }
+  aside { background: #ffffff; border: 1px solid #d7dde7; padding: 12px; }
+  h2 { font-size: 14px; margin: 0 0 10px; }
+  #actions { display: grid; gap: 8px; grid-template-columns: repeat(2, minmax(0, 1fr)); margin-bottom: 12px; }
+  button { background: #ffffff; border: 1px solid #9aa8bd; border-radius: 6px; color: #172033; min-height: 38px; padding: 7px 8px; }
+  button:active { background: #e8eef8; }
+  pre { background: #f2f4f7; border: 1px solid #d7dde7; margin: 0; max-height: 340px; overflow: auto; padding: 10px; white-space: pre-wrap; }
+  @media (max-width: 820px) {
+    main { grid-template-columns: 1fr; }
+    #obs { width: 100%; }
+  }
+</style>
+<header>
+  <h1>Cogs vs Clips</h1>
+  <div id="status">Connecting</div>
+</header>
+<main>
+  <section id="obs"></section>
+  <aside>
+    <h2 id="identity">Player</h2>
+    <div id="actions"></div>
+    <pre id="latest"></pre>
+  </aside>
+</main>
+<script>
+  const websocketUrl = new URL(window.location.href);
+  websocketUrl.protocol = websocketUrl.protocol === "https:" ? "wss:" : "ws:";
+
+  const status = document.getElementById("status");
+  const identity = document.getElementById("identity");
+  const actions = document.getElementById("actions");
+  const latest = document.getElementById("latest");
+  const obs = document.getElementById("obs");
+
+  let socket;
+  let config = null;
+  let featureNames = new Map();
+  let actionNames = [];
+  let done = false;
+
+  function configure(message) {
+    config = message;
+    actionNames = message.action_names || [];
+    featureNames = new Map((message.observation.features || []).map(feature => [feature.id, feature.name]));
+    identity.textContent = `Player ${message.slot + 1}`;
+    obs.style.gridTemplateColumns = `repeat(${message.observation.width}, minmax(0, 1fr))`;
+    drawCells(new Map());
+    drawActions(actionNames);
+    status.textContent = `Waiting for players (${message.num_agents} cogs)`;
+  }
+
+  function drawActions(names) {
+    actions.replaceChildren(...names.map((name, index) => {
+      const button = document.createElement("button");
+      button.type = "button";
+      button.textContent = name.replace("change_vibe_", "vibe ");
+      button.onclick = () => sendAction(index);
+      return button;
+    }));
+  }
+
+  function packedLocation(location) {
+    return { row: Math.floor(location / 16), col: location % 16 };
+  }
+
+  function tokenCells(tokens) {
+    const cells = new Map();
+    const globalFeatures = {};
+    const globalLocation = config.observation.global_location;
+    const emptyLocation = config.observation.empty_location;
+    for (const token of tokens || []) {
+      const location = Number(token[0]);
+      if (location === emptyLocation) continue;
+      const featureId = Number(token[1]);
+      const value = Number(token[2]);
+      const feature = featureNames.get(featureId) || `feature:${featureId}`;
+      if (location === globalLocation) {
+        globalFeatures[feature] = value;
+        continue;
+      }
+      const { row, col } = packedLocation(location);
+      const key = `${row},${col}`;
+      const cell = cells.get(key) || { row, col, tags: [], features: {} };
+      if (feature === "tag") {
+        cell.tags.push(config.observation.tags[value] || `tag:${value}`);
+      } else {
+        cell.features[feature] = value;
+      }
+      cells.set(key, cell);
+    }
+    cells.globalFeatures = globalFeatures;
+    return cells;
+  }
+
+  function classify(cell) {
+    const tags = new Set(cell.tags || []);
+    if (tags.has("wall")) return "wall";
+    if (tags.has("agent")) return "agent";
+    if (tags.size > 0) return "object";
+    return "empty";
+  }
+
+  function cellLabel(cell) {
+    if (!cell) return "";
+    const tags = (cell.tags || []).filter(tag => !["agent", "wall"].includes(tag));
+    const id = cell.features.agent_id;
+    if (id != null) return `cog ${id + 1}`;
+    if (tags.length) return tags[0].replaceAll("_", " ");
+    const feature = Object.keys(cell.features || {}).find(name => name.startsWith("inv:"));
+    return feature ? `${feature.slice(4)} ${cell.features[feature]}` : "";
+  }
+
+  function drawCells(cells) {
+    const height = config.observation.height;
+    const width = config.observation.width;
+    const centerRow = Math.floor(height / 2);
+    const centerCol = Math.floor(width / 2);
+    const elements = [];
+    for (let row = 0; row < height; row += 1) {
+      for (let col = 0; col < width; col += 1) {
+        const cell = cells.get(`${row},${col}`);
+        const el = document.createElement("div");
+        el.className = `cell ${cell ? classify(cell) : "empty"}`;
+        if (row === centerRow && col === centerCol) el.classList.add("center");
+        el.textContent = cellLabel(cell);
+        elements.push(el);
+      }
+    }
+    obs.replaceChildren(...elements);
+  }
+
+  function sendAction(index) {
+    if (!socket || socket.readyState !== WebSocket.OPEN) return;
+    socket.send(JSON.stringify({ action_index: index }));
+  }
+
+  function handleStep(message) {
+    const cells = tokenCells(message.observation);
+    drawCells(cells);
+    status.textContent = `Step ${message.step}`;
+    latest.textContent = JSON.stringify({
+      slot: message.slot,
+      step: message.step,
+      global_features: cells.globalFeatures,
+      actions: actionNames,
+    }, null, 2);
+  }
+
+  socket = new WebSocket(websocketUrl);
+  socket.onopen = () => { status.textContent = "Connected"; };
+  socket.onmessage = (event) => {
+    const message = JSON.parse(event.data);
+    if (message.type === "player_config") configure(message);
+    if (message.type === "step") handleStep(message);
+    if (message.type === "final") {
+      done = true;
+      status.textContent = `Done after ${message.step} steps`;
+    }
+  };
+  socket.onclose = () => { if (!done) status.textContent = "Disconnected"; };
+
+  window.onkeydown = (event) => {
+    const actionsByKey = {
+      w: "move_north",
+      ArrowUp: "move_north",
+      s: "move_south",
+      ArrowDown: "move_south",
+      a: "move_west",
+      ArrowLeft: "move_west",
+      d: "move_east",
+      ArrowRight: "move_east",
+      " ": "noop",
+    };
+    const action = actionsByKey[event.key];
+    if (!action) return;
+    const index = actionNames.indexOf(action);
+    if (index < 0) return;
+    event.preventDefault();
+    sendAction(index);
+  };
+</script>
