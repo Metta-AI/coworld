@@ -83,10 +83,26 @@ def player_client() -> HTMLResponse:
 @app.websocket("/global")
 async def global_viewer(websocket: WebSocket) -> None:
     await websocket.accept()
+    sender = asyncio.create_task(_send_global_snapshots(websocket))
+    receiver = asyncio.create_task(_drain_global_messages(websocket))
+    done, pending = await asyncio.wait({sender, receiver}, return_when=asyncio.FIRST_COMPLETED)
+    for task in pending:
+        task.cancel()
+    await asyncio.gather(*pending, return_exceptions=True)
+    for task in done:
+        task.result()
+
+
+async def _send_global_snapshots(websocket: WebSocket) -> None:
     await websocket.send_json(_snapshot())
     while not state.done:
         await asyncio.sleep(0.1)
         await websocket.send_json(_snapshot())
+
+
+async def _drain_global_messages(websocket: WebSocket) -> None:
+    async for _ in websocket.iter_json():
+        pass
 
 
 @app.websocket("/admin")
