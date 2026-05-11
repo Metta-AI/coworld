@@ -1,7 +1,6 @@
 import gzip
+from pathlib import Path
 from types import SimpleNamespace
-
-import pytest
 
 from coworld.runner import kubernetes_runner
 from coworld.runner.kubernetes_runner import _wait_for_results
@@ -9,10 +8,13 @@ from coworld.runner.runner import EpisodeArtifacts
 
 
 class _FakeCoreV1:
-    def __init__(self, phases: dict[str, str]):
+    def __init__(self, phases: dict[str, str], write_results_on_game_check: Path | None = None):
         self._phases = phases
+        self._write_results_on_game_check = write_results_on_game_check
 
     def read_namespaced_pod(self, *, name: str, namespace: str):
+        if name == "game-pod" and self._write_results_on_game_check is not None:
+            self._write_results_on_game_check.write_text("{}", encoding="utf-8")
         return SimpleNamespace(
             status=SimpleNamespace(
                 phase=self._phases.get(name, "Running"),
@@ -32,23 +34,21 @@ def test_wait_for_results_does_not_wait_for_player_pods_to_succeed(tmp_path):
         "default",
         "game-pod",
         timeout_seconds=0.01,
-        player_pod_names=["player-0"],
     )
 
 
-def test_wait_for_results_raises_when_player_pod_fails(tmp_path):
+def test_wait_for_results_ignores_player_pod_failure(tmp_path, monkeypatch):
     artifacts = EpisodeArtifacts.create(tmp_path)
-    core_v1 = _FakeCoreV1({"player-0": "Failed"})
+    core_v1 = _FakeCoreV1({"player-0": "Failed"}, write_results_on_game_check=artifacts.results_path)
+    monkeypatch.setattr(kubernetes_runner.time, "sleep", lambda _seconds: None)
 
-    with pytest.raises(RuntimeError, match="Player pod player-0 failed"):
-        _wait_for_results(
-            artifacts,
-            core_v1,
-            "default",
-            "game-pod",
-            timeout_seconds=0.01,
-            player_pod_names=["player-0"],
-        )
+    _wait_for_results(
+        artifacts,
+        core_v1,
+        "default",
+        "game-pod",
+        timeout_seconds=1.0,
+    )
 
 
 def test_init_replay_from_env_materializes_compressed_replay(monkeypatch, tmp_path):

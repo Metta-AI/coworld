@@ -168,7 +168,6 @@ def _run_kubernetes_episode(
             namespace,
             pod_name,
             timeout_seconds=timeout_seconds,
-            player_pod_names=child_names,
         )
         _collect_logs(core_v1, namespace, pod_name, child_names, artifacts)
 
@@ -281,15 +280,12 @@ def _wait_for_results(
     pod_name: str,
     *,
     timeout_seconds: float,
-    player_pod_names: list[str] | None = None,
 ) -> None:
     deadline = time.monotonic() + timeout_seconds
     while time.monotonic() < deadline:
         if artifacts.results_path.exists():
             return
         _raise_if_game_terminated(core_v1, namespace, pod_name)
-        if player_pod_names:
-            _raise_if_player_pods_failed(core_v1, namespace, player_pod_names)
         time.sleep(0.5)
     raise TimeoutError(f"Timed out waiting for {artifacts.results_path}")
 
@@ -302,18 +298,6 @@ def _raise_if_game_terminated(core_v1, namespace: str, pod_name: str) -> None:
         exit_code = status.state.terminated.exit_code
         if exit_code != 0:
             raise RuntimeError(f"Game container exited with code {exit_code}")
-
-
-def _raise_if_player_pods_failed(core_v1, namespace: str, pod_names: list[str]) -> None:
-    for pod_name in pod_names:
-        try:
-            pod = core_v1.read_namespaced_pod(name=pod_name, namespace=namespace)
-        except ApiException as exc:
-            if exc.status == 404:
-                continue
-            raise
-        if pod.status.phase == "Failed":
-            raise RuntimeError(f"Player pod {pod_name} failed")
 
 
 def _collect_logs(
