@@ -205,6 +205,14 @@ docker build --platform=linux/amd64 -t my-coworld-runtime:latest .
 Production Coworld jobs run on linux/amd64 Kubernetes nodes. Build local images for `linux/amd64` before uploading,
 especially from Apple Silicon machines.
 
+To upload a Coworld policy image and enter it into a league:
+
+```bash
+uv run coworld upload-policy my-policy-image:latest --name my-policy
+uv run coworld submit my-policy --league league_...
+uv run coworld submit my-policy:v2 --league league_...
+```
+
 ## Download
 
 To download a published Coworld manifest and retag its public images for local development:

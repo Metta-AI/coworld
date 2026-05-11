@@ -13,6 +13,7 @@ from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
 from typing import Any, Self
+from uuid import UUID
 
 import httpx
 import typer
@@ -77,6 +78,24 @@ class CoworldListEntry(BaseModel):
     manifest_hash: str
     size_bytes: int
     created_at: datetime
+
+
+class LeagueSubmissionResponse(BaseModel):
+    id: str
+    status: str
+    league_policy_membership_id: str | None = None
+    notes: str | None = None
+
+
+class PolicyVersionRow(BaseModel):
+    id: UUID
+    name: str
+    version: int
+
+
+class PolicyVersionsResponse(BaseModel):
+    entries: list[PolicyVersionRow]
+    total_count: int
 
 
 class ImageUploadResponse(BaseModel):
@@ -148,6 +167,30 @@ class CoworldUploadClient:
             if len(coworlds) < limit:
                 return None
             offset += limit
+
+    def lookup_policy_version(self, *, name: str, version: int | None = None) -> PolicyVersionRow | None:
+        params: dict[str, Any] = {"mine": "true", "name_exact": name, "limit": 100}
+        if version is not None:
+            params["version"] = str(version)
+        response = self._http_client.get(
+            "/stats/policy-versions",
+            headers=self._headers(),
+            params=params,
+            timeout=60.0,
+        )
+        response.raise_for_status()
+        versions = PolicyVersionsResponse.model_validate(response.json()).entries
+        return versions[0] if versions else None
+
+    def submit_to_league(self, league_id: str, policy_version_id: UUID) -> LeagueSubmissionResponse:
+        response = self._http_client.post(
+            "/v2/league-submissions",
+            headers=self._headers(),
+            json={"league_id": league_id, "policy_version_id": str(policy_version_id)},
+            timeout=120.0,
+        )
+        response.raise_for_status()
+        return LeagueSubmissionResponse.model_validate(response.json())
 
     def list_images(self, *, limit: int = 200, offset: int = 0) -> list[ContainerImageResponse]:
         response = self._http_client.get(

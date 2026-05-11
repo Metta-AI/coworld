@@ -13,6 +13,7 @@ from coworld.config import DEFAULT_LOGIN_SERVER, DEFAULT_SUBMIT_SERVER
 from coworld.manifest_uri import materialized_manifest_path, materialized_replay_path
 from coworld.play import PlaySession, ReplaySession, play_coworld, replay_coworld
 from coworld.runner.runner import EpisodeArtifacts, run_coworld_episode
+from coworld.submit import submit_policy_to_league_cmd
 from coworld.types import CoworldEpisodeJobSpec
 from coworld.upload import (
     ContainerImageResponse,
@@ -178,6 +179,31 @@ def upload_policy(
         image,
         name,
         run=run,
+        server=server,
+        login_server=login_server,
+    )
+
+
+@app.command("submit")
+def submit(
+    policy: Annotated[str, typer.Argument(help="Policy name, optionally with version suffix NAME:vN.")],
+    league: Annotated[
+        str,
+        typer.Option(
+            "--league",
+            "-l",
+            help="League id.",
+        ),
+    ],
+    server: Annotated[str, typer.Option("--server", help="Observatory API server URL.")] = DEFAULT_SUBMIT_SERVER,
+    login_server: Annotated[
+        str,
+        typer.Option("--login-server", help="Authentication server URL."),
+    ] = DEFAULT_LOGIN_SERVER,
+) -> None:
+    submit_policy_to_league_cmd(
+        policy,
+        league_id=league,
         server=server,
         login_server=login_server,
     )
