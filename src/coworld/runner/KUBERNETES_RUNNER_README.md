@@ -139,10 +139,16 @@ Outputs:
 - `RESULTS_URI`: game-defined `results.json`, validated against
   `manifest.game.results_schema`.
 - `REPLAY_URI`: gzip-compressed replay uploaded as `replay.json.z`.
-- `DEBUG_URI`: zip containing game logs and per-player logs.
+- `DEBUG_URI`: zip containing game logs and any available per-player logs.
 - `ERROR_INFO_URI`: crash JSON if the coordinator fails.
 - `POLICY_LOG_URLS`: JSON object mapping player position to a destination URI.
   Each player log is uploaded from `policy_agent_{position}.txt`.
+
+Per-player logs are diagnostic only. After the game has produced valid results,
+the coordinator reads logs from player pods whose `player` container has started
+and skips pods whose container is still waiting, such as `ContainerCreating`.
+Missing player logs do not fail an otherwise successful episode; result and
+replay upload remain the source of truth for episode success.
 
 ## Kubernetes Requirements
 

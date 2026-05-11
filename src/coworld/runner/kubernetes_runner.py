@@ -312,6 +312,9 @@ def _collect_logs(
         encoding="utf-8",
     )
     for slot, player_pod_name in enumerate(player_pod_names):
+        player_pod = core_v1.read_namespaced_pod(name=player_pod_name, namespace=namespace)
+        if not _container_has_started(player_pod, "player"):
+            continue
         artifacts.policy_log_path(slot).write_text(
             core_v1.read_namespaced_pod_log(
                 name=player_pod_name,
@@ -321,6 +324,14 @@ def _collect_logs(
             ),
             encoding="utf-8",
         )
+
+
+def _container_has_started(pod, container_name: str) -> bool:
+    for status in pod.status.container_statuses or []:
+        if status.name != container_name:
+            continue
+        return status.state.running is not None or status.state.terminated is not None
+    return False
 
 
 def _delete_child_resources(core_v1, namespace: str, service_name: str, pod_names: list[str]) -> None:
