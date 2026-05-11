@@ -19,8 +19,11 @@ The `game` object contains:
 - `runnable`: the game engine runnable with `type`, `image`, optional `run`, and optional public `env`,
 - `config_schema`: JSON Schema for the config file supplied to the container,
 - `results_schema`: JSON Schema for the results file written by the container,
-- `protocols.player`: documentation for the player websocket protocol,
-- `protocols.global`: documentation for the global websocket protocol.
+- `protocols.player`: document object for the player websocket protocol documentation,
+- `protocols.global`: document object for the global websocket protocol documentation.
+
+Protocol document objects are explicit: `{ "type": "uri", "value": "https://..." }` links to public HTTP(S) docs, and
+`{ "type": "text", "value": "..." }` stores deliberately inline documentation text.
 
 The `config_schema` must require `tokens`, an array of runner-managed player tokens. `tokens` must declare an exact
 fixed length with equal `minItems` and `maxItems`; that length is the Cogame's runner-managed player count. Author-owned
@@ -48,21 +51,21 @@ These environment variables put the container in rollout mode. In rollout mode, 
 `0.0.0.0:8080` and exposes:
 
 - `GET /healthz`
-- `GET /player?slot=0&token=...&...`
+- `GET /clients/player?slot=0&token=...&...`
 - `WEBSOCKET /player?slot=0&token=...&...`
-- `GET /global` -- serves the global viewer ui, connected to this game, without the need for url args
+- `GET /clients/global` -- serves the global viewer ui, connected to this game, without the need for url args
 - `WEBSOCKET /global` -- used by a global viewer, such as the ui above or a native ui, to connect to the game
 
-HTTP `GET /player` must serve a browser client for one player slot. HTTP `GET /global` must serve a browser client for
-live episode viewing. The served clients read the complete URL query string and forward every query param when opening
-their websocket connection on the same route. For example,
-`http://<engine-host>/player?slot=0&token=...&role=...` serves the player client, and that client opens
+HTTP `GET /clients/player` must serve a browser client for one player slot. HTTP `GET /clients/global` must serve a
+browser client for live episode viewing. The served clients read the complete URL query string and forward every query
+param when opening their websocket connection on the corresponding websocket route. For example,
+`http://<engine-host>/clients/player?slot=0&token=...&role=...` serves the player client, and that client opens
 `ws://<engine-host>/player?slot=0&token=...&role=...`. The same convention applies to
-`http://<engine-host>/global`, whose client opens `ws://<engine-host>/global`.
+`http://<engine-host>/clients/global`, whose client opens `ws://<engine-host>/global`.
 
-Games may implement local development admin controls however they want. By convention, `GET /admin` serves the browser
-admin UI and `WEBSOCKET /admin?...` accepts admin commands such as pausing, unpausing, or changing tick rate. The admin
-protocol is game-owned and the platform must not expose `/admin` in production.
+Games may implement local development admin controls however they want. By convention, `GET /clients/admin` serves the
+browser admin UI and `WEBSOCKET /admin?...` accepts admin commands such as pausing, unpausing, or changing tick rate.
+The admin protocol is game-owned and the platform must not expose `/admin` in production.
 
 The `/global` websocket endpoint must accept viewer connections after an episode has already started. A viewer that
 connects mid-episode must receive enough state over the global protocol to render from its join point without requiring
@@ -79,12 +82,12 @@ To view a replay, the runner starts the same Cogame image in replay mode and sup
 In replay mode, the game container listens on `0.0.0.0:8080` and exposes:
 
 - `GET /healthz`
-- `GET /replay`
+- `GET /clients/replay`
 - `WEBSOCKET /replay`
 
-HTTP `GET /replay` must serve a browser replay viewer. The replay viewer opens `WEBSOCKET /replay` to receive replay
-state and send game-owned control commands such as start, stop, seek, or speed changes. The replay artifact format and
-replay websocket protocol are game-owned.
+HTTP `GET /clients/replay` must serve a browser replay viewer. The replay viewer opens `WEBSOCKET /replay` to receive
+replay state and send game-owned control commands such as start, stop, seek, or speed changes. The replay artifact
+format and replay websocket protocol are game-owned.
 
 ## Coworld Contract
 
@@ -116,10 +119,10 @@ player-supplied connection metadata as untrusted.
    - starts one container per policy runnable,
    - supplies `COGAMES_ENGINE_WS_URL=ws://<engine-host>/player?slot=<slot>&token=<token>` to the policy container.
 9. The game rejects player connections whose `token` does not match the token for that slot.
-10. Browser player clients may request `GET /player?slot=<slot>&token=<token>&...`; the served client opens the
-    `/player` websocket with the same query params.
-11. Browser global clients may request `GET /global`; the served client opens the `/global` websocket with the same
-    query params.
+10. Browser player clients may request `GET /clients/player?slot=<slot>&token=<token>&...`; the served client opens
+    the `/player` websocket with the same query params.
+11. Browser global clients may request `GET /clients/global`; the served client opens the `/global` websocket with the
+    same query params.
 12. Global websocket viewers may connect before or during the episode through `/global`.
 13. Players may disconnect and reconnect to the same slot with the same token.
 14. The game engine progresses the game after each player connects.
@@ -131,6 +134,6 @@ player-supplied connection metadata as untrusted.
 
 1. The runner downloads or otherwise materializes a replay artifact produced by the same Cogame.
 2. The runner starts the game engine container with `COGAME_LOAD_REPLAY_URI` pointing at that replay artifact.
-3. The container boots in replay mode and exposes `GET /healthz`, `GET /replay`, and `WEBSOCKET /replay`.
-4. A browser requests `GET /replay`; the served client opens `WEBSOCKET /replay`.
+3. The container boots in replay mode and exposes `GET /healthz`, `GET /clients/replay`, and `WEBSOCKET /replay`.
+4. A browser requests `GET /clients/replay`; the served client opens `WEBSOCKET /replay`.
 5. Replay playback and controls are implemented by the game-owned replay websocket protocol.

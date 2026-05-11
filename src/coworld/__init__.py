@@ -10,9 +10,7 @@ from coworld.certifier import (
     certify_coworld,
     load_coworld_package,
     load_results,
-    resolve_manifest_uri,
     validate_image_references,
-    validate_referenced_files,
 )
 from coworld.play import (
     PlayLinks,
@@ -57,9 +55,7 @@ __all__ = [
     "load_coworld_package",
     "play_coworld",
     "replay_coworld",
-    "resolve_manifest_uri",
     "run_cogame_episode",
     "run_coworld_episode",
     "validate_image_references",
-    "validate_referenced_files",
 ]

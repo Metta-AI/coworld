@@ -70,7 +70,7 @@ def play_coworld(
     timeout_seconds: float = 60.0,
     on_ready: Callable[[PlaySession], None],
 ) -> PlayResult:
-    package = load_coworld_package(manifest_path, validate_files=False)
+    package = load_coworld_package(manifest_path)
     assert_docker_image_reachable(package.cogame.image, label="Cogame runnable.image")
     artifacts = EpisodeArtifacts.create(workspace, prefix="coworld-play-")
     episode_request = build_episode_request(package, artifacts)
@@ -134,7 +134,7 @@ def replay_coworld(
     timeout_seconds: float = 60.0,
     on_ready: Callable[[ReplaySession], None],
 ) -> ReplaySession:
-    package = load_coworld_package(manifest_path, validate_files=False)
+    package = load_coworld_package(manifest_path)
     assert_docker_image_reachable(package.cogame.image, label="Cogame runnable.image")
     replay_path = replay_path.resolve()
     if not replay_path.is_file():
@@ -194,13 +194,13 @@ def build_play_links(
     game_port: int,
 ) -> PlayLinks:
     player_links = [
-        f"http://127.0.0.1:{game_port}/player?{_player_query(slot, tokens[slot], player)}"
+        f"http://127.0.0.1:{game_port}/clients/player?{_player_query(slot, tokens[slot], player)}"
         for slot, player in enumerate(players)
     ]
     return PlayLinks(
         players=player_links,
-        global_=f"http://127.0.0.1:{game_port}/global",
-        admin=f"http://127.0.0.1:{game_port}/admin",
+        global_=f"http://127.0.0.1:{game_port}/clients/global",
+        admin=f"http://127.0.0.1:{game_port}/clients/admin",
     )
 
 

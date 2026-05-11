@@ -35,6 +35,7 @@
 <script>
   const websocketUrl = new URL(window.location.href);
   websocketUrl.protocol = websocketUrl.protocol === "https:" ? "wss:" : "ws:";
+  websocketUrl.pathname = websocketUrl.pathname.replace(/\/clients\/player$/, "/player");
 
   const screen = document.getElementById("screen");
   const context = screen.getContext("2d");

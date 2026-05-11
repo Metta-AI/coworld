@@ -93,9 +93,22 @@
           "type": "string"
         },
         "content": {
-          "minLength": 1,
-          "title": "Content",
-          "type": "string"
+          "discriminator": {
+            "mapping": {
+              "text": "#/$defs/CoworldTextDoc",
+              "uri": "#/$defs/CoworldUriDoc"
+            },
+            "propertyName": "type"
+          },
+          "oneOf": [
+            {
+              "$ref": "#/$defs/CoworldTextDoc"
+            },
+            {
+              "$ref": "#/$defs/CoworldUriDoc"
+            }
+          ],
+          "title": "Content"
         }
       },
       "required": ["id", "title", "content"],
@@ -108,8 +121,21 @@
         "readme": {
           "anyOf": [
             {
-              "minLength": 1,
-              "type": "string"
+              "discriminator": {
+                "mapping": {
+                  "text": "#/$defs/CoworldTextDoc",
+                  "uri": "#/$defs/CoworldUriDoc"
+                },
+                "propertyName": "type"
+              },
+              "oneOf": [
+                {
+                  "$ref": "#/$defs/CoworldTextDoc"
+                },
+                {
+                  "$ref": "#/$defs/CoworldUriDoc"
+                }
+              ]
             },
             {
               "type": "null"
@@ -228,18 +254,81 @@
       "additionalProperties": false,
       "properties": {
         "player": {
-          "minLength": 1,
-          "title": "Player",
-          "type": "string"
+          "discriminator": {
+            "mapping": {
+              "text": "#/$defs/CoworldTextDoc",
+              "uri": "#/$defs/CoworldUriDoc"
+            },
+            "propertyName": "type"
+          },
+          "oneOf": [
+            {
+              "$ref": "#/$defs/CoworldTextDoc"
+            },
+            {
+              "$ref": "#/$defs/CoworldUriDoc"
+            }
+          ],
+          "title": "Player"
         },
         "global": {
-          "minLength": 1,
-          "title": "Global",
-          "type": "string"
+          "discriminator": {
+            "mapping": {
+              "text": "#/$defs/CoworldTextDoc",
+              "uri": "#/$defs/CoworldUriDoc"
+            },
+            "propertyName": "type"
+          },
+          "oneOf": [
+            {
+              "$ref": "#/$defs/CoworldTextDoc"
+            },
+            {
+              "$ref": "#/$defs/CoworldUriDoc"
+            }
+          ],
+          "title": "Global"
         }
       },
       "required": ["player", "global"],
       "title": "CoworldProtocolDocs",
+      "type": "object"
+    },
+    "CoworldTextDoc": {
+      "additionalProperties": false,
+      "properties": {
+        "type": {
+          "const": "text",
+          "title": "Type",
+          "type": "string"
+        },
+        "value": {
+          "minLength": 1,
+          "title": "Value",
+          "type": "string"
+        }
+      },
+      "required": ["type", "value"],
+      "title": "CoworldTextDoc",
+      "type": "object"
+    },
+    "CoworldUriDoc": {
+      "additionalProperties": false,
+      "properties": {
+        "type": {
+          "const": "uri",
+          "title": "Type",
+          "type": "string"
+        },
+        "value": {
+          "minLength": 1,
+          "pattern": "^https?://",
+          "title": "Value",
+          "type": "string"
+        }
+      },
+      "required": ["type", "value"],
+      "title": "CoworldUriDoc",
       "type": "object"
     },
     "CoworldVariant": {

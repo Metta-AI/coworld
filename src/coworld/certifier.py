@@ -3,7 +3,6 @@ from __future__ import annotations
 from dataclasses import dataclass
 from pathlib import Path
 from typing import cast
-from urllib.parse import unquote, urlparse
 
 from coworld.manifest_validation import game_config_with_tokens, validate_coworld_manifest_game_configs
 from coworld.runner.runner import (
@@ -19,13 +18,13 @@ from coworld.schema_validation import (
     load_json_object,
     validate_json_schema,
 )
-from coworld.types import CoworldEpisodeJobSpec, CoworldManifest, CoworldPlayerSpec, coworld_manifest_schema
+from coworld.types import CoworldDoc, CoworldEpisodeJobSpec, CoworldManifest, CoworldPlayerSpec, coworld_manifest_schema
 
 
 @dataclass(frozen=True)
 class CogameProtocolDocs:
-    player: str
-    global_: str
+    player: CoworldDoc
+    global_: CoworldDoc
 
 
 @dataclass(frozen=True)
@@ -46,16 +45,7 @@ class CertificationResult:
     results: JsonObject
 
 
-def resolve_manifest_uri(base_dir: Path, manifest_uri: str) -> Path:
-    parsed = urlparse(manifest_uri)
-    if parsed.scheme == "file":
-        return Path(unquote(parsed.path)).resolve()
-    if parsed.scheme:
-        raise ValueError(f"Only local manifest URIs are supported for certification: {manifest_uri}")
-    return (base_dir / manifest_uri).resolve()
-
-
-def load_coworld_package(manifest_path: Path, *, validate_files: bool = True) -> CoworldPackage:
+def load_coworld_package(manifest_path: Path) -> CoworldPackage:
     manifest_path = manifest_path.resolve()
     manifest = load_json_object(manifest_path)
     validate_json_schema(manifest, coworld_manifest_schema())
@@ -74,19 +64,11 @@ def load_coworld_package(manifest_path: Path, *, validate_files: bool = True) ->
         ),
     )
     validate_certification_references(package)
-    if validate_files:
-        validate_referenced_files(package)
     return package
 
 
 def validate_certification_references(package: CoworldPackage) -> None:
     _certification_player_specs(package)
-
-
-def validate_referenced_files(package: CoworldPackage) -> None:
-    for label, path in _referenced_file_paths(package):
-        if not path.is_file():
-            raise FileNotFoundError(f"{label} does not exist or is not a file: {path}")
 
 
 def validate_image_references(package: CoworldPackage) -> None:
@@ -156,27 +138,6 @@ def certify_coworld(
         episode_request=episode_request,
         results=results,
     )
-
-
-def _referenced_file_paths(package: CoworldPackage) -> list[tuple[str, Path]]:
-    paths: list[tuple[str, Path]] = []
-    for label, uri in (
-        ("Cogame protocols.player", package.protocols.player),
-        ("Cogame protocols.global", package.protocols.global_),
-    ):
-        if not _is_local_doc_reference(uri):
-            continue
-        paths.append((label, resolve_manifest_uri(package.manifest_path.parent, uri)))
-    return paths
-
-
-def _is_local_doc_reference(value: str) -> bool:
-    parsed = urlparse(value)
-    if parsed.scheme:
-        return parsed.scheme == "file"
-    if "\n" in value or value.startswith("#"):
-        return False
-    return "/" in value or value.startswith(".") or value.endswith((".md", ".markdown", ".txt"))
 
 
 def _image_references(package: CoworldPackage) -> list[tuple[str, str]]:

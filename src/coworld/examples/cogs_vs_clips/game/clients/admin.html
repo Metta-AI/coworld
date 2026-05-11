@@ -143,7 +143,7 @@
   }
 
   function takeoverUrl(slot) {
-    return new URL(slot.takeover_url, httpAddress("/player")).toString();
+    return new URL(slot.takeover_url, httpAddress("/clients/player")).toString();
   }
 
   function copyInput(input) {

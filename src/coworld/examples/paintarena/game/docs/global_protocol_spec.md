@@ -1,7 +1,7 @@
 # Paint Arena Global Protocol
 
-Browsers request `GET /global` to load the global client. The client forwards the same query params when it opens the
-`/global` websocket.
+Browsers request `GET /clients/global` to load the global client. The client forwards the same query params when it
+opens the `/global` websocket.
 
 The server sends a JSON state snapshot immediately on connect and then sends updated snapshots while the episode runs:
 
@@ -21,10 +21,11 @@ The server sends a JSON state snapshot immediately on connect and then sends upd
 }
 ```
 
-When the server is started with `COGAME_LOAD_REPLAY_URI`, browsers request `GET /replay` to load the replay client.
-The replay client opens the `/replay` websocket to receive replay data and send control commands.
+When the server is started with `COGAME_LOAD_REPLAY_URI`, browsers request `GET /clients/replay` to load the replay
+client. The replay client opens the `/replay` websocket to receive replay data and send control commands.
 
-For local development, browsers may request `GET /admin` and open `/admin` as a websocket. The admin websocket accepts:
+For local development, browsers may request `GET /clients/admin` and open `/admin` as a websocket. The admin websocket
+accepts:
 
 ```json
 { "command": "pause" }

@@ -70,8 +70,14 @@
       }
     },
     "protocols": {
-      "player": "game/docs/player_protocol_spec.md",
-      "global": "game/docs/global_protocol_spec.md"
+      "player": {
+        "type": "uri",
+        "value": "https://github.com/Metta-AI/metta/blob/main/packages/coworld/src/coworld/examples/cogs_vs_clips/game/docs/player_protocol_spec.md"
+      },
+      "global": {
+        "type": "uri",
+        "value": "https://github.com/Metta-AI/metta/blob/main/packages/coworld/src/coworld/examples/cogs_vs_clips/game/docs/global_protocol_spec.md"
+      }
     }
   },
   "player": [

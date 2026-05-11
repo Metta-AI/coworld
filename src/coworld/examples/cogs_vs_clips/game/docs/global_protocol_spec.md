@@ -93,10 +93,10 @@ Subsequent delta steps use the same replay frame shape, but may omit static wall
 }
 ```
 
-The HTTP `/global` client loads the bundled websocket-capable MettaScope from `/mettascope/mettascope.html?ws=...` when
-the Docker image includes it, and keeps a lightweight canvas fallback connected to the same `/global` websocket. A
-mid-episode viewer receives a fresh `assign` frame and a step frame containing static walls plus the latest dynamic
-objects, so it can render from its join point.
+The HTTP `/clients/global` client loads the bundled websocket-capable MettaScope from
+`/mettascope/mettascope.html?ws=...` when the Docker image includes it, and keeps a lightweight canvas fallback
+connected to the `/global` websocket. A mid-episode viewer receives a fresh `assign` frame and a step frame containing
+static walls plus the latest dynamic objects, so it can render from its join point.
 
 When the episode completes, the server sends a terminal frame:
 
@@ -125,5 +125,5 @@ The global websocket may also receive MettaScope action/control messages:
 { "type": "control", "command": "speed", "speed": 5.0 }
 ```
 
-Replay mode starts the same image with `COGAME_LOAD_REPLAY_URI`, serves `GET /replay`, and sends the saved live-replay
-artifact over `WEBSOCKET /replay`.
+Replay mode starts the same image with `COGAME_LOAD_REPLAY_URI`, serves `GET /clients/replay`, and sends the saved
+live-replay artifact over `WEBSOCKET /replay`.

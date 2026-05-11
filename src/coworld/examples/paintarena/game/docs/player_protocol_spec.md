@@ -1,7 +1,7 @@
 # Paint Arena Player Protocol
 
-Browsers request `GET /player?slot=<slot>&token=<token>` to load the player client. The client forwards the same query
-params when it opens the `/player?slot=<slot>&token=<token>` websocket.
+Browsers request `GET /clients/player?slot=<slot>&token=<token>` to load the player client. The client forwards the
+same query params when it opens the `/player?slot=<slot>&token=<token>` websocket.
 
 The server sends an observation every tick:
 

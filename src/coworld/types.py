@@ -1,10 +1,11 @@
 from __future__ import annotations
 
-from typing import Any, Literal
+from typing import Annotated, Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 SCHEMA_VERSION = "https://json-schema.org/draft/2020-12/schema"
+HTTP_URL_PATTERN = r"^https?://"
 JsonSchema = dict[str, Any]
 
 
@@ -34,11 +35,28 @@ class CoworldDeclaredRoleSpec(CoworldDeclaredRunnableSpec):
     type: Literal["player", "grader", "reporter", "commissioner", "diagnoser", "optimizer"]
 
 
+class CoworldTextDoc(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    type: Literal["text"]
+    value: str = Field(min_length=1)
+
+
+class CoworldUriDoc(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    type: Literal["uri"]
+    value: str = Field(min_length=1, pattern=HTTP_URL_PATTERN)
+
+
+CoworldDoc = Annotated[CoworldTextDoc | CoworldUriDoc, Field(discriminator="type")]
+
+
 class CoworldProtocolDocs(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    player: str = Field(min_length=1)
-    global_: str = Field(alias="global", min_length=1)
+    player: CoworldDoc
+    global_: CoworldDoc = Field(alias="global")
 
 
 class CoworldDocPage(BaseModel):
@@ -46,13 +64,13 @@ class CoworldDocPage(BaseModel):
 
     id: str = Field(min_length=1)
     title: str = Field(min_length=1)
-    content: str = Field(min_length=1)
+    content: CoworldDoc
 
 
 class CoworldDocs(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    readme: str | None = Field(default=None, min_length=1)
+    readme: CoworldDoc | None = None
     pages: list[CoworldDocPage] = Field(default_factory=list)
 
 

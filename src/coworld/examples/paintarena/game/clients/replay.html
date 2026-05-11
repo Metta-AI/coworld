@@ -207,6 +207,7 @@
 <script type="module">
   const websocketUrl = new URL(window.location.href);
   websocketUrl.protocol = websocketUrl.protocol === "https:" ? "wss:" : "ws:";
+  websocketUrl.pathname = websocketUrl.pathname.replace(/\/clients\/replay$/, "/replay");
 
   const arena = document.getElementById("arena");
   const status = document.getElementById("status");

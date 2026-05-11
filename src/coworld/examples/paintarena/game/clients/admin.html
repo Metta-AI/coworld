@@ -39,6 +39,7 @@
 <script>
   const websocketUrl = new URL(window.location.href);
   websocketUrl.protocol = websocketUrl.protocol === "https:" ? "wss:" : "ws:";
+  websocketUrl.pathname = websocketUrl.pathname.replace(/\/clients\/admin$/, "/admin");
 
   const status = document.getElementById("status");
   const state = document.getElementById("state");

@@ -2,7 +2,7 @@
   "$schema": "../../coworld_manifest_schema.json",
   "game": {
     "name": "paintarena",
-    "version": "0.1.4",
+    "version": "0.1.5",
     "description": "Continuous tick-based territory painting Cogame used to certify the Coworld contract.",
     "owner": "cogames@softmax.com",
     "runnable": {
@@ -98,8 +98,14 @@
       }
     },
     "protocols": {
-      "player": "game/docs/player_protocol_spec.md",
-      "global": "game/docs/global_protocol_spec.md"
+      "player": {
+        "type": "uri",
+        "value": "https://github.com/Metta-AI/metta/blob/main/packages/coworld/src/coworld/examples/paintarena/game/docs/player_protocol_spec.md"
+      },
+      "global": {
+        "type": "uri",
+        "value": "https://github.com/Metta-AI/metta/blob/main/packages/coworld/src/coworld/examples/paintarena/game/docs/global_protocol_spec.md"
+      }
     }
   },
   "player": [

@@ -150,6 +150,7 @@
 <script>
   const websocketUrl = new URL(window.location.href);
   websocketUrl.protocol = websocketUrl.protocol === "https:" ? "wss:" : "ws:";
+  websocketUrl.pathname = websocketUrl.pathname.replace(/\/clients\/player$/, "/player");
 
   const status = document.getElementById("status");
   const arena = document.getElementById("arena");

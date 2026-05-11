@@ -204,7 +204,7 @@ def run_cogame_episode(spec: EpisodeRunSpec, *, verify_replay: bool = True) -> N
             if spec.players:
                 _require_http_ok(_player_client_url(port, 0, spec.tokens[0], spec.players[0]))
                 asyncio.run(_require_bad_player_rejected(f"ws://127.0.0.1:{port}/player?slot=0&token=bad"))
-            _require_http_ok(f"http://127.0.0.1:{port}/global")
+            _require_http_ok(f"http://127.0.0.1:{port}/clients/global")
 
             for slot, player in enumerate(spec.players):
                 container_name = f"coworld-cert-player-{run_id}-{slot}"
@@ -288,11 +288,11 @@ def _player_container_ws_url(port: int, slot: int, token: str, player: PlayerLau
 
 
 def _player_client_url(port: int, slot: int, token: str, player: PlayerLaunchSpec) -> str:
-    return f"http://127.0.0.1:{port}/player?{_player_query(slot, token, player)}"
+    return f"http://127.0.0.1:{port}/clients/player?{_player_query(slot, token, player)}"
 
 
 def _replay_client_url(port: int) -> str:
-    return f"http://127.0.0.1:{port}/replay"
+    return f"http://127.0.0.1:{port}/clients/replay"
 
 
 def _player_query(slot: int, token: str, player: PlayerLaunchSpec) -> str:

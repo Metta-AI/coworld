@@ -42,7 +42,7 @@ def test_cogs_vs_clips_admin_snapshot_exposes_takeover_player_links(tmp_path: Pa
     assert all("takeover_url" not in slot for slot in game.snapshot()["slots"])
     for slot_index, slot in enumerate(snapshot["slots"]):
         player_link = urlparse(slot["takeover_url"])
-        assert player_link.path == "/player"
+        assert player_link.path == "/clients/player"
         assert parse_qs(player_link.query) == {
             "slot": [str(slot_index)],
             "token": [game.tokens[slot_index]],

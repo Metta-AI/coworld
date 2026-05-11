@@ -21,7 +21,6 @@ from coworld.certifier import (
     certify_coworld,
     load_coworld_package,
     load_results,
-    resolve_manifest_uri,
 )
 from coworld.play import ReplaySession, build_play_links, replay_coworld
 from coworld.runner.runner import (
@@ -37,16 +36,6 @@ from coworld.runner.runner import (
 from coworld.types import CoworldEpisodeJobSpec, CoworldManifest
 
 
-def test_resolve_manifest_uri_relative_to_coworld_manifest(tmp_path: Path) -> None:
-    base_dir = tmp_path / "world"
-    game_dir = base_dir / "game"
-    game_dir.mkdir(parents=True)
-    assert (
-        resolve_manifest_uri(base_dir, "game/docs/player_protocol_spec.md")
-        == (game_dir / "docs" / "player_protocol_spec.md").resolve()
-    )
-
-
 def test_load_coworld_package_validates_inline_game_manifest(tmp_path: Path) -> None:
     coworld_manifest_path = _write_package_files(tmp_path)
 
@@ -55,39 +44,47 @@ def test_load_coworld_package_validates_inline_game_manifest(tmp_path: Path) -> 
     assert package.manifest.game.name == "unit-test-game"
 
 
-def test_load_coworld_package_requires_protocol_doc_files(tmp_path: Path) -> None:
-    coworld_manifest_path = _write_package_files(tmp_path, write_protocol_docs=False)
+def test_load_coworld_package_requires_protocol_uri_doc_urls(tmp_path: Path) -> None:
+    coworld_manifest_path = _write_package_files(tmp_path)
+    manifest = json.loads(coworld_manifest_path.read_text())
+    manifest["game"]["protocols"] = {
+        "player": {"type": "uri", "value": "game/docs/player_protocol_spec.md"},
+        "global": {"type": "uri", "value": "https://example.com/global_protocol_spec.md"},
+    }
+    coworld_manifest_path.write_text(json.dumps(manifest))
 
-    with pytest.raises(FileNotFoundError, match="Cogame protocols.player"):
+    with pytest.raises(JsonSchemaValidationError, match="not valid"):
         load_coworld_package(coworld_manifest_path)
 
 
 def test_load_coworld_package_allows_public_protocol_doc_links(tmp_path: Path) -> None:
-    coworld_manifest_path = _write_package_files(tmp_path, write_protocol_docs=False)
+    coworld_manifest_path = _write_package_files(tmp_path)
     manifest = json.loads(coworld_manifest_path.read_text())
     manifest["game"]["protocols"] = {
-        "player": "https://example.com/player_protocol_spec.md",
-        "global": "https://example.com/global_protocol_spec.md",
+        "player": {"type": "uri", "value": "https://example.com/player_protocol_spec.md"},
+        "global": {"type": "uri", "value": "https://example.com/global_protocol_spec.md"},
     }
     coworld_manifest_path.write_text(json.dumps(manifest))
 
     package = load_coworld_package(coworld_manifest_path)
 
-    assert package.protocols.player == "https://example.com/player_protocol_spec.md"
+    assert package.protocols.player.type == "uri"
+    assert package.protocols.player.value == "https://example.com/player_protocol_spec.md"
 
 
-def test_load_coworld_package_allows_inlined_protocol_docs(tmp_path: Path) -> None:
-    coworld_manifest_path = _write_package_files(tmp_path, write_protocol_docs=False)
+def test_load_coworld_package_allows_explicit_text_protocol_docs(tmp_path: Path) -> None:
+    coworld_manifest_path = _write_package_files(tmp_path)
     manifest = json.loads(coworld_manifest_path.read_text())
     manifest["game"]["protocols"] = {
-        "player": "# Player Protocol\n\nConnect over /player.",
-        "global": "# Global Protocol\n\nConnect over /global.",
+        "player": {"type": "text", "value": "# Player Protocol\n\nConnect over /player."},
+        "global": {"type": "text", "value": "# Global Protocol\n\nConnect over /global."},
     }
     coworld_manifest_path.write_text(json.dumps(manifest))
 
     package = load_coworld_package(coworld_manifest_path)
 
-    assert package.protocols.player.startswith("# Player Protocol")
+    assert package.protocols.player.type == "text"
+    assert package.protocols.player.value.startswith("# Player Protocol")
 
 
 def test_load_coworld_package_rejects_invalid_certification_player_entry(tmp_path: Path) -> None:
@@ -269,7 +266,7 @@ def test_build_play_links_point_directly_at_engine_client_routes(tmp_path: Path)
     player_link = urlparse(links.players[0])
     assert player_link.scheme == "http"
     assert player_link.netloc == "127.0.0.1:1234"
-    assert player_link.path == "/player"
+    assert player_link.path == "/clients/player"
     assert parse_qs(player_link.query) == {
         "slot": ["0"],
         "token": ["token-0"],
@@ -280,13 +277,13 @@ def test_build_play_links_point_directly_at_engine_client_routes(tmp_path: Path)
     global_link = urlparse(links.global_)
     assert global_link.scheme == "http"
     assert global_link.netloc == "127.0.0.1:1234"
-    assert global_link.path == "/global"
+    assert global_link.path == "/clients/global"
     assert global_link.query == ""
 
     admin_link = urlparse(links.admin)
     assert admin_link.scheme == "http"
     assert admin_link.netloc == "127.0.0.1:1234"
-    assert admin_link.path == "/admin"
+    assert admin_link.path == "/clients/admin"
     assert admin_link.query == ""
 
 
@@ -297,7 +294,7 @@ def test_replay_client_url_points_at_engine_replay_route() -> None:
     assert REPLAY_LOAD_ENV_VAR == "COGAME_LOAD_REPLAY_URI"
     assert replay_link.scheme == "http"
     assert replay_link.netloc == "127.0.0.1:1234"
-    assert replay_link.path == "/replay"
+    assert replay_link.path == "/clients/replay"
     assert replay_link.query == ""
 
 
@@ -342,7 +339,7 @@ def test_replay_coworld_starts_replay_container_and_reports_link(
         on_ready=ready_sessions.append,
     )
 
-    assert session.link == "http://127.0.0.1:1234/replay"
+    assert session.link == "http://127.0.0.1:1234/clients/replay"
     assert ready_sessions == [session]
     command = popen_commands[0]
     assert f"{REPLAY_LOAD_ENV_VAR}=file:///coworld-replay/replay.json" in command
@@ -371,8 +368,8 @@ def test_example_coworld_manifest_validates() -> None:
     config = build_game_config(package, ["token-0", "token-1"])
     assert package.cogame.image == "coworld-paintarena:latest"
     assert package.cogame.run == ("python", "/app/game/server.py")
-    assert package.manifest.game.protocols.player == "game/docs/player_protocol_spec.md"
-    assert package.manifest.game.protocols.global_ == "game/docs/global_protocol_spec.md"
+    assert package.manifest.game.protocols.player.value.endswith("/paintarena/game/docs/player_protocol_spec.md")
+    assert package.manifest.game.protocols.global_.value.endswith("/paintarena/game/docs/global_protocol_spec.md")
     assert package.manifest.player[0].image == "coworld-paintarena:latest"
     assert package.manifest.player[0].run == ["python", "/app/player/player.py"]
     assert config["tokens"] == ["token-0", "token-1"]
@@ -510,8 +507,8 @@ def test_cogs_vs_clips_coworld_manifest_validates() -> None:
     assert package.manifest.game.name == "cogs_vs_clips"
     assert package.cogame.image == "coworld-cogs-vs-clips-game:latest"
     assert package.cogame.run == ("python", "/app/server.py")
-    assert package.manifest.game.protocols.player == "game/docs/player_protocol_spec.md"
-    assert package.manifest.game.protocols.global_ == "game/docs/global_protocol_spec.md"
+    assert package.manifest.game.protocols.player.value.endswith("/cogs_vs_clips/game/docs/player_protocol_spec.md")
+    assert package.manifest.game.protocols.global_.value.endswith("/cogs_vs_clips/game/docs/global_protocol_spec.md")
     assert package.manifest.player[0].id == "starter-policy-player"
     assert package.manifest.player[0].image == "coworld-mettagrid-policy-player:latest"
     assert package.manifest.player[0].run == ["python", "/app/coworld_policy_player.py"]
@@ -660,15 +657,9 @@ def _write_package_files(
     config_schema_required: list[str] | None = None,
     certification: dict[str, object] | None = None,
     game_config: dict[str, object] | None = None,
-    write_protocol_docs: bool = True,
 ) -> Path:
     world_dir = tmp_path / "world"
-    game_dir = world_dir / "game"
-    docs_dir = game_dir / "docs"
-    docs_dir.mkdir(parents=True)
-    if write_protocol_docs:
-        (docs_dir / "player_protocol_spec.md").write_text("# Player Protocol\n")
-        (docs_dir / "global_protocol_spec.md").write_text("# Global Protocol\n")
+    world_dir.mkdir(parents=True)
     coworld_manifest_path = world_dir / "coworld_manifest.json"
     coworld_manifest_path.write_text(
         json.dumps(
@@ -754,8 +745,8 @@ def _game_manifest(*, config_schema_required: list[str] | None = None) -> dict[s
             "properties": {"scores": {"type": "array", "items": {"type": "number"}}},
         },
         "protocols": {
-            "player": "game/docs/player_protocol_spec.md",
-            "global": "game/docs/global_protocol_spec.md",
+            "player": {"type": "uri", "value": "https://example.com/player_protocol_spec.md"},
+            "global": {"type": "uri", "value": "https://example.com/global_protocol_spec.md"},
         },
     }
 

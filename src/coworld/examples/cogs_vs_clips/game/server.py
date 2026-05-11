@@ -204,7 +204,7 @@ class CogsVsClipsGame:
         return snapshot
 
     def takeover_url(self, slot: int) -> str:
-        return f"/player?{urlencode({'slot': slot, 'token': self.tokens[slot], 'takeover': 1})}"
+        return f"/clients/player?{urlencode({'slot': slot, 'token': self.tokens[slot], 'takeover': 1})}"
 
     def global_status(self) -> dict[str, Any]:
         return {
@@ -270,19 +270,19 @@ def create_app(
     def healthz() -> dict[str, bool]:
         return {"ok": True}
 
-    @app.get("/global")
+    @app.get("/clients/global")
     def global_client() -> HTMLResponse:
         return HTMLResponse((CLIENTS_DIR / "global.html").read_text())
 
-    @app.get("/admin")
+    @app.get("/clients/admin")
     def admin_client() -> HTMLResponse:
         return HTMLResponse((CLIENTS_DIR / "admin.html").read_text())
 
-    @app.get("/replay")
+    @app.get("/clients/replay")
     def replay_client() -> HTMLResponse:
         return HTMLResponse((CLIENTS_DIR / "replay.html").read_text())
 
-    @app.get("/player")
+    @app.get("/clients/player")
     def player_client() -> HTMLResponse:
         return HTMLResponse((CLIENTS_DIR / "player.html").read_text())
 
@@ -390,7 +390,7 @@ def create_replay_app(replay_data: dict[str, Any]) -> FastAPI:
     def healthz() -> dict[str, bool]:
         return {"ok": True}
 
-    @app.get("/replay")
+    @app.get("/clients/replay")
     def replay_client() -> HTMLResponse:
         return HTMLResponse((CLIENTS_DIR / "replay.html").read_text())
 

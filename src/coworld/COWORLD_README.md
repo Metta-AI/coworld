@@ -31,10 +31,16 @@ Currently optional elements that will soon be required:
 
 For a complete small implementation, see [examples/paintarena/](examples/paintarena/).
 
-### Reference Resolution
+### Protocol Documentation
 
-Paths inside the inline `game` manifest, such as `game.protocols.player` and `game.protocols.global`, MUST resolve
-relative to the directory containing `coworld_manifest.json`.
+`game.protocols.player` and `game.protocols.global` are explicit document objects:
+
+```json
+{ "type": "uri", "value": "https://example.com/player_protocol.md" }
+```
+
+Use `type: "uri"` for absolute HTTP(S) links, or `type: "text"` for deliberately inline documentation text. Upload does
+not infer local file paths or inline local protocol documentation into the stored manifest.
 
 ### Cogame
 
@@ -44,19 +50,19 @@ runtime API, browser client routes, websocket endpoints, config/results formats,
 
 ### Player Client
 
-The Cogame serves its player browser client from `GET /player?...`. A browser can request a link such as
-`/player?slot=<slot>&token=<token>&role=<value>` over HTTP and receive the player client.
+The Cogame serves its player browser client from `GET /clients/player?...`. A browser can request a link such as
+`/clients/player?slot=<slot>&token=<token>&role=<value>` over HTTP and receive the player client.
 
 By convention, the client reads the complete URL query string and forwards every query param when it opens the player
-websocket on the same route, for example `ws://<engine-host>/player?slot=<slot>&token=<token>&role=<value>`.
+websocket route, for example `ws://<engine-host>/player?slot=<slot>&token=<token>&role=<value>`.
 
 ### Global Client
 
-The Cogame serves its global browser client from `GET /global`. A browser can request `/global` over HTTP and receive
-the global client.
+The Cogame serves its global browser client from `GET /clients/global`. A browser can request `/clients/global` over
+HTTP and receive the global client.
 
 By convention, the client reads the complete URL query string and forwards every query param when it opens the global
-websocket on the same route, for example `ws://<engine-host>/global`.
+websocket route, for example `ws://<engine-host>/global`.
 
 ### Player
 
@@ -157,9 +163,9 @@ Operational details:
 - Private registries such as GHCR or ECR require the local Docker client to be logged in first.
 - Successful runs print artifact, result, replay, and log paths under `tmp/coworld-cert-*`.
 
-Certification validates the Coworld manifest, checks referenced files and images, verifies the Cogame serves its player
-and global browser clients in rollout mode, verifies the Cogame serves its replay browser client in replay mode, runs one
-smoke episode through Docker, and verifies the produced results and replay artifacts.
+Certification validates the Coworld manifest, checks referenced images, verifies the Cogame serves its player and global
+browser clients in rollout mode, verifies the Cogame serves its replay browser client in replay mode, runs one smoke
+episode through Docker, and verifies the produced results and replay artifacts.
 
 Manifest validation requires `game.config_schema` to define `tokens` as a required string array with equal `minItems` and
 `maxItems`. The certification fixture's player count must match that fixed token count.
@@ -183,7 +189,8 @@ uv run coworld images img_...
 
 The command validates the manifest, runs certification, uploads every runnable image through the platform's
 `/v2/container_images/upload` flow, rewrites runnable image references to returned Softmax digest image URIs, and uploads
-the resulting standalone JSON manifest through `/v2/coworlds/upload`.
+the resulting standalone JSON manifest through `/v2/coworlds/upload`. Protocol documentation objects remain unchanged in
+the uploaded manifest.
 
 Upload does not bundle schemas, docs, or other package files. The manifest is the uploaded artifact. Documentation and
 other supporting references should be publicly accessible links. The current uploader does not validate those links.
