@@ -1,0 +1,66 @@
+[build-system]
+requires = ["setuptools==80.9.0", "wheel==0.45.1"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "coworld"
+version = "0.1.0"
+description = "Coworld certification, upload, and runner tooling"
+readme = "src/coworld/COWORLD_README.md"
+requires-python = ">=3.11,<3.13"
+license = "MIT"
+dependencies = [
+  "httpx>=0.28.1",
+  "jsonschema>=4.25.1",
+  "kubernetes>=31.0.0",
+  "mettagrid",
+  "pydantic>=2.11.5",
+  "referencing>=0.36.2",
+  "rich>=13.7.0",
+  "typer>=0.19.2",
+  "websockets>=15.0.1",
+]
+
+[project.optional-dependencies]
+auth = ["softmax-cli"]
+examples = ["cogsguard", "fastapi>=0.115.0", "numpy>=2.3.0", "uvicorn>=0.34.0"]
+test = [
+  "cogsguard",
+  "fastapi>=0.115.0",
+  "numpy>=2.3.0",
+  "pytest",
+  "pytest-httpserver",
+  "pytest-xdist",
+  "ruff",
+  "softmax-cli",
+  "uvicorn>=0.34.0",
+]
+
+[project.scripts]
+coworld = "coworld.cli:app"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+include = ["coworld", "coworld.*"]
+
+[tool.setuptools]
+include-package-data = true
+
+[tool.setuptools.package-data]
+coworld = ["py.typed", "*.json", "*.md", "runner/*.md", "examples/**/*"]
+
+[tool.setuptools.exclude-package-data]
+coworld = ["**/__pycache__/*", "**/*.pyc"]
+
+[tool.pytest.ini_options]
+pythonpath = ["src"]
+testpaths = ["tests"]
+markers = ["slow: marks tests as slow"]
+
+[tool.uv.sources]
+mettagrid = { workspace = true }
+softmax-cli = { workspace = true }
+cogsguard = { git = "https://github.com/Metta-AI/cogame-cogsguard.git" }
+
+[tool.ruff]
+extend = "../../.ruff.toml"

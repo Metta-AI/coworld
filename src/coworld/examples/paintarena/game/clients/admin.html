@@ -1,0 +1,59 @@
+<!doctype html>
+<title>Coworld Paint Arena Admin</title>
+<style>
+  * { box-sizing: border-box; }
+  body {
+    background: radial-gradient(circle at top left, #ffffff 0, #eef2f7 420px);
+    color: #172033;
+    font-family: Inter, ui-sans-serif, system-ui, sans-serif;
+    margin: 0;
+    min-height: 100vh;
+    padding: 28px;
+  }
+  main { max-width: 760px; }
+  h1 { font-size: clamp(28px, 4vw, 44px); line-height: 1; margin: 0 0 6px; }
+  .eyebrow { color: #637089; font-size: 12px; font-weight: 800; letter-spacing: .08em; text-transform: uppercase; }
+  .panel { background: color-mix(in srgb, #ffffff 92%, transparent); border: 1px solid rgba(126, 140, 162, .35); border-radius: 8px; box-shadow: 0 18px 50px rgba(23, 32, 51, .12); margin-top: 16px; padding: 18px; }
+  #status { background: #172033; border-radius: 999px; color: white; display: inline-flex; font-size: 13px; font-weight: 800; margin-top: 8px; padding: 7px 12px; }
+  .controls { align-items: center; display: flex; flex-wrap: wrap; gap: 10px; }
+  button { background: linear-gradient(#ffffff, #eef3fa); border: 1px solid #9aa8bd; border-radius: 8px; color: #172033; cursor: pointer; font-weight: 800; padding: 8px 12px; }
+  button:hover { border-color: #64748b; transform: translateY(-1px); }
+  label { align-items: center; color: #637089; display: inline-flex; font-size: 14px; font-weight: 800; gap: 8px; }
+  input { border: 1px solid #9aa8bd; border-radius: 8px; color: #172033; font: inherit; padding: 7px 8px; width: 88px; }
+  pre { background: #101827; border-radius: 8px; color: #d6e2ff; font-size: 13px; margin: 16px 0 0; overflow: auto; padding: 14px; }
+  @media (max-width: 640px) { body { padding: 18px; } }
+</style>
+<main>
+  <div class="eyebrow">Control room</div>
+  <h1>Paint Arena Admin</h1>
+  <div id="status">Connecting</div>
+  <section class="panel">
+    <div class="controls">
+      <button id="pause" type="button">Pause</button>
+      <button id="resume" type="button">Resume</button>
+      <label>Tick rate <input id="tickRate" min="1" max="60" step="1" type="number" value="30"></label>
+    </div>
+    <pre id="state"></pre>
+  </section>
+</main>
+<script>
+  const websocketUrl = new URL(window.location.href);
+  websocketUrl.protocol = websocketUrl.protocol === "https:" ? "wss:" : "ws:";
+
+  const status = document.getElementById("status");
+  const state = document.getElementById("state");
+  const tickRate = document.getElementById("tickRate");
+  const socket = new WebSocket(websocketUrl);
+
+  socket.onopen = () => { status.textContent = "Connected"; };
+  socket.onmessage = (event) => {
+    const message = JSON.parse(event.data);
+    tickRate.value = message.tick_rate;
+    state.textContent = JSON.stringify(message, null, 2);
+  };
+  socket.onclose = () => { status.textContent = "Disconnected"; };
+
+  document.getElementById("pause").onclick = () => socket.send(JSON.stringify({ command: "pause" }));
+  document.getElementById("resume").onclick = () => socket.send(JSON.stringify({ command: "resume" }));
+  tickRate.onchange = () => socket.send(JSON.stringify({ command: "tick_rate", tick_rate: Number(tickRate.value) }));
+</script>

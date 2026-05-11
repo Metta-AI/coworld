@@ -1,0 +1,137 @@
+{
+  "$schema": "../../coworld_manifest_schema.json",
+  "game": {
+    "name": "cogs_vs_clips",
+    "version": "0.2.0",
+    "description": "Cogs vs Clips packaged as a Coworld Cogame backed by Cogsguard and MettaGrid.",
+    "owner": "cogames@softmax.com",
+    "runnable": {
+      "type": "game",
+      "image": "coworld-cogs-vs-clips-game:latest",
+      "run": ["python", "/app/server.py"]
+    },
+    "config_schema": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["tokens", "mission", "max_steps", "seed", "step_seconds"],
+      "properties": {
+        "tokens": {
+          "type": "array",
+          "minItems": 8,
+          "maxItems": 8,
+          "items": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "mission": {
+          "type": "string",
+          "enum": ["machina_1", "cogsguard"]
+        },
+        "max_steps": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 10000
+        },
+        "seed": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "step_seconds": {
+          "type": "number",
+          "exclusiveMinimum": 0,
+          "maximum": 1
+        }
+      }
+    },
+    "results_schema": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["scores", "steps", "mission"],
+      "properties": {
+        "scores": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 32,
+          "items": {
+            "type": "number"
+          }
+        },
+        "steps": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "mission": {
+          "type": "string",
+          "enum": ["machina_1", "cogsguard"]
+        }
+      }
+    },
+    "protocols": {
+      "player": "game/docs/player_protocol_spec.md",
+      "global": "game/docs/global_protocol_spec.md"
+    }
+  },
+  "player": [
+    {
+      "id": "starter-policy-player",
+      "name": "Starter Policy Player",
+      "type": "player",
+      "image": "coworld-mettagrid-policy-player:latest",
+      "run": ["python", "/app/coworld_policy_player.py"],
+      "env": {
+        "COGAMES_POLICY_URI": "metta://policy/cogames.policy.starter_agent.StarterPolicy"
+      },
+      "description": "Cogs vs Clips MettaGrid policy player running the starter policy over coworld.player.v1."
+    }
+  ],
+  "variants": [
+    {
+      "id": "machina-1-daily",
+      "name": "Machina 1 Daily",
+      "game_config": {
+        "mission": "machina_1",
+        "max_steps": 10000,
+        "seed": 0,
+        "step_seconds": 0.02
+      },
+      "description": "8-agent Cogs vs Clips daily tournament variant backed by the Cogsguard Machina 1 mission."
+    }
+  ],
+  "certification": {
+    "game_config": {
+      "mission": "cogsguard",
+      "max_steps": 3,
+      "seed": 0,
+      "step_seconds": 0.02
+    },
+    "players": [
+      {
+        "player_id": "starter-policy-player"
+      },
+      {
+        "player_id": "starter-policy-player"
+      },
+      {
+        "player_id": "starter-policy-player"
+      },
+      {
+        "player_id": "starter-policy-player"
+      },
+      {
+        "player_id": "starter-policy-player"
+      },
+      {
+        "player_id": "starter-policy-player"
+      },
+      {
+        "player_id": "starter-policy-player"
+      },
+      {
+        "player_id": "starter-policy-player"
+      }
+    ]
+  }
+}

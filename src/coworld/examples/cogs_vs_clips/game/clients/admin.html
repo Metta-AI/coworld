@@ -1,0 +1,264 @@
+<!doctype html>
+<title>Cogs vs Clips Admin Client</title>
+<style>
+  :root {
+    color: #d8dee9;
+    font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace;
+    font-size: 14px;
+  }
+  * { box-sizing: border-box; }
+  body { background: #101418; margin: 0; }
+  main { display: grid; gap: 16px; margin: 0 auto; max-width: 1180px; padding: 18px; }
+  header { align-items: end; display: flex; flex-wrap: wrap; gap: 12px; justify-content: space-between; }
+  h1 { color: #f5f7fa; font-size: 20px; font-weight: 700; line-height: 1.2; margin: 0; }
+  #status { color: #9fb0c3; }
+  .panel { background: #161c22; border: 1px solid #2b3540; border-radius: 6px; padding: 12px; }
+  .controls { align-items: center; display: flex; flex-wrap: wrap; gap: 8px; }
+  label { align-items: center; color: #9fb0c3; display: inline-flex; gap: 6px; }
+  button, input, select {
+    background: #0f1419;
+    border: 1px solid #3b4654;
+    border-radius: 4px;
+    color: #edf2f7;
+    font: inherit;
+    min-height: 32px;
+    padding: 5px 8px;
+  }
+  button { cursor: pointer; }
+  button:hover { border-color: #7aa2f7; color: #ffffff; }
+  button.danger { border-color: #7f2d35; color: #ff9aa5; min-width: 32px; }
+  button.danger:hover { background: #34171c; border-color: #e05263; color: #ffd4d8; }
+  a { color: #7aa2f7; }
+  input[type="number"] { width: 82px; }
+  .slot-table { border-collapse: collapse; width: 100%; }
+  .slot-table th, .slot-table td { border-bottom: 1px solid #27313b; padding: 10px 8px; text-align: left; vertical-align: top; }
+  .slot-table th { color: #7d8b9c; font-size: 12px; font-weight: 700; text-transform: uppercase; }
+  .slot-table tr:last-child td { border-bottom: 0; }
+  .slot-summary { align-items: center; display: flex; flex-wrap: wrap; gap: 6px; min-width: 190px; }
+  .slot-title { color: #ffffff; font-weight: 700; white-space: nowrap; }
+  .mode { color: #78d8a6; font-weight: 700; text-transform: uppercase; }
+  .mode.human { color: #ffd166; }
+  .muted { color: #6f7d8b; }
+  .url-row { align-items: center; display: grid; gap: 6px; grid-template-columns: minmax(240px, 1fr) auto auto; }
+  .url-row input { color: #bdc7d4; min-width: 0; width: 100%; }
+  .client-list { display: grid; gap: 6px; min-width: 220px; }
+  .client-row { align-items: center; display: grid; gap: 6px; grid-template-columns: 1fr auto auto; }
+  code { color: #d8dee9; }
+  .badge { border: 1px solid #425064; border-radius: 4px; color: #9fb0c3; font-size: 12px; padding: 3px 6px; }
+  .badge.controller { border-color: #8f6b1f; color: #ffd166; }
+  details summary { color: #9fb0c3; cursor: pointer; }
+  pre { color: #b7c4d3; margin: 10px 0 0; max-height: 360px; overflow: auto; white-space: pre-wrap; }
+  @media (max-width: 760px) {
+    main { padding: 10px; }
+    .slot-table, .slot-table tbody, .slot-table tr, .slot-table td { display: block; width: 100%; }
+    .slot-table thead { display: none; }
+    .slot-table tr { border-bottom: 1px solid #27313b; padding: 8px 0; }
+    .slot-table td { border-bottom: 0; padding: 6px 0; }
+    .url-row { grid-template-columns: 1fr auto; }
+    .url-row a { grid-column: 1 / -1; }
+  }
+</style>
+<main>
+  <header>
+    <h1>Cogs vs Clips Admin</h1>
+    <div id="status">Connecting</div>
+  </header>
+  <section class="panel controls" aria-label="Episode controls">
+    <button id="pause" type="button">Pause</button>
+    <button id="resume" type="button">Resume</button>
+    <label>
+      Step seconds
+      <input id="stepSeconds" min="0.01" step="0.01" type="number" value="0.05" />
+    </label>
+    <button id="applySpeed" type="button">Apply</button>
+    <label>
+      Tick mode
+      <select id="tickMode">
+        <option value="fixed">Fixed</option>
+        <option value="tick_when_act">Tick when act</option>
+      </select>
+    </label>
+    <button id="applyTickMode" type="button">Apply</button>
+    <label>
+      Human timeout
+      <input id="humanTimeout" min="0.01" step="0.1" type="number" value="5" />
+    </label>
+    <button id="applyHumanTimeout" type="button">Apply</button>
+  </section>
+  <section class="panel" aria-label="Player slots">
+    <table class="slot-table">
+      <thead>
+        <tr>
+          <th>Slot</th>
+          <th>Takeover URL</th>
+          <th>Connected clients</th>
+        </tr>
+      </thead>
+      <tbody id="slots"></tbody>
+    </table>
+  </section>
+  <details class="panel">
+    <summary>Latest state</summary>
+    <pre id="latest"></pre>
+  </details>
+</main>
+<script>
+  const status = document.getElementById("status");
+  const latest = document.getElementById("latest");
+  const stepSeconds = document.getElementById("stepSeconds");
+  const tickMode = document.getElementById("tickMode");
+  const humanTimeout = document.getElementById("humanTimeout");
+  const slots = document.getElementById("slots");
+  const url = new URL(window.location.href);
+
+  function defaultAddress(path) {
+    const protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
+    const host = window.location.host || "localhost:8080";
+    return `${protocol}//${host}${path}`;
+  }
+
+  function websocketAddress(path) {
+    const target = new URL(url.searchParams.get("address") || defaultAddress(path), window.location.href);
+    if (target.protocol === "http:") target.protocol = "ws:";
+    if (target.protocol === "https:") target.protocol = "wss:";
+    target.pathname = path;
+    target.search = "";
+    target.hash = "";
+    return target;
+  }
+
+  function httpAddress(path) {
+    const target = websocketAddress(path);
+    if (target.protocol === "ws:") target.protocol = "http:";
+    if (target.protocol === "wss:") target.protocol = "https:";
+    return target;
+  }
+
+  const adminAddress = websocketAddress("/admin");
+  const socket = new WebSocket(adminAddress);
+
+  function send(command) {
+    if (socket.readyState !== WebSocket.OPEN) return;
+    socket.send(JSON.stringify(command));
+  }
+
+  function takeoverUrl(slot) {
+    return new URL(slot.takeover_url, httpAddress("/player")).toString();
+  }
+
+  function copyInput(input) {
+    input.focus();
+    input.select();
+    if (navigator.clipboard) {
+      navigator.clipboard.writeText(input.value);
+      return;
+    }
+    document.execCommand("copy");
+  }
+
+  function syncControlValue(control, value) {
+    if (document.activeElement === control) return;
+    const nextValue = String(value);
+    if (control.value !== nextValue) control.value = nextValue;
+  }
+
+  function drawSlots(message) {
+    slots.replaceChildren(...(message.slots || []).map((slot) => {
+      const row = document.createElement("tr");
+      const controlState = slot.control_state || {};
+      const controllerId = controlState.human_controller_connection_id;
+
+      const slotCell = document.createElement("td");
+      const slotSummary = document.createElement("div");
+      slotSummary.className = "slot-summary";
+      const slotTitle = document.createElement("span");
+      slotTitle.className = "slot-title";
+      slotTitle.textContent = `Slot ${slot.slot + 1}`;
+      const mode = document.createElement("span");
+      mode.className = `mode ${controlState.control_mode === "human" ? "human" : ""}`;
+      mode.textContent = controlState.control_mode || "policy";
+      const controller = document.createElement("span");
+      controller.className = "muted";
+      controller.textContent = controllerId ? `controller ${controllerId}` : "policy actions";
+      slotSummary.append(slotTitle, mode, controller);
+      slotCell.append(slotSummary);
+
+      const urlCell = document.createElement("td");
+      const link = takeoverUrl(slot);
+      const urlRow = document.createElement("div");
+      urlRow.className = "url-row";
+      const input = document.createElement("input");
+      input.readOnly = true;
+      input.value = link;
+      const copy = document.createElement("button");
+      copy.type = "button";
+      copy.textContent = "Copy";
+      copy.onclick = () => copyInput(input);
+      const open = document.createElement("a");
+      open.href = link;
+      open.target = "_blank";
+      open.rel = "noopener noreferrer";
+      open.textContent = "Open";
+      urlRow.append(input, copy, open);
+      urlCell.append(urlRow);
+
+      const clientsCell = document.createElement("td");
+      const clients = document.createElement("div");
+      clients.className = "client-list";
+      for (const connection of slot.connections || []) {
+        const clientRow = document.createElement("div");
+        clientRow.className = "client-row";
+        const id = document.createElement("code");
+        id.textContent = connection.connection_id;
+        const badge = document.createElement("span");
+        badge.className = connection.connection_id === controllerId ? "badge controller" : "badge";
+        badge.textContent = connection.connection_id === controllerId ? "controller" : "connected";
+        const boot = document.createElement("button");
+        boot.className = "danger";
+        boot.type = "button";
+        boot.title = `Boot ${connection.connection_id}`;
+        boot.textContent = "X";
+        boot.onclick = () => send({ command: "boot_connection", connection_id: connection.connection_id });
+        clientRow.append(id, badge, boot);
+        clients.append(clientRow);
+      }
+      if (!clients.childElementCount) {
+        const empty = document.createElement("span");
+        empty.className = "muted";
+        empty.textContent = "none";
+        clients.append(empty);
+      }
+      clientsCell.append(clients);
+
+      row.append(slotCell, urlCell, clientsCell);
+      return row;
+    }));
+  }
+
+  socket.onopen = () => { status.textContent = `Connected to ${adminAddress.host}`; };
+  socket.onmessage = (event) => {
+    const message = JSON.parse(event.data);
+    latest.textContent = JSON.stringify(message, null, 2);
+    status.textContent = message.paused ? "Paused" : `Step ${message.step}`;
+    syncControlValue(stepSeconds, message.step_seconds);
+    syncControlValue(tickMode, message.tick_mode);
+    syncControlValue(humanTimeout, message.human_action_timeout_seconds);
+    drawSlots(message);
+  };
+  socket.onclose = () => { status.textContent = "Disconnected"; };
+
+  document.getElementById("pause").onclick = () => send({ command: "pause" });
+  document.getElementById("resume").onclick = () => send({ command: "resume" });
+  document.getElementById("applySpeed").onclick = () => {
+    send({ command: "step_seconds", step_seconds: Number(stepSeconds.value) });
+  };
+  document.getElementById("applyTickMode").onclick = () => {
+    send({ command: "tick_mode", tick_mode: tickMode.value });
+  };
+  tickMode.onchange = () => {
+    send({ command: "tick_mode", tick_mode: tickMode.value });
+  };
+  document.getElementById("applyHumanTimeout").onclick = () => {
+    send({ command: "human_action_timeout_seconds", human_action_timeout_seconds: Number(humanTimeout.value) });
+  };
+</script>

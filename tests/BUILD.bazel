@@ -1,0 +1,40 @@
+load("//tools:pytest.bzl", "pytest_test")
+
+_TEST_FILES = glob(
+    ["test_*.py"],
+    allow_empty = False,
+)
+
+_SHARED_SRCS = glob(
+    ["__init__.py"],
+    allow_empty = True,
+)
+
+[
+    pytest_test(
+        name = test_file.removesuffix(".py"),
+        srcs = [test_file] + _SHARED_SRCS,
+        args = [
+            "--rootdir=packages/coworld/tests",
+            "--confcutdir=packages/coworld/tests",
+            "--import-mode=importlib",
+            "-p",
+            "no:importnb",
+            "-o",
+            "addopts=",
+            "-o",
+            "pythonpath=",
+        ],
+        tags = [
+            "no-sandbox",
+            "requires-network",
+        ],
+        deps = [
+            "//packages/coworld:coworld",
+            "@pyenv//:pytest",
+            "@pyenv//:pytest_httpserver",
+            "@pyenv//:torch",
+        ],
+    )
+    for test_file in _TEST_FILES
+]

@@ -1,0 +1,324 @@
+<!doctype html>
+<title>Coworld Paint Arena Replay Client</title>
+<style>
+  body {
+    background: radial-gradient(circle at top left, #ffffff 0, #eef2f7 420px);
+    color: #172033;
+    font-family: Inter, ui-sans-serif, system-ui, sans-serif;
+    margin: 0;
+    min-height: 100vh;
+    padding: 28px;
+  }
+  * {
+    box-sizing: border-box;
+  }
+  main {
+    display: grid;
+    gap: 18px;
+    grid-template-columns: minmax(280px, 720px) minmax(240px, 360px);
+  }
+  h1 {
+    font-size: clamp(28px, 4vw, 44px);
+    line-height: 1;
+    margin: 0 0 6px;
+  }
+  .eyebrow {
+    color: #637089;
+    font-size: 12px;
+    font-weight: 800;
+    letter-spacing: .08em;
+    text-transform: uppercase;
+  }
+  .panel {
+    background: color-mix(in srgb, #ffffff 92%, transparent);
+    border: 1px solid rgba(126, 140, 162, .35);
+    border-radius: 8px;
+    box-shadow: 0 18px 50px rgba(23, 32, 51, .12);
+    padding: 18px;
+  }
+  #status {
+    background: #172033;
+    border-radius: 999px;
+    color: white;
+    display: inline-flex;
+    font-size: 13px;
+    font-weight: 800;
+    margin-top: 8px;
+    padding: 7px 12px;
+  }
+  .hud {
+    display: grid;
+    gap: 10px;
+    margin-top: 10px;
+  }
+  #scores {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+  }
+  .score {
+    align-items: center;
+    background: white;
+    border: 1px solid #cdd6e4;
+    border-radius: 999px;
+    display: inline-flex;
+    font-size: 13px;
+    font-weight: 900;
+    gap: 7px;
+    padding: 6px 10px;
+  }
+  .score::before {
+    background: var(--color);
+    border-radius: 999px;
+    content: "";
+    height: 10px;
+    width: 10px;
+  }
+  #timer {
+    background: #d8e0ec;
+    border-radius: 999px;
+    height: 10px;
+    overflow: hidden;
+    width: 100%;
+  }
+  #timerFill {
+    background: #172033;
+    border-radius: inherit;
+    height: 100%;
+    transition: width 120ms linear;
+    width: 100%;
+  }
+  #arena {
+    background: #d8e0ec;
+    border: 1px solid #b8c4d8;
+    border-radius: 8px;
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, .8), 0 18px 50px rgba(23, 32, 51, .12);
+    display: grid;
+    gap: 3px;
+    margin-top: 16px;
+    overflow: hidden;
+    padding: 6px;
+    width: 100%;
+  }
+  .cell {
+    aspect-ratio: 1;
+    background: #f8fafc;
+    border-radius: 5px;
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, .85);
+    position: relative;
+  }
+  .owned-0 {
+    background: #93c5fd;
+  }
+  .owned-1 {
+    background: #fca5a5;
+  }
+  .owned-2 {
+    background: #86efac;
+  }
+  .owned-3 {
+    background: #c4b5fd;
+  }
+  .agent {
+    color: white;
+    display: grid;
+    font-size: 13px;
+    font-weight: 900;
+    place-items: center;
+    text-shadow: 0 1px 1px rgba(0, 0, 0, .3);
+  }
+  .agent::after {
+    content: attr(data-heading);
+    font-size: clamp(20px, 3.4vw, 42px);
+    line-height: 1;
+  }
+  .agent-0 {
+    background: linear-gradient(145deg, #60a5fa, #2563eb);
+  }
+  .agent-1 {
+    background: linear-gradient(145deg, #fb7185, #dc2626);
+  }
+  .agent-2 {
+    background: linear-gradient(145deg, #34d399, #059669);
+  }
+  .agent-3 {
+    background: linear-gradient(145deg, #a78bfa, #7c3aed);
+  }
+  .controls {
+    display: grid;
+    gap: 12px;
+    margin-top: 14px;
+  }
+  .buttons {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+  }
+  button {
+    background: linear-gradient(#ffffff, #eef3fa);
+    border: 1px solid #9aa8bd;
+    border-radius: 8px;
+    color: #172033;
+    cursor: pointer;
+    font-weight: 800;
+    padding: 8px 12px;
+  }
+  button:hover {
+    border-color: #64748b;
+    transform: translateY(-1px);
+  }
+  input {
+    accent-color: #2563eb;
+    width: 100%;
+  }
+  @media (max-width: 860px) {
+    body {
+      padding: 18px;
+    }
+    main {
+      grid-template-columns: 1fr;
+    }
+  }
+</style>
+<main>
+  <section>
+    <div class="eyebrow">Replay viewer</div>
+    <h1>Paint Arena</h1>
+    <div id="status">Connecting</div>
+    <div class="hud">
+      <div id="scores"></div>
+      <div id="timer"><div id="timerFill"></div></div>
+    </div>
+    <div id="arena"></div>
+  </section>
+  <aside class="panel">
+    <div class="eyebrow">Playback</div>
+    <div class="controls">
+      <div class="buttons">
+        <button id="play" type="button">Play</button>
+        <button id="pause" type="button">Pause</button>
+        <button id="slower" type="button">Slower</button>
+        <button id="faster" type="button">Faster</button>
+      </div>
+      <input id="scrubber" min="0" type="range" value="0" />
+    </div>
+  </aside>
+</main>
+<script type="module">
+  const websocketUrl = new URL(window.location.href);
+  websocketUrl.protocol = websocketUrl.protocol === "https:" ? "wss:" : "ws:";
+
+  const arena = document.getElementById("arena");
+  const status = document.getElementById("status");
+  const scores = document.getElementById("scores");
+  const timerFill = document.getElementById("timerFill");
+  const play = document.getElementById("play");
+  const pause = document.getElementById("pause");
+  const slower = document.getElementById("slower");
+  const faster = document.getElementById("faster");
+  const scrubber = document.getElementById("scrubber");
+  const colors = ["#2563eb", "#dc2626", "#059669", "#7c3aed"];
+  const headingSymbols = { up: "↑", down: "↓", left: "←", right: "→", stay: "•" };
+  let frames = [];
+  let results = {};
+  let frameIndex = 0;
+  let speed = 1;
+  let timer = null;
+
+  function draw(message) {
+    arena.style.gridTemplateColumns = `repeat(${message.width}, 1fr)`;
+    const agents = new Map(message.positions.map((position, slot) => [`${position[0]},${position[1]}`, slot]));
+    const previous = frames[Math.max(frameIndex - 1, 0)] || message;
+    const cells = [];
+    for (let y = 0; y < message.height; y += 1) {
+      for (let x = 0; x < message.width; x += 1) {
+        const key = `${x},${y}`;
+        const owner = message.tile_owners[y * message.width + x];
+        const cell = document.createElement("div");
+        cell.className = "cell";
+        if (owner >= 0) cell.classList.add(`owned-${owner}`);
+        if (agents.has(key)) {
+          const slot = agents.get(key);
+          cell.className = `cell agent owned-${slot} agent-${slot}`;
+          cell.dataset.heading = headingFor(previous.positions[slot], message.positions[slot]);
+        }
+        cells.push(cell);
+      }
+    }
+    arena.replaceChildren(...cells);
+    scrubber.value = frameIndex;
+    timerFill.style.width = `${Math.max(100 - (message.tick / message.max_ticks) * 100, 0)}%`;
+    scores.replaceChildren(...message.scores.map((score, slot) => {
+      const scoreEl = document.createElement("div");
+      scoreEl.className = "score";
+      scoreEl.style.setProperty("--color", colors[slot]);
+      scoreEl.textContent = `${message.player_names[slot]}: ${score}`;
+      return scoreEl;
+    }));
+    status.textContent = `Frame ${frameIndex + 1}/${frames.length} · tick ${message.tick}/${message.max_ticks} · ${speed}x`;
+  }
+
+  function headingFor(previous, current) {
+    const dx = current[0] - previous[0];
+    const dy = current[1] - previous[1];
+    if (dx > 0) return headingSymbols.right;
+    if (dx < 0) return headingSymbols.left;
+    if (dy > 0) return headingSymbols.down;
+    if (dy < 0) return headingSymbols.up;
+    return headingSymbols.stay;
+  }
+
+  function showFrame(index) {
+    frameIndex = Math.min(Math.max(index, 0), frames.length - 1);
+    draw(frames[frameIndex]);
+  }
+
+  function stop() {
+    clearInterval(timer);
+    timer = null;
+  }
+
+  function start() {
+    stop();
+    timer = setInterval(() => {
+      if (frameIndex >= frames.length - 1) {
+        stop();
+      } else {
+        showFrame(frameIndex + 1);
+      }
+    }, 200 / speed);
+  }
+
+  const socket = new WebSocket(websocketUrl);
+  socket.onopen = () => {
+    status.textContent = "Connected";
+  };
+  socket.onmessage = (event) => {
+    const message = JSON.parse(event.data);
+    if (message.type !== "replay") return;
+    frames = message.frames.map(frame => ({ ...frame, player_names: message.player_names }));
+    results = message.results;
+    scrubber.max = Math.max(frames.length - 1, 0);
+    if (frames.length > 0) showFrame(0);
+  };
+  socket.onclose = () => {
+    if (frames.length === 0) status.textContent = "Disconnected";
+  };
+
+  play.onclick = () => start();
+  pause.onclick = () => stop();
+  slower.onclick = () => {
+    speed = Math.max(speed / 2, 0.25);
+    if (timer) start();
+    if (frames.length > 0) draw(frames[frameIndex]);
+  };
+  faster.onclick = () => {
+    speed = Math.min(speed * 2, 8);
+    if (timer) start();
+    if (frames.length > 0) draw(frames[frameIndex]);
+  };
+  scrubber.oninput = () => {
+    stop();
+    showFrame(Number(scrubber.value));
+  };
+</script>

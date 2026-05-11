@@ -1,0 +1,364 @@
+{
+  "$defs": {
+    "CoworldCertificationFixture": {
+      "additionalProperties": false,
+      "properties": {
+        "game_config": {
+          "additionalProperties": true,
+          "title": "Game Config",
+          "type": "object"
+        },
+        "players": {
+          "items": {
+            "$ref": "#/$defs/CoworldCertificationPlayer"
+          },
+          "minItems": 1,
+          "title": "Players",
+          "type": "array"
+        }
+      },
+      "required": ["game_config", "players"],
+      "title": "CoworldCertificationFixture",
+      "type": "object"
+    },
+    "CoworldCertificationPlayer": {
+      "additionalProperties": false,
+      "properties": {
+        "player_id": {
+          "minLength": 1,
+          "title": "Player Id",
+          "type": "string"
+        }
+      },
+      "required": ["player_id"],
+      "title": "CoworldCertificationPlayer",
+      "type": "object"
+    },
+    "CoworldDeclaredRoleSpec": {
+      "properties": {
+        "image": {
+          "title": "Image",
+          "type": "string"
+        },
+        "run": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Run",
+          "type": "array"
+        },
+        "env": {
+          "additionalProperties": {
+            "type": "string"
+          },
+          "title": "Env",
+          "type": "object"
+        },
+        "id": {
+          "minLength": 1,
+          "title": "Id",
+          "type": "string"
+        },
+        "name": {
+          "minLength": 1,
+          "title": "Name",
+          "type": "string"
+        },
+        "description": {
+          "minLength": 1,
+          "title": "Description",
+          "type": "string"
+        },
+        "type": {
+          "enum": ["player", "grader", "reporter", "commissioner", "diagnoser", "optimizer"],
+          "title": "Type",
+          "type": "string"
+        }
+      },
+      "required": ["image", "id", "name", "description", "type"],
+      "title": "CoworldDeclaredRoleSpec",
+      "type": "object"
+    },
+    "CoworldDocPage": {
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "minLength": 1,
+          "title": "Id",
+          "type": "string"
+        },
+        "title": {
+          "minLength": 1,
+          "title": "Title",
+          "type": "string"
+        },
+        "content": {
+          "minLength": 1,
+          "title": "Content",
+          "type": "string"
+        }
+      },
+      "required": ["id", "title", "content"],
+      "title": "CoworldDocPage",
+      "type": "object"
+    },
+    "CoworldDocs": {
+      "additionalProperties": false,
+      "properties": {
+        "readme": {
+          "anyOf": [
+            {
+              "minLength": 1,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Readme"
+        },
+        "pages": {
+          "items": {
+            "$ref": "#/$defs/CoworldDocPage"
+          },
+          "title": "Pages",
+          "type": "array"
+        }
+      },
+      "title": "CoworldDocs",
+      "type": "object"
+    },
+    "CoworldGameManifest": {
+      "additionalProperties": false,
+      "properties": {
+        "name": {
+          "minLength": 1,
+          "title": "Name",
+          "type": "string"
+        },
+        "version": {
+          "minLength": 1,
+          "title": "Version",
+          "type": "string"
+        },
+        "description": {
+          "minLength": 1,
+          "title": "Description",
+          "type": "string"
+        },
+        "owner": {
+          "minLength": 1,
+          "title": "Owner",
+          "type": "string"
+        },
+        "config_schema": {
+          "additionalProperties": true,
+          "title": "Config Schema",
+          "type": "object"
+        },
+        "results_schema": {
+          "additionalProperties": true,
+          "title": "Results Schema",
+          "type": "object"
+        },
+        "runnable": {
+          "$ref": "#/$defs/CoworldGameRunnableSpec"
+        },
+        "protocols": {
+          "$ref": "#/$defs/CoworldProtocolDocs"
+        },
+        "docs": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/CoworldDocs"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        }
+      },
+      "required": [
+        "name",
+        "version",
+        "description",
+        "owner",
+        "config_schema",
+        "results_schema",
+        "runnable",
+        "protocols"
+      ],
+      "title": "CoworldGameManifest",
+      "type": "object"
+    },
+    "CoworldGameRunnableSpec": {
+      "properties": {
+        "image": {
+          "title": "Image",
+          "type": "string"
+        },
+        "run": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Run",
+          "type": "array"
+        },
+        "env": {
+          "additionalProperties": {
+            "type": "string"
+          },
+          "title": "Env",
+          "type": "object"
+        },
+        "type": {
+          "const": "game",
+          "default": "game",
+          "title": "Type",
+          "type": "string"
+        }
+      },
+      "required": ["image"],
+      "title": "CoworldGameRunnableSpec",
+      "type": "object"
+    },
+    "CoworldProtocolDocs": {
+      "additionalProperties": false,
+      "properties": {
+        "player": {
+          "minLength": 1,
+          "title": "Player",
+          "type": "string"
+        },
+        "global": {
+          "minLength": 1,
+          "title": "Global",
+          "type": "string"
+        }
+      },
+      "required": ["player", "global"],
+      "title": "CoworldProtocolDocs",
+      "type": "object"
+    },
+    "CoworldVariant": {
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "minLength": 1,
+          "title": "Id",
+          "type": "string"
+        },
+        "name": {
+          "minLength": 1,
+          "title": "Name",
+          "type": "string"
+        },
+        "game_config": {
+          "additionalProperties": true,
+          "title": "Game Config",
+          "type": "object"
+        },
+        "parent_id": {
+          "anyOf": [
+            {
+              "minLength": 1,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Parent Id"
+        },
+        "description": {
+          "minLength": 1,
+          "title": "Description",
+          "type": "string"
+        }
+      },
+      "required": ["id", "name", "game_config", "description"],
+      "title": "CoworldVariant",
+      "type": "object"
+    }
+  },
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "description": "Schema for a complete game world in the Softmax universe.",
+  "properties": {
+    "$schema": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "$Schema"
+    },
+    "game": {
+      "$ref": "#/$defs/CoworldGameManifest"
+    },
+    "player": {
+      "items": {
+        "$ref": "#/$defs/CoworldDeclaredRoleSpec"
+      },
+      "minItems": 1,
+      "title": "Player",
+      "type": "array"
+    },
+    "grader": {
+      "items": {
+        "$ref": "#/$defs/CoworldDeclaredRoleSpec"
+      },
+      "title": "Grader",
+      "type": "array"
+    },
+    "reporter": {
+      "items": {
+        "$ref": "#/$defs/CoworldDeclaredRoleSpec"
+      },
+      "title": "Reporter",
+      "type": "array"
+    },
+    "commissioner": {
+      "items": {
+        "$ref": "#/$defs/CoworldDeclaredRoleSpec"
+      },
+      "title": "Commissioner",
+      "type": "array"
+    },
+    "diagnoser": {
+      "items": {
+        "$ref": "#/$defs/CoworldDeclaredRoleSpec"
+      },
+      "title": "Diagnoser",
+      "type": "array"
+    },
+    "optimizer": {
+      "items": {
+        "$ref": "#/$defs/CoworldDeclaredRoleSpec"
+      },
+      "title": "Optimizer",
+      "type": "array"
+    },
+    "variants": {
+      "items": {
+        "$ref": "#/$defs/CoworldVariant"
+      },
+      "minItems": 1,
+      "title": "Variants",
+      "type": "array"
+    },
+    "certification": {
+      "$ref": "#/$defs/CoworldCertificationFixture"
+    }
+  },
+  "required": ["game", "player", "variants", "certification"],
+  "title": "Coworld Manifest",
+  "type": "object"
+}

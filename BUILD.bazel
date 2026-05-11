@@ -1,0 +1,43 @@
+load("@rules_python//python:defs.bzl", "py_binary", "py_library")
+
+py_library(
+    name = "coworld",
+    srcs = glob(["src/coworld/**/*.py"]),
+    data = glob(
+        [
+            "src/coworld/*.json",
+            "src/coworld/*.md",
+            "src/coworld/examples/**/*",
+            "src/coworld/py.typed",
+            "src/coworld/runner/*.md",
+        ],
+        allow_empty = True,
+    ),
+    imports = ["src"],
+    visibility = ["//visibility:public"],
+    deps = [
+        "//packages/softmax-cli:softmax",
+        "@pyenv//:cogsguard",
+        "@pyenv//:fastapi",
+        "@pyenv//:httpx",
+        "@pyenv//:jsonschema",
+        "@pyenv//:kubernetes",
+        "@pyenv//:mettagrid",
+        "@pyenv//:numpy",
+        "@pyenv//:pydantic",
+        "@pyenv//:referencing",
+        "@pyenv//:rich",
+        "@pyenv//:typer",
+        "@pyenv//:uvicorn",
+        "@pyenv//:websockets",
+    ],
+)
+
+py_binary(
+    name = "coworld_bin",
+    srcs = ["src/coworld/cli.py"],
+    main = "src/coworld/cli.py",
+    imports = ["src"],
+    visibility = ["//visibility:public"],
+    deps = [":coworld"],
+)
