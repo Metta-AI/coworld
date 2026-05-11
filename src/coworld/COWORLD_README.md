@@ -187,7 +187,7 @@ uv run coworld images
 uv run coworld images img_...
 ```
 
-The command validates the manifest, runs certification, uploads every runnable image through the platform's
+The Coworld upload command validates the manifest, runs certification, uploads every runnable image through the platform's
 `/v2/container_images/upload` flow, rewrites runnable image references to returned Softmax digest image URIs, and uploads
 the resulting standalone JSON manifest through `/v2/coworlds/upload`. Protocol documentation objects remain unchanged in
 the uploaded manifest.
