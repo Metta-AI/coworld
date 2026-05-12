@@ -87,6 +87,37 @@ def test_load_coworld_package_allows_explicit_text_protocol_docs(tmp_path: Path)
     assert package.protocols.player.value.startswith("# Player Protocol")
 
 
+def test_load_coworld_package_allows_named_game_docs(tmp_path: Path) -> None:
+    coworld_manifest_path = _write_package_files(tmp_path)
+    manifest = json.loads(coworld_manifest_path.read_text())
+    manifest["game"]["docs"] = {
+        "readme": {"type": "uri", "value": "https://example.com/README.md"},
+        "pages": [
+            {
+                "id": "play",
+                "title": "play.md",
+                "content": {"type": "uri", "value": "https://example.com/play.md"},
+            },
+            {
+                "id": "diagnoser",
+                "title": "diagnoser.md",
+                "content": {"type": "text", "value": "# Diagnoser\n\nRun diagnostic episodes."},
+            },
+        ],
+    }
+    coworld_manifest_path.write_text(json.dumps(manifest))
+
+    package = load_coworld_package(coworld_manifest_path)
+
+    assert package.manifest.game.docs is not None
+    assert package.manifest.game.docs.readme is not None
+    assert package.manifest.game.docs.readme.value == "https://example.com/README.md"
+    assert package.manifest.game.docs.pages[0].title == "play.md"
+    assert package.manifest.game.docs.pages[0].content.value == "https://example.com/play.md"
+    assert package.manifest.game.docs.pages[1].title == "diagnoser.md"
+    assert package.manifest.game.docs.pages[1].content.value.startswith("# Diagnoser")
+
+
 def test_load_coworld_package_rejects_invalid_certification_player_entry(tmp_path: Path) -> None:
     coworld_manifest_path = _write_package_files(
         tmp_path,

@@ -42,6 +42,23 @@ For a complete small implementation, see [examples/paintarena/](examples/paintar
 Use `type: "uri"` for absolute HTTP(S) links, or `type: "text"` for deliberately inline documentation text. Upload does
 not infer local file paths or inline local protocol documentation into the stored manifest.
 
+### Named Documentation
+
+`game.docs.pages` is an ordered list of named Markdown documents for the Coworld page to render:
+
+```json
+{
+  "id": "play",
+  "title": "play.md",
+  "content": { "type": "uri", "value": "https://example.com/play.md" }
+}
+```
+
+Use `content.type: "uri"` for hosted Markdown files, or `content.type: "text"` for deliberately inline Markdown.
+Recommended page titles for viable Coworlds are `play.md`, `player.md`, `grader.md`, `reporter.md`,
+`commissioner.md`, `diagnoser.md`, `optimizer.md`, and `variants.md`. These names are convention, not schema-enforced
+fields; use the page title to name the document users should read.
+
 ### Cogame
 
 A Cogame is the game service declared by the inline `game` object in `coworld_manifest.json`. It defines the container
