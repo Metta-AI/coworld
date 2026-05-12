@@ -47,7 +47,6 @@ class EpisodeRequest(BaseModel):
     request_id: str
     variant_id: str
     policy_version_ids: list[UUID]
-    assignments: list[int]
     seed: int | None = None
     tags: dict[str, str] = Field(default_factory=dict)
 

@@ -66,7 +66,6 @@ def test_commissioner_message_parses_schedule_episodes() -> None:
                     "request_id": "episode-1",
                     "variant_id": "among_them",
                     "policy_version_ids": [str(policy_version_id) for policy_version_id in policy_version_ids],
-                    "assignments": [0, 1],
                     "seed": 42,
                     "tags": {"stage": "round"},
                 }
@@ -80,7 +79,6 @@ def test_commissioner_message_parses_schedule_episodes() -> None:
             request_id="episode-1",
             variant_id="among_them",
             policy_version_ids=policy_version_ids,
-            assignments=[0, 1],
             seed=42,
             tags={"stage": "round"},
         )
