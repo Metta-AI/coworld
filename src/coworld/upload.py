@@ -87,6 +87,27 @@ class LeagueSubmissionResponse(BaseModel):
     notes: str | None = None
 
 
+class HostedGameCreateResponse(BaseModel):
+    session_id: str
+    join_url: str
+    lobby_url: str
+
+
+class HostedGameJoinPlayer(BaseModel):
+    slot: int
+    label: str
+    user_id: str | None = None
+    player_id: str | None = None
+    player_name: str | None = None
+    joined_at: datetime | None = None
+
+
+class HostedGameJoinResponse(BaseModel):
+    player_url: str
+    slot: int
+    player: HostedGameJoinPlayer
+
+
 class PolicyVersionRow(BaseModel):
     id: UUID
     name: str
@@ -191,6 +212,37 @@ class CoworldUploadClient:
         )
         response.raise_for_status()
         return LeagueSubmissionResponse.model_validate(response.json())
+
+    def create_hosted_game(
+        self,
+        *,
+        coworld_id: str,
+        variant_id: str | None = None,
+        player_count: int | None = None,
+        allow_spectators: bool = False,
+    ) -> HostedGameCreateResponse:
+        response = self._http_client.post(
+            "/v2/coworlds/play/session",
+            headers=self._headers(),
+            json={
+                "coworld_id": coworld_id,
+                "variant_id": variant_id,
+                "player_count": player_count,
+                "allow_spectators": allow_spectators,
+            },
+            timeout=120.0,
+        )
+        response.raise_for_status()
+        return HostedGameCreateResponse.model_validate(response.json())
+
+    def join_hosted_game(self, session_id: str) -> HostedGameJoinResponse:
+        response = self._http_client.post(
+            f"/v2/coworlds/play/session/{session_id}/join",
+            headers=self._headers(),
+            timeout=120.0,
+        )
+        response.raise_for_status()
+        return HostedGameJoinResponse.model_validate(response.json())
 
     def list_images(self, *, limit: int = 200, offset: int = 0) -> list[ContainerImageResponse]:
         response = self._http_client.get(

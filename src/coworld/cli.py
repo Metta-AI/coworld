@@ -28,6 +28,8 @@ from coworld.upload import (
 
 app = typer.Typer(no_args_is_help=True, pretty_exceptions_enable=False)
 register_tournament_commands(app)
+hosted_game_app = typer.Typer(no_args_is_help=True, help="Create and join hosted Coworld games.")
+app.add_typer(hosted_game_app, name="hosted-game")
 
 
 def _parse_secret_env(value: str) -> tuple[str, str]:
@@ -248,6 +250,46 @@ def replay(
                 on_ready=_print_replay_session,
             )
     typer.echo(f"Logs: {session.artifacts.logs_dir}")
+
+
+@hosted_game_app.command("create")
+def hosted_game_create(
+    coworld_id: Annotated[str, typer.Argument(help="Uploaded Coworld ID to host.")],
+    server: Annotated[str, typer.Option("--server", help="Observatory API server URL.")] = DEFAULT_SUBMIT_SERVER,
+    variant_id: Annotated[str | None, typer.Option("--variant", help="Coworld variant ID.")] = None,
+    player_count: Annotated[int | None, typer.Option("--players", min=1, help="Number of player slots.")] = None,
+    allow_spectators: Annotated[bool, typer.Option("--spectators/--no-spectators")] = True,
+    json_output: Annotated[bool, typer.Option("--json", help="Print raw JSON.")] = False,
+) -> None:
+    with CoworldUploadClient.from_login(server_url=server) as client:
+        session = client.create_hosted_game(
+            coworld_id=coworld_id,
+            variant_id=variant_id,
+            player_count=player_count,
+            allow_spectators=allow_spectators,
+        )
+    if json_output:
+        emit_json(session.model_dump(mode="json"))
+        return
+    typer.echo(f"Hosted game: {session.session_id}")
+    typer.echo(f"Lobby: {session.lobby_url}")
+    typer.echo(f"Join: {session.join_url}")
+
+
+@hosted_game_app.command("join")
+def hosted_game_join(
+    session_id: Annotated[str, typer.Argument(help="Hosted play session ID.")],
+    server: Annotated[str, typer.Option("--server", help="Observatory API server URL.")] = DEFAULT_SUBMIT_SERVER,
+    json_output: Annotated[bool, typer.Option("--json", help="Print raw JSON.")] = False,
+) -> None:
+    with CoworldUploadClient.from_login(server_url=server) as client:
+        join = client.join_hosted_game(session_id)
+    if json_output:
+        emit_json(join.model_dump(mode="json"))
+        return
+    typer.echo(f"Slot: {join.slot}")
+    typer.echo(f"Player: {join.player.label}")
+    typer.echo(f"URL: {join.player_url}")
 
 
 def _print_play_session(session: PlaySession) -> None:

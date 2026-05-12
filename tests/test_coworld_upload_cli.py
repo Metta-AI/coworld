@@ -351,6 +351,79 @@ def test_coworld_list_command_prints_json(httpserver: HTTPServer, monkeypatch: p
     assert json.loads(result.output)[0]["id"] == "cow_00000000-0000-0000-0000-000000000001"
 
 
+def test_hosted_game_create_posts_play_session(httpserver: HTTPServer, monkeypatch: pytest.MonkeyPatch) -> None:
+    coworld_id = "cow_00000000-0000-0000-0000-000000000001"
+    monkeypatch.setattr("coworld.upload._load_current_cogames_token", lambda: "token")
+    httpserver.expect_request(
+        "/v2/coworlds/play/session",
+        method="POST",
+        headers={"X-Auth-Token": "token"},
+        json={
+            "coworld_id": coworld_id,
+            "variant_id": "default",
+            "player_count": 3,
+            "allow_spectators": True,
+        },
+    ).respond_with_json(
+        {
+            "session_id": "ps_00000000-0000-0000-0000-000000000011",
+            "join_url": "/observatory/v2/coworld-play/ps_00000000-0000-0000-0000-000000000011/join",
+            "lobby_url": "/observatory/v2/coworld-play/ps_00000000-0000-0000-0000-000000000011",
+        }
+    )
+
+    result = CliRunner().invoke(
+        app,
+        [
+            "hosted-game",
+            "create",
+            coworld_id,
+            "--variant",
+            "default",
+            "--players",
+            "3",
+            "--server",
+            httpserver.url_for(""),
+        ],
+    )
+
+    assert result.exit_code == 0, result.output
+    assert "Hosted game: ps_00000000-0000-0000-0000-000000000011" in result.output
+    assert "Join:" in result.output
+
+
+def test_hosted_game_join_posts_join_session(httpserver: HTTPServer, monkeypatch: pytest.MonkeyPatch) -> None:
+    session_id = "ps_00000000-0000-0000-0000-000000000011"
+    monkeypatch.setattr("coworld.upload._load_current_cogames_token", lambda: "token")
+    httpserver.expect_request(
+        f"/v2/coworlds/play/session/{session_id}/join",
+        method="POST",
+        headers={"X-Auth-Token": "token"},
+    ).respond_with_json(
+        {
+            "player_url": "https://api.example.com/v2/coworlds/play/session/ps_00000000/proxy/clients/player",
+            "slot": 1,
+            "player": {"slot": 1, "label": "Player 2"},
+        }
+    )
+
+    result = CliRunner().invoke(
+        app,
+        [
+            "hosted-game",
+            "join",
+            session_id,
+            "--server",
+            httpserver.url_for(""),
+        ],
+    )
+
+    assert result.exit_code == 0, result.output
+    assert "Slot: 1" in result.output
+    assert "Player: Player 2" in result.output
+    assert "URL: https://api.example.com" in result.output
+
+
 def test_coworld_show_command_prints_json(httpserver: HTTPServer, monkeypatch: pytest.MonkeyPatch) -> None:
     coworld_id = "cow_00000000-0000-0000-0000-000000000001"
     monkeypatch.setattr("coworld.upload._load_current_cogames_token", lambda: "token")
