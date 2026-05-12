@@ -13,6 +13,7 @@ RUN uv pip install --python /opt/coworld/bin/python \
     "httpx>=0.28.1" \
     "jsonschema>=4.25.1" \
     "kubernetes>=31.0.0" \
+    "packaging>=24.0.0" \
     "pydantic>=2.11.5" \
     "referencing>=0.36.2" \
     "websockets>=15.0.1"
@@ -21,5 +22,7 @@ COPY packages/coworld/src/coworld /workspace/packages/coworld/src/coworld
 
 ENV PATH="/opt/coworld/bin:$PATH"
 ENV PYTHONPATH="/workspace/packages/coworld/src"
+
+RUN python -c "import coworld.runner.kubernetes_runner"
 
 ENTRYPOINT ["python", "-m", "coworld.runner.kubernetes_runner"]
