@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from typing import Annotated, Any, Literal
 
+from packaging.version import Version
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 SCHEMA_VERSION = "https://json-schema.org/draft/2020-12/schema"
@@ -86,6 +87,11 @@ class CoworldGameManifest(BaseModel):
     runnable: CoworldGameRunnableSpec
     protocols: CoworldProtocolDocs
     docs: CoworldDocs | None = None
+
+    @model_validator(mode="after")
+    def validate_version(self) -> "CoworldGameManifest":
+        Version(self.version)
+        return self
 
 
 class CoworldVariant(BaseModel):

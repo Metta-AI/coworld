@@ -317,10 +317,18 @@ def _print_coworld_table(coworlds: list[CoworldListEntry]) -> None:
     table.add_column("ID")
     table.add_column("Name")
     table.add_column("Version")
+    table.add_column("Canonical")
     table.add_column("Size")
     table.add_column("Manifest Hash")
     for coworld in coworlds:
-        table.add_row(coworld.id, coworld.name, coworld.version, f"{coworld.size_bytes} B", coworld.manifest_hash)
+        table.add_row(
+            coworld.id,
+            coworld.name,
+            coworld.version,
+            "yes" if coworld.canonical else "no",
+            f"{coworld.size_bytes} B",
+            coworld.manifest_hash,
+        )
     console.print(table)
 
 
@@ -328,6 +336,7 @@ def _print_coworld_detail(coworld: CoworldListEntry | CoworldUploadResponse) -> 
     console.print(f"[bold]Coworld:[/bold] {coworld.id}")
     console.print(f"Name: {coworld.name}")
     console.print(f"Version: {coworld.version}")
+    console.print(f"Canonical: {'yes' if coworld.canonical else 'no'}")
     console.print(f"Manifest hash: {coworld.manifest_hash}")
     console.print(f"Size: {coworld.size_bytes} bytes")
 

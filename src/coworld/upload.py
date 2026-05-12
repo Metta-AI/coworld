@@ -32,6 +32,7 @@ class CoworldUploadResponse(BaseModel):
     manifest: dict[str, Any]
     manifest_hash: str
     size_bytes: int
+    canonical: bool
 
 
 class PolicyVersionResponse(BaseModel):
@@ -78,6 +79,7 @@ class CoworldListEntry(BaseModel):
     manifest_hash: str
     size_bytes: int
     created_at: datetime
+    canonical: bool
 
 
 class LeagueSubmissionResponse(BaseModel):
@@ -131,6 +133,7 @@ class CoworldUploadResult:
     version: str
     manifest_hash: str
     size_bytes: int
+    canonical: bool
 
 
 class CoworldUploadClient:
@@ -328,6 +331,7 @@ def upload_coworld(
         version=response.version,
         manifest_hash=response.manifest_hash,
         size_bytes=response.size_bytes,
+        canonical=response.canonical,
     )
 
 
@@ -351,6 +355,7 @@ def upload_coworld_cmd(
     typer.echo(f"Coworld: {result.id}")
     typer.echo(f"Manifest hash: {result.manifest_hash}")
     typer.echo(f"Size: {result.size_bytes} bytes")
+    typer.echo(f"Canonical: {'yes' if result.canonical else 'no'}")
 
 
 def upload_policy_cmd(

@@ -98,6 +98,7 @@ def test_upload_coworld_posts_standalone_manifest(
             "manifest": _manifest_with_image(image_id),
             "manifest_hash": "sha256:manifest-hash",
             "size_bytes": 1234,
+            "canonical": True,
         }
     )
 
@@ -110,6 +111,7 @@ def test_upload_coworld_posts_standalone_manifest(
     assert result.version == "0.1.0"
     assert result.id == "cow_00000000-0000-0000-0000-000000000001"
     assert result.manifest_hash == "sha256:manifest-hash"
+    assert result.canonical is True
     assert certification_calls == [(manifest_path.resolve(), 60.0)]
     assert pushed_images == [
         ("unit-test-runtime:latest", "123456789012.dkr.ecr.us-east-1.amazonaws.com/cogames/user/unit-test-runtime:v1"),
@@ -167,6 +169,7 @@ def test_upload_coworld_command_certifies_before_uploading(
             "manifest": _manifest_with_image(image_id),
             "manifest_hash": "sha256:manifest-hash",
             "size_bytes": 1234,
+            "canonical": True,
         }
     )
 
@@ -184,6 +187,7 @@ def test_upload_coworld_command_certifies_before_uploading(
     assert "Upload complete: unit-test-game:0.1.0" in result.output
     assert "Coworld: cow_00000000-0000-0000-0000-000000000002" in result.output
     assert "Manifest hash: sha256:manifest-hash" in result.output
+    assert "Canonical: yes" in result.output
     assert certification_calls == [(manifest_path.resolve(), 60.0)]
 
 
@@ -331,6 +335,7 @@ def test_coworld_list_command_prints_json(httpserver: HTTPServer, monkeypatch: p
                 "manifest_hash": "sha256:manifest-hash",
                 "size_bytes": 1234,
                 "created_at": "2026-05-08T21:00:00Z",
+                "canonical": True,
             }
         ]
     )
@@ -442,6 +447,7 @@ def test_coworld_show_command_prints_json(httpserver: HTTPServer, monkeypatch: p
                 "manifest_hash": "sha256:manifest-hash",
                 "size_bytes": 1234,
                 "created_at": "2026-05-08T21:00:00Z",
+                "canonical": True,
             }
         ]
     )
@@ -481,6 +487,7 @@ def test_coworld_show_command_pages_until_uploaded_world(
                 "manifest_hash": f"sha256:manifest-hash-{i}",
                 "size_bytes": 1234,
                 "created_at": "2026-05-08T21:00:00Z",
+                "canonical": False,
             }
             for i in range(200)
         ]
@@ -500,6 +507,7 @@ def test_coworld_show_command_pages_until_uploaded_world(
                 "manifest_hash": "sha256:manifest-hash",
                 "size_bytes": 1234,
                 "created_at": "2026-05-08T21:00:00Z",
+                "canonical": True,
             }
         ]
     )
@@ -613,6 +621,7 @@ def test_download_coworld_command_writes_local_package(
             "manifest": _manifest_with_image(public_image_uri),
             "manifest_hash": "sha256:manifest-hash",
             "size_bytes": 1234,
+            "canonical": True,
         }
     )
 
