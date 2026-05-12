@@ -25,7 +25,7 @@ CONTAINER_WORKDIR = "/coworld"
 CONFIG_ENV_VAR = "COGAME_CONFIG_URI"
 RESULTS_ENV_VAR = "COGAME_RESULTS_URI"
 REPLAY_SAVE_ENV_VAR = "COGAME_SAVE_REPLAY_URI"
-REPLAY_LOAD_ENV_VAR = "COGAME_LOAD_REPLAY_URI"
+REPLAY_SERVER_ENV_VAR = "COGAME_REPLAY_SERVER"
 
 
 @dataclass(frozen=True)
@@ -162,6 +162,14 @@ def compress_replay(artifacts: EpisodeArtifacts) -> Path:
     return compressed_path
 
 
+def replay_session_path(replay_uri: str) -> str:
+    return f"/replay?{urlencode({'uri': replay_uri})}"
+
+
+def replay_client_url(port: int, replay_uri: str) -> str:
+    return f"http://127.0.0.1:{port}/clients/replay?{urlencode({'uri': replay_uri})}"
+
+
 def run_cogame_episode(spec: EpisodeRunSpec, *, verify_replay: bool = True) -> None:
     port = _free_local_port()
     run_id = secrets.token_hex(8)
@@ -245,6 +253,7 @@ def run_cogame_episode(spec: EpisodeRunSpec, *, verify_replay: bool = True) -> N
                 return
 
             replay_port = _free_local_port()
+            replay_uri = f"file://{CONTAINER_WORKDIR}/replay.json"
             replay_process = subprocess.Popen(
                 [
                     "docker",
@@ -256,7 +265,7 @@ def run_cogame_episode(spec: EpisodeRunSpec, *, verify_replay: bool = True) -> N
                     f"127.0.0.1:{replay_port}:8080",
                     *_env_args(spec.cogame.env),
                     "-e",
-                    f"{REPLAY_LOAD_ENV_VAR}=file://{CONTAINER_WORKDIR}/replay.json",
+                    f"{REPLAY_SERVER_ENV_VAR}=1",
                     "-v",
                     f"{spec.artifacts.workspace.resolve()}:{CONTAINER_WORKDIR}:rw",
                     *_image_command(spec.cogame),
@@ -271,9 +280,12 @@ def run_cogame_episode(spec: EpisodeRunSpec, *, verify_replay: bool = True) -> N
                 spec.artifacts.game_stderr_path,
                 timeout_seconds=spec.timeout_seconds,
             )
-            _require_http_ok(_replay_client_url(replay_port))
+            _require_http_ok(replay_client_url(replay_port, replay_uri))
             asyncio.run(
-                _require_replay_message(f"ws://127.0.0.1:{replay_port}/replay", timeout_seconds=spec.timeout_seconds)
+                _require_replay_message(
+                    f"ws://127.0.0.1:{replay_port}{replay_session_path(replay_uri)}",
+                    timeout_seconds=spec.timeout_seconds,
+                )
             )
     finally:
         for container_name in player_containers:
@@ -288,10 +300,6 @@ def _player_container_ws_url(port: int, slot: int, token: str, player: PlayerLau
 
 def _player_client_url(port: int, slot: int, token: str, player: PlayerLaunchSpec) -> str:
     return f"http://127.0.0.1:{port}/clients/player?{_player_query(slot, token, player)}"
-
-
-def _replay_client_url(port: int) -> str:
-    return f"http://127.0.0.1:{port}/clients/replay"
 
 
 def _player_query(slot: int, token: str, player: PlayerLaunchSpec) -> str:

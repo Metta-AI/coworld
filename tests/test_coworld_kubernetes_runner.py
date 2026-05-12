@@ -1,4 +1,3 @@
-import gzip
 import json
 import os
 from pathlib import Path
@@ -128,18 +127,6 @@ def test_collect_logs_skips_missing_player_pods(tmp_path):
     assert not artifacts.policy_log_path(0).exists()
     assert artifacts.policy_log_path(1).read_text(encoding="utf-8") == "player-running player logs"
     assert core_v1.log_calls == [("game-pod", "game"), ("player-running", "player")]
-
-
-def test_init_replay_from_env_materializes_compressed_replay(monkeypatch, tmp_path):
-    payload = b'{"frames":[{"tick":1}]}'
-    monkeypatch.setenv("COGAME_LOAD_REPLAY_URI", "https://storage.example.com/replay.json.z")
-    monkeypatch.setattr(kubernetes_runner, "WORKDIR", tmp_path)
-    monkeypatch.setattr(kubernetes_runner, "REPLAY_PATH", tmp_path / "replay.json")
-    monkeypatch.setattr(kubernetes_runner, "read_data", lambda _uri: gzip.compress(payload))
-
-    kubernetes_runner.init_replay_from_env()
-
-    assert (tmp_path / "replay.json").read_bytes() == payload
 
 
 def test_new_workspace_does_not_require_repo_depth(monkeypatch, tmp_path):

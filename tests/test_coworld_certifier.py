@@ -25,13 +25,13 @@ from coworld.certifier import (
 from coworld.play import ReplaySession, build_play_links, replay_coworld
 from coworld.runner.runner import (
     CONFIG_ENV_VAR,
-    REPLAY_LOAD_ENV_VAR,
     REPLAY_SAVE_ENV_VAR,
+    REPLAY_SERVER_ENV_VAR,
     RESULTS_ENV_VAR,
     EpisodeArtifacts,
     _image_command,
-    _replay_client_url,
     assert_docker_image_reachable,
+    replay_client_url,
 )
 from coworld.types import CoworldEpisodeJobSpec, CoworldManifest
 
@@ -319,14 +319,14 @@ def test_build_play_links_point_directly_at_engine_client_routes(tmp_path: Path)
 
 
 def test_replay_client_url_points_at_engine_replay_route() -> None:
-    replay_link = urlparse(_replay_client_url(1234))
+    replay_link = urlparse(replay_client_url(1234, "file:///coworld-replay/replay.json"))
 
     assert REPLAY_SAVE_ENV_VAR == "COGAME_SAVE_REPLAY_URI"
-    assert REPLAY_LOAD_ENV_VAR == "COGAME_LOAD_REPLAY_URI"
+    assert REPLAY_SERVER_ENV_VAR == "COGAME_REPLAY_SERVER"
     assert replay_link.scheme == "http"
     assert replay_link.netloc == "127.0.0.1:1234"
     assert replay_link.path == "/clients/replay"
-    assert replay_link.query == ""
+    assert parse_qs(replay_link.query) == {"uri": ["file:///coworld-replay/replay.json"]}
 
 
 def test_replay_coworld_starts_replay_container_and_reports_link(
@@ -358,6 +358,7 @@ def test_replay_coworld_starts_replay_container_and_reports_link(
     monkeypatch.setattr("coworld.play._free_local_port", lambda: 1234)
     monkeypatch.setattr("coworld.play._wait_for_health", noop_wait_for_health)
     monkeypatch.setattr("coworld.play.subprocess.Popen", fake_popen)
+    monkeypatch.setattr("coworld.play.secrets.token_hex", lambda _bytes: "session-1")
     monkeypatch.setattr(
         "coworld.play.subprocess.run",
         lambda cmd, **kwargs: subprocess.CompletedProcess(cmd, 0),
@@ -370,10 +371,10 @@ def test_replay_coworld_starts_replay_container_and_reports_link(
         on_ready=ready_sessions.append,
     )
 
-    assert session.link == "http://127.0.0.1:1234/clients/replay"
+    assert session.link == "http://127.0.0.1:1234/clients/replay?uri=file%3A%2F%2F%2Fcoworld-replay%2Freplay.json"
     assert ready_sessions == [session]
     command = popen_commands[0]
-    assert f"{REPLAY_LOAD_ENV_VAR}=file:///coworld-replay/replay.json" in command
+    assert f"{REPLAY_SERVER_ENV_VAR}=1" in command
     assert f"{tmp_path}:/coworld-replay:ro" in command
     assert _image_command_slice(command) == [
         "--entrypoint",
@@ -423,7 +424,7 @@ def test_paintarena_snapshots_are_independent(tmp_path: Path, monkeypatch: pytes
     monkeypatch.setenv(CONFIG_ENV_VAR, config_path.as_uri())
     monkeypatch.setenv(RESULTS_ENV_VAR, (tmp_path / "results.json").as_uri())
     monkeypatch.setenv(REPLAY_SAVE_ENV_VAR, (tmp_path / "replay.json").as_uri())
-    monkeypatch.delenv(REPLAY_LOAD_ENV_VAR, raising=False)
+    monkeypatch.delenv(REPLAY_SERVER_ENV_VAR, raising=False)
 
     spec = importlib.util.spec_from_file_location("paintarena_server_test", _example_root() / "game" / "server.py")
     assert spec is not None
@@ -470,7 +471,7 @@ def test_paintarena_starts_after_player_connect_timeout(tmp_path: Path, monkeypa
     monkeypatch.setenv(CONFIG_ENV_VAR, config_path.as_uri())
     monkeypatch.setenv(RESULTS_ENV_VAR, results_path.as_uri())
     monkeypatch.setenv(REPLAY_SAVE_ENV_VAR, replay_path.as_uri())
-    monkeypatch.delenv(REPLAY_LOAD_ENV_VAR, raising=False)
+    monkeypatch.delenv(REPLAY_SERVER_ENV_VAR, raising=False)
 
     spec = importlib.util.spec_from_file_location("paintarena_timeout_test", _example_root() / "game" / "server.py")
     assert spec is not None
@@ -509,7 +510,7 @@ def test_paintarena_disconnected_player_noops_after_timeout(tmp_path: Path, monk
     monkeypatch.setenv(CONFIG_ENV_VAR, config_path.as_uri())
     monkeypatch.setenv(RESULTS_ENV_VAR, results_path.as_uri())
     monkeypatch.setenv(REPLAY_SAVE_ENV_VAR, replay_path.as_uri())
-    monkeypatch.delenv(REPLAY_LOAD_ENV_VAR, raising=False)
+    monkeypatch.delenv(REPLAY_SERVER_ENV_VAR, raising=False)
 
     spec = importlib.util.spec_from_file_location("paintarena_disconnect_test", _example_root() / "game" / "server.py")
     assert spec is not None

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import gzip
 import json
 import os
 from contextlib import asynccontextmanager, suppress
@@ -51,14 +52,19 @@ def post_data(uri: str, data: bytes | str, *, content_type: str) -> None:
     raise ValueError(f"Unsupported URI for post_data: {uri}")
 
 
-REPLAY_MODE = "COGAME_LOAD_REPLAY_URI" in os.environ
-if REPLAY_MODE:
-    REPLAY_DATA = json.loads(read_data(os.environ["COGAME_LOAD_REPLAY_URI"]))
+def load_replay_data(replay_uri: str) -> dict[str, Any]:
+    replay_data = read_data(replay_uri)
+    if replay_uri.endswith((".json.z", ".json.gz")):
+        replay_data = gzip.decompress(replay_data)
+    return json.loads(replay_data)
+
+
+REPLAY_SERVER = os.environ.get("COGAME_REPLAY_SERVER") == "1"
+if REPLAY_SERVER:
     CONFIG = {"tokens": [], "players": [], "width": 1, "height": 1, "max_ticks": 0, "tick_rate": 1.0}
-    RESULTS_URI = os.environ["COGAME_LOAD_REPLAY_URI"]
-    REPLAY_URI = os.environ["COGAME_LOAD_REPLAY_URI"]
+    RESULTS_URI = ""
+    REPLAY_URI = ""
 else:
-    REPLAY_DATA = {}
     CONFIG = json.loads(read_data(os.environ["COGAME_CONFIG_URI"]))
     RESULTS_URI = os.environ["COGAME_RESULTS_URI"]
     REPLAY_URI = os.environ["COGAME_SAVE_REPLAY_URI"]
@@ -174,8 +180,11 @@ async def admin(websocket: WebSocket) -> None:
 
 @app.websocket("/replay")
 async def replay_viewer(websocket: WebSocket) -> None:
+    if "uri" not in websocket.query_params:
+        await websocket.close(code=1008)
+        return
     await websocket.accept()
-    await websocket.send_json({"type": "replay", **REPLAY_DATA})
+    await websocket.send_json({"type": "replay", **load_replay_data(websocket.query_params["uri"])})
     async for command in websocket.iter_json():
         await websocket.send_json({"type": "control", "command": command})
 

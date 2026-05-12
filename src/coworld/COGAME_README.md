@@ -75,19 +75,20 @@ The `/player` websocket endpoint must allow a player to reconnect to the same sl
 is still running. The slot's game state survives disconnects. During a disconnect, the game may advance that slot with
 no-op actions or another documented disconnected-player behavior until the player reconnects.
 
-To view a replay, the runner starts the same Cogame image in replay mode and supplies:
+To view replays, the runner starts the same Cogame image as a warm replay server and supplies:
 
-- `COGAME_LOAD_REPLAY_URI`: URI from which to GET a replay artifact produced by the game.
+- `COGAME_REPLAY_SERVER=1`: the container serves replay viewers and waits for replay URIs on viewer requests.
 
-In replay mode, the game container listens on `0.0.0.0:8080` and exposes:
+In replay server mode, the game container listens on `0.0.0.0:8080` and exposes:
 
 - `GET /healthz`
-- `GET /clients/replay`
-- `WEBSOCKET /replay`
+- `GET /clients/replay?uri=<uri>`
+- `WEBSOCKET /replay?uri=<uri>`
 
-HTTP `GET /clients/replay` must serve a browser replay viewer. The replay viewer opens `WEBSOCKET /replay` to receive
-replay state and send game-owned control commands such as start, stop, seek, or speed changes. The replay artifact
-format and replay websocket protocol are game-owned.
+HTTP `GET /clients/replay?uri=<uri>` must serve a browser replay viewer. The replay viewer opens
+`WEBSOCKET /replay?uri=<uri>`; the game server loads that replay artifact and sends replay state plus game-owned control
+commands such as start, stop, seek, or speed changes. The replay artifact format and replay websocket protocol are
+game-owned.
 
 ## Coworld Contract
 
@@ -133,7 +134,6 @@ player-supplied connection metadata as untrusted.
 ## Replay Lifecycle
 
 1. The runner downloads or otherwise materializes a replay artifact produced by the same Cogame.
-2. The runner starts the game engine container with `COGAME_LOAD_REPLAY_URI` pointing at that replay artifact.
-3. The container boots in replay mode and exposes `GET /healthz`, `GET /clients/replay`, and `WEBSOCKET /replay`.
-4. A browser requests `GET /clients/replay`; the served client opens `WEBSOCKET /replay`.
-5. Replay playback and controls are implemented by the game-owned replay websocket protocol.
+2. The runner starts or reuses a game engine container with `COGAME_REPLAY_SERVER=1`.
+3. A browser requests `GET /clients/replay?uri=<uri>`; the served client opens `WEBSOCKET /replay?uri=<uri>`.
+4. Replay playback and controls are implemented by the game-owned replay websocket protocol.

@@ -34,7 +34,6 @@ from coworld.types import CoworldEpisodeJobSpec
 
 WORKDIR = Path(os.environ.get("COWORLD_WORKDIR", "/coworld"))
 STATE_PATH = WORKDIR / "state.json"
-REPLAY_PATH = WORKDIR / "replay.json"
 GAME_PORT = 8080
 _BEDROCK_SERVICE_ACCOUNT = "episode-runner"
 
@@ -48,14 +47,6 @@ def init_config_from_env() -> None:
         content_type="application/json",
     )
     STATE_PATH.write_text(json.dumps({"tokens": tokens}), encoding="utf-8")
-
-
-def init_replay_from_env() -> None:
-    replay_uri = os.environ["COGAME_LOAD_REPLAY_URI"]
-    replay_data = read_data(replay_uri)
-    if replay_uri.endswith((".json.z", ".json.gz")):
-        replay_data = gzip.decompress(replay_data)
-    REPLAY_PATH.write_bytes(replay_data)
 
 
 def run_from_env() -> None:
@@ -425,12 +416,10 @@ def _workload_tolerations() -> list[client.V1Toleration] | None:
 
 def main() -> None:
     parser = argparse.ArgumentParser()
-    parser.add_argument("command", choices=("init-config", "init-replay", "run"))
+    parser.add_argument("command", choices=("init-config", "run"))
     args = parser.parse_args()
     if args.command == "init-config":
         init_config_from_env()
-    elif args.command == "init-replay":
-        init_replay_from_env()
     else:
         run_from_env()
 

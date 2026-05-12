@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import gzip
 import json
 import os
 from collections.abc import Callable
@@ -383,7 +384,14 @@ def create_app(
     return app
 
 
-def create_replay_app(replay_data: dict[str, Any]) -> FastAPI:
+def load_replay_data(replay_uri: str) -> dict[str, Any]:
+    replay_data = read_data(replay_uri)
+    if replay_uri.endswith((".json.z", ".json.gz")):
+        replay_data = gzip.decompress(replay_data)
+    return json.loads(replay_data)
+
+
+def create_replay_app() -> FastAPI:
     app = FastAPI()
 
     @app.get("/healthz")
@@ -396,8 +404,11 @@ def create_replay_app(replay_data: dict[str, Any]) -> FastAPI:
 
     @app.websocket("/replay")
     async def replay_viewer(websocket: WebSocket) -> None:
+        if "uri" not in websocket.query_params:
+            await websocket.close(code=1008)
+            return
         await websocket.accept()
-        await websocket.send_json({"type": "replay", **replay_data})
+        await websocket.send_json({"type": "replay", **load_replay_data(websocket.query_params["uri"])})
         async for command in websocket.iter_json():
             await websocket.send_json({"type": "control", "command": command})
 
@@ -405,9 +416,8 @@ def create_replay_app(replay_data: dict[str, Any]) -> FastAPI:
 
 
 def load_app_from_env(request_shutdown: Callable[[], None] = noop_shutdown) -> FastAPI:
-    if "COGAME_LOAD_REPLAY_URI" in os.environ:
-        replay_data = json.loads(read_data(os.environ["COGAME_LOAD_REPLAY_URI"]))
-        return create_replay_app(replay_data)
+    if os.environ.get("COGAME_REPLAY_SERVER") == "1":
+        return create_replay_app()
     config = json.loads(read_data(os.environ["COGAME_CONFIG_URI"]))
     results_path = _file_uri_path(os.environ["COGAME_RESULTS_URI"])
     raw_replay_uri = os.environ.get("COGAME_SAVE_REPLAY_URI")

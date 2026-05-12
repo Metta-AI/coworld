@@ -18,18 +18,18 @@ from coworld.certifier import (
 from coworld.runner.runner import (
     CONFIG_ENV_VAR,
     CONTAINER_WORKDIR,
-    REPLAY_LOAD_ENV_VAR,
     REPLAY_SAVE_ENV_VAR,
+    REPLAY_SERVER_ENV_VAR,
     RESULTS_ENV_VAR,
     EpisodeArtifacts,
     PlayerLaunchSpec,
     RunnableLaunchSpec,
     _free_local_port,
-    _replay_client_url,
     _tail,
     _wait_for_health,
     assert_docker_image_reachable,
     generate_tokens,
+    replay_client_url,
     write_coworld_game_config,
 )
 from coworld.schema_validation import JsonObject
@@ -142,15 +142,15 @@ def replay_coworld(
 
     artifacts = EpisodeArtifacts.create(workspace, prefix="coworld-replay-")
     replay_port = _free_local_port()
+    container_replay_uri = f"file:///coworld-replay/{replay_path.name}"
     session = ReplaySession(
         package=package,
         artifacts=artifacts,
         replay_path=replay_path,
-        link=_replay_client_url(replay_port),
+        link=replay_client_url(replay_port, container_replay_uri),
     )
 
     replay_container = f"coworld-replay-game-{secrets.token_hex(8)}"
-    container_replay_path = f"/coworld-replay/{replay_path.name}"
     try:
         with artifacts.game_stdout_path.open("w") as game_stdout, artifacts.game_stderr_path.open("w") as game_stderr:
             replay_process = subprocess.Popen(
@@ -164,7 +164,7 @@ def replay_coworld(
                     f"127.0.0.1:{replay_port}:8080",
                     *_env_args(package.cogame.env),
                     "-e",
-                    f"{REPLAY_LOAD_ENV_VAR}=file://{container_replay_path}",
+                    f"{REPLAY_SERVER_ENV_VAR}=1",
                     "-v",
                     f"{replay_path.parent}:/coworld-replay:ro",
                     *_image_command(package.cogame),

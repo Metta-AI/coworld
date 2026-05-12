@@ -125,5 +125,5 @@ The global websocket may also receive MettaScope action/control messages:
 { "type": "control", "command": "speed", "speed": 5.0 }
 ```
 
-Replay mode starts the same image with `COGAME_LOAD_REPLAY_URI`, serves `GET /clients/replay`, and sends the saved
-live-replay artifact over `WEBSOCKET /replay`.
+Replay mode starts the same image with `COGAME_REPLAY_SERVER=1`. The server serves
+`GET /clients/replay?uri=<uri>` and sends the saved live-replay artifact over `WEBSOCKET /replay?uri=<uri>`.
