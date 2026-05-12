@@ -20,7 +20,7 @@ import typer
 from pydantic import BaseModel
 
 from coworld.certifier import certify_coworld, load_coworld_package
-from coworld.config import DEFAULT_LOGIN_SERVER, DEFAULT_SUBMIT_SERVER
+from coworld.config import DEFAULT_SUBMIT_SERVER
 
 _LOCAL_TAG_SEPARATOR_RE = re.compile(r"[^a-z0-9._-]+")
 
@@ -118,8 +118,8 @@ class CoworldUploadClient:
         self._token = token
 
     @classmethod
-    def from_login(cls, *, server_url: str, login_server: str) -> Self:
-        token = _load_current_cogames_token(login_server=login_server)
+    def from_login(cls, *, server_url: str) -> Self:
+        token = _load_current_cogames_token()
         if token is None:
             raise RuntimeError("Not authenticated. Run: uv run softmax login")
         return cls(server_url=server_url, token=token)
@@ -258,13 +258,12 @@ def upload_coworld(
     manifest_path: Path,
     *,
     server: str = DEFAULT_SUBMIT_SERVER,
-    login_server: str = DEFAULT_LOGIN_SERVER,
     timeout_seconds: float = 60.0,
 ) -> CoworldUploadResult:
     package = load_coworld_package(manifest_path)
     certify_coworld(package.manifest_path, timeout_seconds=timeout_seconds)
 
-    with CoworldUploadClient.from_login(server_url=server, login_server=login_server) as client:
+    with CoworldUploadClient.from_login(server_url=server) as client:
         upload_manifest = _manifest_with_softmax_image_ids(
             client,
             package.manifest.model_dump(by_alias=True, exclude_none=True),
@@ -280,22 +279,20 @@ def upload_coworld(
     )
 
 
-def _load_current_cogames_token(*, login_server: str) -> str | None:
-    from softmax.auth import load_current_cogames_token  # noqa: PLC0415
+def _load_current_cogames_token() -> str | None:
+    from softmax.auth import get_login_server, load_current_cogames_token  # noqa: PLC0415
 
-    return load_current_cogames_token(login_server=login_server)
+    return load_current_cogames_token(login_server=get_login_server())
 
 
 def upload_coworld_cmd(
     manifest_path: Path,
     server: str = DEFAULT_SUBMIT_SERVER,
-    login_server: str = DEFAULT_LOGIN_SERVER,
     timeout_seconds: float = 60.0,
 ) -> None:
     result = upload_coworld(
         manifest_path,
         server=server,
-        login_server=login_server,
         timeout_seconds=timeout_seconds,
     )
     typer.echo(f"Upload complete: {result.name}:{result.version}")
@@ -311,9 +308,8 @@ def upload_policy_cmd(
     run: list[str] | None = None,
     secret_env: dict[str, str] | None = None,
     server: str = DEFAULT_SUBMIT_SERVER,
-    login_server: str = DEFAULT_LOGIN_SERVER,
 ) -> None:
-    with CoworldUploadClient.from_login(server_url=server, login_server=login_server) as client:
+    with CoworldUploadClient.from_login(server_url=server) as client:
         uploaded_image = _upload_container_image(client, image)
         result = client.complete_docker_image_policy(
             name=name,

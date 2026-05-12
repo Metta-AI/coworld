@@ -253,6 +253,20 @@ use uppercase letters, digits, and underscores, and each secret is scoped to the
 During Coworld episodes, only the player pod running that policy version receives those secrets as environment
 variables.
 
+## Tournament CLI
+
+The Coworld CLI can inspect v2 leagues, divisions, rounds, pools, standings, episode requests, stats, logs, and replays.
+It uses the current `softmax-cli` login:
+
+```bash
+uv run softmax login
+uv run coworld results div_...
+uv run coworld episodes --division div_... --mine --with-replay
+uv run coworld replays --division div_... --mine --download-dir replays/
+```
+
+See [CLI_README.md](CLI_README.md) for the command reference.
+
 ## Download
 
 To download a published Coworld manifest and retag its public images for local development:

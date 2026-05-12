@@ -3,7 +3,7 @@ from __future__ import annotations
 import typer
 
 from coworld.cli_support import console
-from coworld.config import DEFAULT_LOGIN_SERVER, DEFAULT_SUBMIT_SERVER
+from coworld.config import DEFAULT_SUBMIT_SERVER
 from coworld.upload import CoworldUploadClient, PolicyVersionRow
 
 
@@ -36,9 +36,8 @@ def submit_policy_to_league_cmd(
     *,
     league_id: str,
     server: str = DEFAULT_SUBMIT_SERVER,
-    login_server: str = DEFAULT_LOGIN_SERVER,
 ) -> None:
-    with CoworldUploadClient.from_login(server_url=server, login_server=login_server) as client:
+    with CoworldUploadClient.from_login(server_url=server) as client:
         policy_version = _resolve_policy_version(client, policy_identifier)
 
         version_label = f":v{policy_version.version}"

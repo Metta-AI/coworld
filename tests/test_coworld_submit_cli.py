@@ -13,7 +13,7 @@ def test_submit_policy_to_league_posts_v2_submission(
     httpserver: HTTPServer,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    monkeypatch.setattr("coworld.upload._load_current_cogames_token", lambda *, login_server: "token")
+    monkeypatch.setattr("coworld.upload._load_current_cogames_token", lambda: "token")
     _expect_policy_versions(httpserver, [_policy_version(version=3)])
     httpserver.expect_request(
         "/v2/league-submissions",
@@ -37,8 +37,6 @@ def test_submit_policy_to_league_posts_v2_submission(
             LEAGUE_ID,
             "--server",
             httpserver.url_for(""),
-            "--login-server",
-            "https://softmax.test/api",
         ],
     )
 
@@ -62,8 +60,6 @@ def test_submit_policy_requires_league_id_option() -> None:
             "paintbot",
             "--server",
             "https://softmax.test/api",
-            "--login-server",
-            "https://softmax.test/api",
         ],
     )
 
@@ -76,7 +72,7 @@ def test_submit_policy_reports_missing_policy_without_posting_submission(
     httpserver: HTTPServer,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    monkeypatch.setattr("coworld.upload._load_current_cogames_token", lambda *, login_server: "token")
+    monkeypatch.setattr("coworld.upload._load_current_cogames_token", lambda: "token")
     _expect_policy_versions(httpserver, [])
 
     result = CliRunner().invoke(
@@ -88,8 +84,6 @@ def test_submit_policy_reports_missing_policy_without_posting_submission(
             LEAGUE_ID,
             "--server",
             httpserver.url_for(""),
-            "--login-server",
-            "https://softmax.test/api",
         ],
     )
 

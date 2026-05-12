@@ -9,11 +9,12 @@ from rich.table import Table
 
 from coworld.certifier import certify_coworld
 from coworld.cli_support import console, emit_json
-from coworld.config import DEFAULT_LOGIN_SERVER, DEFAULT_SUBMIT_SERVER
+from coworld.config import DEFAULT_SUBMIT_SERVER
 from coworld.manifest_uri import materialized_manifest_path, materialized_replay_path
 from coworld.play import PlaySession, ReplaySession, play_coworld, replay_coworld
 from coworld.runner.runner import EpisodeArtifacts, run_coworld_episode
 from coworld.submit import submit_policy_to_league_cmd
+from coworld.tournament_cli import register_tournament_commands
 from coworld.types import CoworldEpisodeJobSpec
 from coworld.upload import (
     ContainerImageResponse,
@@ -26,6 +27,7 @@ from coworld.upload import (
 )
 
 app = typer.Typer(no_args_is_help=True, pretty_exceptions_enable=False)
+register_tournament_commands(app)
 
 
 def _parse_secret_env(value: str) -> tuple[str, str]:
@@ -71,15 +73,11 @@ def play(
 @app.command("list")
 def list_coworlds(
     server: Annotated[str, typer.Option("--server", help="Observatory API server URL.")] = DEFAULT_SUBMIT_SERVER,
-    login_server: Annotated[
-        str,
-        typer.Option("--login-server", help="Authentication server URL."),
-    ] = DEFAULT_LOGIN_SERVER,
     limit: Annotated[int, typer.Option("--limit", min=1, max=500, help="Maximum rows to return.")] = 200,
     offset: Annotated[int, typer.Option("--offset", min=0, help="Rows to skip.")] = 0,
     json_output: Annotated[bool, typer.Option("--json", help="Print raw JSON.")] = False,
 ) -> None:
-    with CoworldUploadClient.from_login(server_url=server, login_server=login_server) as client:
+    with CoworldUploadClient.from_login(server_url=server) as client:
         coworlds = client.list_coworlds(limit=limit, offset=offset)
     if json_output:
         emit_json([coworld.model_dump(mode="json") for coworld in coworlds])
@@ -91,13 +89,9 @@ def list_coworlds(
 def show_coworld(
     coworld_id: Annotated[str, typer.Argument(help="Coworld ID to inspect.")],
     server: Annotated[str, typer.Option("--server", help="Observatory API server URL.")] = DEFAULT_SUBMIT_SERVER,
-    login_server: Annotated[
-        str,
-        typer.Option("--login-server", help="Authentication server URL."),
-    ] = DEFAULT_LOGIN_SERVER,
     json_output: Annotated[bool, typer.Option("--json", help="Print raw JSON.")] = False,
 ) -> None:
-    with CoworldUploadClient.from_login(server_url=server, login_server=login_server) as client:
+    with CoworldUploadClient.from_login(server_url=server) as client:
         coworld = client.find_coworld(coworld_id)
     if coworld is None:
         console.print("[red]Coworld not found[/red]")
@@ -112,15 +106,11 @@ def show_coworld(
 def images(
     image_id: Annotated[str | None, typer.Argument(help="Image ID to inspect. Lists images when omitted.")] = None,
     server: Annotated[str, typer.Option("--server", help="Observatory API server URL.")] = DEFAULT_SUBMIT_SERVER,
-    login_server: Annotated[
-        str,
-        typer.Option("--login-server", help="Authentication server URL."),
-    ] = DEFAULT_LOGIN_SERVER,
     limit: Annotated[int, typer.Option("--limit", min=1, max=500, help="Maximum rows to return.")] = 200,
     offset: Annotated[int, typer.Option("--offset", min=0, help="Rows to skip.")] = 0,
     json_output: Annotated[bool, typer.Option("--json", help="Print raw JSON.")] = False,
 ) -> None:
-    with CoworldUploadClient.from_login(server_url=server, login_server=login_server) as client:
+    with CoworldUploadClient.from_login(server_url=server) as client:
         if image_id is None:
             image_list = client.list_images(limit=limit, offset=offset)
             if json_output:
@@ -139,16 +129,11 @@ def images(
 def upload_coworld(
     manifest_path: Annotated[Path, typer.Argument(help="Path to coworld_manifest.json.")],
     server: Annotated[str, typer.Option("--server", help="Observatory API server URL.")] = DEFAULT_SUBMIT_SERVER,
-    login_server: Annotated[
-        str,
-        typer.Option("--login-server", help="Authentication server URL."),
-    ] = DEFAULT_LOGIN_SERVER,
     timeout_seconds: Annotated[float, typer.Option("--timeout-seconds", min=1.0)] = 60.0,
 ) -> None:
     upload_coworld_cmd(
         manifest_path,
         server=server,
-        login_server=login_server,
         timeout_seconds=timeout_seconds,
     )
 
@@ -191,10 +176,6 @@ def upload_policy(
         ),
     ] = False,
     server: Annotated[str, typer.Option("--server", help="Observatory API server URL.")] = DEFAULT_SUBMIT_SERVER,
-    login_server: Annotated[
-        str,
-        typer.Option("--login-server", help="Authentication server URL."),
-    ] = DEFAULT_LOGIN_SERVER,
 ) -> None:
     parsed_secret_env: dict[str, str] = {}
     if use_bedrock:
@@ -210,7 +191,6 @@ def upload_policy(
         run=run,
         secret_env=parsed_secret_env if parsed_secret_env else None,
         server=server,
-        login_server=login_server,
     )
 
 
@@ -226,16 +206,11 @@ def submit(
         ),
     ],
     server: Annotated[str, typer.Option("--server", help="Observatory API server URL.")] = DEFAULT_SUBMIT_SERVER,
-    login_server: Annotated[
-        str,
-        typer.Option("--login-server", help="Authentication server URL."),
-    ] = DEFAULT_LOGIN_SERVER,
 ) -> None:
     submit_policy_to_league_cmd(
         policy,
         league_id=league,
         server=server,
-        login_server=login_server,
     )
 
 
