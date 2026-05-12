@@ -2,8 +2,8 @@
 
 A coworld is a set of docker images and configurations that form a game ecosystem in the Softmax universe.
 
-A viable coworld is one that has enough integration points implemented in a compliant way that Softmax can make use of it.
-
+A viable coworld is one that has enough integration points implemented in a compliant way that Softmax can make use of
+it.
 
 ## Coworld Package Specification
 
@@ -55,9 +55,9 @@ not infer local file paths or inline local protocol documentation into the store
 ```
 
 Use `content.type: "uri"` for hosted Markdown files, or `content.type: "text"` for deliberately inline Markdown.
-Recommended page titles for viable Coworlds are `play.md`, `player.md`, `grader.md`, `reporter.md`,
-`commissioner.md`, `diagnoser.md`, `optimizer.md`, and `variants.md`. These names are convention, not schema-enforced
-fields; use the page title to name the document users should read.
+Recommended page titles for viable Coworlds are `play.md`, `player.md`, `grader.md`, `reporter.md`, `commissioner.md`,
+`diagnoser.md`, `optimizer.md`, and `variants.md`. These names are convention, not schema-enforced fields; use the page
+title to name the document users should read.
 
 ### Cogame
 
@@ -70,16 +70,20 @@ runtime API, browser client routes, websocket endpoints, config/results formats,
 The Cogame serves its player browser client from `GET /clients/player?...`. A browser can request a link such as
 `/clients/player?slot=<slot>&token=<token>&role=<value>` over HTTP and receive the player client.
 
-By convention, the client reads the complete URL query string and forwards every query param when it opens the player
-websocket route, for example `ws://<engine-host>/player?slot=<slot>&token=<token>&role=<value>`.
+By convention, the client reads the complete URL query string before it opens the player websocket route. If the query
+contains `address`, the client uses that value as the complete websocket URL after converting `http`/`https` to
+`ws`/`wss`; it does not merge other page query params. Otherwise, it derives the websocket URL from the page URL by
+replacing `/clients/player` with `/player` and preserving page query params such as `slot`, `token`, and `role`.
 
 ### Global Client
 
 The Cogame serves its global browser client from `GET /clients/global`. A browser can request `/clients/global` over
 HTTP and receive the global client.
 
-By convention, the client reads the complete URL query string and forwards every query param when it opens the global
-websocket route, for example `ws://<engine-host>/global`.
+By convention, the client reads the complete URL query string before it opens the global websocket route. If the query
+contains `address`, the client uses that value as the complete websocket URL after converting `http`/`https` to
+`ws`/`wss`; it does not merge other page query params. Otherwise, it derives the websocket URL from the page URL by
+replacing `/clients/global` with `/global` and preserving page query params.
 
 ### Player
 
@@ -100,10 +104,7 @@ A short deterministic smoke episode proves that the Coworld works end to end.
     "game_config": {
       "map": "default"
     },
-    "players": [
-      { "player_id": "first-empty-player" },
-      { "player_id": "first-empty-player" }
-    ]
+    "players": [{ "player_id": "first-empty-player" }, { "player_id": "first-empty-player" }]
   }
 }
 ```
@@ -146,8 +147,8 @@ A graph of token-free game configurations. Variants factorize the game into mech
 experience targeted at learning different aspects of the game independently for training purposes.
 
 Each `variants[].game_config` is author-owned game data and must omit runner-managed `tokens`. Certification validates
-each variant by injecting dummy tokens of the exact fixed length declared by `game.config_schema.properties.tokens`, then
-checking the derived playable config against the game's config schema.
+each variant by injecting dummy tokens of the exact fixed length declared by `game.config_schema.properties.tokens`,
+then checking the derived playable config against the game's config schema.
 
 ## Play
 
@@ -161,11 +162,14 @@ uv run coworld play /v2/coworlds/cow_... --server https://softmax.com/api
 
 The `play`, `replay`, and `certify` commands accept local paths, full HTTP(S) manifest URIs, backend
 `/v2/coworlds/cow_...` paths with `--server`. The command downloads URI manifests to a temporary local file, uses the
-certification fixture for game config and player slots, then prints player and global client links.
-Observatory's public Coworld manifest endpoint returns public image URIs for Softmax-managed images once those images
-have been mirrored to public ECR.
-Each link points directly at the Cogame's HTTP client route. The served client forwards the link's query params when it
-connects back to the Cogame over websocket.
+certification fixture for game config and player slots, then prints player and global client links. Observatory's public
+Coworld manifest endpoint returns public image URIs for Softmax-managed images once those images have been mirrored to
+public ECR. Each link points directly at the Cogame's HTTP client route. The served client forwards the link's query
+params when it connects back to the Cogame over websocket.
+
+Hosted play uses the same fixed token count as certification and Coworld commissioners. The platform derives the number
+of player slots from `game.config_schema.properties.tokens.minItems/maxItems`, which must be equal, then injects fresh
+runner-managed tokens into the selected variant's token-free `game_config`.
 
 ## Certification
 
@@ -184,8 +188,8 @@ Certification validates the Coworld manifest, checks referenced images, verifies
 browser clients in rollout mode, verifies the Cogame serves its replay browser client in replay mode, runs one smoke
 episode through Docker, and verifies the produced results and replay artifacts.
 
-Manifest validation requires `game.config_schema` to define `tokens` as a required string array with equal `minItems` and
-`maxItems`. The certification fixture's player count must match that fixed token count.
+Manifest validation requires `game.config_schema` to define `tokens` as a required string array with equal `minItems`
+and `maxItems`. The certification fixture's player count must match that fixed token count.
 
 ## Upload
 
@@ -204,10 +208,10 @@ uv run coworld images
 uv run coworld images img_...
 ```
 
-The Coworld upload command validates the manifest, runs certification, uploads every runnable image through the platform's
-`/v2/container_images/upload` flow, rewrites runnable image references to returned Softmax digest image URIs, and uploads
-the resulting standalone JSON manifest through `/v2/coworlds/upload`. Protocol documentation objects remain unchanged in
-the uploaded manifest.
+The Coworld upload command validates the manifest, runs certification, uploads every runnable image through the
+platform's `/v2/container_images/upload` flow, rewrites runnable image references to returned Softmax digest image URIs,
+and uploads the resulting standalone JSON manifest through `/v2/coworlds/upload`. Protocol documentation objects remain
+unchanged in the uploaded manifest.
 
 Upload does not bundle schemas, docs, or other package files. The manifest is the uploaded artifact. Documentation and
 other supporting references should be publicly accessible links. The current uploader does not validate those links.

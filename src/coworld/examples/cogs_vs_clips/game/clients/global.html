@@ -3,7 +3,7 @@
 <style>
   :root {
     color: #d8dee9;
-    font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace;
+    font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, 'Liberation Mono', monospace;
     font-size: 14px;
   }
   * {
@@ -144,9 +144,19 @@
   </aside>
 </main>
 <script>
-  const websocketUrl = new URL(window.location.href)
-  websocketUrl.protocol = websocketUrl.protocol === 'https:' ? 'wss:' : 'ws:'
-  websocketUrl.pathname = websocketUrl.pathname.replace(/\/clients\/global$/, '/global')
+  const pageUrl = new URL(window.location.href)
+
+  function websocketAddress(path) {
+    const address = pageUrl.searchParams.get('address')
+    const target = new URL(address || window.location.href, window.location.href)
+    if (target.protocol === 'http:') target.protocol = 'ws:'
+    if (target.protocol === 'https:') target.protocol = 'wss:'
+    if (!address) target.pathname = target.pathname.replace(/\/clients\/global$/, path)
+    target.hash = ''
+    return target
+  }
+
+  const websocketUrl = websocketAddress('/global')
 
   const status = document.getElementById('status')
   const protocol = document.getElementById('protocol')

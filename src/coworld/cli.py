@@ -1,7 +1,9 @@
 from __future__ import annotations
 
+import shlex
 from pathlib import Path
 from typing import Annotated
+from urllib.parse import urlparse, urlunparse
 
 import typer
 from rich import box
@@ -257,7 +259,6 @@ def hosted_game_create(
     coworld_id: Annotated[str, typer.Argument(help="Uploaded Coworld ID to host.")],
     server: Annotated[str, typer.Option("--server", help="Observatory API server URL.")] = DEFAULT_SUBMIT_SERVER,
     variant_id: Annotated[str | None, typer.Option("--variant", help="Coworld variant ID.")] = None,
-    player_count: Annotated[int | None, typer.Option("--players", min=1, help="Number of player slots.")] = None,
     allow_spectators: Annotated[bool, typer.Option("--spectators/--no-spectators")] = True,
     json_output: Annotated[bool, typer.Option("--json", help="Print raw JSON.")] = False,
 ) -> None:
@@ -265,15 +266,19 @@ def hosted_game_create(
         session = client.create_hosted_game(
             coworld_id=coworld_id,
             variant_id=variant_id,
-            player_count=player_count,
             allow_spectators=allow_spectators,
         )
     if json_output:
         emit_json(session.model_dump(mode="json"))
         return
     typer.echo(f"Hosted game: {session.session_id}")
-    typer.echo(f"Lobby: {session.lobby_url}")
-    typer.echo(f"Join: {session.join_url}")
+    typer.echo(f"Player slots: {session.player_count}")
+    typer.echo(f"Player command: {_hosted_game_join_command(session.session_id, server)}")
+    typer.echo(f"Player URL: {_observatory_web_url(server, session.join_url)}")
+    if allow_spectators:
+        typer.echo(f"Spectator URL: {_observatory_web_url(server, session.lobby_url)}")
+    else:
+        typer.echo("Spectators: disabled")
 
 
 @hosted_game_app.command("join")
@@ -307,6 +312,26 @@ def _print_replay_session(session: ReplaySession) -> None:
     typer.echo(f"Replay file: {session.replay_path}")
     typer.echo(f"Replay client: {session.link}")
     typer.echo("Waiting for the replay container to exit...")
+
+
+def _hosted_game_join_command(session_id: str, server: str) -> str:
+    command = ["uv", "run", "coworld", "hosted-game", "join", session_id]
+    if server.rstrip("/") != DEFAULT_SUBMIT_SERVER.rstrip("/"):
+        command.extend(["--server", server])
+    return shlex.join(command)
+
+
+def _observatory_web_url(server: str, path: str) -> str:
+    if path.startswith(("http://", "https://")):
+        return path
+    if server.rstrip("/") == DEFAULT_SUBMIT_SERVER.rstrip("/"):
+        return f"https://softmax.com{path}"
+
+    parsed = urlparse(server)
+    if parsed.path.rstrip("/") == "/api/observatory":
+        origin = urlunparse((parsed.scheme, parsed.netloc, "", "", "", ""))
+        return f"{origin}{path}"
+    return path
 
 
 def _print_coworld_table(coworlds: list[CoworldListEntry]) -> None:

@@ -366,7 +366,6 @@ def test_hosted_game_create_posts_play_session(httpserver: HTTPServer, monkeypat
         json={
             "coworld_id": coworld_id,
             "variant_id": "default",
-            "player_count": 3,
             "allow_spectators": True,
         },
     ).respond_with_json(
@@ -374,6 +373,8 @@ def test_hosted_game_create_posts_play_session(httpserver: HTTPServer, monkeypat
             "session_id": "ps_00000000-0000-0000-0000-000000000011",
             "join_url": "/observatory/v2/coworld-play/ps_00000000-0000-0000-0000-000000000011/join",
             "lobby_url": "/observatory/v2/coworld-play/ps_00000000-0000-0000-0000-000000000011",
+            "player_count": 3,
+            "global_url": "https://api.example.com/v2/coworlds/play/session/ps_00000000/proxy/clients/global",
         }
     )
 
@@ -385,8 +386,6 @@ def test_hosted_game_create_posts_play_session(httpserver: HTTPServer, monkeypat
             coworld_id,
             "--variant",
             "default",
-            "--players",
-            "3",
             "--server",
             httpserver.url_for(""),
         ],
@@ -394,7 +393,13 @@ def test_hosted_game_create_posts_play_session(httpserver: HTTPServer, monkeypat
 
     assert result.exit_code == 0, result.output
     assert "Hosted game: ps_00000000-0000-0000-0000-000000000011" in result.output
-    assert "Join:" in result.output
+    assert "Player slots: 3" in result.output
+    assert (
+        "Player command: uv run coworld hosted-game join ps_00000000-0000-0000-0000-000000000011 --server "
+        in result.output
+    )
+    assert "Player URL: /observatory/v2/coworld-play/ps_00000000-0000-0000-0000-000000000011/join" in result.output
+    assert "Spectator URL: /observatory/v2/coworld-play/ps_00000000-0000-0000-0000-000000000011" in result.output
 
 
 def test_hosted_game_join_posts_join_session(httpserver: HTTPServer, monkeypatch: pytest.MonkeyPatch) -> None:

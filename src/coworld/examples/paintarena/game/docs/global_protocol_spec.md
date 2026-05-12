@@ -1,7 +1,8 @@
 # Paint Arena Global Protocol
 
-Browsers request `GET /clients/global` to load the global client. The client forwards the same query params when it
-opens the `/global` websocket.
+Browsers request `GET /clients/global` to load the global client. The client opens `/global` by default. If the page
+query includes `address`, the client uses that as the complete websocket endpoint and does not merge other page query
+params.
 
 The server sends a JSON state snapshot immediately on connect and then sends updated snapshots while the episode runs:
 
@@ -10,7 +11,10 @@ The server sends a JSON state snapshot immediately on connect and then sends upd
   "type": "state",
   "width": 12,
   "height": 8,
-  "positions": [[0, 0], [11, 7]],
+  "positions": [
+    [0, 0],
+    [11, 7]
+  ],
   "tile_owners": [0, -1, -1, 1],
   "scores": [0, 0],
   "tick": 0,

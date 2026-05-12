@@ -4,12 +4,26 @@
   :root {
     background: #050607;
     color: #f7fafc;
-    font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace;
+    font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, 'Liberation Mono', monospace;
   }
-  * { box-sizing: border-box; }
-  html, body { height: 100%; margin: 0; overflow: hidden; }
-  body { background: #050607; }
-  #screen { display: block; height: 100vh; image-rendering: pixelated; width: 100vw; }
+  * {
+    box-sizing: border-box;
+  }
+  html,
+  body {
+    height: 100%;
+    margin: 0;
+    overflow: hidden;
+  }
+  body {
+    background: #050607;
+  }
+  #screen {
+    display: block;
+    height: 100vh;
+    image-rendering: pixelated;
+    width: 100vw;
+  }
   #hud {
     background: rgba(5, 6, 7, 0.74);
     border: 1px solid rgba(216, 222, 233, 0.24);
@@ -23,9 +37,17 @@
     top: 12px;
     white-space: nowrap;
   }
-  #hud .mode { color: #78d8a6; font-weight: 700; text-transform: uppercase; }
-  #hud .mode.human { color: #ffd166; }
-  #hud .muted { color: #8b98a8; }
+  #hud .mode {
+    color: #78d8a6;
+    font-weight: 700;
+    text-transform: uppercase;
+  }
+  #hud .mode.human {
+    color: #ffd166;
+  }
+  #hud .muted {
+    color: #8b98a8;
+  }
 </style>
 <canvas id="screen"></canvas>
 <div id="hud">
@@ -33,208 +55,220 @@
   <span class="muted" id="details"></span>
 </div>
 <script>
-  const websocketUrl = new URL(window.location.href);
-  websocketUrl.protocol = websocketUrl.protocol === "https:" ? "wss:" : "ws:";
-  websocketUrl.pathname = websocketUrl.pathname.replace(/\/clients\/player$/, "/player");
+  const pageUrl = new URL(window.location.href)
 
-  const screen = document.getElementById("screen");
-  const context = screen.getContext("2d");
-  const identity = document.getElementById("identity");
-  const details = document.getElementById("details");
-  const autoTakeover = new URLSearchParams(window.location.search).get("takeover") === "1";
+  function websocketAddress(path) {
+    const address = pageUrl.searchParams.get('address')
+    const target = new URL(address || window.location.href, window.location.href)
+    if (target.protocol === 'http:') target.protocol = 'ws:'
+    if (target.protocol === 'https:') target.protocol = 'wss:'
+    if (!address) target.pathname = target.pathname.replace(/\/clients\/player$/, path)
+    target.hash = ''
+    return target
+  }
 
-  let socket;
-  let config = null;
-  let featureNames = new Map();
-  let actionNames = [];
-  let cells = new Map();
-  let latestStep = null;
-  let controlState = null;
-  let done = false;
-  let autoTakeoverSent = false;
+  const websocketUrl = websocketAddress('/player')
+
+  const screen = document.getElementById('screen')
+  const context = screen.getContext('2d')
+  const identity = document.getElementById('identity')
+  const details = document.getElementById('details')
+  const autoTakeover = new URLSearchParams(window.location.search).get('takeover') === '1'
+
+  let socket
+  let config = null
+  let featureNames = new Map()
+  let actionNames = []
+  let cells = new Map()
+  let latestStep = null
+  let controlState = null
+  let done = false
+  let autoTakeoverSent = false
 
   function configure(message) {
-    config = message;
-    actionNames = message.action_names || [];
-    featureNames = new Map((message.observation.features || []).map(feature => [feature.id, feature.name]));
-    controlState = message.control_state;
-    identity.textContent = `Slot ${message.slot + 1}`;
-    updateHud();
-    draw();
+    config = message
+    actionNames = message.action_names || []
+    featureNames = new Map((message.observation.features || []).map((feature) => [feature.id, feature.name]))
+    controlState = message.control_state
+    identity.textContent = `Slot ${message.slot + 1}`
+    updateHud()
+    draw()
     if (autoTakeover && !autoTakeoverSent) {
-      autoTakeoverSent = true;
-      requestTakeover();
+      autoTakeoverSent = true
+      requestTakeover()
     }
   }
 
   function packedLocation(location) {
-    return { row: Math.floor(location / 16), col: location % 16 };
+    return { row: Math.floor(location / 16), col: location % 16 }
   }
 
   function tokenCells(tokens) {
-    const nextCells = new Map();
-    const globalLocation = config.observation.global_location;
-    const emptyLocation = config.observation.empty_location;
+    const nextCells = new Map()
+    const globalLocation = config.observation.global_location
+    const emptyLocation = config.observation.empty_location
     for (const token of tokens || []) {
-      const location = Number(token[0]);
-      if (location === emptyLocation || location === globalLocation) continue;
-      const featureId = Number(token[1]);
-      const value = Number(token[2]);
-      const feature = featureNames.get(featureId) || `feature:${featureId}`;
-      const { row, col } = packedLocation(location);
-      if (row < 0 || col < 0 || row >= config.observation.height || col >= config.observation.width) continue;
-      const key = `${row},${col}`;
-      const cell = nextCells.get(key) || { row, col, tags: [], features: {} };
-      if (feature === "tag") {
-        cell.tags.push(config.observation.tags[value] || `tag:${value}`);
+      const location = Number(token[0])
+      if (location === emptyLocation || location === globalLocation) continue
+      const featureId = Number(token[1])
+      const value = Number(token[2])
+      const feature = featureNames.get(featureId) || `feature:${featureId}`
+      const { row, col } = packedLocation(location)
+      if (row < 0 || col < 0 || row >= config.observation.height || col >= config.observation.width) continue
+      const key = `${row},${col}`
+      const cell = nextCells.get(key) || { row, col, tags: [], features: {} }
+      if (feature === 'tag') {
+        cell.tags.push(config.observation.tags[value] || `tag:${value}`)
       } else {
-        cell.features[feature] = value;
+        cell.features[feature] = value
       }
-      nextCells.set(key, cell);
+      nextCells.set(key, cell)
     }
-    return nextCells;
+    return nextCells
   }
 
   function hasTag(cell, name) {
-    return (cell.tags || []).some(tag => tag === name || tag === `type:${name}` || tag.endsWith(`:${name}`));
+    return (cell.tags || []).some((tag) => tag === name || tag === `type:${name}` || tag.endsWith(`:${name}`))
   }
 
   function cellColor(cell) {
-    if (!cell) return "#0f1419";
-    if (hasTag(cell, "wall")) return "#4b5563";
-    if (hasTag(cell, "agent")) return "#2dd4bf";
-    if ((cell.tags || []).length > 0) return "#f59e0b";
-    return "#9f7aea";
+    if (!cell) return '#0f1419'
+    if (hasTag(cell, 'wall')) return '#4b5563'
+    if (hasTag(cell, 'agent')) return '#2dd4bf'
+    if ((cell.tags || []).length > 0) return '#f59e0b'
+    return '#9f7aea'
   }
 
   function draw() {
-    const pixelRatio = window.devicePixelRatio || 1;
-    const width = window.innerWidth;
-    const height = window.innerHeight;
-    screen.width = Math.floor(width * pixelRatio);
-    screen.height = Math.floor(height * pixelRatio);
-    screen.style.width = `${width}px`;
-    screen.style.height = `${height}px`;
-    context.setTransform(pixelRatio, 0, 0, pixelRatio, 0, 0);
-    context.fillStyle = "#050607";
-    context.fillRect(0, 0, width, height);
-    if (!config) return;
+    const pixelRatio = window.devicePixelRatio || 1
+    const width = window.innerWidth
+    const height = window.innerHeight
+    screen.width = Math.floor(width * pixelRatio)
+    screen.height = Math.floor(height * pixelRatio)
+    screen.style.width = `${width}px`
+    screen.style.height = `${height}px`
+    context.setTransform(pixelRatio, 0, 0, pixelRatio, 0, 0)
+    context.fillStyle = '#050607'
+    context.fillRect(0, 0, width, height)
+    if (!config) return
 
-    const gridWidth = config.observation.width;
-    const gridHeight = config.observation.height;
-    const tile = Math.max(1, Math.floor(Math.min(width / gridWidth, height / gridHeight)));
-    const originX = Math.floor((width - gridWidth * tile) / 2);
-    const originY = Math.floor((height - gridHeight * tile) / 2);
+    const gridWidth = config.observation.width
+    const gridHeight = config.observation.height
+    const tile = Math.max(1, Math.floor(Math.min(width / gridWidth, height / gridHeight)))
+    const originX = Math.floor((width - gridWidth * tile) / 2)
+    const originY = Math.floor((height - gridHeight * tile) / 2)
 
-    context.fillStyle = "#0b0f14";
-    context.fillRect(originX, originY, gridWidth * tile, gridHeight * tile);
-    const inset = tile > 3 ? 1 : 0;
-    const tileBody = Math.max(1, tile - inset * 2);
+    context.fillStyle = '#0b0f14'
+    context.fillRect(originX, originY, gridWidth * tile, gridHeight * tile)
+    const inset = tile > 3 ? 1 : 0
+    const tileBody = Math.max(1, tile - inset * 2)
     for (let row = 0; row < gridHeight; row += 1) {
       for (let col = 0; col < gridWidth; col += 1) {
-        const cell = cells.get(`${row},${col}`);
-        context.fillStyle = cellColor(cell);
-        context.fillRect(originX + col * tile + inset, originY + row * tile + inset, tileBody, tileBody);
+        const cell = cells.get(`${row},${col}`)
+        context.fillStyle = cellColor(cell)
+        context.fillRect(originX + col * tile + inset, originY + row * tile + inset, tileBody, tileBody)
       }
     }
 
-    const centerRow = Math.floor(gridHeight / 2);
-    const centerCol = Math.floor(gridWidth / 2);
-    const outlineInset = tile > 6 ? 2 : 0;
-    const outlineBody = Math.max(1, tile - outlineInset * 2);
-    context.strokeStyle = "#ffffff";
-    context.lineWidth = Math.max(2, Math.floor(tile * 0.05));
+    const centerRow = Math.floor(gridHeight / 2)
+    const centerCol = Math.floor(gridWidth / 2)
+    const outlineInset = tile > 6 ? 2 : 0
+    const outlineBody = Math.max(1, tile - outlineInset * 2)
+    context.strokeStyle = '#ffffff'
+    context.lineWidth = Math.max(2, Math.floor(tile * 0.05))
     context.strokeRect(
       originX + centerCol * tile + outlineInset,
       originY + centerRow * tile + outlineInset,
       outlineBody,
-      outlineBody,
-    );
+      outlineBody
+    )
   }
 
   function sendAction(index) {
-    if (!socket || socket.readyState !== WebSocket.OPEN) return;
-    socket.send(JSON.stringify({ type: "action", action_index: index }));
+    if (!socket || socket.readyState !== WebSocket.OPEN) return
+    socket.send(JSON.stringify({ type: 'action', action_index: index }))
   }
 
   function sendActionName(name) {
-    const index = actionNames.indexOf(name);
-    if (index < 0) return;
-    sendAction(index);
+    const index = actionNames.indexOf(name)
+    if (index < 0) return
+    sendAction(index)
   }
 
   function requestTakeover() {
-    if (!socket || socket.readyState !== WebSocket.OPEN) return;
-    socket.send(JSON.stringify({ type: "takeover" }));
+    if (!socket || socket.readyState !== WebSocket.OPEN) return
+    socket.send(JSON.stringify({ type: 'takeover' }))
   }
 
   function releaseTakeover() {
-    if (!socket || socket.readyState !== WebSocket.OPEN) return;
-    socket.send(JSON.stringify({ type: "release_takeover" }));
+    if (!socket || socket.readyState !== WebSocket.OPEN) return
+    socket.send(JSON.stringify({ type: 'release_takeover' }))
   }
 
   function updateHud() {
-    const mode = controlState && controlState.control_mode === "human" ? "human" : "policy";
-    const stepText = latestStep == null ? "" : ` step ${latestStep}`;
-    const connectionText = config && config.connection_id ? ` ${config.connection_id}` : "";
-    const modeSpan = document.createElement("span");
-    modeSpan.className = mode === "human" ? "mode human" : "mode";
-    modeSpan.textContent = mode;
-    const meta = document.createElement("span");
-    meta.className = "muted";
-    meta.textContent = `${connectionText}${stepText}`;
-    details.replaceChildren(document.createTextNode(" "), modeSpan, meta);
+    const mode = controlState && controlState.control_mode === 'human' ? 'human' : 'policy'
+    const stepText = latestStep == null ? '' : ` step ${latestStep}`
+    const connectionText = config && config.connection_id ? ` ${config.connection_id}` : ''
+    const modeSpan = document.createElement('span')
+    modeSpan.className = mode === 'human' ? 'mode human' : 'mode'
+    modeSpan.textContent = mode
+    const meta = document.createElement('span')
+    meta.className = 'muted'
+    meta.textContent = `${connectionText}${stepText}`
+    details.replaceChildren(document.createTextNode(' '), modeSpan, meta)
   }
 
   function handleObservation(message) {
-    cells = tokenCells(message.observation);
-    latestStep = message.step;
-    controlState = message.control_state;
-    updateHud();
-    draw();
+    cells = tokenCells(message.observation)
+    latestStep = message.step
+    controlState = message.control_state
+    updateHud()
+    draw()
   }
 
-  window.addEventListener("resize", draw);
-  window.addEventListener("keydown", (event) => {
+  window.addEventListener('resize', draw)
+  window.addEventListener('keydown', (event) => {
     const actionsByKey = {
-      ArrowUp: "move_north",
-      w: "move_north",
-      ArrowDown: "move_south",
-      s: "move_south",
-      ArrowLeft: "move_west",
-      a: "move_west",
-      ArrowRight: "move_east",
-      d: "move_east",
-      " ": "noop",
-    };
-    if (event.key === "Escape") {
-      event.preventDefault();
-      releaseTakeover();
-      return;
+      ArrowUp: 'move_north',
+      w: 'move_north',
+      ArrowDown: 'move_south',
+      s: 'move_south',
+      ArrowLeft: 'move_west',
+      a: 'move_west',
+      ArrowRight: 'move_east',
+      d: 'move_east',
+      ' ': 'noop',
     }
-    const action = actionsByKey[event.key];
-    if (!action) return;
-    event.preventDefault();
-    sendActionName(action);
-  });
+    if (event.key === 'Escape') {
+      event.preventDefault()
+      releaseTakeover()
+      return
+    }
+    const action = actionsByKey[event.key]
+    if (!action) return
+    event.preventDefault()
+    sendActionName(action)
+  })
 
-  socket = new WebSocket(websocketUrl);
-  socket.onopen = () => { identity.textContent = "Connected"; };
+  socket = new WebSocket(websocketUrl)
+  socket.onopen = () => {
+    identity.textContent = 'Connected'
+  }
   socket.onmessage = (event) => {
-    const message = JSON.parse(event.data);
-    if (message.type === "player_config") configure(message);
-    if (message.type === "observation") handleObservation(message);
-    if (message.type === "final") {
-      done = true;
-      latestStep = message.step;
-      identity.textContent = "Done";
-      updateHud();
+    const message = JSON.parse(event.data)
+    if (message.type === 'player_config') configure(message)
+    if (message.type === 'observation') handleObservation(message)
+    if (message.type === 'final') {
+      done = true
+      latestStep = message.step
+      identity.textContent = 'Done'
+      updateHud()
     }
-  };
+  }
   socket.onclose = (event) => {
-    if (done) return;
-    identity.textContent = event.code === 4000 ? "Booted" : "Disconnected";
-    details.textContent = "";
-  };
-  draw();
+    if (done) return
+    identity.textContent = event.code === 4000 ? 'Booted' : 'Disconnected'
+    details.textContent = ''
+  }
+  draw()
 </script>

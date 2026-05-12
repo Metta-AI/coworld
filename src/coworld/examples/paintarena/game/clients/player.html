@@ -14,7 +14,9 @@
     --green: #059669;
     --violet: #7c3aed;
   }
-  * { box-sizing: border-box; }
+  * {
+    box-sizing: border-box;
+  }
   body {
     background: var(--page);
     color: var(--ink);
@@ -74,7 +76,7 @@
   .score::before {
     background: var(--color);
     border-radius: 999px;
-    content: "";
+    content: '';
     height: 10px;
     width: 10px;
   }
@@ -96,7 +98,7 @@
     background: #d8e0ec;
     border: 1px solid #b8c4d8;
     border-radius: 8px;
-    box-shadow: inset 0 1px 0 rgba(255, 255, 255, .8);
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.8);
     display: grid;
     gap: 3px;
     overflow: hidden;
@@ -107,33 +109,55 @@
     aspect-ratio: 1;
     background: var(--empty);
     border-radius: 5px;
-    box-shadow: inset 0 1px 0 rgba(255, 255, 255, .85);
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.85);
     position: relative;
   }
-  .owned-0 { background: #bfdbfe; }
-  .owned-1 { background: #fecaca; }
-  .owned-2 { background: #bbf7d0; }
-  .owned-3 { background: #ddd6fe; }
+  .owned-0 {
+    background: #bfdbfe;
+  }
+  .owned-1 {
+    background: #fecaca;
+  }
+  .owned-2 {
+    background: #bbf7d0;
+  }
+  .owned-3 {
+    background: #ddd6fe;
+  }
   .agent {
     color: white;
     display: grid;
     font-size: 13px;
     font-weight: 900;
     place-items: center;
-    text-shadow: 0 1px 1px rgba(0, 0, 0, .3);
+    text-shadow: 0 1px 1px rgba(0, 0, 0, 0.3);
   }
   .agent::after {
     content: attr(data-heading);
     font-size: clamp(20px, 3.4vw, 42px);
     line-height: 1;
   }
-  .agent-0 { background: linear-gradient(145deg, #60a5fa, var(--blue)); }
-  .agent-1 { background: linear-gradient(145deg, #fb7185, var(--red)); }
-  .agent-2 { background: linear-gradient(145deg, #34d399, var(--green)); }
-  .agent-3 { background: linear-gradient(145deg, #a78bfa, var(--violet)); }
-  .you { box-shadow: inset 0 0 0 3px #111827, 0 0 0 2px white; }
+  .agent-0 {
+    background: linear-gradient(145deg, #60a5fa, var(--blue));
+  }
+  .agent-1 {
+    background: linear-gradient(145deg, #fb7185, var(--red));
+  }
+  .agent-2 {
+    background: linear-gradient(145deg, #34d399, var(--green));
+  }
+  .agent-3 {
+    background: linear-gradient(145deg, #a78bfa, var(--violet));
+  }
+  .you {
+    box-shadow:
+      inset 0 0 0 3px #111827,
+      0 0 0 2px white;
+  }
   @media (max-width: 860px) {
-    body { padding: 14px; }
+    body {
+      padding: 14px;
+    }
   }
 </style>
 <main>
@@ -148,86 +172,100 @@
   <div id="arena"></div>
 </main>
 <script>
-  const websocketUrl = new URL(window.location.href);
-  websocketUrl.protocol = websocketUrl.protocol === "https:" ? "wss:" : "ws:";
-  websocketUrl.pathname = websocketUrl.pathname.replace(/\/clients\/player$/, "/player");
+  const pageUrl = new URL(window.location.href)
 
-  const status = document.getElementById("status");
-  const arena = document.getElementById("arena");
-  const playerName = document.getElementById("playerName");
-  const scores = document.getElementById("scores");
-  const timerFill = document.getElementById("timerFill");
-  const colors = ["#2563eb", "#dc2626", "#059669", "#7c3aed"];
-  const headingSymbols = { up: "↑", down: "↓", left: "←", right: "→", stay: "•" };
-  let heading = "stay";
-  let done = false;
-  let slot = null;
-  let socket;
-
-  function draw(message) {
-    slot = message.slot;
-    playerName.textContent = message.player_names[slot];
-    timerFill.style.width = `${Math.max(100 - (message.tick / message.max_ticks) * 100, 0)}%`;
-    scores.replaceChildren(...message.scores.map((score, scoreSlot) => {
-      const scoreEl = document.createElement("div");
-      scoreEl.className = "score";
-      scoreEl.style.setProperty("--color", colors[scoreSlot]);
-      scoreEl.textContent = `${message.player_names[scoreSlot]}: ${score}`;
-      return scoreEl;
-    }));
-    arena.style.gridTemplateColumns = `repeat(${message.width}, 1fr)`;
-    const agents = new Map(message.positions.map((position, slot) => [`${position[0]},${position[1]}`, slot]));
-    const cells = [];
-    for (let y = 0; y < message.height; y += 1) {
-      for (let x = 0; x < message.width; x += 1) {
-        const key = `${x},${y}`;
-        const owner = message.tile_owners[y * message.width + x];
-        const cell = document.createElement("div");
-        cell.className = "cell";
-        if (owner >= 0) cell.classList.add(`owned-${owner}`);
-        if (agents.has(key)) {
-          const agentSlot = agents.get(key);
-          cell.className = `cell agent owned-${agentSlot} agent-${agentSlot}`;
-          if (agentSlot === slot) {
-            cell.classList.add("you");
-            cell.dataset.heading = headingSymbols[heading];
-          } else {
-            cell.textContent = agentSlot + 1;
-          }
-        }
-        cells.push(cell);
-      }
-    }
-    arena.replaceChildren(...cells);
+  function websocketAddress(path) {
+    const address = pageUrl.searchParams.get('address')
+    const target = new URL(address || window.location.href, window.location.href)
+    if (target.protocol === 'http:') target.protocol = 'ws:'
+    if (target.protocol === 'https:') target.protocol = 'wss:'
+    if (!address) target.pathname = target.pathname.replace(/\/clients\/player$/, path)
+    target.hash = ''
+    return target
   }
 
-  socket = new WebSocket(websocketUrl);
-  socket.onopen = () => { status.textContent = "Connected"; };
-  socket.onmessage = (event) => {
-    const message = JSON.parse(event.data);
-    draw(message);
-    if (!message.started) status.textContent = "Waiting for other player";
-    if (message.started && !message.done) status.textContent = "Running";
-    if (message.done) {
-      done = true;
-      status.textContent = "Done";
+  const websocketUrl = websocketAddress('/player')
+
+  const status = document.getElementById('status')
+  const arena = document.getElementById('arena')
+  const playerName = document.getElementById('playerName')
+  const scores = document.getElementById('scores')
+  const timerFill = document.getElementById('timerFill')
+  const colors = ['#2563eb', '#dc2626', '#059669', '#7c3aed']
+  const headingSymbols = { up: '↑', down: '↓', left: '←', right: '→', stay: '•' }
+  let heading = 'stay'
+  let done = false
+  let slot = null
+  let socket
+
+  function draw(message) {
+    slot = message.slot
+    playerName.textContent = message.player_names[slot]
+    timerFill.style.width = `${Math.max(100 - (message.tick / message.max_ticks) * 100, 0)}%`
+    scores.replaceChildren(
+      ...message.scores.map((score, scoreSlot) => {
+        const scoreEl = document.createElement('div')
+        scoreEl.className = 'score'
+        scoreEl.style.setProperty('--color', colors[scoreSlot])
+        scoreEl.textContent = `${message.player_names[scoreSlot]}: ${score}`
+        return scoreEl
+      })
+    )
+    arena.style.gridTemplateColumns = `repeat(${message.width}, 1fr)`
+    const agents = new Map(message.positions.map((position, slot) => [`${position[0]},${position[1]}`, slot]))
+    const cells = []
+    for (let y = 0; y < message.height; y += 1) {
+      for (let x = 0; x < message.width; x += 1) {
+        const key = `${x},${y}`
+        const owner = message.tile_owners[y * message.width + x]
+        const cell = document.createElement('div')
+        cell.className = 'cell'
+        if (owner >= 0) cell.classList.add(`owned-${owner}`)
+        if (agents.has(key)) {
+          const agentSlot = agents.get(key)
+          cell.className = `cell agent owned-${agentSlot} agent-${agentSlot}`
+          if (agentSlot === slot) {
+            cell.classList.add('you')
+            cell.dataset.heading = headingSymbols[heading]
+          } else {
+            cell.textContent = agentSlot + 1
+          }
+        }
+        cells.push(cell)
+      }
     }
-  };
+    arena.replaceChildren(...cells)
+  }
+
+  socket = new WebSocket(websocketUrl)
+  socket.onopen = () => {
+    status.textContent = 'Connected'
+  }
+  socket.onmessage = (event) => {
+    const message = JSON.parse(event.data)
+    draw(message)
+    if (!message.started) status.textContent = 'Waiting for other player'
+    if (message.started && !message.done) status.textContent = 'Running'
+    if (message.done) {
+      done = true
+      status.textContent = 'Done'
+    }
+  }
   socket.onclose = () => {
-    if (!done) status.textContent = "Disconnected";
-  };
+    if (!done) status.textContent = 'Disconnected'
+  }
 
   function sendMove(move) {
-    if (socket.readyState !== WebSocket.OPEN) return;
-    heading = move;
-    socket.send(JSON.stringify({ move }));
+    if (socket.readyState !== WebSocket.OPEN) return
+    heading = move
+    socket.send(JSON.stringify({ move }))
   }
 
   window.onkeydown = (event) => {
-    const moves = { ArrowUp: "up", ArrowDown: "down", ArrowLeft: "left", ArrowRight: "right", " ": "stay" };
+    const moves = { ArrowUp: 'up', ArrowDown: 'down', ArrowLeft: 'left', ArrowRight: 'right', ' ': 'stay' }
     if (event.key in moves) {
-      event.preventDefault();
-      sendMove(moves[event.key]);
+      event.preventDefault()
+      sendMove(moves[event.key])
     }
-  };
+  }
 </script>

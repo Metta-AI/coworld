@@ -44,8 +44,8 @@ The runner supplies:
 - `COGAME_RESULTS_URI`: URI to which to POST the final results,
 - `COGAME_SAVE_REPLAY_URI`: URI to which to POST the game's replay artifact.
 
-Games must support `file://` URIs. Hosted runners may provide other writable URI
-schemes for results and replay when the game image supports them.
+Games must support `file://` URIs. Hosted runners may provide other writable URI schemes for results and replay when the
+game image supports them.
 
 These environment variables put the container in rollout mode. In rollout mode, the game container listens on
 `0.0.0.0:8080` and exposes:
@@ -57,11 +57,15 @@ These environment variables put the container in rollout mode. In rollout mode, 
 - `WEBSOCKET /global` -- used by a global viewer, such as the ui above or a native ui, to connect to the game
 
 HTTP `GET /clients/player` must serve a browser client for one player slot. HTTP `GET /clients/global` must serve a
-browser client for live episode viewing. The served clients read the complete URL query string and forward every query
-param when opening their websocket connection on the corresponding websocket route. For example,
+browser client for live episode viewing. The served clients read the complete URL query string before opening their
+websocket connection. If the query contains `address`, the client uses that value as the complete websocket URL after
+converting `http`/`https` to `ws`/`wss`; it must not merge other page query params into that URL. Otherwise, it derives
+the websocket URL from the client page URL by replacing `/clients/player` with `/player` or `/clients/global` with
+`/global` and preserving the page query params such as `slot`, `token`, and game-owned params. For example,
 `http://<engine-host>/clients/player?slot=0&token=...&role=...` serves the player client, and that client opens
-`ws://<engine-host>/player?slot=0&token=...&role=...`. The same convention applies to
-`http://<engine-host>/clients/global`, whose client opens `ws://<engine-host>/global`.
+`ws://<engine-host>/player?slot=0&token=...&role=...`. A proxy may instead serve
+`https://<proxy>/clients/player?address=wss://<proxy>/player?slot=0&token=...`, which tells the client to connect to
+`wss://<proxy>/player?slot=0&token=...`.
 
 Games may implement local development admin controls however they want. By convention, `GET /clients/admin` serves the
 browser admin UI and `WEBSOCKET /admin?...` accepts admin commands such as pausing, unpausing, or changing tick rate.
@@ -120,15 +124,15 @@ player-supplied connection metadata as untrusted.
    - starts one container per policy runnable,
    - supplies `COGAMES_ENGINE_WS_URL=ws://<engine-host>/player?slot=<slot>&token=<token>` to the policy container.
 9. The game rejects player connections whose `token` does not match the token for that slot.
-10. Browser player clients may request `GET /clients/player?slot=<slot>&token=<token>&...`; the served client opens
-    the `/player` websocket with the same query params.
+10. Browser player clients may request `GET /clients/player?slot=<slot>&token=<token>&...`; the served client opens the
+    `/player` websocket with the same query params, unless an `address` query param supplies the full websocket URL.
 11. Browser global clients may request `GET /clients/global`; the served client opens the `/global` websocket with the
-    same query params.
+    same query params, unless an `address` query param supplies the full websocket URL.
 12. Global websocket viewers may connect before or during the episode through `/global`.
 13. Players may disconnect and reconnect to the same slot with the same token.
 14. The game engine progresses the game after each player connects.
-15. When the game ends, it POSTs results to `COGAME_RESULTS_URI` and a replay artifact to `COGAME_SAVE_REPLAY_URI`.
-    The results file is JSON matching `results_schema`, and the game engine stops responding to `/healthz` with 200.
+15. When the game ends, it POSTs results to `COGAME_RESULTS_URI` and a replay artifact to `COGAME_SAVE_REPLAY_URI`. The
+    results file is JSON matching `results_schema`, and the game engine stops responding to `/healthz` with 200.
 16. The runner uploads results, replay, and logs to the episode config output URIs.
 
 ## Replay Lifecycle

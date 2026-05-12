@@ -93,6 +93,8 @@ class HostedGameCreateResponse(BaseModel):
     session_id: str
     join_url: str
     lobby_url: str
+    player_count: int
+    global_url: str | None
 
 
 class HostedGameJoinPlayer(BaseModel):
@@ -221,7 +223,6 @@ class CoworldUploadClient:
         *,
         coworld_id: str,
         variant_id: str | None = None,
-        player_count: int | None = None,
         allow_spectators: bool = False,
     ) -> HostedGameCreateResponse:
         response = self._http_client.post(
@@ -230,7 +231,6 @@ class CoworldUploadClient:
             json={
                 "coworld_id": coworld_id,
                 "variant_id": variant_id,
-                "player_count": player_count,
                 "allow_spectators": allow_spectators,
             },
             timeout=120.0,

@@ -189,6 +189,17 @@ def test_create_player_pod_injects_policy_secret_env():
     assert pod.spec.service_account_name == "episode-runner"
 
 
+def test_kubernetes_runner_uses_direct_player_urls_without_address():
+    player = PlayerLaunchSpec(image="paintbot:latest", run=(), env={})
+
+    assert kubernetes_runner._player_client_url(1, "slot-token", player) == (
+        "http://127.0.0.1:8080/clients/player?slot=1&token=slot-token"
+    )
+    assert kubernetes_runner._player_service_ws_url("game-service", 1, "slot-token", player) == (
+        "ws://game-service:8080/player?slot=1&token=slot-token"
+    )
+
+
 def test_create_player_pod_keeps_default_service_account_without_bedrock():
     created: dict[str, object] = {}
     core_v1 = SimpleNamespace(
