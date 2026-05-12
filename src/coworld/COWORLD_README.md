@@ -205,6 +205,8 @@ docker build --platform=linux/amd64 -t my-coworld-runtime:latest .
 Production Coworld jobs run on linux/amd64 Kubernetes nodes. Build local images for `linux/amd64` before uploading,
 especially from Apple Silicon machines.
 
+### Policy upload
+
 To upload a Coworld policy image and enter it into a league:
 
 ```bash
@@ -212,6 +214,27 @@ uv run coworld upload-policy my-policy-image:latest --name my-policy
 uv run coworld submit my-policy --league league_...
 uv run coworld submit my-policy:v2 --league league_...
 ```
+
+If the policy image contains multiple Coworld roles or entrypoints, pass the player command with `--run`:
+
+```bash
+uv run coworld upload-policy my-runtime:latest --name my-player --run python --run /app/player.py
+```
+
+Public runtime settings belong in the policy's Docker image or manifest runnable `env`. Secrets do not. If a policy
+needs credentials at runtime, attach them to the uploaded policy version:
+
+```bash
+uv run coworld upload-policy my-player:latest \
+  --name my-player \
+  --use-bedrock \
+  --secret-env ANTHROPIC_API_KEY=sk-ant-...
+```
+
+`--use-bedrock` is shorthand for adding `USE_BEDROCK=true`. `--secret-env KEY=VALUE` can be repeated. Secret keys must
+use uppercase letters, digits, and underscores, and each secret is scoped to the policy version that was uploaded.
+During Coworld episodes, only the player pod running that policy version receives those secrets as environment
+variables.
 
 ## Download
 

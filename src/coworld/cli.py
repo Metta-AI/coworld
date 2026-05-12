@@ -28,6 +28,13 @@ from coworld.upload import (
 app = typer.Typer(no_args_is_help=True, pretty_exceptions_enable=False)
 
 
+def _parse_secret_env(value: str) -> tuple[str, str]:
+    if "=" not in value:
+        raise typer.BadParameter(f"Expected KEY=VALUE format, got: {value}")
+    key, _, val = value.partition("=")
+    return key, val
+
+
 @app.callback()
 def main() -> None:
     """Validate, certify, and play Coworld packages."""
@@ -169,16 +176,39 @@ def upload_policy(
         list[str] | None,
         typer.Option("--run", help="Command argv for images that contain multiple Coworld roles."),
     ] = None,
+    secret_env: Annotated[
+        list[str] | None,
+        typer.Option(
+            "--secret-env",
+            help="Secret environment variable for policy execution (can be repeated). Stored in AWS Secrets Manager.",
+        ),
+    ] = None,
+    use_bedrock: Annotated[
+        bool,
+        typer.Option(
+            "--use-bedrock",
+            help="Enable AWS Bedrock access for this policy. Sets USE_BEDROCK=true in policy environment.",
+        ),
+    ] = False,
     server: Annotated[str, typer.Option("--server", help="Observatory API server URL.")] = DEFAULT_SUBMIT_SERVER,
     login_server: Annotated[
         str,
         typer.Option("--login-server", help="Authentication server URL."),
     ] = DEFAULT_LOGIN_SERVER,
 ) -> None:
+    parsed_secret_env: dict[str, str] = {}
+    if use_bedrock:
+        parsed_secret_env["USE_BEDROCK"] = "true"
+    if secret_env:
+        for kv in secret_env:
+            key, val = _parse_secret_env(kv)
+            parsed_secret_env[key] = val
+
     upload_policy_cmd(
         image,
         name,
         run=run,
+        secret_env=parsed_secret_env if parsed_secret_env else None,
         server=server,
         login_server=login_server,
     )

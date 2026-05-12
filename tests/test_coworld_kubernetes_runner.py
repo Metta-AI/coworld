@@ -1,10 +1,12 @@
 import gzip
+import json
+import os
 from pathlib import Path
 from types import SimpleNamespace
 
 from coworld.runner import kubernetes_runner
 from coworld.runner.kubernetes_runner import _collect_logs, _wait_for_results
-from coworld.runner.runner import EpisodeArtifacts
+from coworld.runner.runner import EpisodeArtifacts, PlayerLaunchSpec
 
 
 class _FakeCoreV1:
@@ -108,3 +110,79 @@ def test_init_replay_from_env_materializes_compressed_replay(monkeypatch, tmp_pa
     kubernetes_runner.init_replay_from_env()
 
     assert (tmp_path / "replay.json").read_bytes() == payload
+
+
+def test_policy_secrets_from_env_loads_and_removes_uri(monkeypatch, tmp_path):
+    bundle_path = tmp_path / "bundle.json"
+    bundle_path.write_text(
+        json.dumps({"policies": {"0": {"ANTHROPIC_API_KEY": "sk-ant-test"}, "2": {"USE_BEDROCK": "true"}}}),
+        encoding="utf-8",
+    )
+    monkeypatch.setenv("POLICY_SECRETS_URI", bundle_path.as_uri())
+
+    assert kubernetes_runner._policy_secrets_from_env() == {
+        0: {"ANTHROPIC_API_KEY": "sk-ant-test"},
+        2: {"USE_BEDROCK": "true"},
+    }
+    assert "POLICY_SECRETS_URI" not in os.environ
+
+
+def test_create_player_pod_injects_policy_secret_env():
+    created: dict[str, object] = {}
+    core_v1 = SimpleNamespace(
+        create_namespaced_pod=lambda *, namespace, body: created.update({"namespace": namespace, "body": body})
+    )
+    player = PlayerLaunchSpec(
+        image="paintbot:latest",
+        run=(),
+        env={"PUBLIC_SETTING": "visible", "ANTHROPIC_API_KEY": "placeholder"},
+    )
+
+    kubernetes_runner._create_player_pod(
+        core_v1,
+        "jobs",
+        "job-player-0",
+        0,
+        "slot-token",
+        player,
+        {"ANTHROPIC_API_KEY": "sk-ant-test", "USE_BEDROCK": "true"},
+        "job-id",
+        "game-service",
+        [],
+    )
+
+    pod = created["body"]
+    env = {env_var.name: env_var.value for env_var in pod.spec.containers[0].env}
+    assert env["PUBLIC_SETTING"] == "visible"
+    assert env["ANTHROPIC_API_KEY"] == "sk-ant-test"
+    assert env["USE_BEDROCK"] == "true"
+    assert env["COGAMES_ENGINE_WS_URL"] == "ws://game-service:8080/player?slot=0&token=slot-token"
+    assert pod.spec.service_account_name == "episode-runner"
+
+
+def test_create_player_pod_keeps_default_service_account_without_bedrock():
+    created: dict[str, object] = {}
+    core_v1 = SimpleNamespace(
+        create_namespaced_pod=lambda *, namespace, body: created.update({"namespace": namespace, "body": body})
+    )
+    player = PlayerLaunchSpec(
+        image="paintbot:latest",
+        run=(),
+        env={},
+    )
+
+    kubernetes_runner._create_player_pod(
+        core_v1,
+        "jobs",
+        "job-player-0",
+        0,
+        "slot-token",
+        player,
+        {"ANTHROPIC_API_KEY": "sk-ant-test"},
+        "job-id",
+        "game-service",
+        [],
+    )
+
+    pod = created["body"]
+    assert pod.spec.service_account_name is None

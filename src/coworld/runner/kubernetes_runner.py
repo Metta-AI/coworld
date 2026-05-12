@@ -36,6 +36,7 @@ WORKDIR = Path(os.environ.get("COWORLD_WORKDIR", "/coworld"))
 STATE_PATH = WORKDIR / "state.json"
 REPLAY_PATH = WORKDIR / "replay.json"
 GAME_PORT = 8080
+_BEDROCK_SERVICE_ACCOUNT = "episode-runner"
 
 
 def init_config_from_env() -> None:
@@ -136,6 +137,7 @@ def _run_kubernetes_episode(
     owner_references = _owner_references()
     tokens = json.loads(STATE_PATH.read_text(encoding="utf-8"))["tokens"]
     players = [PlayerLaunchSpec.from_model(player) for player in job.players]
+    policy_secrets = _policy_secrets_from_env()
     child_names: list[str] = []
 
     try:
@@ -156,6 +158,7 @@ def _run_kubernetes_episode(
                 slot,
                 tokens[slot],
                 player,
+                policy_secrets.get(slot, {}),
                 job_id,
                 service_name,
                 owner_references,
@@ -217,11 +220,13 @@ def _create_player_pod(
     slot: int,
     token: str,
     player: PlayerLaunchSpec,
+    policy_secret_env: Mapping[str, str],
     job_id: str,
     service_name: str,
     owner_references: list[client.V1OwnerReference],
 ) -> None:
     command, args = _command_args(player.run)
+    player_env = dict(player.env) | dict(policy_secret_env)
     pod = client.V1Pod(
         metadata=client.V1ObjectMeta(
             name=name,
@@ -235,6 +240,7 @@ def _create_player_pod(
         ),
         spec=client.V1PodSpec(
             restart_policy="Never",
+            service_account_name=_player_service_account_name(policy_secret_env),
             node_selector=_workload_node_selector(),
             tolerations=_workload_tolerations(),
             containers=[
@@ -245,7 +251,7 @@ def _create_player_pod(
                     command=command,
                     args=args,
                     env=[
-                        *_env_vars(player.env),
+                        *_env_vars(player_env),
                         client.V1EnvVar(
                             name="COGAMES_ENGINE_WS_URL",
                             value=_player_service_ws_url(service_name, slot, token, player),
@@ -256,6 +262,20 @@ def _create_player_pod(
         ),
     )
     core_v1.create_namespaced_pod(namespace=namespace, body=pod)
+
+
+def _player_service_account_name(policy_secret_env: Mapping[str, str]) -> str | None:
+    if "USE_BEDROCK" in policy_secret_env and policy_secret_env["USE_BEDROCK"] == "true":
+        return _BEDROCK_SERVICE_ACCOUNT
+    return None
+
+
+def _policy_secrets_from_env() -> dict[int, dict[str, str]]:
+    secrets_uri = os.environ.pop("POLICY_SECRETS_URI", None)
+    if secrets_uri is None:
+        return {}
+    bundle = json.loads(read_data(secrets_uri))
+    return {int(position): secret_env for position, secret_env in bundle["policies"].items()}
 
 
 def _wait_for_health(core_v1, namespace: str, pod_name: str, *, timeout_seconds: float) -> None:

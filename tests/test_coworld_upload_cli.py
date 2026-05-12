@@ -252,6 +252,75 @@ def test_upload_policy_command_creates_docker_image_policy(
     assert "Upload complete: paintbot:v1" in result.output
 
 
+def test_upload_policy_command_sends_policy_secrets(
+    httpserver: HTTPServer,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    softmax_image_uri = "123456789012.dkr.ecr.us-east-1.amazonaws.com/cogames/user/unit-test-policy@sha256:digest"
+
+    monkeypatch.setattr("coworld.upload._load_current_cogames_token", lambda *, login_server: "token")
+    monkeypatch.setattr("coworld.upload._local_image_client_hash", lambda image: "sha256:client-hash")
+    monkeypatch.setattr("coworld.upload._push_container_image", lambda source_image, push_info: None)
+    httpserver.expect_request(
+        "/v2/container_images/upload",
+        method="POST",
+        headers={"X-Auth-Token": "token"},
+        json={"name": "unit-test-policy", "client_hash": "sha256:client-hash"},
+    ).respond_with_json(
+        {
+            "image": {
+                "id": "img_00000000-0000-0000-0000-000000000030",
+                "name": "unit-test-policy",
+                "version": 1,
+                "client_hash": "sha256:client-hash",
+                "status": "ready",
+                "image_uri": softmax_image_uri,
+                "image_digest": "sha256:digest",
+            },
+            "pre_signed_info": None,
+        }
+    )
+    httpserver.expect_request(
+        "/stats/policies/docker-img/complete",
+        method="POST",
+        headers={"X-Auth-Token": "token"},
+        json={
+            "name": "paintbot",
+            "container_image_id": "img_00000000-0000-0000-0000-000000000030",
+            "policy_secret_env": {
+                "USE_BEDROCK": "true",
+                "ANTHROPIC_API_KEY": "sk-ant-test",
+            },
+        },
+    ).respond_with_json(
+        {
+            "id": "00000000-0000-0000-0000-000000000031",
+            "name": "paintbot",
+            "version": 1,
+        }
+    )
+
+    result = CliRunner().invoke(
+        app,
+        [
+            "upload-policy",
+            "unit-test-policy:latest",
+            "--name",
+            "paintbot",
+            "--server",
+            httpserver.url_for(""),
+            "--login-server",
+            "https://softmax.test/api",
+            "--use-bedrock",
+            "--secret-env",
+            "ANTHROPIC_API_KEY=sk-ant-test",
+        ],
+    )
+
+    assert result.exit_code == 0, result.output
+    assert "Upload complete: paintbot:v1" in result.output
+
+
 def test_coworld_list_command_prints_json(httpserver: HTTPServer, monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr("coworld.upload._load_current_cogames_token", lambda *, login_server: "token")
     httpserver.expect_request(
