@@ -1,50 +1,98 @@
-# Coworld Specification
+# Coworld Guide
 
-A coworld is a set of docker images and configurations that form a game ecosystem in the Softmax universe.
+This is the canonical overview for Coworlds. Use it to understand the shape of the system and which command to run
+next. Use [COGAME_README.md](COGAME_README.md) for the game-container runtime contract and
+[CLI_README.md](CLI_README.md) for the command reference.
 
-A viable coworld is one that has enough integration points implemented in a compliant way that Softmax can make use of
-it.
+A Coworld is a containerized game package that Softmax can run locally, in hosted play, and in leagues. It has:
 
-## Coworld Package Specification
+- one game image that owns rules, state, viewers, results, and replays;
+- one or more player images that connect to the game and choose actions;
+- a `coworld_manifest.json` file that names the images, configs, schemas, and player docs.
 
-A viable coworld package provides a `coworld_manifest.json` at its root that adheres to
-[coworld_manifest_schema.json](coworld_manifest_schema.json) and passes certification:
+## Player Loop
+
+Use this flow when you want to build a player for an existing Coworld league:
 
 ```bash
-uv run coworld certify path/to/coworld_manifest.json
+uv run softmax login
+uv run coworld download cow_... --output-dir ./coworld
+python -m json.tool ./coworld/coworld_manifest.json | less
+docker build --platform=linux/amd64 -t my-player:latest .
+uv run coworld run-episode ./coworld/coworld_manifest.json my-player:latest
+uv run coworld upload-policy my-player:latest --name my-player
+uv run coworld submit my-player --league league_...
 ```
 
-The schema provides a full description for what it requires. A summary of the required elements:
+Before writing code, read the downloaded manifest:
 
-- [Cogame](#cogame)
-- [Certification fixture](#certification-fixture)
-- [Player](#player)
-- [Variants](#variants)
+- `game.protocols.player` links to the websocket protocol your player must implement.
+- `game.docs.pages` may contain extra game-authored docs such as strategy notes.
+- `certification.game_config` is the small local episode used by `coworld run-episode`.
+- `variants` are named game configs used by leagues or local testing.
 
-Currently optional elements that will soon be required:
+A player image receives `COGAMES_ENGINE_WS_URL`, connects to that websocket, follows the game protocol, plays until the
+episode ends, and exits.
 
-- [Grader](#grader)
-- [Reporter](#reporter)
-- [Commissioner](#commissioner)
-- [Diagnoser](#diagnoser)
-- [Optimizer](#optimizer)
+For local testing, one image can fill every player slot:
 
-For a complete small implementation, see [examples/paintarena/](examples/paintarena/).
+```bash
+uv run coworld run-episode ./coworld/coworld_manifest.json my-player:latest
+```
 
-### Protocol Documentation
+You can also pass one image per slot:
 
-`game.protocols.player` and `game.protocols.global` are explicit document objects:
+```bash
+uv run coworld run-episode ./coworld/coworld_manifest.json player-one:latest player-two:latest
+```
+
+If the image needs a specific player command, pass it explicitly:
+
+```bash
+uv run coworld run-episode ./coworld/coworld_manifest.json my-runtime:latest --run python --run /app/player.py
+uv run coworld upload-policy my-runtime:latest --name my-player --run python --run /app/player.py
+```
+
+## Game Author Loop
+
+Use this flow when you want to package a new Coworld:
+
+```bash
+docker build --platform=linux/amd64 -t my-coworld-game:latest .
+uv run coworld certify path/to/coworld_manifest.json
+uv run coworld upload-coworld path/to/coworld_manifest.json
+```
+
+The smallest complete example is [examples/paintarena/](examples/paintarena/).
+
+Certification validates the manifest, checks the referenced Docker images, runs one short episode, checks player and
+global client routes, checks replay viewing, and validates the results file. The certifier does not build images; build
+or pull them first.
+
+## Manifest
+
+Every Coworld package has a `coworld_manifest.json` file that follows
+[coworld_manifest_schema.json](coworld_manifest_schema.json). The main sections are:
+
+- `game`: the game server image, config schema, result schema, and protocol docs.
+- `player`: bundled player images that can play the game.
+- `variants`: named game configs, such as maps, difficulty levels, or league settings.
+- `certification`: the short smoke-test episode used by `coworld certify` and `coworld run-episode`.
+
+The game, player, grader, reporter, commissioner, diagnoser, and optimizer sections all use the same runnable shape: an
+image, an optional command (`run`), and optional public environment variables (`env`). Secrets do not belong in the
+manifest.
+
+Protocol docs are explicit document objects:
 
 ```json
 { "type": "uri", "value": "https://example.com/player_protocol.md" }
 ```
 
-Use `type: "uri"` for absolute HTTP(S) links, or `type: "text"` for deliberately inline documentation text. Upload does
-not infer local file paths or inline local protocol documentation into the stored manifest.
+Use `type: "uri"` for public HTTP(S) docs. Use `type: "text"` only when the docs are intentionally stored inline in the
+manifest.
 
-### Named Documentation
-
-`game.docs.pages` is an ordered list of named Markdown documents for the Coworld page to render:
+Extra docs go in `game.docs.pages`:
 
 ```json
 {
@@ -54,196 +102,51 @@ not infer local file paths or inline local protocol documentation into the store
 }
 ```
 
-Use `content.type: "uri"` for hosted Markdown files, or `content.type: "text"` for deliberately inline Markdown.
-Recommended page titles for viable Coworlds are `play.md`, `player.md`, `grader.md`, `reporter.md`, `commissioner.md`,
-`diagnoser.md`, `optimizer.md`, and `variants.md`. These names are convention, not schema-enforced fields; use the page
-title to name the document users should read.
+Upload stores the manifest as JSON. It does not bundle local Markdown files, schemas, or assets, so public docs should
+use public URLs.
 
-### Cogame
+## Runtime Contract
 
-A Cogame is the game service declared by the inline `game` object in `coworld_manifest.json`. It defines the container
-runtime API, browser client routes, websocket endpoints, config/results formats, and episode lifecycle described in
-[COGAME_README.md](COGAME_README.md).
+The game image owns the episode. It must:
 
-### Player Client
+- read the config from `COGAME_CONFIG_URI`;
+- serve `GET /healthz`;
+- serve player clients at `GET /clients/player?...` and player websockets at `WEBSOCKET /player?...`;
+- serve a live viewer at `GET /clients/global` and `WEBSOCKET /global`;
+- write final results to `COGAME_RESULTS_URI`;
+- write a replay artifact to `COGAME_SAVE_REPLAY_URI`;
+- serve replay viewers when started with `COGAME_REPLAY_SERVER=1`.
 
-The Cogame serves its player browser client from `GET /clients/player?...`. A browser can request a link such as
-`/clients/player?slot=<slot>&token=<token>&role=<value>` over HTTP and receive the player client.
+Browser client pages forward their query string when they open the websocket. Hosted proxies may pass an `address`
+query parameter containing the full websocket URL. See [COGAME_README.md](COGAME_README.md) for the exact route,
+websocket, token, reconnect, replay, and artifact contract.
 
-By convention, the client reads the complete URL query string before it opens the player websocket route. If the query
-contains `address`, the client uses that value as the complete websocket URL after converting `http`/`https` to
-`ws`/`wss`; it does not merge other page query params. Otherwise, it derives the websocket URL from the page URL by
-replacing `/clients/player` with `/player` and preserving page query params such as `slot`, `token`, and `role`.
+The game config schema must define `tokens` as a required string array with equal `minItems` and `maxItems`. That fixed
+length is the number of player slots. Coworld-authored configs omit `tokens`; the runner creates fresh tokens for each
+episode and injects them into the concrete runtime config.
 
-### Global Client
+## Upload And Inspect
 
-The Cogame serves its global browser client from `GET /clients/global`. A browser can request `/clients/global` over
-HTTP and receive the global client.
-
-By convention, the client reads the complete URL query string before it opens the global websocket route. If the query
-contains `address`, the client uses that value as the complete websocket URL after converting `http`/`https` to
-`ws`/`wss`; it does not merge other page query params. Otherwise, it derives the websocket URL from the page URL by
-replacing `/clients/global` with `/global` and preserving page query params.
-
-### Player
-
-A base player policy competently plays the game. See [COGAME_README.md](COGAME_README.md) for how a player should be
-implemented.
-
-The game, player, grader, reporter, commissioner, diagnoser, and optimizer entries are runnables. A runnable names a
-container image plus an optional complete `run` argv and public `env`, so one image can implement multiple Coworld roles
-with different commands.
-
-### Certification Fixture
-
-A short deterministic smoke episode proves that the Coworld works end to end.
-
-```json
-{
-  "certification": {
-    "game_config": {
-      "map": "default"
-    },
-    "players": [{ "player_id": "first-empty-player" }, { "player_id": "first-empty-player" }]
-  }
-}
-```
-
-### Grader
-
-An executable that attaches to the `/global` stream on a game and outputs a scalar reflecting game quality.
-
-_Contract to be specified._
-
-### Reporter
-
-An executable that attaches to the `/global` stream and emits text about important or interesting game events.
-
-_Contract to be specified._
-
-### Commissioner
-
-An executable that runs tournaments for the game and produces valid rankings.
-
-_Contract to be specified._
-
-### Diagnoser
-
-An executable that takes a player as input, runs targeted episodes, and uses the `/global` stream or episode outputs to
-assess player competence.
-
-_Contract to be specified._
-
-### Optimizer
-
-An executable that improves the player and grader. This is often a documentation file or coding-agent image that
-describes how the player and grader work.
-
-_Contract to be specified._
-
-### Variants
-
-A graph of token-free game configurations. Variants factorize the game into mechanics, so walking the tree generates
-experience targeted at learning different aspects of the game independently for training purposes.
-
-Each `variants[].game_config` is author-owned game data and must omit runner-managed `tokens`. Certification validates
-each variant by injecting dummy tokens of the exact fixed length declared by `game.config_schema.properties.tokens`,
-then checking the derived playable config against the game's config schema.
-
-## Play
-
-To start a local game for browser play:
-
-```bash
-uv run coworld play path/to/coworld_manifest.json
-uv run coworld play https://softmax.com/api/v2/coworlds/cow_...
-uv run coworld play /v2/coworlds/cow_... --server https://softmax.com/api
-```
-
-The `play`, `replay`, and `certify` commands accept local paths, full HTTP(S) manifest URIs, backend
-`/v2/coworlds/cow_...` paths with `--server`. The command downloads URI manifests to a temporary local file, uses the
-certification fixture for game config and player slots, then prints player and global client links. Observatory's public
-Coworld manifest endpoint returns public image URIs for Softmax-managed images once those images have been mirrored to
-public ECR. Each link points directly at the Cogame's HTTP client route. The served client forwards the link's query
-params when it connects back to the Cogame over websocket.
-
-Hosted play uses the same fixed token count as certification and Coworld commissioners. The platform derives the number
-of player slots from `game.config_schema.properties.tokens.minItems/maxItems`, which must be equal, then injects fresh
-runner-managed tokens into the selected variant's token-free `game_config`.
-
-## Certification
-
-Coworld certification resolves the fixture into an `EpisodeInput` from
-[runner/episode_request_schema.json](runner/episode_request_schema.json), supplies artifact destinations, and runs the
-Cogame lifecycle described in [COGAME_README.md](COGAME_README.md).
-
-Operational details:
-
-- The certifier does not build images; referenced images must already be available locally or in a reachable registry.
-- Local images are checked with `docker image inspect`; remote images are checked with `docker manifest inspect`.
-- Private registries such as GHCR or ECR require the local Docker client to be logged in first.
-- Successful runs print artifact, result, replay, and log paths under `tmp/coworld-cert-*`.
-
-Certification validates the Coworld manifest, checks referenced images, verifies the Cogame serves its player and global
-browser clients in rollout mode, verifies the Cogame serves its replay browser client in replay mode, runs one smoke
-episode through Docker, and verifies the produced results and replay artifacts.
-
-Manifest validation requires `game.config_schema` to define `tokens` as a required string array with equal `minItems`
-and `maxItems`. The certification fixture's player count must match that fixed token count.
-
-## Upload
-
-To certify and upload a Coworld manifest to the CoGames platform:
+Coworld upload certifies the package, uploads every runnable image, rewrites image references to Softmax-managed image
+IDs, and uploads the standalone manifest:
 
 ```bash
 uv run coworld upload-coworld path/to/coworld_manifest.json
-```
-
-To inspect uploaded Coworlds and uploaded runnable images:
-
-```bash
 uv run coworld list
 uv run coworld show cow_...
 uv run coworld images
-uv run coworld images img_...
 ```
 
-The Coworld upload command validates the manifest, runs certification, uploads every runnable image through the
-platform's `/v2/container_images/upload` flow, rewrites runnable image references to returned Softmax digest image URIs,
-and uploads the resulting standalone JSON manifest through `/v2/coworlds/upload`. Protocol documentation objects remain
-unchanged in the uploaded manifest.
-
-Upload does not bundle schemas, docs, or other package files. The manifest is the uploaded artifact. Documentation and
-other supporting references should be publicly accessible links. The current uploader does not validate those links.
-
-The uploader derives an optional client hash from the local image archive's config and layer content, uses it to skip
-re-uploading images the platform already has, and records ECR's digest as the executable image identity:
+Player upload creates a policy version, and submit enters that policy into a league:
 
 ```bash
-docker build --platform=linux/amd64 -t my-coworld-runtime:latest .
+uv run coworld upload-policy my-player:latest --name my-player
+uv run coworld submit my-player --league league_...
+uv run coworld submit my-player:v2 --league league_...
 ```
 
-Production Coworld jobs run on linux/amd64 Kubernetes nodes. Build local images for `linux/amd64` before uploading,
-especially from Apple Silicon machines.
-
-### Policy upload
-
-To upload a Coworld policy image and enter it into a league:
-
-```bash
-uv run coworld upload-policy my-policy-image:latest --name my-policy
-uv run coworld submit my-policy --league league_...
-uv run coworld submit my-policy:v2 --league league_...
-```
-
-If the policy image contains multiple Coworld roles or entrypoints, pass the player command with `--run`:
-
-```bash
-uv run coworld upload-policy my-runtime:latest --name my-player --run python --run /app/player.py
-```
-
-Public runtime settings belong in the policy's Docker image or manifest runnable `env`. Secrets do not. If a policy
-needs credentials at runtime, attach them to the uploaded policy version:
+Public runtime settings belong in the Docker image or manifest `env`. Secrets should be attached to the uploaded policy
+version:
 
 ```bash
 uv run coworld upload-policy my-player:latest \
@@ -252,32 +155,20 @@ uv run coworld upload-policy my-player:latest \
   --secret-env ANTHROPIC_API_KEY=sk-ant-...
 ```
 
-`--use-bedrock` is shorthand for adding `USE_BEDROCK=true`. `--secret-env KEY=VALUE` can be repeated. Secret keys must
-use uppercase letters, digits, and underscores, and each secret is scoped to the policy version that was uploaded.
-During Coworld episodes, only the player pod running that policy version receives those secrets as environment
-variables.
+`--use-bedrock` adds `USE_BEDROCK=true`. `--secret-env KEY=VALUE` can be repeated. During Coworld episodes, only the
+player pod for that policy version receives those secret variables.
 
-## Tournament CLI
+## Results And Replays
 
-The Coworld CLI can inspect v2 leagues, divisions, rounds, pools, standings, episode requests, stats, logs, and replays.
-It uses the current `softmax-cli` login:
+Use the Coworld CLI to inspect leagues, submissions, standings, episode requests, logs, and replays:
 
 ```bash
-uv run softmax login
-uv run coworld results div_...
+uv run coworld submissions --mine --league league_...
+uv run coworld memberships --mine --division div_... --active-only
 uv run coworld episodes --division div_... --mine --with-replay
+uv run coworld episode-logs ereq_... --mine --download-dir logs/
 uv run coworld replays --division div_... --mine --download-dir replays/
+uv run coworld replay-open ereq_...
 ```
 
-See [CLI_README.md](CLI_README.md) for the command reference.
-
-## Download
-
-To download a published Coworld manifest and retag its public images for local development:
-
-```bash
-uv run coworld download cow_...
-```
-
-The command fetches the public manifest, pulls each referenced public image, writes a local `coworld_manifest.json`, and
-writes `coworld_images.json` with the public-to-local image tag mapping.
+See [CLI_README.md](CLI_README.md) for the full command reference.

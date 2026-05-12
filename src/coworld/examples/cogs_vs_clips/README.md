@@ -1,6 +1,7 @@
 # Cogs vs Clips Coworld
 
-This example packages the Cogsguard Cogs vs Clips game as a Coworld-compliant Cogame.
+This example packages Cogsguard Cogs vs Clips as a Coworld. The game image runs the MettaGrid game server, and the
+player image runs a policy player that connects to the game's `/player` websocket.
 
 ## Build Images
 
@@ -31,6 +32,16 @@ From the repo root:
 ```bash
 uv run coworld certify packages/coworld/src/coworld/examples/cogs_vs_clips/coworld_manifest.json
 ```
+
+## Run A Local Episode
+
+From the repo root, run the game with the bundled policy player image:
+
+```bash
+uv run coworld run-episode packages/coworld/src/coworld/examples/cogs_vs_clips/coworld_manifest.json coworld-mettagrid-policy-player:latest --run python --run /app/coworld_policy_player.py
+```
+
+This is the same command shape a league player would use after building their own player image.
 
 ## View A Replay
 

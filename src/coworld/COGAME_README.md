@@ -1,143 +1,130 @@
-# Cogame Spec
+# Coworld Game Runtime Contract
 
-`cogame` is the contract package for Cogame repositories: it defines the manifest schemas, container runtime API,
-websocket endpoints, config/results formats, and episode lifecycle a game must provide to run on the CoGames platform.
+This is the canonical contract for game images. Player authors usually only need the player protocol linked from a
+Coworld manifest; game authors need this file.
 
-Short version:
+A Coworld episode has one game container and one player container per slot. The runner starts the game, gives it a
+config, starts the players, records logs, and collects results and replay artifacts. The game owns the rules. Players
+connect over websocket and choose actions.
 
-> Specs and schemas for defining, validating, and running containerized Cogames.
+## Manifest Fields
 
-## Package Contract
+The `game` object in `coworld_manifest.json` describes the game container:
 
-At the base of a Coworld package there must be a `coworld_manifest.json` file that adheres to
-`coworld_manifest_schema.json`; its inline `game` object declares the Cogame.
+- `name`, `version`, `description`, and `owner`
+- `runnable`: Docker image, optional command, and public environment variables
+- `config_schema`: JSON Schema for the runtime game config
+- `results_schema`: JSON Schema for the final results file
+- `protocols.player`: player websocket protocol docs
+- `protocols.global`: live viewer websocket protocol docs
 
-The `game` object contains:
+Protocol docs are document objects:
 
-- `name`, `version`, and `description`,
-- `owner`: the game owner's contact email,
-- `runnable`: the game engine runnable with `type`, `image`, optional `run`, and optional public `env`,
-- `config_schema`: JSON Schema for the config file supplied to the container,
-- `results_schema`: JSON Schema for the results file written by the container,
-- `protocols.player`: document object for the player websocket protocol documentation,
-- `protocols.global`: document object for the global websocket protocol documentation.
+```json
+{ "type": "uri", "value": "https://example.com/player_protocol.md" }
+```
 
-Protocol document objects are explicit: `{ "type": "uri", "value": "https://..." }` links to public HTTP(S) docs, and
-`{ "type": "text", "value": "..." }` stores deliberately inline documentation text.
+Use `type: "uri"` for public HTTP(S) docs and `type: "text"` only for deliberately inline docs.
 
-The `config_schema` must require `tokens`, an array of runner-managed player tokens. `tokens` must declare an exact
-fixed length with equal `minItems` and `maxItems`; that length is the Cogame's runner-managed player count. Author-owned
-game configs such as certification fixtures and Coworld variants must omit `tokens`. The runner injects generated tokens
-when it derives the concrete runtime config. The `results_schema` must require `scores`, one scalar score per player
-slot, and may define additional game-specific result fields.
+## Player Slots
 
-## Container Contract
+The game config schema must require a `tokens` field. It must be a string array with equal `minItems` and `maxItems`.
+That fixed length is the number of player slots.
 
-The container referenced by `runnable.image` must implement the runtime contract below.
+Coworld-authored configs, variants, and certification fixtures do not include `tokens`. The runner creates fresh tokens
+for each episode and injects them into the concrete runtime config.
 
-This contract is platform-owned and hardcoded in the runner and certifier. A game container does not receive a runtime
-contract file; it implements this behavior directly.
+The game must reject a `/player` websocket connection when the slot/token pair is not valid for that episode.
 
-The runner supplies:
+## Rollout Mode
 
-- `COGAME_CONFIG_URI`: URI from which to GET the config JSON file,
-- `COGAME_RESULTS_URI`: URI to which to POST the final results,
-- `COGAME_SAVE_REPLAY_URI`: URI to which to POST the game's replay artifact.
+For a normal episode, the runner starts the game with:
 
-Games must support `file://` URIs. Hosted runners may provide other writable URI schemes for results and replay when the
-game image supports them.
+```bash
+COGAME_CONFIG_URI=...
+COGAME_RESULTS_URI=...
+COGAME_SAVE_REPLAY_URI=...
+```
 
-These environment variables put the container in rollout mode. In rollout mode, the game container listens on
-`0.0.0.0:8080` and exposes:
+The game must support `file://` URIs. Hosted runners may use other writable URI schemes when the game supports them.
+
+In rollout mode, the game listens on `0.0.0.0:8080` and exposes:
 
 - `GET /healthz`
 - `GET /clients/player?slot=0&token=...&...`
 - `WEBSOCKET /player?slot=0&token=...&...`
-- `GET /clients/global` -- serves the global viewer ui, connected to this game, without the need for url args
-- `WEBSOCKET /global` -- used by a global viewer, such as the ui above or a native ui, to connect to the game
+- `GET /clients/global`
+- `WEBSOCKET /global`
 
-HTTP `GET /clients/player` must serve a browser client for one player slot. HTTP `GET /clients/global` must serve a
-browser client for live episode viewing. The served clients read the complete URL query string before opening their
-websocket connection. If the query contains `address`, the client uses that value as the complete websocket URL after
-converting `http`/`https` to `ws`/`wss`; it must not merge other page query params into that URL. Otherwise, it derives
-the websocket URL from the client page URL by replacing `/clients/player` with `/player` or `/clients/global` with
-`/global` and preserving the page query params such as `slot`, `token`, and game-owned params. For example,
-`http://<engine-host>/clients/player?slot=0&token=...&role=...` serves the player client, and that client opens
-`ws://<engine-host>/player?slot=0&token=...&role=...`. A proxy may instead serve
-`https://<proxy>/clients/player?address=wss://<proxy>/player?slot=0&token=...`, which tells the client to connect to
-`wss://<proxy>/player?slot=0&token=...`.
+`GET /healthz` returns 200 when the game is ready.
 
-Games may implement local development admin controls however they want. By convention, `GET /clients/admin` serves the
-browser admin UI and `WEBSOCKET /admin?...` accepts admin commands such as pausing, unpausing, or changing tick rate.
-The admin protocol is game-owned and the platform must not expose `/admin` in production.
+`GET /clients/player` serves a browser client for one slot. `GET /clients/global` serves a live viewer.
 
-The `/global` websocket endpoint must accept viewer connections after an episode has already started. A viewer that
-connects mid-episode must receive enough state over the global protocol to render from its join point without requiring
-the episode to restart.
+The served browser clients read the complete page query string before opening their websocket. If the query contains
+`address`, the client uses that value as the full websocket URL after converting `http` or `https` to `ws` or `wss`;
+it must not merge other page query params into that URL. Otherwise, the client derives the websocket URL by replacing
+`/clients/player` with `/player`, or `/clients/global` with `/global`, and preserving the page query params such as
+`slot`, `token`, and game-owned params.
 
-The `/player` websocket endpoint must allow a player to reconnect to the same slot with the same token while the episode
-is still running. The slot's game state survives disconnects. During a disconnect, the game may advance that slot with
-no-op actions or another documented disconnected-player behavior until the player reconnects.
+For example, `/clients/player?slot=0&token=abc&role=scout` should open
+`/player?slot=0&token=abc&role=scout`. A hosted proxy may instead serve
+`/clients/player?address=wss://example.com/player?slot=0&token=abc`.
 
-To view replays, the runner starts the same Cogame image as a warm replay server and supplies:
+The `/global` websocket must support late viewers. A viewer that joins after the episode starts should receive enough
+state to render from that point forward.
 
-- `COGAME_REPLAY_SERVER=1`: the container serves replay viewers and waits for replay URIs on viewer requests.
+The `/player` websocket must allow the same slot to reconnect with the same token while the episode is still running.
+The slot's game state survives disconnects. During a disconnect, the game may use no-op actions or another documented
+behavior.
 
-In replay server mode, the game container listens on `0.0.0.0:8080` and exposes:
+Games may expose local-only admin controls by convention:
+
+- `GET /clients/admin`
+- `WEBSOCKET /admin?...`
+
+The admin route is game-owned. The platform must not expose `/admin` in production.
+
+## Replay Mode
+
+For replay viewing, the runner starts or reuses the same game image with:
+
+```bash
+COGAME_REPLAY_SERVER=1
+```
+
+In replay mode, the game listens on `0.0.0.0:8080` and exposes:
 
 - `GET /healthz`
 - `GET /clients/replay?uri=<uri>`
 - `WEBSOCKET /replay?uri=<uri>`
 
-HTTP `GET /clients/replay?uri=<uri>` must serve a browser replay viewer. The replay viewer opens
-`WEBSOCKET /replay?uri=<uri>`; the game server loads that replay artifact and sends replay state plus game-owned control
-commands such as start, stop, seek, or speed changes. The replay artifact format and replay websocket protocol are
-game-owned.
+`GET /clients/replay?uri=<uri>` serves a browser replay viewer. The served client opens `/replay?uri=<uri>`. The game
+loads the replay artifact and handles game-owned replay controls such as start, stop, seek, or speed changes.
 
-## Coworld Contract
-
-A Coworld declares exactly one Cogame through the inline `game` object in `coworld_manifest.json`.
-
-Coworld certification resolves the Coworld's fixture into one end-to-end smoke episode for the referenced Cogame.
-
-## Episode Config
-
-The runner receives an episode request that adheres to `runner/episode_request_schema.json`. It has the game config,
-player runnables, and output destinations. Per-player game metadata belongs in `game_config`. The game must treat
-player-supplied connection metadata as untrusted.
+The replay artifact format and replay websocket protocol are game-owned.
 
 ## Episode Lifecycle
 
-1. The runner receives episode config containing `game_config`, `players`, and artifact output URIs.
-2. The runner generates a random string token for each player slot.
-3. The runner writes game config JSON matching the manifest's `config_schema` to a URI, inserting `tokens` with the
-   generated token array.
-4. The runner starts the game engine container and supplies:
-   - `COGAME_CONFIG_URI`: URI from which to GET the config JSON file,
-   - `COGAME_RESULTS_URI`: URI to which to POST the final results,
-   - `COGAME_SAVE_REPLAY_URI`: URI to which to POST the game's replay artifact.
-5. The runner records all stdout and stderr from the game engine.
-6. The container boots, GETs its initial config, and listens for HTTP and websocket traffic on `0.0.0.0:8080`.
-7. The game engine exposes `GET /healthz`, which returns `200` when the container is ready to accept connections.
-8. For each player, the runner:
-   - decides which policy image corresponds to which slot,
-   - starts one container per policy runnable,
-   - supplies `COGAMES_ENGINE_WS_URL=ws://<engine-host>/player?slot=<slot>&token=<token>` to the policy container.
-9. The game rejects player connections whose `token` does not match the token for that slot.
-10. Browser player clients may request `GET /clients/player?slot=<slot>&token=<token>&...`; the served client opens the
-    `/player` websocket with the same query params, unless an `address` query param supplies the full websocket URL.
-11. Browser global clients may request `GET /clients/global`; the served client opens the `/global` websocket with the
-    same query params, unless an `address` query param supplies the full websocket URL.
-12. Global websocket viewers may connect before or during the episode through `/global`.
-13. Players may disconnect and reconnect to the same slot with the same token.
-14. The game engine progresses the game after each player connects.
-15. When the game ends, it POSTs results to `COGAME_RESULTS_URI` and a replay artifact to `COGAME_SAVE_REPLAY_URI`. The
-    results file is JSON matching `results_schema`, and the game engine stops responding to `/healthz` with 200.
-16. The runner uploads results, replay, and logs to the episode config output URIs.
+1. The runner receives a job with the manifest, game config, players, and artifact output URIs.
+2. The runner generates one token per player slot.
+3. The runner writes the concrete game config, including `tokens`.
+4. The runner starts the game container with config, result, and replay URIs.
+5. The game reads its config and starts listening on port 8080.
+6. The runner waits for `GET /healthz` to return 200.
+7. The runner starts one player container per slot.
+8. Each player gets `COGAMES_ENGINE_WS_URL=ws://<engine-host>/player?slot=<slot>&token=<token>`.
+9. Players connect to `/player` and send game-specific actions.
+10. Viewers may connect to `/global`.
+11. The game runs until the episode ends.
+12. The game writes results to `COGAME_RESULTS_URI`.
+13. The game writes a replay to `COGAME_SAVE_REPLAY_URI`.
+14. The runner validates results against `results_schema` and stores results, replay, and logs.
 
-## Replay Lifecycle
+The final results file must match `game.results_schema`. It must include `scores`, one number per player slot, and may
+include extra game-specific fields declared by the schema.
 
-1. The runner downloads or otherwise materializes a replay artifact produced by the same Cogame.
-2. The runner starts or reuses a game engine container with `COGAME_REPLAY_SERVER=1`.
-3. A browser requests `GET /clients/replay?uri=<uri>`; the served client opens `WEBSOCKET /replay?uri=<uri>`.
-4. Replay playback and controls are implemented by the game-owned replay websocket protocol.
+## Certification
+
+Coworld certification turns the manifest's `certification` fixture into one local episode. It runs the game and bundled
+player images, checks the HTTP routes, verifies that bad player tokens are rejected, validates final results, and checks
+that the replay viewer can start.

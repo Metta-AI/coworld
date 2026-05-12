@@ -85,15 +85,43 @@ def build_game_config(package: CoworldPackage, tokens: list[str]) -> JsonObject:
 def build_episode_request(package: CoworldPackage, artifacts: EpisodeArtifacts) -> JsonObject:
     episode_request: JsonObject = {
         key: cast(object, value)
-        for key, value in CoworldEpisodeJobSpec(
-            manifest=package.manifest,
-            game_config=dict(package.manifest.certification.game_config),
-            players=_certification_player_specs(package),
-        )
+        for key, value in build_manifest_episode_job_spec(package)
         .model_dump(by_alias=True, exclude_defaults=True)
         .items()
     }
     return episode_request
+
+
+def build_manifest_episode_job_spec(
+    package: CoworldPackage,
+    *,
+    player_images: list[str] | None = None,
+    player_run: list[str] | None = None,
+) -> CoworldEpisodeJobSpec:
+    players = _certification_player_specs(package)
+    if not player_images:
+        if player_run:
+            raise ValueError("player_run requires at least one player image")
+    else:
+        slot_count = len(players)
+        if len(player_images) == 1:
+            slot_images = player_images * slot_count
+        elif len(player_images) == slot_count:
+            slot_images = player_images
+        else:
+            expected_counts = "1" if slot_count == 1 else f"1 or {slot_count}"
+            raise ValueError(f"expected {expected_counts} player images for {slot_count} player slots")
+
+        players = [
+            players[slot].model_copy(update={"image": image, "run": list(player_run or [])})
+            for slot, image in enumerate(slot_images)
+        ]
+
+    return CoworldEpisodeJobSpec(
+        manifest=package.manifest,
+        game_config=dict(package.manifest.certification.game_config),
+        players=players,
+    )
 
 
 def build_player_launch_specs(episode_request: JsonObject) -> list[PlayerLaunchSpec]:

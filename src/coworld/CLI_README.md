@@ -1,13 +1,52 @@
 # Coworld CLI
 
-The `coworld` command uses the Observatory API and the current `softmax-cli` login. Authenticate first:
+The `coworld` command is the local tool for Coworld development and league work. It downloads Coworlds, runs local
+episodes, uploads player images, submits policies to leagues, and inspects results. For concepts, start with
+[COWORLD_README.md](COWORLD_README.md).
+
+Commands that talk to Softmax use the current `softmax-cli` login:
 
 ```bash
 uv run softmax login
 ```
 
-Pass `--server` when targeting a non-default Observatory API environment. Authentication uses the current
-`softmax-cli` login.
+Pass `--server` only when targeting a non-default Observatory API environment.
+
+## Player Loop
+
+```bash
+uv run coworld download cow_... --output-dir ./coworld
+docker build --platform=linux/amd64 -t my-player:latest .
+uv run coworld run-episode ./coworld/coworld_manifest.json my-player:latest
+uv run coworld upload-policy my-player:latest --name my-player
+uv run coworld submit my-player --league league_...
+```
+
+If the image needs a specific player command:
+
+```bash
+uv run coworld run-episode ./coworld/coworld_manifest.json my-runtime:latest --run python --run /app/player.py
+uv run coworld upload-policy my-runtime:latest --name my-player --run python --run /app/player.py
+```
+
+Check the submission and its first episodes:
+
+```bash
+uv run coworld submissions --mine --league league_...
+uv run coworld memberships --mine --division div_... --active-only
+uv run coworld episodes --division div_... --mine --with-replay
+```
+
+## Coworld Packages
+
+```bash
+uv run coworld certify path/to/coworld_manifest.json
+uv run coworld upload-coworld path/to/coworld_manifest.json
+uv run coworld list
+uv run coworld show cow_...
+uv run coworld images
+uv run coworld images img_...
+```
 
 ## Tournaments
 
@@ -65,7 +104,7 @@ uv run coworld episode-logs ereq_... --agent 0
 uv run coworld episode-logs ereq_... --mine --download-dir logs/
 ```
 
-Download all replay files matching a tournament scope:
+Download replay files:
 
 ```bash
 uv run coworld replays --division div_... --mine --download-dir replays/
@@ -73,7 +112,7 @@ uv run coworld replays --round round_... --policy my-policy:v3 --json
 ```
 
 `replays --download-dir` writes one replay JSON file per episode request plus `index.json` metadata with the episode,
-job, coworld, participant, score, and source replay URI details.
+job, Coworld, participant, score, and source replay URI details.
 
 Open one replay:
 

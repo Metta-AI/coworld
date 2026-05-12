@@ -1,8 +1,10 @@
 # Paint Arena Coworld Example
 
-Paint Arena is a two-player tick-based Coworld example. Each player moves around the grid and paints the tile they are
-standing on. Painting overwrites the previous owner, and final scores are the number of tiles painted with each player's
-color.
+Paint Arena is the smallest complete Coworld example in this package. It has one game image and one bundled player
+entrypoint.
+
+The game is two-player and tick-based. Each player moves around a grid and paints the tile they are standing on.
+Painting overwrites the previous owner. Final scores are the number of tiles painted with each player's color.
 
 ## Build Images
 
@@ -18,7 +20,7 @@ From the Coworld package root (`packages/coworld/src/coworld`):
 docker build --platform=linux/amd64 -t coworld-paintarena:latest examples/paintarena
 ```
 
-Use `linux/amd64` for images that will be uploaded to the CoGames platform, including when building from Apple Silicon.
+Use `linux/amd64` for images that will be uploaded to Softmax, including when building from Apple Silicon.
 
 ## Play Locally
 
@@ -36,6 +38,16 @@ The command prints:
 - the local artifact directory for results, replay, and logs.
 
 Open both player links before playing. The episode starts after both player websocket clients connect.
+
+## Run A Local Episode
+
+To run the full game with the bundled sweep-painter player image:
+
+```bash
+uv run coworld run-episode examples/paintarena/coworld_manifest.json coworld-paintarena:latest --run python --run /app/player/player.py
+```
+
+This is the same local smoke-test shape a league player would use with their own image.
 
 ## Certify
 

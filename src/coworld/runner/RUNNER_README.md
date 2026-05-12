@@ -1,15 +1,13 @@
 # Coworld Episode Runner
 
-`coworld.runner.runner` is the fully local Coworld episode
-runner. It starts the game and players with Docker on the current machine, waits
-for the episode to finish, and writes artifacts to a local workspace.
+`coworld.runner.runner` is the local Docker runner for one Coworld episode. It starts the game and player containers on
+the current machine, waits for the episode to finish, and writes results, replay, and logs to a local workspace.
 
 Use it through the public CLI:
 
 ```bash
-uv run coworld run-episode spec.json --output-dir ./coworld-episode-results
+uv run coworld run-episode path/to/coworld_manifest.json my-player:latest --output-dir ./coworld-episode-results
 ```
 
-The hosted production runner is `coworld.runner.kubernetes_runner`.
-That path runs the game and players as Kubernetes containers instead of requiring
-Docker inside the runner container.
+The hosted production runner is `coworld.runner.kubernetes_runner`. That path uses Kubernetes containers instead of
+Docker on the runner machine, but it follows the same game and player contract.

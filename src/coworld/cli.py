@@ -9,7 +9,7 @@ import typer
 from rich import box
 from rich.table import Table
 
-from coworld.certifier import certify_coworld
+from coworld.certifier import build_manifest_episode_job_spec, certify_coworld, load_coworld_package
 from coworld.cli_support import console, emit_json
 from coworld.config import DEFAULT_SUBMIT_SERVER
 from coworld.manifest_uri import materialized_manifest_path, materialized_replay_path
@@ -17,7 +17,6 @@ from coworld.play import PlaySession, ReplaySession, play_coworld, replay_coworl
 from coworld.runner.runner import EpisodeArtifacts, run_coworld_episode
 from coworld.submit import submit_policy_to_league_cmd
 from coworld.tournament_cli import register_tournament_commands
-from coworld.types import CoworldEpisodeJobSpec
 from coworld.upload import (
     ContainerImageResponse,
     CoworldListEntry,
@@ -220,14 +219,30 @@ def submit(
 
 @app.command("run-episode")
 def run_episode(
-    spec_path: Annotated[Path, typer.Argument(help="Path to a CoworldEpisodeJobSpec JSON file.")],
+    manifest_uri: Annotated[str, typer.Argument(help="Path, URI, or Coworld ID for coworld_manifest.json.")],
+    player_images: Annotated[
+        list[str] | None,
+        typer.Argument(
+            help=(
+                "Optional local player image override. One image is reused for every player slot; otherwise provide "
+                "one image per slot."
+            )
+        ),
+    ] = None,
+    run: Annotated[
+        list[str] | None,
+        typer.Option("--run", help="Command argv for supplied player image(s)."),
+    ] = None,
     output_dir: Annotated[Path, typer.Option("--output-dir", "-o", help="Directory for episode artifacts.")] = Path(
         "./coworld-episode-results"
     ),
+    server: Annotated[str, typer.Option("--server", help="Observatory API server URL.")] = DEFAULT_SUBMIT_SERVER,
     timeout_seconds: Annotated[float, typer.Option("--timeout-seconds", min=1.0)] = 3600.0,
     verify_replay: Annotated[bool, typer.Option("--verify-replay/--no-verify-replay")] = False,
 ) -> None:
-    spec = CoworldEpisodeJobSpec.model_validate_json(spec_path.read_text(encoding="utf-8"))
+    with materialized_manifest_path(manifest_uri, server=server) as manifest_path:
+        package = load_coworld_package(manifest_path)
+        spec = build_manifest_episode_job_spec(package, player_images=player_images, player_run=run)
     artifacts = EpisodeArtifacts.create(output_dir.resolve(), prefix="coworld-run-")
     run_coworld_episode(spec, artifacts, timeout_seconds=timeout_seconds, verify_replay=verify_replay)
     typer.echo(f"Artifacts: {artifacts.workspace}")

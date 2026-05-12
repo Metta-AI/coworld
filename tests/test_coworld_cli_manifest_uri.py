@@ -1,12 +1,14 @@
 import json
 from pathlib import Path
 from types import SimpleNamespace
+from typing import cast
 
 from pytest import MonkeyPatch
 from pytest_httpserver import HTTPServer
 from typer.testing import CliRunner
 
 from coworld.cli import app
+from coworld.types import CoworldEpisodeJobSpec
 
 COWORLD_ID = "cow_00000000-0000-0000-0000-000000000001"
 COWORLD_PATH = f"/v2/coworlds/{COWORLD_ID}"
@@ -33,3 +35,99 @@ def test_coworld_play_accepts_backend_coworld_path(httpserver: HTTPServer, monke
 
     assert result.exit_code == 0, result.output
     assert captured["manifest"] == manifest
+
+
+def test_run_episode_uses_manifest_certification_players(monkeypatch: MonkeyPatch, tmp_path: Path) -> None:
+    spec, kwargs = _invoke_run_episode(
+        monkeypatch,
+        tmp_path,
+        str(_example_manifest()),
+        "--timeout-seconds",
+        "12",
+        "--verify-replay",
+    )
+
+    assert [player.image for player in spec.players] == ["coworld-paintarena:latest", "coworld-paintarena:latest"]
+    assert [player.run for player in spec.players] == [["python", "/app/player/player.py"]] * 2
+    assert spec.game_config["max_ticks"] == 100
+    assert kwargs == {"timeout_seconds": 12.0, "verify_replay": True}
+
+
+def test_run_episode_accepts_one_player_image_for_all_slots(monkeypatch: MonkeyPatch, tmp_path: Path) -> None:
+    spec, kwargs = _invoke_run_episode(
+        monkeypatch,
+        tmp_path,
+        str(_example_manifest()),
+        "my-player:latest",
+        "--run",
+        "python",
+        "--run",
+        "/app/player.py",
+    )
+
+    assert [player.image for player in spec.players] == ["my-player:latest", "my-player:latest"]
+    assert [player.run for player in spec.players] == [["python", "/app/player.py"]] * 2
+    assert kwargs == {"timeout_seconds": 3600.0, "verify_replay": False}
+
+
+def test_run_episode_accepts_one_player_image_per_slot(monkeypatch: MonkeyPatch, tmp_path: Path) -> None:
+    spec, _kwargs = _invoke_run_episode(
+        monkeypatch,
+        tmp_path,
+        str(_example_manifest()),
+        "player-one:latest",
+        "player-two:latest",
+    )
+
+    assert [player.image for player in spec.players] == ["player-one:latest", "player-two:latest"]
+    assert [player.run for player in spec.players] == [[], []]
+
+
+def test_run_episode_player_image_override_keeps_manifest_env(monkeypatch: MonkeyPatch, tmp_path: Path) -> None:
+    spec, _kwargs = _invoke_run_episode(
+        monkeypatch,
+        tmp_path,
+        str(_cogs_vs_clips_manifest()),
+        "custom-policy-player:latest",
+        "--run",
+        "python",
+        "--run",
+        "/app/player.py",
+    )
+
+    assert [player.image for player in spec.players] == ["custom-policy-player:latest"] * 8
+    assert [player.run for player in spec.players] == [["python", "/app/player.py"]] * 8
+    assert {tuple(player.env.items()) for player in spec.players} == {
+        (("COGAMES_POLICY_URI", "metta://policy/cogames.policy.starter_agent.StarterPolicy"),)
+    }
+
+
+def _invoke_run_episode(
+    monkeypatch: MonkeyPatch,
+    tmp_path: Path,
+    *args: str,
+) -> tuple[CoworldEpisodeJobSpec, dict[str, object]]:
+    captured: dict[str, object] = {}
+
+    def fake_run_coworld_episode(spec: CoworldEpisodeJobSpec, _artifacts: object, **kwargs: object) -> None:
+        captured["spec"] = spec
+        captured["kwargs"] = kwargs
+
+    monkeypatch.setattr("coworld.cli.run_coworld_episode", fake_run_coworld_episode)
+    result = CliRunner().invoke(
+        app,
+        ["run-episode", *args, "--output-dir", str(tmp_path / "episode")],
+    )
+
+    assert result.exit_code == 0, result.output
+    return cast(CoworldEpisodeJobSpec, captured["spec"]), cast(dict[str, object], captured["kwargs"])
+
+
+def _example_manifest() -> Path:
+    return Path(__file__).resolve().parents[1] / "src" / "coworld" / "examples" / "paintarena" / "coworld_manifest.json"
+
+
+def _cogs_vs_clips_manifest() -> Path:
+    return (
+        Path(__file__).resolve().parents[1] / "src" / "coworld" / "examples" / "cogs_vs_clips" / "coworld_manifest.json"
+    )
