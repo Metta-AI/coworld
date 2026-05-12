@@ -143,14 +143,17 @@ def upload_coworld(
 
 @app.command("download")
 def download(
-    coworld_id: Annotated[str, typer.Argument(help="Coworld ID to download.")],
+    coworld_ref: Annotated[
+        str,
+        typer.Argument(help="Coworld ID to download, or Coworld name to download its canonical version."),
+    ],
     output_dir: Annotated[Path, typer.Option("--output-dir", "-o", help="Directory for downloaded files.")] = Path(
         "./coworld-download"
     ),
     server: Annotated[str, typer.Option("--server", help="Observatory API server URL.")] = DEFAULT_SUBMIT_SERVER,
 ) -> None:
     download_coworld_cmd(
-        coworld_id,
+        coworld_ref,
         output_dir,
         server=server,
     )

@@ -194,6 +194,19 @@ class CoworldUploadClient:
                 return None
             offset += limit
 
+    def find_canonical_coworld(self, name: str) -> CoworldListEntry | None:
+        target_name = _coworld_name_key(name)
+        limit = 200
+        offset = 0
+        while True:
+            coworlds = self.list_coworlds(limit=limit, offset=offset)
+            for coworld in coworlds:
+                if _coworld_name_key(coworld.name) == target_name and coworld.canonical:
+                    return coworld
+            if len(coworlds) < limit:
+                return None
+            offset += limit
+
     def lookup_policy_version(self, *, name: str, version: int | None = None) -> PolicyVersionRow | None:
         params: dict[str, Any] = {"mine": "true", "name_exact": name, "limit": 100}
         if version is not None:
@@ -378,23 +391,30 @@ def upload_policy_cmd(
 
 
 def download_coworld(
-    coworld_id: str,
+    coworld_ref: str,
     *,
     server: str = DEFAULT_SUBMIT_SERVER,
 ) -> CoworldUploadResponse:
+    if not coworld_ref.startswith("cow_"):
+        with CoworldUploadClient.from_login(server_url=server) as client:
+            coworld = client.find_canonical_coworld(coworld_ref)
+        if coworld is None:
+            raise RuntimeError(f"Canonical Coworld not found: {coworld_ref}")
+        coworld_ref = coworld.id
+
     with httpx.Client(base_url=server, timeout=30.0) as http_client:
-        response = http_client.get(f"/v2/coworlds/{coworld_id}", timeout=120.0)
+        response = http_client.get(f"/v2/coworlds/{coworld_ref}", timeout=120.0)
     response.raise_for_status()
     return CoworldUploadResponse.model_validate(response.json())
 
 
 def download_coworld_cmd(
-    coworld_id: str,
+    coworld_ref: str,
     output_dir: Path,
     *,
     server: str = DEFAULT_SUBMIT_SERVER,
 ) -> None:
-    coworld = download_coworld(coworld_id, server=server)
+    coworld = download_coworld(coworld_ref, server=server)
 
     image_tags = _local_image_tags(coworld)
     for public_image_uri, local_tag in image_tags.items():
@@ -463,6 +483,10 @@ def _local_image_tags(coworld: CoworldUploadResponse) -> dict[str, str]:
     return {
         image: _local_image_tag(coworld.id, coworld.name, coworld.version, index) for index, image in enumerate(images)
     }
+
+
+def _coworld_name_key(name: str) -> str:
+    return name.replace("-", "_")
 
 
 def _local_image_tag(coworld_id: str, coworld_name: str, coworld_version: str, index: int) -> str:
