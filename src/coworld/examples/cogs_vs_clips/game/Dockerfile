@@ -1,4 +1,5 @@
 ARG METTASCOPE_BUILDER_PLATFORM=linux/amd64
+ARG GAME_RUNTIME_PLATFORM=linux/amd64
 FROM --platform=${METTASCOPE_BUILDER_PLATFORM} emscripten/emsdk:4.0.15 AS mettascope-builder
 
 ARG NIMBY_VERSION=0.1.26
@@ -33,7 +34,7 @@ RUN nim c -d:emscripten -d:release src/mettascope.nim && \
     test -f dist/mettascope.data && \
     ls -lh dist/
 
-FROM python:3.12-slim
+FROM --platform=${GAME_RUNTIME_PLATFORM} python:3.12-slim
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
     ca-certificates \

@@ -1,4 +1,5 @@
-FROM python:3.12-slim
+ARG PLAYER_RUNTIME_PLATFORM=linux/amd64
+FROM --platform=${PLAYER_RUNTIME_PLATFORM} python:3.12-slim
 
 RUN pip install --no-cache-dir \
     mettagrid==0.26.17

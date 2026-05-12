@@ -21,7 +21,6 @@ from websockets.exceptions import InvalidHandshake, InvalidStatus
 from coworld.schema_validation import validate_json_schema
 from coworld.types import CoworldEpisodeJobSpec, CoworldPlayerSpec, CoworldRunnableSpec
 
-REPO_ROOT = Path(__file__).resolve().parents[6]
 CONTAINER_WORKDIR = "/coworld"
 CONFIG_ENV_VAR = "COGAME_CONFIG_URI"
 RESULTS_ENV_VAR = "COGAME_RESULTS_URI"
@@ -397,8 +396,15 @@ def _free_local_port() -> int:
         return int(sock.getsockname()[1])
 
 
+def _repo_root() -> Path:
+    for parent in Path(__file__).resolve().parents:
+        if (parent / "packages" / "coworld").exists():
+            return parent
+    return Path.cwd()
+
+
 def _new_workspace(prefix: str) -> Path:
-    temp_root = REPO_ROOT / "tmp"
+    temp_root = _repo_root() / "tmp"
     temp_root.mkdir(exist_ok=True)
     return Path(tempfile.mkdtemp(prefix=prefix, dir=temp_root))
 

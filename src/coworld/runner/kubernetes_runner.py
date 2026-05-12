@@ -332,16 +332,27 @@ def _collect_logs(
         encoding="utf-8",
     )
     for slot, player_pod_name in enumerate(player_pod_names):
-        player_pod = core_v1.read_namespaced_pod(name=player_pod_name, namespace=namespace)
+        try:
+            player_pod = core_v1.read_namespaced_pod(name=player_pod_name, namespace=namespace)
+        except ApiException as exc:
+            if exc.status == 404:
+                continue
+            raise
         if not _container_has_started(player_pod, "player"):
             continue
-        artifacts.policy_log_path(slot).write_text(
-            core_v1.read_namespaced_pod_log(
+        try:
+            player_log = core_v1.read_namespaced_pod_log(
                 name=player_pod_name,
                 namespace=namespace,
                 container="player",
                 tail_lines=10000,
-            ),
+            )
+        except ApiException as exc:
+            if exc.status == 404:
+                continue
+            raise
+        artifacts.policy_log_path(slot).write_text(
+            player_log,
             encoding="utf-8",
         )
 
