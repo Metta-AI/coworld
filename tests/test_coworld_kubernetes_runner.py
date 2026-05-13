@@ -3,6 +3,7 @@ import os
 from pathlib import Path
 from types import SimpleNamespace
 
+import pytest
 from kubernetes.client.rest import ApiException
 
 from coworld.runner import kubernetes_runner
@@ -198,6 +199,40 @@ def test_kubernetes_runner_uses_direct_player_urls_without_address():
     assert kubernetes_runner._player_service_ws_url("game-service", 1, "slot-token", player) == (
         "ws://game-service:8080/player?slot=1&token=slot-token"
     )
+
+
+def test_run_from_env_deletes_parent_job_after_writing_error_info(monkeypatch, tmp_path):
+    events: list[tuple] = []
+
+    monkeypatch.setenv("JOB_NAMESPACE", "jobs")
+    monkeypatch.setenv("JOB_NAME", "job-abc123")
+    monkeypatch.setenv("COWORLD_WORKDIR", str(tmp_path))
+    monkeypatch.setattr(kubernetes_runner, "_read_job_spec", lambda: object())
+    monkeypatch.setattr(kubernetes_runner.EpisodeArtifacts, "create", lambda workdir, prefix: object())
+    monkeypatch.setattr(kubernetes_runner.client, "BatchV1Api", lambda: "batch-v1")
+    monkeypatch.setattr(
+        kubernetes_runner,
+        "_write_error_info",
+        lambda exc: events.append(("error_info", str(exc))),
+    )
+    monkeypatch.setattr(
+        kubernetes_runner,
+        "_delete_parent_job",
+        lambda batch_v1, namespace, job_name: events.append(("delete_job", batch_v1, namespace, job_name)),
+    )
+
+    def run_episode(*args, **kwargs):
+        raise RuntimeError("episode failed")
+
+    monkeypatch.setattr(kubernetes_runner, "_run_kubernetes_episode", run_episode)
+
+    with pytest.raises(RuntimeError, match="episode failed"):
+        kubernetes_runner.run_from_env()
+
+    assert events == [
+        ("error_info", "episode failed"),
+        ("delete_job", "batch-v1", "jobs", "job-abc123"),
+    ]
 
 
 def test_create_player_pod_keeps_default_service_account_without_bedrock():

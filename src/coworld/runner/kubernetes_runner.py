@@ -59,7 +59,10 @@ def run_from_env() -> None:
             timeout_seconds=float(os.environ.get("COWORLD_TIMEOUT_SECONDS", "3600")),
         )
     except Exception as exc:
-        _write_error_info(exc)
+        try:
+            _write_error_info(exc)
+        finally:
+            _delete_parent_job(client.BatchV1Api(), os.environ["JOB_NAMESPACE"], os.environ["JOB_NAME"])
         raise
     _upload_outputs(artifacts)
 
@@ -365,6 +368,14 @@ def _delete_child_resources(core_v1, namespace: str, service_name: str, pod_name
                 raise
     try:
         core_v1.delete_namespaced_service(name=service_name, namespace=namespace)
+    except ApiException as exc:
+        if exc.status != 404:
+            raise
+
+
+def _delete_parent_job(batch_v1, namespace: str, job_name: str) -> None:
+    try:
+        batch_v1.delete_namespaced_job(name=job_name, namespace=namespace, propagation_policy="Background")
     except ApiException as exc:
         if exc.status != 404:
             raise

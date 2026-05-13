@@ -12,14 +12,16 @@ finish, gathers artifacts, then uploads them to the URIs provided in environment
 The parent Job has:
 
 - `coworld-init-config`: writes the concrete game config and player tokens into the shared workdir.
-- `game`: runs `manifest.game.runnable.image` and listens on port `8080`.
-- `worker`: runs the Kubernetes coordinator.
+- `game`: regular non-restarting container that runs `manifest.game.runnable.image` and listens on port `8080`.
+- `worker`: regular Job container that runs the Kubernetes coordinator.
 - `coworld-workdir`: an `emptyDir` volume mounted into all parent containers.
 
 The game receives URI-based artifact environment variables. Today the app backend supplies `file://` URIs inside
 `COWORLD_WORKDIR` so the worker can validate results and upload hosted artifacts, but the game contract is URI-based
 rather than path-based. The worker reaches the game locally for health checks and creates a ClusterIP Service so player
-pods can connect back to the game.
+pods can connect back to the game. If the coordinator fails before the episode completes, it writes runner error info,
+deletes child player pods, then deletes the parent Kubernetes Job so Kubernetes terminates the game container without
+restarting it or exposing worker environment variables through a shared process namespace.
 
 ## Commands
 
@@ -28,8 +30,8 @@ python -m coworld.runner.kubernetes_runner init-config
 python -m coworld.runner.kubernetes_runner run
 ```
 
-`init-config` and `run` are separate commands because Kubernetes init containers must finish before the game container
-starts.
+`init-config` and `run` are separate commands because Kubernetes init containers must finish before the game and worker
+containers start.
 
 ## Required Inputs
 
@@ -44,6 +46,7 @@ COWORLD_WORKDIR=/coworld
 
 ```bash
 JOB_ID
+JOB_NAME
 JOB_NAMESPACE
 COWORLD_SERVICE_NAME
 POD_NAME
@@ -154,6 +157,7 @@ Required RBAC:
 - pods: `create`, `get`, `list`, `delete`
 - pods/log: `get`
 - services: `create`, `get`, `delete`
+- jobs.batch: `delete`
 
 The app backend creates the parent Job in the eval cluster. Coworld jobs use the same cluster and namespace as standard
 episode jobs, but schedule onto a separate Karpenter workload lane through:
