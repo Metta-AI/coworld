@@ -40,9 +40,15 @@ def _container_status(name: str, *, running: bool = False, terminated: bool = Fa
 
 
 class _FakeLogCoreV1:
-    def __init__(self, statuses: dict[str, list], missing_pods: set[str] | None = None):
+    def __init__(
+        self,
+        statuses: dict[str, list],
+        missing_pods: set[str] | None = None,
+        log_errors: dict[tuple[str, str], ApiException] | None = None,
+    ):
         self._statuses = statuses
         self._missing_pods = missing_pods or set()
+        self._log_errors = log_errors or {}
         self.log_calls: list[tuple[str, str]] = []
 
     def read_namespaced_pod(self, *, name: str, namespace: str):
@@ -52,6 +58,8 @@ class _FakeLogCoreV1:
 
     def read_namespaced_pod_log(self, *, name: str, namespace: str, container: str, tail_lines: int):
         self.log_calls.append((name, container))
+        if (name, container) in self._log_errors:
+            raise self._log_errors[(name, container)]
         return f"{name} {container} logs"
 
 
@@ -128,6 +136,33 @@ def test_collect_logs_skips_missing_player_pods(tmp_path):
     assert not artifacts.policy_log_path(0).exists()
     assert artifacts.policy_log_path(1).read_text(encoding="utf-8") == "player-running player logs"
     assert core_v1.log_calls == [("game-pod", "game"), ("player-running", "player")]
+
+
+def test_collect_logs_records_player_log_errors_without_failing(tmp_path):
+    artifacts = EpisodeArtifacts.create(tmp_path)
+    core_v1 = _FakeLogCoreV1(
+        {
+            "game-pod": [],
+            "player-broken": [_container_status("player", running=True)],
+            "player-running": [_container_status("player", running=True)],
+        },
+        log_errors={("player-broken", "player"): ApiException(status=500, reason="kubelet timeout")},
+    )
+
+    _collect_logs(
+        core_v1,
+        "default",
+        "game-pod",
+        ["player-broken", "player-running"],
+        artifacts,
+    )
+
+    assert artifacts.game_stdout_path.read_text(encoding="utf-8") == "game-pod game logs"
+    assert "Failed to collect Kubernetes logs for pod player-broken container player" in artifacts.policy_log_path(
+        0
+    ).read_text(encoding="utf-8")
+    assert artifacts.policy_log_path(1).read_text(encoding="utf-8") == "player-running player logs"
+    assert core_v1.log_calls == [("game-pod", "game"), ("player-broken", "player"), ("player-running", "player")]
 
 
 def test_new_workspace_does_not_require_repo_depth(monkeypatch, tmp_path):

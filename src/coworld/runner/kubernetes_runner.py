@@ -321,34 +321,43 @@ def _collect_logs(
     player_pod_names: list[str],
     artifacts: EpisodeArtifacts,
 ) -> None:
-    artifacts.game_stdout_path.write_text(
-        core_v1.read_namespaced_pod_log(name=pod_name, namespace=namespace, container="game", tail_lines=10000),
-        encoding="utf-8",
-    )
+    game_log = _read_pod_log(core_v1, namespace, pod_name, "game")
+    if game_log is not None:
+        artifacts.game_stdout_path.write_text(game_log, encoding="utf-8")
     for slot, player_pod_name in enumerate(player_pod_names):
         try:
             player_pod = core_v1.read_namespaced_pod(name=player_pod_name, namespace=namespace)
         except ApiException as exc:
             if exc.status == 404:
                 continue
-            raise
+            artifacts.policy_log_path(slot).write_text(
+                _log_read_failure(player_pod_name, "player", exc),
+                encoding="utf-8",
+            )
+            continue
         if not _container_has_started(player_pod, "player"):
             continue
-        try:
-            player_log = core_v1.read_namespaced_pod_log(
-                name=player_pod_name,
-                namespace=namespace,
-                container="player",
-                tail_lines=10000,
-            )
-        except ApiException as exc:
-            if exc.status == 404:
-                continue
-            raise
-        artifacts.policy_log_path(slot).write_text(
-            player_log,
-            encoding="utf-8",
+        player_log = _read_pod_log(core_v1, namespace, player_pod_name, "player")
+        if player_log is not None:
+            artifacts.policy_log_path(slot).write_text(player_log, encoding="utf-8")
+
+
+def _read_pod_log(core_v1, namespace: str, pod_name: str, container: str) -> str | None:
+    try:
+        return core_v1.read_namespaced_pod_log(
+            name=pod_name,
+            namespace=namespace,
+            container=container,
+            tail_lines=10000,
         )
+    except ApiException as exc:
+        if exc.status == 404:
+            return None
+        return _log_read_failure(pod_name, container, exc)
+
+
+def _log_read_failure(pod_name: str, container: str, exc: ApiException) -> str:
+    return f"Failed to collect Kubernetes logs for pod {pod_name} container {container}: {exc}\n"
 
 
 def _container_has_started(pod, container_name: str) -> bool:
