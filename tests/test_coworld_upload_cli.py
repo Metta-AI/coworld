@@ -15,6 +15,7 @@ from coworld.upload import (
     _docker_archive_client_hash,
     _local_image_client_hash,
     _local_image_tag,
+    _push_archive_to_registry,
     upload_coworld,
 )
 
@@ -754,6 +755,45 @@ def test_docker_archive_client_hash_matches_config_and_layer_digests() -> None:
     archive = io.BytesIO(_docker_archive(config=b'{"env":["A=B"]}', layers=[b"layer-one"]))
 
     assert _docker_archive_client_hash(archive) == _expected_archive_hash(b'{"env":["A=B"]}', [b"layer-one"])
+
+
+def test_push_archive_to_registry_uploads_layers_config_and_manifest(httpserver: HTTPServer) -> None:
+    config = b'{"architecture":"amd64","os":"linux"}'
+    layer_data = b"fake-layer-content"
+    archive_bytes = _docker_archive(config=config, layers=[layer_data])
+
+    layer_digest = _sha256_digest(layer_data)
+    config_digest = _sha256_digest(config)
+
+    # Layer blob upload: POST to initiate, PUT to finalize
+    httpserver.expect_request("/v2/repo/test/blobs/uploads/", method="POST").respond_with_data(
+        "", status=202, headers={"Location": httpserver.url_for("/v2/repo/test/blobs/upload-session-layer")}
+    )
+    httpserver.expect_request("/v2/repo/test/blobs/upload-session-layer", method="PUT").respond_with_data(
+        "", status=201
+    )
+
+    # Config blob upload: POST to initiate, PUT to finalize
+    httpserver.expect_request("/v2/repo/test/blobs/uploads/", method="POST").respond_with_data(
+        "", status=202, headers={"Location": httpserver.url_for("/v2/repo/test/blobs/upload-session-config")}
+    )
+    httpserver.expect_request("/v2/repo/test/blobs/upload-session-config", method="PUT").respond_with_data(
+        "", status=201
+    )
+
+    # Manifest PUT
+    httpserver.expect_request("/v2/repo/test/manifests/v1", method="PUT").respond_with_data("", status=201)
+
+    base_url = httpserver.url_for("/v2/repo/test")
+    archive_file = io.BytesIO(archive_bytes)
+    _push_archive_to_registry(archive_file, base_url, "v1", "dGVzdDp0ZXN0")
+
+    manifest_req = next(req for req, _ in httpserver.log if "/manifests/" in req.path)
+    manifest_body = json.loads(manifest_req.data)
+    assert manifest_body["schemaVersion"] == 2
+    assert manifest_body["config"]["digest"] == config_digest
+    assert len(manifest_body["layers"]) == 1
+    assert manifest_body["layers"][0]["digest"] == layer_digest
 
 
 def _docker_archive(*, config: bytes, layers: list[bytes]) -> bytes:

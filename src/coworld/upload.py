@@ -3,6 +3,7 @@ from __future__ import annotations
 import copy
 import hashlib
 import json
+import logging
 import os
 import re
 import subprocess
@@ -572,6 +573,25 @@ def _sha256_digest(content: bytes) -> str:
     return f"sha256:{hashlib.sha256(content).hexdigest()}"
 
 
+_logger = logging.getLogger(__name__)
+
+# --- Direct registry push (workaround for moby/moby#51779) ---
+#
+# Docker 29 made the containerd image store the default. Its push implementation
+# does a HEAD on /v2/<repo>/manifests/<tag> to check existence before pushing.
+# ECR returns 403 (not 404) for non-existent manifests, which the containerd
+# pusher treats as fatal. All layers upload fine; only the manifest tag fails.
+#
+# Rather than shelling out to `docker push`, we implement the OCI distribution
+# spec directly via httpx: POST+PUT each blob, then PUT the manifest. This
+# sidesteps the HEAD check entirely. Once Docker fixes this upstream, this code
+# can be replaced with a simple `docker push` call again.
+
+_DOCKER_MANIFEST_MEDIA_TYPE = "application/vnd.docker.distribution.manifest.v2+json"
+_DOCKER_CONFIG_MEDIA_TYPE = "application/vnd.docker.container.image.v1+json"
+_DOCKER_LAYER_MEDIA_TYPE = "application/vnd.docker.image.rootfs.diff.tar.gzip"
+
+
 def _push_container_image(source_image: str, push_info: EcrPushInfo) -> None:
     aws_env = os.environ | {
         "AWS_ACCESS_KEY_ID": push_info.credentials.access_key_id,
@@ -582,21 +602,95 @@ def _push_container_image(source_image: str, push_info: EcrPushInfo) -> None:
     login_command = ["aws", "ecr", "get-login-password", "--region", push_info.region]
     if push_info.endpoint_url is not None:
         login_command.extend(["--endpoint-url", push_info.endpoint_url])
-    password = subprocess.run(
-        login_command,
-        env=aws_env,
-        check=True,
-        capture_output=True,
-        text=True,
-    ).stdout
-    with tempfile.TemporaryDirectory(prefix="coworld-docker-config-") as docker_config_dir:
-        auth = b64encode(f"AWS:{password.strip()}".encode()).decode()
-        (Path(docker_config_dir) / "config.json").write_text(
-            json.dumps({"auths": {push_info.registry: {"auth": auth}}}) + "\n"
+    password = subprocess.run(login_command, env=aws_env, check=True, capture_output=True, text=True).stdout.strip()
+
+    auth_header = b64encode(f"AWS:{password}".encode()).decode()
+    if push_info.endpoint_url is not None:
+        scheme = "http" if push_info.endpoint_url.startswith("http://") else "https"
+    else:
+        scheme = "https"
+    base_url = f"{scheme}://{push_info.registry}/v2/{push_info.repository}"
+
+    with tempfile.TemporaryFile() as archive:
+        subprocess.run(["docker", "image", "save", source_image], check=True, stdout=archive)
+        archive.seek(0)
+        _push_archive_to_registry(archive, base_url, push_info.tag, auth_header)
+
+
+def _push_archive_to_registry(archive: Any, base_url: str, tag: str, auth_header: str) -> None:
+    """Push a docker-save tar archive to a registry via the OCI distribution API."""
+    headers = {"Authorization": f"Basic {auth_header}"}
+
+    with tarfile.open(fileobj=archive, mode="r|*") as tar:
+        members: dict[str, bytes] = {}
+        for member in tar:
+            if member.isfile():
+                data = tar.extractfile(member)
+                if data is not None:
+                    members[member.name] = data.read()
+
+    manifest_json = members.get("manifest.json")
+    if manifest_json is None:
+        raise RuntimeError("Docker image archive is missing manifest.json")
+    docker_manifest = json.loads(manifest_json)
+    if not isinstance(docker_manifest, list) or len(docker_manifest) != 1:
+        raise RuntimeError("Docker image archive must contain exactly one image manifest")
+    entry = docker_manifest[0]
+
+    config_name = entry["Config"]
+    layer_names = entry["Layers"]
+    config_bytes = members[config_name]
+
+    with httpx.Client(timeout=600.0) as client:
+        layer_descriptors = []
+        for layer_name in layer_names:
+            layer_bytes = members[layer_name]
+            descriptor = _push_blob(client, base_url, headers, layer_bytes, _DOCKER_LAYER_MEDIA_TYPE)
+            layer_descriptors.append(descriptor)
+            _logger.info("Pushed layer %s (%d bytes)", descriptor["digest"], descriptor["size"])
+
+        config_descriptor = _push_blob(client, base_url, headers, config_bytes, _DOCKER_CONFIG_MEDIA_TYPE)
+        _logger.info("Pushed config %s", config_descriptor["digest"])
+
+        manifest = {
+            "schemaVersion": 2,
+            "mediaType": _DOCKER_MANIFEST_MEDIA_TYPE,
+            "config": config_descriptor,
+            "layers": layer_descriptors,
+        }
+        manifest_bytes = json.dumps(manifest, separators=(",", ":")).encode()
+
+        # PUT the manifest directly — no HEAD pre-check (which is what breaks docker push + ECR).
+        resp = client.put(
+            f"{base_url}/manifests/{tag}",
+            content=manifest_bytes,
+            headers=headers | {"Content-Type": _DOCKER_MANIFEST_MEDIA_TYPE},
         )
-        docker_env = os.environ | {"DOCKER_CONFIG": docker_config_dir}
-        subprocess.run(["docker", "tag", source_image, push_info.image_uri], check=True)
-        subprocess.run(["docker", "push", push_info.image_uri], env=docker_env, check=True)
+        resp.raise_for_status()
+        _logger.info("Pushed manifest tagged %s", tag)
+
+
+def _push_blob(
+    client: httpx.Client, base_url: str, headers: dict[str, str], data: bytes, media_type: str
+) -> dict[str, Any]:
+    digest = _sha256_digest(data)
+
+    resp = client.post(f"{base_url}/blobs/uploads/", headers=headers)
+    resp.raise_for_status()
+    upload_url = resp.headers["Location"]
+    if not upload_url.startswith("http"):
+        registry_origin = base_url.split("/v2/")[0]
+        upload_url = registry_origin + upload_url
+
+    sep = "&" if "?" in upload_url else "?"
+    resp = client.put(
+        f"{upload_url}{sep}digest={digest}",
+        content=data,
+        headers=headers | {"Content-Type": "application/octet-stream"},
+    )
+    resp.raise_for_status()
+
+    return {"mediaType": media_type, "digest": digest, "size": len(data)}
 
 
 def _image_upload_name(image: str) -> str:
