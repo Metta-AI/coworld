@@ -653,6 +653,9 @@ def test_cogs_vs_clips_coworld_manifest_validates() -> None:
     assert package.cogame.run == ("python", "/app/server.py")
     assert package.manifest.game.protocols.player.value.endswith("/cogs_vs_clips/game/docs/player_protocol_spec.md")
     assert package.manifest.game.protocols.global_.value.endswith("/cogs_vs_clips/game/docs/global_protocol_spec.md")
+    assert package.manifest.game.docs is not None
+    assert package.manifest.game.docs.pages[0].id == "play_cogsvsclips.md"
+    assert package.manifest.game.docs.pages[0].content.value == "https://softmax.com/play_cogsvsclips.md"
     assert package.manifest.player[0].id == "starter-policy-player"
     assert package.manifest.player[0].image == "coworld-mettagrid-policy-player:latest"
     assert package.manifest.player[0].run == ["python", "/app/coworld_policy_player.py"]

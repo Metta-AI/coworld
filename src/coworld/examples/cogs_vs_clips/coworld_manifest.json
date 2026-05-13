@@ -78,6 +78,18 @@
         "type": "uri",
         "value": "https://github.com/Metta-AI/metta/blob/main/packages/coworld/src/coworld/examples/cogs_vs_clips/game/docs/global_protocol_spec.md"
       }
+    },
+    "docs": {
+      "pages": [
+        {
+          "id": "play_cogsvsclips.md",
+          "title": "play_cogsvsclips.md",
+          "content": {
+            "type": "uri",
+            "value": "https://softmax.com/play_cogsvsclips.md"
+          }
+        }
+      ]
     }
   },
   "player": [
