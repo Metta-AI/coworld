@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import secrets
 import subprocess
+from contextlib import ExitStack
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Callable, Mapping
@@ -9,9 +10,7 @@ from urllib.parse import urlencode
 
 from coworld.certifier import (
     CoworldPackage,
-    build_coworld_episode_job_spec,
-    build_episode_request,
-    build_player_launch_specs,
+    build_manifest_episode_job_spec,
     load_coworld_package,
     load_results,
 )
@@ -27,6 +26,7 @@ from coworld.runner.runner import (
     _free_local_port,
     _tail,
     _wait_for_health,
+    _wait_for_player_exit,
     assert_docker_image_reachable,
     generate_tokens,
     replay_client_url,
@@ -46,6 +46,7 @@ class PlayLinks:
 class PlaySession:
     package: CoworldPackage
     artifacts: EpisodeArtifacts
+    variant_id: str
     links: PlayLinks
 
 
@@ -66,6 +67,9 @@ class ReplaySession:
 def play_coworld(
     manifest_path: Path,
     *,
+    variant_id: str | None = None,
+    player_images: list[str] | None = None,
+    player_run: list[str] | None = None,
     workspace: Path | None = None,
     timeout_seconds: float = 60.0,
     on_ready: Callable[[PlaySession], None],
@@ -73,21 +77,37 @@ def play_coworld(
     package = load_coworld_package(manifest_path)
     assert_docker_image_reachable(package.cogame.image, label="Cogame runnable.image")
     artifacts = EpisodeArtifacts.create(workspace, prefix="coworld-play-")
-    episode_request = build_episode_request(package, artifacts)
-    job_spec = build_coworld_episode_job_spec(episode_request)
+    if variant_id is None:
+        variant_id = (
+            "default"
+            if any(variant.id == "default" for variant in package.manifest.variants)
+            else package.manifest.variants[0].id
+        )
+    job_spec = build_manifest_episode_job_spec(
+        package,
+        variant_id=variant_id,
+        player_images=player_images,
+        player_run=player_run,
+    )
     tokens = generate_tokens(len(job_spec.players))
     write_coworld_game_config(job_spec, artifacts, tokens)
-    players = build_player_launch_specs(episode_request)
+    players = [PlayerLaunchSpec.from_model(player) for player in job_spec.players]
     game_port = _free_local_port()
     session = PlaySession(
         package=package,
         artifacts=artifacts,
+        variant_id=variant_id,
         links=build_play_links(players, tokens, game_port=game_port),
     )
 
-    game_container = f"coworld-play-game-{secrets.token_hex(8)}"
+    run_id = secrets.token_hex(8)
+    game_container = f"coworld-play-game-{run_id}"
+    player_containers: list[str] = []
+    player_processes: list[tuple[subprocess.Popen[str], Path]] = []
     try:
-        with artifacts.game_stdout_path.open("w") as game_stdout, artifacts.game_stderr_path.open("w") as game_stderr:
+        with ExitStack() as stack:
+            game_stdout = stack.enter_context(artifacts.game_stdout_path.open("w"))
+            game_stderr = stack.enter_context(artifacts.game_stderr_path.open("w"))
             game_process = subprocess.Popen(
                 [
                     "docker",
@@ -114,13 +134,49 @@ def play_coworld(
             )
 
             _wait_for_health(game_port, game_process, artifacts.game_stderr_path, timeout_seconds=timeout_seconds)
+
+            for slot, player in enumerate(players):
+                container_name = f"coworld-play-player-{run_id}-{slot}"
+                engine_ws_url = _player_container_ws_url(game_port, slot, tokens[slot], player)
+                player_containers.append(container_name)
+                player_log_path = artifacts.policy_log_path(slot)
+                player_log = stack.enter_context(player_log_path.open("w"))
+                player_processes.append(
+                    (
+                        subprocess.Popen(
+                            [
+                                "docker",
+                                "run",
+                                "--rm",
+                                "--name",
+                                container_name,
+                                "--add-host",
+                                "host.docker.internal:host-gateway",
+                                *_env_args(player.env),
+                                "-e",
+                                f"COGAMES_ENGINE_WS_URL={engine_ws_url}",
+                                *_image_command(player),
+                            ],
+                            stdout=player_log,
+                            stderr=subprocess.STDOUT,
+                            text=True,
+                        ),
+                        player_log_path,
+                    )
+                )
+
             on_ready(session)
             return_code = game_process.wait()
             if return_code != 0:
                 raise RuntimeError(
                     f"Game container exited with status {return_code}.\n{_tail(artifacts.game_stderr_path)}"
                 )
+
+            for player_process, player_log_path in player_processes:
+                _wait_for_player_exit(player_process, player_log_path)
     finally:
+        for container_name in player_containers:
+            subprocess.run(["docker", "rm", "-f", container_name], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
         subprocess.run(["docker", "rm", "-f", game_container], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
 
     return PlayResult(session=session, results=load_results(package, artifacts))
@@ -206,6 +262,10 @@ def build_play_links(
 
 def _player_query(slot: int, token: str, player: PlayerLaunchSpec) -> str:
     return urlencode({"slot": slot, "token": token})
+
+
+def _player_container_ws_url(port: int, slot: int, token: str, player: PlayerLaunchSpec) -> str:
+    return f"ws://host.docker.internal:{port}/player?{_player_query(slot, token, player)}"
 
 
 def _env_args(env: Mapping[str, str]) -> list[str]:

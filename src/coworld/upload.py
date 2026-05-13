@@ -419,7 +419,15 @@ def download_coworld_cmd(
 
     image_tags = _local_image_tags(coworld)
     for public_image_uri, local_tag in image_tags.items():
-        subprocess.run(["docker", "pull", public_image_uri], check=True)
+        if public_image_uri.startswith("public.ecr.aws/"):
+            with tempfile.TemporaryDirectory(prefix="coworld-docker-config-") as docker_config:
+                subprocess.run(
+                    ["docker", "pull", public_image_uri],
+                    check=True,
+                    env={**os.environ, "DOCKER_CONFIG": docker_config},
+                )
+        else:
+            subprocess.run(["docker", "pull", public_image_uri], check=True)
         subprocess.run(["docker", "tag", public_image_uri, local_tag], check=True)
 
     output_dir.mkdir(parents=True, exist_ok=True)

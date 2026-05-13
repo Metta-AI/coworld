@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import shlex
+import webbrowser
 from pathlib import Path
 from typing import Annotated
 from urllib.parse import urlparse, urlunparse
@@ -63,11 +64,47 @@ def certify(
 @app.command("play")
 def play(
     manifest_uri: Annotated[str, typer.Argument(help="Path, URI, or Coworld ID for coworld_manifest.json.")],
+    player_images: Annotated[
+        list[str] | None,
+        typer.Argument(
+            help=(
+                "Optional local player image override. One image is reused for every player slot; otherwise provide "
+                "one image per slot."
+            )
+        ),
+    ] = None,
+    run: Annotated[
+        list[str] | None,
+        typer.Option("--run", help="Command argv for supplied player image(s)."),
+    ] = None,
     server: Annotated[str, typer.Option("--server", help="Observatory API server URL.")] = DEFAULT_SUBMIT_SERVER,
+    variant_id: Annotated[
+        str | None,
+        typer.Option(
+            "--variant",
+            help="Coworld variant ID to play. Defaults to 'default' when present, otherwise the first variant.",
+        ),
+    ] = None,
     timeout_seconds: Annotated[float, typer.Option("--timeout-seconds", min=1.0, help="Health check timeout.")] = 60.0,
+    open_browser: Annotated[
+        bool,
+        typer.Option("--open-browser/--no-open-browser", help="Open the global viewer in a browser."),
+    ] = True,
 ) -> None:
+    def on_ready(session: PlaySession) -> None:
+        _print_play_session(session)
+        if open_browser:
+            webbrowser.open(session.links.global_)
+
     with materialized_manifest_path(manifest_uri, server=server) as manifest_path:
-        result = play_coworld(manifest_path, timeout_seconds=timeout_seconds, on_ready=_print_play_session)
+        result = play_coworld(
+            manifest_path,
+            variant_id=variant_id,
+            player_images=player_images,
+            player_run=run,
+            timeout_seconds=timeout_seconds,
+            on_ready=on_ready,
+        )
     typer.echo(f"Results: {result.session.artifacts.results_path}")
     typer.echo(f"Replay: {result.session.artifacts.replay_path}")
     typer.echo(f"Logs: {result.session.artifacts.logs_dir}")
@@ -317,6 +354,8 @@ def hosted_game_join(
 
 def _print_play_session(session: PlaySession) -> None:
     typer.echo(f"Artifacts: {session.artifacts.workspace}")
+    typer.echo(f"Variant: {session.variant_id}")
+    typer.echo(f"Player containers: {len(session.links.players)} launched")
     typer.echo("Player clients:")
     for slot, link in enumerate(session.links.players):
         typer.echo(f"  {slot}: {link}")

@@ -17,12 +17,13 @@ from starlette.websockets import WebSocketDisconnect
 from coworld.certifier import (
     build_episode_request,
     build_game_config,
+    build_manifest_episode_job_spec,
     build_player_launch_specs,
     certify_coworld,
     load_coworld_package,
     load_results,
 )
-from coworld.play import ReplaySession, build_play_links, replay_coworld
+from coworld.play import ReplaySession, build_play_links, play_coworld, replay_coworld
 from coworld.runner.runner import (
     CONFIG_ENV_VAR,
     REPLAY_SAVE_ENV_VAR,
@@ -272,6 +273,43 @@ def test_build_episode_request_matches_runner_spec_shape(tmp_path: Path) -> None
     assert "logs_uri" not in episode_request
 
 
+def test_build_manifest_episode_job_spec_can_use_variant_config(tmp_path: Path) -> None:
+    package = _write_package(
+        tmp_path,
+        certification={
+            "game_config": {"difficulty": "smoke"},
+            "players": [{"player_id": "unit-test-player"}],
+        },
+        game_config={"difficulty": "watch"},
+    )
+
+    spec = build_manifest_episode_job_spec(package, variant_id="default")
+
+    assert spec.game_config == {"difficulty": "watch"}
+
+
+def test_build_manifest_episode_job_spec_defaults_to_certification_config(tmp_path: Path) -> None:
+    package = _write_package(
+        tmp_path,
+        certification={
+            "game_config": {"difficulty": "smoke"},
+            "players": [{"player_id": "unit-test-player"}],
+        },
+        game_config={"difficulty": "watch"},
+    )
+
+    spec = build_manifest_episode_job_spec(package)
+
+    assert spec.game_config == {"difficulty": "smoke"}
+
+
+def test_build_manifest_episode_job_spec_rejects_unknown_variant(tmp_path: Path) -> None:
+    package = _write_package(tmp_path)
+
+    with pytest.raises(ValueError, match="unknown Coworld variant_id"):
+        build_manifest_episode_job_spec(package, variant_id="missing")
+
+
 def test_episode_request_allows_no_runner_managed_players() -> None:
     episode_request = {
         "manifest": _coworld_manifest(),
@@ -316,6 +354,80 @@ def test_build_play_links_point_directly_at_engine_client_routes(tmp_path: Path)
     assert admin_link.netloc == "127.0.0.1:1234"
     assert admin_link.path == "/clients/admin"
     assert admin_link.query == ""
+
+
+def test_play_coworld_starts_certification_player_containers(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    coworld_manifest_path = _write_package_files(
+        tmp_path,
+        certification={
+            "game_config": {"difficulty": "smoke"},
+            "players": [{"player_id": "unit-test-player"}],
+        },
+        game_config={"difficulty": "watch"},
+    )
+    ready_sessions = []
+    popen_commands: list[list[str]] = []
+    rm_commands: list[list[str]] = []
+    waited_players: list[Path] = []
+
+    class FakeProcess:
+        def wait(self) -> int:
+            return 0
+
+    def fake_popen(cmd, **kwargs):
+        popen_commands.append(cmd)
+        return FakeProcess()
+
+    def noop_wait_for_health(
+        port: int, process: subprocess.Popen, stderr_path: Path, *, timeout_seconds: float
+    ) -> None:
+        pass
+
+    def fake_wait_for_player_exit(player_process: subprocess.Popen[str], stderr_path: Path) -> None:
+        waited_players.append(stderr_path)
+
+    def fake_subprocess_run(cmd, **kwargs):
+        rm_commands.append(cmd)
+        return subprocess.CompletedProcess(cmd, 0)
+
+    monkeypatch.setattr("coworld.play.assert_docker_image_reachable", lambda image, *, label: None)
+    monkeypatch.setattr("coworld.play._free_local_port", lambda: 1234)
+    monkeypatch.setattr("coworld.play._wait_for_health", noop_wait_for_health)
+    monkeypatch.setattr("coworld.play._wait_for_player_exit", fake_wait_for_player_exit)
+    monkeypatch.setattr("coworld.play.subprocess.Popen", fake_popen)
+    monkeypatch.setattr("coworld.play.subprocess.run", fake_subprocess_run)
+    monkeypatch.setattr("coworld.play.secrets.token_hex", lambda _bytes: "session-1")
+    monkeypatch.setattr("coworld.runner.runner.secrets.token_urlsafe", lambda _bytes: "token-0")
+    monkeypatch.setattr("coworld.play.load_results", lambda package, artifacts: {"scores": [1.0]})
+
+    result = play_coworld(
+        coworld_manifest_path,
+        workspace=tmp_path / "play-workspace",
+        on_ready=ready_sessions.append,
+    )
+
+    assert ready_sessions == [result.session]
+    assert result.session.variant_id == "default"
+    assert json.loads((tmp_path / "play-workspace" / "config.json").read_text())["difficulty"] == "watch"
+    assert len(popen_commands) == 2
+    game_command, player_command = popen_commands
+    assert "coworld-play-game-session-1" in game_command
+    assert f"{CONFIG_ENV_VAR}=file:///coworld/config.json" in game_command
+    assert "coworld-play-player-session-1-0" in player_command
+    assert "--add-host" in player_command
+    assert "host.docker.internal:host-gateway" in player_command
+    assert "PLAYER_MODE=test" in player_command
+    assert "COGAMES_ENGINE_WS_URL=ws://host.docker.internal:1234/player?slot=0&token=token-0" in player_command
+    assert _image_command_slice(player_command) == [
+        "--entrypoint",
+        "python",
+        "unit-test-runtime:latest",
+        "-m",
+        "unit_test.player",
+    ]
+    assert waited_players == [tmp_path / "play-workspace" / "logs" / "policy_agent_0.txt"]
+    assert ["docker", "rm", "-f", "coworld-play-player-session-1-0"] in rm_commands
+    assert ["docker", "rm", "-f", "coworld-play-game-session-1"] in rm_commands
 
 
 def test_replay_client_url_points_at_engine_replay_route() -> None:

@@ -95,6 +95,7 @@ def build_episode_request(package: CoworldPackage, artifacts: EpisodeArtifacts) 
 def build_manifest_episode_job_spec(
     package: CoworldPackage,
     *,
+    variant_id: str | None = None,
     player_images: list[str] | None = None,
     player_run: list[str] | None = None,
 ) -> CoworldEpisodeJobSpec:
@@ -117,9 +118,17 @@ def build_manifest_episode_job_spec(
             for slot, image in enumerate(slot_images)
         ]
 
+    if variant_id is None:
+        game_config = dict(package.manifest.certification.game_config)
+    else:
+        variants = {variant.id: variant for variant in package.manifest.variants}
+        if variant_id not in variants:
+            raise ValueError(f"unknown Coworld variant_id: {variant_id!r}")
+        game_config = dict(variants[variant_id].game_config)
+
     return CoworldEpisodeJobSpec(
         manifest=package.manifest,
-        game_config=dict(package.manifest.certification.game_config),
+        game_config=game_config,
         players=players,
     )
 

@@ -1,7 +1,7 @@
 import json
 from pathlib import Path
 from types import SimpleNamespace
-from typing import cast
+from typing import Callable, cast
 
 from pytest import MonkeyPatch
 from pytest_httpserver import HTTPServer
@@ -35,6 +35,100 @@ def test_coworld_play_accepts_backend_coworld_path(httpserver: HTTPServer, monke
 
     assert result.exit_code == 0, result.output
     assert captured["manifest"] == manifest
+
+
+def test_coworld_play_accepts_player_image_override(monkeypatch: MonkeyPatch) -> None:
+    captured: dict[str, object] = {}
+
+    def fake_play_coworld(manifest_path: Path, **kwargs: object) -> SimpleNamespace:
+        captured["manifest_path"] = manifest_path
+        captured["kwargs"] = kwargs
+        artifacts = SimpleNamespace(
+            workspace=Path("/tmp/workspace"),
+            results_path=Path("/tmp/results.json"),
+            replay_path=Path("/tmp/replay.json"),
+            logs_dir=Path("/tmp/logs"),
+        )
+        return SimpleNamespace(session=SimpleNamespace(artifacts=artifacts), results={})
+
+    monkeypatch.setattr("coworld.cli.play_coworld", fake_play_coworld)
+
+    result = CliRunner().invoke(
+        app,
+        [
+            "play",
+            str(_example_manifest()),
+            "my-player:latest",
+            "--variant",
+            "default",
+            "--run",
+            "python",
+            "--run",
+            "/app/player.py",
+            "--no-open-browser",
+        ],
+    )
+
+    assert result.exit_code == 0, result.output
+    kwargs = cast(dict[str, object], captured["kwargs"])
+    assert kwargs["variant_id"] == "default"
+    assert kwargs["player_images"] == ["my-player:latest"]
+    assert kwargs["player_run"] == ["python", "/app/player.py"]
+
+
+def test_coworld_play_accepts_variant(monkeypatch: MonkeyPatch) -> None:
+    captured: dict[str, object] = {}
+
+    def fake_play_coworld(manifest_path: Path, **kwargs: object) -> SimpleNamespace:
+        captured["kwargs"] = kwargs
+        artifacts = SimpleNamespace(
+            workspace=Path("/tmp/workspace"),
+            results_path=Path("/tmp/results.json"),
+            replay_path=Path("/tmp/replay.json"),
+            logs_dir=Path("/tmp/logs"),
+        )
+        return SimpleNamespace(session=SimpleNamespace(artifacts=artifacts), results={})
+
+    monkeypatch.setattr("coworld.cli.play_coworld", fake_play_coworld)
+
+    result = CliRunner().invoke(app, ["play", str(_example_manifest()), "--variant", "daily", "--no-open-browser"])
+
+    assert result.exit_code == 0, result.output
+    kwargs = cast(dict[str, object], captured["kwargs"])
+    assert kwargs["variant_id"] == "daily"
+
+
+def test_coworld_play_opens_global_client_by_default(monkeypatch: MonkeyPatch) -> None:
+    opened_urls: list[str] = []
+
+    def fake_play_coworld(manifest_path: Path, **kwargs: object) -> SimpleNamespace:
+        artifacts = SimpleNamespace(
+            workspace=Path("/tmp/workspace"),
+            results_path=Path("/tmp/results.json"),
+            replay_path=Path("/tmp/replay.json"),
+            logs_dir=Path("/tmp/logs"),
+        )
+        session = SimpleNamespace(
+            artifacts=artifacts,
+            variant_id="default",
+            links=SimpleNamespace(
+                players=["http://127.0.0.1/player"],
+                global_="http://127.0.0.1/global",
+                admin="http://127.0.0.1/admin",
+            ),
+        )
+        cast(Callable[[object], None], kwargs["on_ready"])(session)
+        return SimpleNamespace(session=session, results={})
+
+    monkeypatch.setattr("coworld.cli.play_coworld", fake_play_coworld)
+    monkeypatch.setattr("coworld.cli.webbrowser.open", opened_urls.append)
+
+    result = CliRunner().invoke(app, ["play", str(_example_manifest())])
+
+    assert result.exit_code == 0, result.output
+    assert opened_urls == ["http://127.0.0.1/global"]
+    assert "Variant: default" in result.output
+    assert "Player containers: 1 launched" in result.output
 
 
 def test_run_episode_uses_manifest_certification_players(monkeypatch: MonkeyPatch, tmp_path: Path) -> None:

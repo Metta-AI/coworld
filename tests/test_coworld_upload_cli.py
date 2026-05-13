@@ -1,6 +1,7 @@
 import hashlib
 import io
 import json
+import os
 import subprocess
 import tarfile
 from pathlib import Path
@@ -607,9 +608,11 @@ def test_download_coworld_command_writes_local_package(
     public_image_uri = "public.ecr.aws/softmax/cogames@sha256:public-digest"
     output_dir = tmp_path / "downloaded"
     docker_calls: list[list[str]] = []
+    docker_envs: list[dict[str, str] | None] = []
 
-    def fake_run(command: list[str], **_kwargs: object) -> subprocess.CompletedProcess[str]:
+    def fake_run(command: list[str], **kwargs: object) -> subprocess.CompletedProcess[str]:
         docker_calls.append(command)
+        docker_envs.append(cast(dict[str, str] | None, kwargs.get("env")))
         return subprocess.CompletedProcess(command, 0)
 
     monkeypatch.setattr("coworld.upload.subprocess.run", fake_run)
@@ -646,6 +649,10 @@ def test_download_coworld_command_writes_local_package(
         ["docker", "pull", public_image_uri],
         ["docker", "tag", public_image_uri, local_image],
     ]
+    assert docker_envs[0] is not None
+    assert docker_envs[0]["DOCKER_CONFIG"] != os.environ.get("DOCKER_CONFIG")
+    assert "coworld-docker-config-" in Path(docker_envs[0]["DOCKER_CONFIG"]).name
+    assert docker_envs[1] is None
     manifest = json.loads((output_dir / "coworld_manifest.json").read_text())
     assert manifest["game"]["runnable"]["image"] == local_image
     assert manifest["player"][0]["image"] == local_image
