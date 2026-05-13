@@ -8,22 +8,40 @@ from kubernetes.client.rest import ApiException
 
 from coworld.runner import kubernetes_runner
 from coworld.runner import runner as runner_module
-from coworld.runner.kubernetes_runner import _collect_logs, _wait_for_results
+from coworld.runner.kubernetes_runner import _collect_logs, _wait_for_episode_artifacts
 from coworld.runner.runner import EpisodeArtifacts, PlayerLaunchSpec
 
 
 class _FakeCoreV1:
-    def __init__(self, phases: dict[str, str], write_results_on_game_check: Path | None = None):
-        self._phases = phases
-        self._write_results_on_game_check = write_results_on_game_check
+    def __init__(
+        self,
+        artifact_writes: list[list[Path]] | None = None,
+        game_exit_codes: list[int | None] | None = None,
+    ):
+        self._artifact_writes = artifact_writes or []
+        self._game_exit_codes = game_exit_codes or []
+        self.game_read_count = 0
 
     def read_namespaced_pod(self, *, name: str, namespace: str):
-        if name == "game-pod" and self._write_results_on_game_check is not None:
-            self._write_results_on_game_check.write_text("{}", encoding="utf-8")
+        container_statuses = []
+        if name == "game-pod":
+            self.game_read_count += 1
+            if self.game_read_count <= len(self._artifact_writes):
+                for path in self._artifact_writes[self.game_read_count - 1]:
+                    path.write_text("{}", encoding="utf-8")
+            if self.game_read_count <= len(self._game_exit_codes):
+                exit_code = self._game_exit_codes[self.game_read_count - 1]
+                if exit_code is not None:
+                    container_statuses = [
+                        SimpleNamespace(
+                            name="game",
+                            state=SimpleNamespace(terminated=SimpleNamespace(exit_code=exit_code)),
+                        )
+                    ]
         return SimpleNamespace(
             status=SimpleNamespace(
-                phase=self._phases.get(name, "Running"),
-                container_statuses=[],
+                phase="Running",
+                container_statuses=container_statuses,
             )
         )
 
@@ -63,32 +81,77 @@ class _FakeLogCoreV1:
         return f"{name} {container} logs"
 
 
-def test_wait_for_results_does_not_wait_for_player_pods_to_succeed(tmp_path):
+class _FailingCoreV1:
+    def read_namespaced_pod(self, *, name: str, namespace: str):
+        raise RuntimeError("pod status read failed")
+
+
+def test_wait_for_episode_artifacts_skips_pod_status_after_results_when_replay_not_required(tmp_path):
     artifacts = EpisodeArtifacts.create(tmp_path)
     artifacts.results_path.write_text("{}", encoding="utf-8")
-    core_v1 = _FakeCoreV1({"player-0": "Running"})
 
-    _wait_for_results(
+    _wait_for_episode_artifacts(
         artifacts,
-        core_v1,
+        _FailingCoreV1(),
         "default",
         "game-pod",
         timeout_seconds=0.01,
+        require_replay=False,
     )
 
 
-def test_wait_for_results_ignores_player_pod_failure(tmp_path, monkeypatch):
+def test_wait_for_episode_artifacts_returns_after_results_written_when_replay_not_required(tmp_path, monkeypatch):
     artifacts = EpisodeArtifacts.create(tmp_path)
-    core_v1 = _FakeCoreV1({"player-0": "Failed"}, write_results_on_game_check=artifacts.results_path)
+    core_v1 = _FakeCoreV1(artifact_writes=[[artifacts.results_path]])
     monkeypatch.setattr(kubernetes_runner.time, "sleep", lambda _seconds: None)
 
-    _wait_for_results(
+    _wait_for_episode_artifacts(
         artifacts,
         core_v1,
         "default",
         "game-pod",
         timeout_seconds=1.0,
+        require_replay=False,
     )
+
+
+def test_wait_for_episode_artifacts_waits_for_replay_after_results(tmp_path, monkeypatch):
+    artifacts = EpisodeArtifacts.create(tmp_path)
+    core_v1 = _FakeCoreV1(
+        artifact_writes=[[artifacts.results_path], [artifacts.replay_path]],
+        game_exit_codes=[None, 0],
+    )
+    monkeypatch.setattr(kubernetes_runner.time, "sleep", lambda _seconds: None)
+
+    _wait_for_episode_artifacts(
+        artifacts,
+        core_v1,
+        "default",
+        "game-pod",
+        timeout_seconds=1.0,
+        require_replay=True,
+    )
+
+    assert artifacts.replay_path.exists()
+    assert core_v1.game_read_count == 2
+
+
+def test_wait_for_episode_artifacts_fails_when_game_exits_without_replay(tmp_path):
+    artifacts = EpisodeArtifacts.create(tmp_path)
+    core_v1 = _FakeCoreV1(
+        artifact_writes=[[artifacts.results_path]],
+        game_exit_codes=[0],
+    )
+
+    with pytest.raises(TimeoutError, match="replay.json"):
+        _wait_for_episode_artifacts(
+            artifacts,
+            core_v1,
+            "default",
+            "game-pod",
+            timeout_seconds=1.0,
+            require_replay=True,
+        )
 
 
 def test_collect_logs_skips_player_pods_that_have_not_started(tmp_path):

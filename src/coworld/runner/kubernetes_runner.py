@@ -85,7 +85,7 @@ def _upload_outputs(artifacts: EpisodeArtifacts) -> None:
         upload_data(results_uri, artifacts.results_path.read_bytes(), content_type="application/json")
 
     replay_uri = os.environ.get("REPLAY_URI")
-    if replay_uri is not None and artifacts.replay_path.exists():
+    if replay_uri is not None:
         upload_data(replay_uri, _compress_replay(artifacts).read_bytes(), content_type="application/x-compress")
 
     debug_uri = os.environ.get("DEBUG_URI")
@@ -159,12 +159,13 @@ def _run_kubernetes_episode(
             )
 
         asyncio.run(_require_global_message(f"ws://127.0.0.1:{GAME_PORT}/global", timeout_seconds=timeout_seconds))
-        _wait_for_results(
+        _wait_for_episode_artifacts(
             artifacts,
             core_v1,
             namespace,
             pod_name,
             timeout_seconds=timeout_seconds,
+            require_replay=os.environ.get("REPLAY_URI") is not None,
         )
         _collect_logs(core_v1, namespace, pod_name, child_names, artifacts)
 
@@ -288,31 +289,55 @@ def _wait_for_health(core_v1, namespace: str, pod_name: str, *, timeout_seconds:
     raise TimeoutError(f"Timed out waiting for {url}")
 
 
-def _wait_for_results(
+def _wait_for_episode_artifacts(
     artifacts: EpisodeArtifacts,
     core_v1,
     namespace: str,
     pod_name: str,
     *,
     timeout_seconds: float,
+    require_replay: bool,
 ) -> None:
     deadline = time.monotonic() + timeout_seconds
+    expected = [artifacts.results_path]
+    if require_replay:
+        expected.append(artifacts.replay_path)
+
     while time.monotonic() < deadline:
-        if artifacts.results_path.exists():
+        missing = [path for path in expected if not path.exists()]
+
+        if not missing and not require_replay:
             return
-        _raise_if_game_terminated(core_v1, namespace, pod_name)
+
+        exit_code = _game_container_exit_code(core_v1, namespace, pod_name)
+
+        if exit_code is not None:
+            if exit_code != 0:
+                raise RuntimeError(f"Game container exited with code {exit_code}")
+            missing = [path for path in expected if not path.exists()]
+            if not missing:
+                return
+            missing_list = ", ".join(str(path) for path in missing)
+            raise TimeoutError(f"Game container exited before writing episode artifact(s): {missing_list}")
+
         time.sleep(0.5)
-    raise TimeoutError(f"Timed out waiting for {artifacts.results_path}")
+    expected_list = ", ".join(str(path) for path in expected)
+    raise TimeoutError(f"Timed out waiting for game container to finish writing episode artifact(s): {expected_list}")
 
 
-def _raise_if_game_terminated(core_v1, namespace: str, pod_name: str) -> None:
+def _game_container_exit_code(core_v1, namespace: str, pod_name: str) -> int | None:
     pod = core_v1.read_namespaced_pod(name=pod_name, namespace=namespace)
     for status in pod.status.container_statuses or []:
         if status.name != "game" or status.state.terminated is None:
             continue
-        exit_code = status.state.terminated.exit_code
-        if exit_code != 0:
-            raise RuntimeError(f"Game container exited with code {exit_code}")
+        return status.state.terminated.exit_code
+    return None
+
+
+def _raise_if_game_terminated(core_v1, namespace: str, pod_name: str) -> None:
+    exit_code = _game_container_exit_code(core_v1, namespace, pod_name)
+    if exit_code is not None and exit_code != 0:
+        raise RuntimeError(f"Game container exited with code {exit_code}")
 
 
 def _collect_logs(
