@@ -3,11 +3,24 @@ load("@rules_python//python:defs.bzl", "py_binary", "py_library")
 py_library(
     name = "coworld",
     srcs = glob(["src/coworld/**/*.py"]),
+    # Keep `data` narrowly scoped to files actually read at runtime, so
+    # downstream-irrelevant edits (Dockerfiles, protocol docs, READMEs)
+    # don't propagate into every dependent test's input tree and flip
+    # action keys. Specifically:
+    #   - examples/**/*.py:   example servers/players the runtime imports
+    #   - examples/**/*.json: coworld_manifest.json + game configs the
+    #                         schema validator loads
+    #   - examples/**/*.html: client UIs the example servers serve via
+    #                         FastAPI's HTMLResponse((CLIENTS_DIR/...))
+    # Excluded by omission: Dockerfiles (container-build only), README.md
+    # and *_spec.md (docs), __pycache__/*.pyc (build artifacts).
     data = glob(
         [
             "src/coworld/*.json",
             "src/coworld/*.md",
-            "src/coworld/examples/**/*",
+            "src/coworld/examples/**/*.py",
+            "src/coworld/examples/**/*.json",
+            "src/coworld/examples/**/*.html",
             "src/coworld/py.typed",
             "src/coworld/runner/*.md",
         ],

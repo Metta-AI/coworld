@@ -51,7 +51,19 @@ include-package-data = true
 coworld = ["py.typed", "*.json", "*.md", "runner/*.md", "examples/**/*"]
 
 [tool.setuptools.exclude-package-data]
-coworld = ["**/__pycache__/*", "**/*.pyc"]
+coworld = [
+  "**/__pycache__/*",
+  "**/*.pyc",
+  # Files the Python runtime never reads. Excluding them from the
+  # wheel means a non-runtime edit (e.g. updating an example
+  # Dockerfile) doesn't change wheel content, doesn't change the
+  # @pyenv tree bazel hashes into action keys, and so doesn't
+  # invalidate every downstream test that has @pyenv in its
+  # transitive deps.
+  "**/Dockerfile",
+  "examples/**/README.md",
+  "examples/**/*_spec.md",
+]
 
 [tool.pytest.ini_options]
 pythonpath = ["src"]
