@@ -166,11 +166,10 @@ def _run_kubernetes_episode(
             timeout_seconds=timeout_seconds,
             require_replay=os.environ.get("REPLAY_URI") is not None,
         )
-        _collect_logs(core_v1, namespace, pod_name, child_names, artifacts)
-
         results = json.loads(artifacts.results_path.read_text(encoding="utf-8"))
         validate_json_schema(results, job.results_schema)
     finally:
+        _collect_logs(core_v1, namespace, pod_name, child_names, artifacts)
         _delete_child_resources(core_v1, namespace, service_name, child_names)
 
 
