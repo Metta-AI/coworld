@@ -10,6 +10,12 @@ Commands that talk to Softmax use the current `softmax-cli` login:
 uv run softmax login
 ```
 
+In a standalone public environment, install the CLI with:
+
+```bash
+uv pip install "coworld[auth]"
+```
+
 Pass `--server` only when targeting a non-default Observatory API environment.
 
 ## Player Loop

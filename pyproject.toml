@@ -1,14 +1,14 @@
 [build-system]
-requires = ["setuptools==80.9.0", "wheel==0.45.1"]
+requires = ["setuptools==80.9.0", "wheel==0.45.1", "setuptools_scm==8.1.0"]
 build-backend = "setuptools.build_meta"
 
 [project]
 name = "coworld"
-version = "0.1.0"
 description = "Coworld certification, upload, and runner tooling"
 readme = "src/coworld/COWORLD_README.md"
 requires-python = ">=3.11,<3.13"
 license = "MIT"
+dynamic = ["version"]
 dependencies = [
   "httpx>=0.28.1",
   "jsonschema>=4.25.1",
@@ -64,6 +64,14 @@ coworld = [
   "examples/**/README.md",
   "examples/**/*_spec.md",
 ]
+
+[tool.setuptools_scm]
+tag_regex = "^coworld-v(?P<version>\\d+\\.\\d+\\.\\d+(?:\\.\\d+)?)$"
+version_scheme = "no-guess-dev"
+local_scheme = "no-local-version"
+root = "../.."
+fallback_version = "0.0.0"
+git_describe_command = ["git", "describe", "--dirty", "--tags", "--long", "--match", "coworld-v*"]
 
 [tool.pytest.ini_options]
 pythonpath = ["src"]
