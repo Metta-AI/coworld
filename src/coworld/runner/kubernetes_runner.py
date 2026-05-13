@@ -225,6 +225,7 @@ def _create_player_pod(
         metadata=client.V1ObjectMeta(
             name=name,
             namespace=namespace,
+            annotations={"karpenter.sh/do-not-disrupt": "true"},
             labels={
                 "coworld-job-id": job_id,
                 "coworld-component": "player",

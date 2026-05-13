@@ -165,6 +165,31 @@ def test_collect_logs_records_player_log_errors_without_failing(tmp_path):
     assert core_v1.log_calls == [("game-pod", "game"), ("player-broken", "player"), ("player-running", "player")]
 
 
+def test_collect_logs_records_game_log_read_failures(tmp_path):
+    artifacts = EpisodeArtifacts.create(tmp_path)
+    core_v1 = _FakeLogCoreV1(
+        {
+            "game-pod": [],
+            "player-running": [_container_status("player", running=True)],
+        },
+        log_errors={("game-pod", "game"): ApiException(status=500, reason="kubelet timeout")},
+    )
+
+    _collect_logs(
+        core_v1,
+        "default",
+        "game-pod",
+        ["player-running"],
+        artifacts,
+    )
+
+    assert artifacts.game_stdout_path.read_text(encoding="utf-8").startswith(
+        "Failed to collect Kubernetes logs for pod game-pod container game:"
+    )
+    assert artifacts.policy_log_path(0).read_text(encoding="utf-8") == "player-running player logs"
+    assert core_v1.log_calls == [("game-pod", "game"), ("player-running", "player")]
+
+
 def test_new_workspace_does_not_require_repo_depth(monkeypatch, tmp_path):
     shallow_package_file = tmp_path / "coworld" / "runner" / "runner.py"
     shallow_package_file.parent.mkdir(parents=True)
@@ -222,6 +247,7 @@ def test_create_player_pod_injects_policy_secret_env():
     assert env["ANTHROPIC_API_KEY"] == "sk-ant-test"
     assert env["USE_BEDROCK"] == "true"
     assert env["COGAMES_ENGINE_WS_URL"] == "ws://game-service:8080/player?slot=0&token=slot-token"
+    assert pod.metadata.annotations == {"karpenter.sh/do-not-disrupt": "true"}
     assert pod.spec.service_account_name == "episode-runner"
 
 
