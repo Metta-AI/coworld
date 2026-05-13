@@ -281,7 +281,7 @@ def run_cogame_episode(spec: EpisodeRunSpec, *, verify_replay: bool = True) -> N
                 spec.artifacts.game_stderr_path,
                 timeout_seconds=spec.timeout_seconds,
             )
-            _require_http_ok(replay_client_url(replay_port, replay_uri))
+            _require_http_ok(replay_client_url(replay_port, replay_uri), allow_redirect=True)
             asyncio.run(
                 _require_replay_message(
                     f"ws://127.0.0.1:{replay_port}{replay_session_path(replay_uri)}",
@@ -320,8 +320,10 @@ def _image_command(runnable: RunnableLaunchSpec) -> list[str]:
     return ["--entrypoint", runnable.run[0], runnable.image, *runnable.run[1:]]
 
 
-def _require_http_ok(url: str) -> None:
+def _require_http_ok(url: str, *, allow_redirect: bool = False) -> None:
     response = httpx.get(url, timeout=5.0)
+    if allow_redirect and 300 <= response.status_code < 400:
+        return
     response.raise_for_status()
 
 
@@ -348,7 +350,7 @@ async def _require_global_message(url: str, *, timeout_seconds: float) -> None:
 
 
 async def _require_replay_message(url: str, *, timeout_seconds: float) -> None:
-    async with websockets.connect(url, open_timeout=5) as websocket:
+    async with websockets.connect(url, open_timeout=5, max_size=None) as websocket:
         message = await asyncio.wait_for(websocket.recv(), timeout=min(timeout_seconds, 10.0))
         if not message:
             raise AssertionError(f"Replay viewer received an empty message from {url}")

@@ -107,6 +107,18 @@ def test_kubernetes_compress_replay_writes_zlib_json_z(tmp_path):
     assert zlib.decompress(compressed_path.read_bytes()) == b'{"events":[]}'
 
 
+def test_require_http_ok_accepts_replay_client_redirect(monkeypatch):
+    class RedirectResponse:
+        status_code = 307
+
+        def raise_for_status(self):
+            raise AssertionError("redirect should be accepted")
+
+    monkeypatch.setattr(runner_module.httpx, "get", lambda _url, timeout: RedirectResponse())
+
+    runner_module._require_http_ok("http://example.test/clients/replay", allow_redirect=True)
+
+
 def test_wait_for_episode_artifacts_skips_pod_status_after_results_when_replay_not_required(tmp_path):
     artifacts = EpisodeArtifacts.create(tmp_path)
     artifacts.results_path.write_text("{}", encoding="utf-8")
