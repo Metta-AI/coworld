@@ -4,22 +4,25 @@ import asyncio
 import gzip
 import json
 import os
+import zlib
 from collections.abc import Callable
 from pathlib import Path
 from typing import Any, cast
-from urllib.parse import unquote, urlencode, urlparse
+from urllib.parse import quote, unquote, urlencode, urlparse
 
 import numpy as np
 import uvicorn
 from cogsguard.missions.machina_1 import make_cogsguard_mission, make_machina1_mission
-from fastapi import FastAPI, WebSocket, WebSocketDisconnect
-from fastapi.responses import HTMLResponse
+from fastapi import FastAPI, Request, WebSocket, WebSocketDisconnect
+from fastapi.responses import HTMLResponse, RedirectResponse, Response
 from fastapi.staticfiles import StaticFiles
 
 from coworld.runner.io import read_data
 from mettagrid.config.mettagrid_config import MettaGridConfig
 from mettagrid.map_builder.map_builder import HasSeed
+from mettagrid.renderer.common import METTASCOPE_REPLAY_URL_PREFIX
 from mettagrid.runner.live_episode import LiveMettaGridEpisode, TickMode
+from mettagrid.simulator.replay_log_writer import EpisodeReplay
 from mettagrid.util.grid_object_formatter import format_grid_object
 
 CLIENTS_DIR = Path(__file__).parent / "clients"
@@ -119,18 +122,21 @@ class CogsVsClipsGame:
         )
         self.episode.configure_artifacts(
             results_path=results_path,
-            replay_path=replay_path,
+            replay_path=None,
             results_builder=self.results,
         )
         self.sim = self.episode.sim
+        self.replay_path = replay_path
+        self.replay = EpisodeReplay(self.sim) if replay_path is not None else None
+        self.replay_written = False
         (
             self.initial_replay,
             self.capacity_names,
             self.resource_to_capacity_id,
         ) = build_initial_replay(self.sim)
         self.episode.configure_replay_events(
-            baseline_builder=self.global_baseline_message,
-            step_builder=self.global_delta_message,
+            baseline_builder=lambda: {"type": "baseline"},
+            step_builder=self.record_replay_step,
         )
 
     def handle_global_message(self, message: dict[str, Any]) -> None:
@@ -175,6 +181,22 @@ class CogsVsClipsGame:
 
     def global_delta_message(self) -> dict[str, Any]:
         return self._global_step_message(ignored_object_types=["wall"])
+
+    def record_replay_step(self) -> dict[str, Any]:
+        if self.replay is not None:
+            self.replay.log_step(
+                self.sim.current_step,
+                self.sim._c_sim.actions(),
+                self.sim._c_sim.rewards(),
+            )
+        return {"type": "step", "step": self.sim.current_step}
+
+    def write_replay(self) -> None:
+        if self.replay_path is None or self.replay is None or self.replay_written:
+            return
+        self.replay_path.parent.mkdir(parents=True, exist_ok=True)
+        self.replay_path.write_text(json.dumps(self.replay.get_replay_data()), encoding="utf-8")
+        self.replay_written = True
 
     def _global_step_message(self, *, ignored_object_types: list[str] | None = None) -> dict[str, Any]:
         return {
@@ -222,6 +244,7 @@ class CogsVsClipsGame:
         return [float(score) for score in self.sim.episode_rewards.tolist()]
 
     def results(self) -> dict[str, Any]:
+        self.write_replay()
         return {"scores": self.scores(), "steps": self.sim.current_step, "mission": self.mission_name}
 
 
@@ -386,8 +409,10 @@ def create_app(
 
 def load_replay_data(replay_uri: str) -> dict[str, Any]:
     replay_data = read_data(replay_uri)
-    if replay_uri.endswith((".json.z", ".json.gz")):
+    if replay_uri.endswith(".json.gz"):
         replay_data = gzip.decompress(replay_data)
+    elif replay_uri.endswith(".json.z"):
+        replay_data = zlib.decompress(replay_data)
     return json.loads(replay_data)
 
 
@@ -399,8 +424,17 @@ def create_replay_app() -> FastAPI:
         return {"ok": True}
 
     @app.get("/clients/replay")
-    def replay_client() -> HTMLResponse:
-        return HTMLResponse((CLIENTS_DIR / "replay.html").read_text())
+    def replay_client(request: Request, uri: str) -> RedirectResponse:
+        replay_url = str(request.url_for("replay_data")) + "?" + urlencode({"uri": uri})
+        return RedirectResponse(METTASCOPE_REPLAY_URL_PREFIX + quote(replay_url, safe=""))
+
+    @app.get("/replay-data", name="replay_data")
+    def replay_data(uri: str) -> Response:
+        return Response(
+            read_data(uri),
+            media_type="application/octet-stream",
+            headers={"Access-Control-Allow-Origin": "*"},
+        )
 
     @app.websocket("/replay")
     async def replay_viewer(websocket: WebSocket) -> None:

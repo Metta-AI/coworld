@@ -2,12 +2,12 @@ from __future__ import annotations
 
 import argparse
 import asyncio
-import gzip
 import json
 import os
 import sys
 import time
 import zipfile
+import zlib
 from io import BytesIO
 from pathlib import Path
 from typing import Mapping
@@ -102,8 +102,7 @@ def _upload_outputs(artifacts: EpisodeArtifacts) -> None:
 
 def _compress_replay(artifacts: EpisodeArtifacts) -> Path:
     compressed_path = artifacts.workspace / "replay.json.z"
-    with artifacts.replay_path.open("rb") as src, gzip.open(compressed_path, "wb") as dst:
-        dst.write(src.read())
+    compressed_path.write_bytes(zlib.compress(artifacts.replay_path.read_bytes()))
     return compressed_path
 
 

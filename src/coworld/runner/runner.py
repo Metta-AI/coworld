@@ -1,13 +1,13 @@
 from __future__ import annotations
 
 import asyncio
-import gzip
 import json
 import secrets
 import socket
 import subprocess
 import tempfile
 import time
+import zlib
 from contextlib import ExitStack
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -137,6 +137,8 @@ def run_coworld_episode(
 
     results = json.loads(artifacts.results_path.read_text(encoding="utf-8"))
     validate_json_schema(results, job.results_schema)
+    if artifacts.replay_path.exists():
+        compress_replay(artifacts)
 
 
 def generate_tokens(player_count: int) -> list[str]:
@@ -157,8 +159,7 @@ def write_coworld_game_config(job: CoworldEpisodeJobSpec, artifacts: EpisodeArti
 
 def compress_replay(artifacts: EpisodeArtifacts) -> Path:
     compressed_path = artifacts.workspace / "replay.json.z"
-    with artifacts.replay_path.open("rb") as src, gzip.open(compressed_path, "wb") as dst:
-        dst.write(src.read())
+    compressed_path.write_bytes(zlib.compress(artifacts.replay_path.read_bytes()))
     return compressed_path
 
 

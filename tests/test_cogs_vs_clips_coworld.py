@@ -1,8 +1,11 @@
 from __future__ import annotations
 
 import importlib.util
+import json
 from pathlib import Path
 from urllib.parse import parse_qs, urlparse
+
+from fastapi.testclient import TestClient
 
 
 def test_cogs_vs_clips_snapshot_exposes_admin_slot_state(tmp_path: Path) -> None:
@@ -84,6 +87,60 @@ def test_cogs_vs_clips_global_action_updates_policy_action(tmp_path: Path) -> No
 
     assert game.episode.latest_policy_actions[0].action_name == action_name
     assert game.episode.latest_action_indices[0] == game.episode.action_names.index(action_name)
+
+
+def test_cogs_vs_clips_records_compact_mettascope_replay(tmp_path: Path) -> None:
+    server_module = _load_cogs_vs_clips_server_module()
+    replay_path = tmp_path / "replay.json"
+    game = server_module.CogsVsClipsGame(
+        {
+            "mission": "machina_1",
+            "tokens": ["token-0", "token-1"],
+            "max_steps": 3,
+            "seed": 0,
+            "step_seconds": 0.02,
+        },
+        results_path=tmp_path / "results.json",
+        replay_path=replay_path,
+        request_shutdown=lambda: None,
+    )
+
+    game.episode.apply_actions()
+    game.sim.step()
+    message = game.record_replay_step()
+    results = game.results()
+
+    replay = json.loads(replay_path.read_text(encoding="utf-8"))
+    assert message["type"] == "step"
+    assert results["steps"] == 1
+    assert replay["version"] == 4
+    assert replay["max_steps"] == 1
+    assert replay["num_agents"] == 2
+    assert replay["objects"]
+    assert "events" not in replay
+    assert "results" not in replay
+
+
+def test_cogs_vs_clips_replay_client_redirects_to_mettascope(tmp_path: Path) -> None:
+    server_module = _load_cogs_vs_clips_server_module()
+    replay_path = tmp_path / "replay.json"
+    replay_path.write_text("{}", encoding="utf-8")
+    client = TestClient(server_module.create_replay_app())
+
+    response = client.get(
+        "/clients/replay",
+        params={"uri": replay_path.as_uri()},
+        follow_redirects=False,
+    )
+    location = response.headers["location"]
+    replay_url = parse_qs(urlparse(location).query)["replay"][0]
+
+    assert response.status_code == 307
+    assert location.startswith(server_module.METTASCOPE_REPLAY_URL_PREFIX)
+    assert replay_url.startswith("http://testserver/replay-data?")
+    replay_response = client.get("/replay-data", params={"uri": replay_path.as_uri()})
+    assert replay_response.content == b"{}"
+    assert replay_response.headers["access-control-allow-origin"] == "*"
 
 
 def _new_game(tmp_path: Path):

@@ -1,5 +1,6 @@
 import json
 import os
+import zlib
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -84,6 +85,26 @@ class _FakeLogCoreV1:
 class _FailingCoreV1:
     def read_namespaced_pod(self, *, name: str, namespace: str):
         raise RuntimeError("pod status read failed")
+
+
+def test_runner_compress_replay_writes_zlib_json_z(tmp_path):
+    artifacts = EpisodeArtifacts.create(tmp_path)
+    artifacts.replay_path.write_bytes(b'{"events":[]}')
+
+    compressed_path = runner_module.compress_replay(artifacts)
+
+    assert compressed_path.name == "replay.json.z"
+    assert zlib.decompress(compressed_path.read_bytes()) == b'{"events":[]}'
+
+
+def test_kubernetes_compress_replay_writes_zlib_json_z(tmp_path):
+    artifacts = EpisodeArtifacts.create(tmp_path)
+    artifacts.replay_path.write_bytes(b'{"events":[]}')
+
+    compressed_path = kubernetes_runner._compress_replay(artifacts)
+
+    assert compressed_path.name == "replay.json.z"
+    assert zlib.decompress(compressed_path.read_bytes()) == b'{"events":[]}'
 
 
 def test_wait_for_episode_artifacts_skips_pod_status_after_results_when_replay_not_required(tmp_path):
