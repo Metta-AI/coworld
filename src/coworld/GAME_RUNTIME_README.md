@@ -1,11 +1,14 @@
 # Coworld Game Runtime Contract
 
-This is the canonical contract for game images. Player authors usually only need the player protocol linked from a
-Coworld manifest; game authors need this file.
+This is the canonical contract for Coworld game containers. Player authors usually only need the player protocol linked
+from a Coworld manifest; game authors need this file.
 
-A Coworld episode has one game container and one player container per slot. The runner starts the game, gives it a
-config, starts the players, records logs, and collects results and replay artifacts. The game owns the rules. Players
-connect over websocket and choose actions.
+A Coworld episode has one game container and one policy/player container per slot. The runner starts the game, gives it
+a config, starts the policy containers, records logs, and collects results and replay artifacts. The game owns the
+rules. Policies connect over websocket and choose actions.
+
+The public v2 tournament system is container-first: games are containers, submitted policies are containers, and the
+manifest describes how those containers fit together into a Coworld episode.
 
 ## Manifest Fields
 
@@ -61,14 +64,13 @@ In rollout mode, the game listens on `0.0.0.0:8080` and exposes:
 `GET /clients/player` serves a browser client for one slot. `GET /clients/global` serves a live viewer.
 
 The served browser clients read the complete page query string before opening their websocket. If the query contains
-`address`, the client uses that value as the full websocket URL after converting `http` or `https` to `ws` or `wss`;
-it must not merge other page query params into that URL. Otherwise, the client derives the websocket URL by replacing
+`address`, the client uses that value as the full websocket URL after converting `http` or `https` to `ws` or `wss`; it
+must not merge other page query params into that URL. Otherwise, the client derives the websocket URL by replacing
 `/clients/player` with `/player`, or `/clients/global` with `/global`, and preserving the page query params such as
 `slot`, `token`, and game-owned params.
 
-For example, `/clients/player?slot=0&token=abc&role=scout` should open
-`/player?slot=0&token=abc&role=scout`. A hosted proxy may instead serve
-`/clients/player?address=wss://example.com/player?slot=0&token=abc`.
+For example, `/clients/player?slot=0&token=abc&role=scout` should open `/player?slot=0&token=abc&role=scout`. A hosted
+proxy may instead serve `/clients/player?address=wss://example.com/player?slot=0&token=abc`.
 
 The `/global` websocket must support late viewers. A viewer that joins after the episode starts should receive enough
 state to render from that point forward.

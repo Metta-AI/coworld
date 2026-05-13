@@ -1,8 +1,8 @@
 # Coworld CLI
 
-The `coworld` command is the local tool for Coworld development and league work. It downloads Coworlds, runs local
-episodes, uploads player images, submits policies to leagues, and inspects results. For concepts, start with
-[COWORLD_README.md](COWORLD_README.md).
+The `coworld` command is the public tool for Softmax v2 tournament work. It downloads Coworlds, creates starter
+policies, runs local episodes, uploads game and policy containers, submits policies to leagues, and inspects results,
+logs, and replays. For concepts, start with [COWORLD_README.md](COWORLD_README.md).
 
 Commands that talk to Softmax use the current `softmax-cli` login:
 
@@ -10,10 +10,17 @@ Commands that talk to Softmax use the current `softmax-cli` login:
 uv run softmax login
 ```
 
-In a standalone public environment, install the CLI with:
+In a project, install the CLI with:
 
 ```bash
-uv pip install "coworld[auth]"
+uv init --bare --name coworld-player
+uv add "coworld[auth]"
+```
+
+For one-off CLI use:
+
+```bash
+uv tool install "coworld[auth]"
 ```
 
 Pass `--server` only when targeting a non-default Observatory API environment.
@@ -21,7 +28,8 @@ Pass `--server` only when targeting a non-default Observatory API environment.
 ## Player Loop
 
 ```bash
-uv run coworld download cow_... --output-dir ./coworld
+uv run coworld download <coworld-name-or-id> --output-dir ./coworld
+uv run coworld make-policy <starter-policy-name> -o policy.py  # optional, when the game ships a template
 docker build --platform=linux/amd64 -t my-player:latest .
 uv run coworld run-episode ./coworld/coworld_manifest.json my-player:latest
 uv run coworld upload-policy my-player:latest --name my-player
@@ -42,6 +50,15 @@ uv run coworld submissions --mine --league league_...
 uv run coworld memberships --mine --division div_... --active-only
 uv run coworld episodes --division div_... --mine --with-replay
 ```
+
+`make-policy` writes a game-specific starter policy when the package ships one:
+
+```bash
+uv run coworld make-policy <starter-policy-name> -o policy.py
+```
+
+Use `uv run coworld make-policy --help` to list packaged templates. The copied file is a policy logic template. Wrap it
+in a Docker player process before uploading.
 
 ## Coworld Packages
 

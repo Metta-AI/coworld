@@ -16,6 +16,12 @@ from coworld.config import DEFAULT_SUBMIT_SERVER
 from coworld.manifest_uri import materialized_manifest_path, materialized_replay_path
 from coworld.play import PlaySession, ReplaySession, play_coworld, replay_coworld
 from coworld.runner.runner import EpisodeArtifacts, run_coworld_episode
+from coworld.starter_policy import (
+    STARTER_POLICIES,
+    STARTER_POLICY_ALIASES,
+    policy_module_name_error,
+    write_starter_policy,
+)
 from coworld.submit import submit_policy_to_league_cmd
 from coworld.tournament_cli import register_tournament_commands
 from coworld.upload import (
@@ -194,6 +200,31 @@ def download(
         output_dir,
         server=server,
     )
+
+
+@app.command("make-policy")
+def make_policy(
+    policy: Annotated[
+        str,
+        typer.Argument(help=f"Starter policy to copy. Choices: {', '.join(sorted(STARTER_POLICIES))}."),
+    ],
+    output: Annotated[Path, typer.Option("--output", "-o", help="Output Python file.")] = Path("policy.py"),
+) -> None:
+    if policy not in STARTER_POLICY_ALIASES:
+        choices = ", ".join(sorted(STARTER_POLICIES))
+        console.print(f"[red]Unknown starter policy '{policy}'. Choices: {choices}[/red]")
+        raise typer.Exit(1)
+    module_error = policy_module_name_error(output)
+    if module_error is not None:
+        console.print(f"[red]{module_error}[/red]")
+        raise typer.Exit(1)
+
+    display_name, class_name, output_path = write_starter_policy(policy, output)
+
+    console.print(f"[green]{display_name} starter policy copied to: {output_path}[/green]")
+    console.print(f"[dim]Policy class: {output_path.stem}.{class_name}[/dim]")
+    console.print("[dim]Build a Docker player wrapper before uploading to a Coworld league.[/dim]")
+    console.print("[dim]Guide: https://softmax.com/play_amongthem.md[/dim]")
 
 
 @app.command("upload-policy")

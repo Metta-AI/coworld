@@ -1,14 +1,76 @@
 # Coworld Guide
 
-This is the canonical overview for Coworlds. Use it to understand the shape of the system and which command to run
-next. Use [COGAME_README.md](COGAME_README.md) for the game-container runtime contract and
+`coworld` is the public CLI and Python package for Softmax v2 tournaments. Use it to download Coworlds, create starter
+policies, run local episodes, upload game and policy containers, submit policies to leagues, and inspect standings,
+logs, and replays.
+
+A Coworld is the unit Softmax can run locally, in hosted play, and in leagues. It combines:
+
+- one game container that owns rules, state, viewers, results, and replays;
+- one or more player or policy containers that connect to the game and choose actions;
+- a `coworld_manifest.json` file that names the containers, configs, schemas, protocols, and docs.
+
+During a league episode, the platform starts the game container plus one submitted policy container per player slot.
+Public users normally build policy containers and submit them to existing Coworld leagues. Game authors build game
+containers and publish complete Coworld packages.
+
+Use [GAME_RUNTIME_README.md](GAME_RUNTIME_README.md) for the game-container runtime contract and
 [CLI_README.md](CLI_README.md) for the command reference.
 
-A Coworld is a containerized game package that Softmax can run locally, in hosted play, and in leagues. It has:
+## Install
 
-- one game image that owns rules, state, viewers, results, and replays;
-- one or more player images that connect to the game and choose actions;
-- a `coworld_manifest.json` file that names the images, configs, schemas, and player docs.
+In a project:
+
+```bash
+uv init --bare --name my-coworld-player
+uv add "coworld[auth]"
+```
+
+Commands that talk to Observatory use `softmax-cli` auth, included in the `auth` extra:
+
+```bash
+uv run softmax login
+uv run coworld leagues
+```
+
+For one-off CLI use outside a project:
+
+```bash
+uv tool install "coworld[auth]"
+```
+
+## Quickstart: Play A Public League
+
+Pick a league, download its Coworld, read the manifest and linked game docs, test locally, upload a policy image, and
+submit it to the league:
+
+```bash
+uv run softmax login
+uv run coworld leagues
+uv run coworld download <coworld-name-or-id> --output-dir ./coworld
+python -m json.tool ./coworld/coworld_manifest.json | less
+docker build --platform=linux/amd64 -t my-player:latest .
+uv run coworld run-episode ./coworld/coworld_manifest.json my-player:latest
+uv run coworld upload-policy my-player:latest --name my-player
+uv run coworld submit my-player --league league_...
+```
+
+Use the CLI to inspect the tournament:
+
+```bash
+uv run coworld leagues
+uv run coworld submissions --mine --league league_...
+uv run coworld results league_...
+uv run coworld rounds --league league_...
+uv run coworld replays --league league_... --mine --download-dir replays/
+```
+
+Game-specific play guides live with each Coworld manifest in `game.docs.pages`. Public examples include:
+
+| Coworld       | Download name   | Guide                                     |
+| ------------- | --------------- | ----------------------------------------- |
+| Among Them    | `among_them`    | <https://softmax.com/play_amongthem.md>   |
+| Cogs vs Clips | `cogs_vs_clips` | <https://softmax.com/play_cogsvsclips.md> |
 
 ## Player Loop
 
@@ -16,7 +78,7 @@ Use this flow when you want to build a player for an existing Coworld league:
 
 ```bash
 uv run softmax login
-uv run coworld download cow_... --output-dir ./coworld
+uv run coworld download <coworld-name-or-id> --output-dir ./coworld
 python -m json.tool ./coworld/coworld_manifest.json | less
 docker build --platform=linux/amd64 -t my-player:latest .
 uv run coworld run-episode ./coworld/coworld_manifest.json my-player:latest
@@ -27,12 +89,22 @@ uv run coworld submit my-player --league league_...
 Before writing code, read the downloaded manifest:
 
 - `game.protocols.player` links to the websocket protocol your player must implement.
-- `game.docs.pages` may contain extra game-authored docs such as strategy notes.
+- `game.docs.pages` may contain extra game-authored docs such as play guides and strategy notes.
 - `certification.game_config` is the small local episode used by `coworld run-episode`.
 - `variants` are named game configs used by leagues or local testing.
 
 A player image receives `COGAMES_ENGINE_WS_URL`, connects to that websocket, follows the game protocol, plays until the
 episode ends, and exits.
+
+Starter policy templates are available for games that ship one:
+
+```bash
+uv run coworld make-policy <starter-policy-name> -o policy.py
+```
+
+Use `uv run coworld make-policy --help` to list packaged templates. The copied policy file is a starting point for game
+logic. It is not a submitted policy by itself; package it behind a Docker player process, run a local episode, then
+upload the resulting image with `coworld upload-policy`.
 
 For local testing, one image can fill every player slot:
 
@@ -68,6 +140,9 @@ The smallest complete example is [examples/paintarena/](examples/paintarena/).
 Certification validates the manifest, checks the referenced Docker images, runs one short episode, checks player and
 global client routes, checks replay viewing, and validates the results file. The certifier does not build images; build
 or pull them first.
+
+Publishing a Coworld is separate from submitting a policy. `upload-coworld` uploads the game package and bundled player
+images. `upload-policy` uploads a player's policy container and creates a policy version for league submission.
 
 ## Manifest
 
@@ -117,8 +192,8 @@ The game image owns the episode. It must:
 - write a replay artifact to `COGAME_SAVE_REPLAY_URI`;
 - serve replay viewers when started with `COGAME_REPLAY_SERVER=1`.
 
-Browser client pages forward their query string when they open the websocket. Hosted proxies may pass an `address`
-query parameter containing the full websocket URL. See [COGAME_README.md](COGAME_README.md) for the exact route,
+Browser client pages forward their query string when they open the websocket. Hosted proxies may pass an `address` query
+parameter containing the full websocket URL. See [GAME_RUNTIME_README.md](GAME_RUNTIME_README.md) for the exact route,
 websocket, token, reconnect, replay, and artifact contract.
 
 The game config schema must define `tokens` as a required string array with equal `minItems` and `maxItems`. That fixed
