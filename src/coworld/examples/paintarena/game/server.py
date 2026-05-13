@@ -16,11 +16,17 @@ from fastapi.responses import HTMLResponse
 
 CLIENTS_DIR = Path(__file__).parent / "clients"
 
+# urllib's default User-Agent ("Python-urllib/3.x") is blocked by some CDN
+# WAFs (Cloudflare's "Bad bot" rule, error 1010), so we set an explicit one
+# whenever we drive an HTTP request. Any non-default UA suffices.
+HTTP_USER_AGENT = "cogame-paintarena/0.1"
+
 
 def read_data(uri: str) -> bytes:
     parsed = urlparse(uri)
     if parsed.scheme in ("http", "https"):
-        with urlopen(uri, timeout=30) as response:
+        request = Request(uri, headers={"User-Agent": HTTP_USER_AGENT})
+        with urlopen(request, timeout=30) as response:
             return response.read()
     if parsed.scheme == "file":
         return Path(unquote(parsed.path)).read_bytes()
@@ -37,6 +43,7 @@ def post_data(uri: str, data: bytes | str, *, content_type: str) -> None:
     if parsed.scheme in ("http", "https"):
         request = Request(uri, data=data, method="POST")
         request.add_header("Content-Type", content_type)
+        request.add_header("User-Agent", HTTP_USER_AGENT)
         with urlopen(request, timeout=60):
             return
     if parsed.scheme == "file":
