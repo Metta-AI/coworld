@@ -60,6 +60,7 @@ def run_from_env() -> None:
         )
     except Exception as exc:
         _write_error_info(exc)
+        _upload_debug_logs(artifacts)
         raise
     _upload_outputs(artifacts)
 
@@ -74,6 +75,19 @@ def _write_error_info(exc: Exception) -> None:
         return
     runner_error = RunnerError(error_type="crash", message=str(exc)[:2000])
     upload_data(error_info_uri, runner_error.model_dump_json(), content_type="application/json")
+
+
+def _upload_debug_logs(artifacts: EpisodeArtifacts) -> None:
+    debug_uri = os.environ.get("DEBUG_URI")
+    if debug_uri is not None and artifacts.logs_dir.exists() and any(artifacts.logs_dir.iterdir()):
+        upload_data(debug_uri, _zip_logs(artifacts.logs_dir), content_type="application/zip")
+
+    policy_log_urls = os.environ.get("POLICY_LOG_URLS")
+    if policy_log_urls is not None:
+        for slot, log_uri in json.loads(policy_log_urls).items():
+            log_path = artifacts.policy_log_path(int(slot))
+            if log_path.exists():
+                upload_data(log_uri, log_path.read_bytes(), content_type="text/plain")
 
 
 def _upload_outputs(artifacts: EpisodeArtifacts) -> None:

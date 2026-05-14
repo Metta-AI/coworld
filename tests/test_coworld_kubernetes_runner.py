@@ -1,6 +1,8 @@
 import json
 import os
+import zipfile
 import zlib
+from io import BytesIO
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -444,3 +446,53 @@ def test_create_player_pod_keeps_default_service_account_without_bedrock():
 
     pod = created["body"]
     assert pod.spec.service_account_name is None
+
+
+def test_run_from_env_uploads_debug_logs_on_failure(monkeypatch, tmp_path):
+    """When the episode crashes, collected game/player logs must be uploaded
+    before the pod is deleted — otherwise they're lost forever."""
+    workspace = tmp_path / "workspace"
+    artifacts = EpisodeArtifacts.create(workspace)
+
+    # Simulate logs that _collect_logs would have written
+    artifacts.game_stdout_path.write_text("game crashed with segfault", encoding="utf-8")
+    artifacts.policy_log_path(0).write_text("player 0 timeout waiting for server", encoding="utf-8")
+    artifacts.policy_log_path(1).write_text("player 1 connection refused", encoding="utf-8")
+
+    # Set up file:// destinations for uploads
+    debug_dest = tmp_path / "uploaded" / "debug.zip"
+    policy0_dest = tmp_path / "uploaded" / "policy_0.txt"
+    policy1_dest = tmp_path / "uploaded" / "policy_1.txt"
+    error_dest = tmp_path / "uploaded" / "error_info.json"
+
+    monkeypatch.setenv("COWORLD_WORKDIR", str(workspace))
+    monkeypatch.setenv("DEBUG_URI", debug_dest.as_uri())
+    monkeypatch.setenv("ERROR_INFO_URI", error_dest.as_uri())
+    monkeypatch.setenv(
+        "POLICY_LOG_URLS",
+        json.dumps({"0": policy0_dest.as_uri(), "1": policy1_dest.as_uri()}),
+    )
+
+    monkeypatch.setattr(kubernetes_runner, "_read_job_spec", lambda: object())
+    monkeypatch.setattr(kubernetes_runner.EpisodeArtifacts, "create", lambda workdir, prefix: artifacts)
+
+    def run_episode(*args, **kwargs):
+        raise TimeoutError("Timed out waiting for game container")
+
+    monkeypatch.setattr(kubernetes_runner, "_run_kubernetes_episode", run_episode)
+
+    with pytest.raises(TimeoutError):
+        kubernetes_runner.run_from_env()
+
+    assert debug_dest.exists()
+    with zipfile.ZipFile(BytesIO(debug_dest.read_bytes())) as zf:
+        names = set(zf.namelist())
+        assert "game.stdout.log" in names
+        assert "policy_agent_0.txt" in names
+        assert "policy_agent_1.txt" in names
+        assert zf.read("game.stdout.log").decode() == "game crashed with segfault"
+        assert zf.read("policy_agent_0.txt").decode() == "player 0 timeout waiting for server"
+
+    # Verify per-policy logs were uploaded individually
+    assert policy0_dest.read_text(encoding="utf-8") == "player 0 timeout waiting for server"
+    assert policy1_dest.read_text(encoding="utf-8") == "player 1 connection refused"
