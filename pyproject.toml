@@ -17,13 +17,13 @@ dependencies = [
   "pydantic>=2.11.5",
   "referencing>=0.36.2",
   "rich>=13.7.0",
-  "softmax-cli",
+  "softmax-cli==0.26.10",
   "typer>=0.19.2",
   "websockets>=15.0.1",
 ]
 
 [project.optional-dependencies]
-auth = ["softmax-cli"]
+auth = ["softmax-cli==0.26.10"]
 examples = ["cogsguard", "fastapi>=0.115.0", "mettagrid", "numpy>=2.3.0", "uvicorn>=0.34.0"]
 test = [
   "cogsguard",
@@ -79,8 +79,8 @@ testpaths = ["tests"]
 markers = ["slow: marks tests as slow"]
 
 [tool.uv.sources]
-mettagrid = { workspace = true }
-softmax-cli = { workspace = true }
+mettagrid = {git = "https://github.com/Metta-AI/mettagrid.git"}
+softmax-cli = {git = "https://github.com/Metta-AI/softmax-cli.git"}
 cogsguard = { git = "https://github.com/Metta-AI/cogame-cogsguard.git" }
 
 [tool.ruff]
