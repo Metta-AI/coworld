@@ -23,6 +23,7 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
+auth = ["softmax-cli"]
 examples = ["cogsguard", "fastapi>=0.115.0", "mettagrid", "numpy>=2.3.0", "uvicorn>=0.34.0"]
 test = [
   "cogsguard",
