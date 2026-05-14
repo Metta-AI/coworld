@@ -17,7 +17,7 @@ dependencies = [
   "pydantic>=2.11.5",
   "referencing>=0.36.2",
   "rich>=13.7.0",
-  "softmax-cli",
+  "softmax-cli==0.26.10",
   "typer>=0.19.2",
   "websockets>=15.0.1",
 ]
