@@ -25,6 +25,17 @@ uv tool install "coworld[auth]"
 
 Pass `--server` only when targeting a non-default Observatory API environment.
 
+## Bug Reports
+
+File Coworld bug reports as GitHub issues in the public `Metta-AI/coworld` package:
+
+```text
+https://github.com/Metta-AI/coworld/issues
+```
+
+Use that issue tracker for Coworld CLI, package, hosted runner, site-specific, and game-specific issues. Include the
+command you ran, the Coworld or league name, and any relevant logs or replay links.
+
 ## Player Loop
 
 ```bash
