@@ -30,7 +30,7 @@ CLIENTS_DIR = Path(__file__).parent / "clients"
 METTASCOPE_DIST_DIR = Path(os.environ.get("METTASCOPE_DIST_DIR", Path(__file__).parent / "mettascope"))
 GLOBAL_PROTOCOL = "mettagrid.mettascope.live.v1"
 START_GRACE_SECONDS = 0.5
-POLICY_ACTION_TIMEOUT_SECONDS = 10.0
+POLICY_ACTION_TIMEOUT_SECONDS = 0.1
 POLICY_NAMES_ENV_VAR = "COGAMES_POLICY_NAMES"
 POLICY_NAMES_ADAPTER = TypeAdapter(list[str])
 

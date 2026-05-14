@@ -21,7 +21,7 @@ def test_cogs_vs_clips_snapshot_exposes_admin_slot_state(tmp_path: Path) -> None
     assert snapshot["tick_mode"] == "fixed"
     assert snapshot["human_action_timeout_seconds"] == 5.0
     assert game.episode.wait_for_all_players is True
-    assert game.episode.policy_action_timeout_seconds == 10.0
+    assert game.episode.policy_action_timeout_seconds == 0.1
     assert snapshot["slots"][0]["control_state"] == {
         "control_mode": "policy",
         "human_controller_connection_id": None,
