@@ -214,6 +214,34 @@ def test_cogs_vs_clips_records_compact_mettascope_replay(tmp_path: Path, monkeyp
     assert "results" not in replay
 
 
+def test_cogs_vs_clips_assign_payload_stays_under_proxy_frame_cap(tmp_path: Path) -> None:
+    # Spectator `assign` traverses an Observatory websocket proxy whose upstream
+    # `websockets.connect` defaults to max_size=1 MiB. The simulator-only `events`
+    # config in mg_config has no client-side consumer (mettascope's GameConfig
+    # type has no `events` field, and the live viewer only reads `map_size` from
+    # initial_replay); leaking it back into the wire payload silently breaks the
+    # spectator with a 1006 close.
+    server_module = _load_cogs_vs_clips_server_module()
+    game = server_module.CogsVsClipsGame(
+        {
+            "mission": "machina_1",
+            "tokens": [f"token-{i}" for i in range(8)],
+            "max_steps": 100,
+            "seed": 0,
+            "step_seconds": 0.05,
+        },
+        results_path=tmp_path / "results.json",
+        replay_path=None,
+        request_shutdown=lambda: None,
+    )
+
+    assign = game.global_assign_message()
+    payload = json.dumps(assign)
+
+    assert "events" not in assign["initial_replay"]["mg_config"]["game"]
+    assert len(payload) < 256 * 1024, f"assign payload grew to {len(payload):,} bytes"
+
+
 def test_cogs_vs_clips_live_replay_includes_mettascope_render_config(tmp_path: Path) -> None:
     game = _new_game(tmp_path)
 

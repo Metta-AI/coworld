@@ -38,6 +38,11 @@ POLICY_NAMES_ADAPTER = TypeAdapter(list[str])
 def build_initial_replay(sim) -> tuple[dict[str, Any], list[str], dict[int, int]]:
     game_config = sim.config.game
     game_config_dict = game_config.model_dump(mode="json", exclude_none=True)
+    # The simulator-only event table can balloon to >1 MiB (cogsguard generates
+    # one EventConfig per (lane, direction, search radius) tuple), pushing the
+    # assign frame past the websockets-library default max_size of 1 MiB on the
+    # Observatory proxy. No mettascope client field consumes it.
+    game_config_dict.pop("events", None)
     agent_inv_limits = game_config.agents[0].inventory.limits if game_config.agents else {}
     capacity_names = sorted(agent_inv_limits.keys())
     resource_to_capacity_id = {}
