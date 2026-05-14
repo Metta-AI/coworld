@@ -17,6 +17,7 @@ def test_cogs_vs_clips_snapshot_exposes_admin_slot_state(tmp_path: Path) -> None
 
     assert snapshot["protocol"] == "coworld.player.v1"
     assert snapshot["global_protocol"] == "mettagrid.mettascope.live.v1"
+    assert snapshot["policy_names"] == []
     assert snapshot["tick_mode"] == "fixed"
     assert snapshot["human_action_timeout_seconds"] == 5.0
     assert snapshot["slots"][0]["control_state"] == {
@@ -159,7 +160,18 @@ def test_cogs_vs_clips_global_action_updates_policy_action(tmp_path: Path) -> No
     assert game.episode.latest_action_indices[0] == game.episode.action_names.index(action_name)
 
 
-def test_cogs_vs_clips_records_compact_mettascope_replay(tmp_path: Path) -> None:
+def test_cogs_vs_clips_global_messages_include_policy_names(tmp_path: Path, monkeypatch) -> None:
+    monkeypatch.setenv("COGAMES_POLICY_NAMES", json.dumps(["slanky:v194", "slinky:v19"]))
+    game = _new_game(tmp_path)
+
+    message = game.global_baseline_message()
+
+    assert message["state"]["policy_names"] == ["slanky:v194", "slinky:v19"]
+    assert _agent_policy_names(message["objects"]) == {0: "slanky:v194", 1: "slinky:v19"}
+
+
+def test_cogs_vs_clips_records_compact_mettascope_replay(tmp_path: Path, monkeypatch) -> None:
+    monkeypatch.setenv("COGAMES_POLICY_NAMES", json.dumps(["slanky:v194", "slinky:v19"]))
     server_module = _load_cogs_vs_clips_server_module()
     replay_path = tmp_path / "replay.json"
     game = server_module.CogsVsClipsGame(
@@ -187,6 +199,7 @@ def test_cogs_vs_clips_records_compact_mettascope_replay(tmp_path: Path) -> None
     assert replay["max_steps"] == 1
     assert replay["num_agents"] == 2
     assert replay["objects"]
+    assert _agent_policy_names(replay["objects"]) == {0: "slanky:v194", 1: "slinky:v19"}
     assert "events" not in replay
     assert "results" not in replay
 
@@ -250,6 +263,15 @@ def _new_game(tmp_path: Path):
         replay_path=None,
         request_shutdown=lambda: None,
     )
+
+
+def _agent_policy_names(objects: list[dict]) -> dict[int, str]:
+    names: dict[int, str] = {}
+    for obj in objects:
+        if not obj.get("is_agent"):
+            continue
+        names[obj["agent_id"]] = obj["policy_infos"]["policy_name"]
+    return names
 
 
 def _cogs_vs_clips_root() -> Path:

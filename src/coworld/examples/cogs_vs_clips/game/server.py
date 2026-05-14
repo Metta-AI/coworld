@@ -16,6 +16,7 @@ from cogsguard.missions.machina_1 import make_cogsguard_mission, make_machina1_m
 from fastapi import FastAPI, Request, WebSocket, WebSocketDisconnect
 from fastapi.responses import HTMLResponse, RedirectResponse, Response
 from fastapi.staticfiles import StaticFiles
+from pydantic import TypeAdapter
 
 from coworld.runner.io import read_data
 from mettagrid.config.mettagrid_config import MettaGridConfig
@@ -29,6 +30,8 @@ CLIENTS_DIR = Path(__file__).parent / "clients"
 METTASCOPE_DIST_DIR = Path(os.environ.get("METTASCOPE_DIST_DIR", Path(__file__).parent / "mettascope"))
 GLOBAL_PROTOCOL = "mettagrid.mettascope.live.v1"
 START_GRACE_SECONDS = 0.5
+POLICY_NAMES_ENV_VAR = "COGAMES_POLICY_NAMES"
+POLICY_NAMES_ADAPTER = TypeAdapter(list[str])
 
 
 def build_initial_replay(sim) -> tuple[dict[str, Any], list[str], dict[int, int]]:
@@ -66,18 +69,22 @@ def build_step_replay(
     action_indices: list[int],
     capacity_names: list[str],
     resource_to_capacity_id: dict[int, int],
+    policy_infos_by_agent: dict[int, dict[str, Any]] | None = None,
     ignored_object_types: list[str] | None = None,
 ) -> dict[str, Any]:
     actions = np.asarray(action_indices, dtype=np.int32)
     rewards = np.zeros(sim.num_agents)
     objects = []
     for grid_object in sim.grid_objects(ignore_types=ignored_object_types or []).values():
+        agent_id = grid_object.get("agent_id")
+        policy_infos = policy_infos_by_agent.get(agent_id) if agent_id is not None and policy_infos_by_agent else None
         formatted = format_grid_object(
             grid_object,
             actions,
             sim.action_success,
             rewards,
             sim.episode_rewards,
+            policy_infos=policy_infos,
         )
         raw_capacities = formatted.pop("inventory_capacities_raw", {})
         group_capacities = {}
@@ -105,6 +112,7 @@ class CogsVsClipsGame:
     ):
         self.mission_name = config["mission"]
         self.tokens = config["tokens"]
+        self.policy_names = load_policy_names(len(self.tokens))
         max_steps = config["max_steps"]
         seed = config["seed"]
 
@@ -184,6 +192,7 @@ class CogsVsClipsGame:
 
     def record_replay_step(self) -> dict[str, Any]:
         if self.replay is not None:
+            self.sim._context["policy_infos"] = self.policy_infos_by_agent()
             self.replay.log_step(
                 self.sim.current_step,
                 self.sim._c_sim.actions(),
@@ -207,13 +216,18 @@ class CogsVsClipsGame:
                 self.episode.latest_action_indices,
                 self.capacity_names,
                 self.resource_to_capacity_id,
-                ignored_object_types,
+                policy_infos_by_agent=self.policy_infos_by_agent(),
+                ignored_object_types=ignored_object_types,
             ),
             "state": self.snapshot(),
         }
 
     def snapshot(self) -> dict[str, Any]:
-        return {**self.episode.snapshot(), "global_protocol": GLOBAL_PROTOCOL}
+        return {
+            **self.episode.snapshot(),
+            "global_protocol": GLOBAL_PROTOCOL,
+            "policy_names": self.policy_names,
+        }
 
     def admin_snapshot(self) -> dict[str, Any]:
         snapshot = self.snapshot()
@@ -234,6 +248,7 @@ class CogsVsClipsGame:
             "mission": self.mission_name,
             "done": self.episode.done,
             "scores": self.scores(),
+            "policy_names": self.policy_names,
             "num_agents": len(self.tokens),
             "connected_players": len(self.episode.connections),
             "action_names": self.episode.action_names,
@@ -246,6 +261,26 @@ class CogsVsClipsGame:
     def results(self) -> dict[str, Any]:
         self.write_replay()
         return {"scores": self.scores(), "steps": self.sim.current_step, "mission": self.mission_name}
+
+    def policy_infos_by_agent(self) -> dict[int, dict[str, Any]]:
+        infos_by_agent: dict[int, dict[str, Any]] = {}
+        for slot, action in enumerate(self.episode.latest_policy_actions):
+            policy_infos = dict(action.policy_infos)
+            if slot < len(self.policy_names):
+                policy_infos["policy_name"] = self.policy_names[slot]
+            if policy_infos:
+                infos_by_agent[slot] = policy_infos
+        return infos_by_agent
+
+
+def load_policy_names(player_count: int) -> list[str]:
+    raw_names = os.environ.get(POLICY_NAMES_ENV_VAR)
+    if raw_names is None:
+        return []
+    policy_names = POLICY_NAMES_ADAPTER.validate_json(raw_names)
+    if len(policy_names) != player_count:
+        raise ValueError(f"{POLICY_NAMES_ENV_VAR} must contain {player_count} names")
+    return policy_names
 
 
 def make_env(mission_name: str, *, num_agents: int, max_steps: int, seed: int) -> MettaGridConfig:

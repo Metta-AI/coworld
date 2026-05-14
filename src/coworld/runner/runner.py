@@ -26,6 +26,7 @@ CONFIG_ENV_VAR = "COGAME_CONFIG_URI"
 RESULTS_ENV_VAR = "COGAME_RESULTS_URI"
 REPLAY_SAVE_ENV_VAR = "COGAME_SAVE_REPLAY_URI"
 REPLAY_SERVER_ENV_VAR = "COGAME_REPLAY_SERVER"
+POLICY_NAMES_ENV_VAR = "COGAMES_POLICY_NAMES"
 
 
 @dataclass(frozen=True)
@@ -63,6 +64,7 @@ class EpisodeRunSpec:
     cogame: RunnableLaunchSpec
     players: list[PlayerLaunchSpec]
     tokens: list[str]
+    policy_names: list[str] | None
     artifacts: EpisodeArtifacts
     timeout_seconds: float
 
@@ -130,6 +132,7 @@ def run_coworld_episode(
         cogame=RunnableLaunchSpec.from_model(job.game_runnable),
         players=[PlayerLaunchSpec.from_model(player) for player in job.players],
         tokens=tokens,
+        policy_names=job.policy_names,
         artifacts=artifacts,
         timeout_seconds=timeout_seconds,
     )
@@ -199,6 +202,7 @@ def run_cogame_episode(spec: EpisodeRunSpec, *, verify_replay: bool = True) -> N
                     f"{RESULTS_ENV_VAR}=file://{CONTAINER_WORKDIR}/results.json",
                     "-e",
                     f"{REPLAY_SAVE_ENV_VAR}=file://{CONTAINER_WORKDIR}/replay.json",
+                    *_env_args({POLICY_NAMES_ENV_VAR: json.dumps(spec.policy_names)} if spec.policy_names else {}),
                     "-v",
                     f"{spec.artifacts.workspace.resolve()}:{CONTAINER_WORKDIR}:rw",
                     *_image_command(spec.cogame),

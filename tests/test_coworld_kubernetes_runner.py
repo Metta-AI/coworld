@@ -10,7 +10,7 @@ from kubernetes.client.rest import ApiException
 from coworld.runner import kubernetes_runner
 from coworld.runner import runner as runner_module
 from coworld.runner.kubernetes_runner import _collect_logs, _wait_for_episode_artifacts
-from coworld.runner.runner import EpisodeArtifacts, PlayerLaunchSpec
+from coworld.runner.runner import EpisodeArtifacts, EpisodeRunSpec, PlayerLaunchSpec, RunnableLaunchSpec
 
 
 class _FakeCoreV1:
@@ -117,6 +117,43 @@ def test_require_http_ok_accepts_replay_client_redirect(monkeypatch):
     monkeypatch.setattr(runner_module.httpx, "get", lambda _url, timeout: RedirectResponse())
 
     runner_module._require_http_ok("http://example.test/clients/replay", allow_redirect=True)
+
+
+def test_run_cogame_episode_omits_empty_policy_names_env(tmp_path, monkeypatch):
+    commands: list[list[str]] = []
+
+    class FakeProcess:
+        def poll(self):
+            return None
+
+    monkeypatch.setattr(runner_module, "_free_local_port", lambda: 12345)
+    monkeypatch.setattr(runner_module, "_wait_for_health", lambda *_args, **_kwargs: None)
+    monkeypatch.setattr(runner_module, "_require_http_ok", lambda *_args, **_kwargs: None)
+    monkeypatch.setattr(runner_module, "_require_global_message", lambda *_args, **_kwargs: None)
+    monkeypatch.setattr(runner_module, "_wait_for_game_exit", lambda *_args, **_kwargs: None)
+    monkeypatch.setattr(runner_module.asyncio, "run", lambda _awaitable: None)
+
+    def fake_popen(command, **_kwargs):
+        commands.append(command)
+        return FakeProcess()
+
+    monkeypatch.setattr(runner_module.subprocess, "Popen", fake_popen)
+    monkeypatch.setattr(runner_module.subprocess, "run", lambda *_args, **_kwargs: None)
+
+    runner_module.run_cogame_episode(
+        EpisodeRunSpec(
+            cogame=RunnableLaunchSpec(image="game:latest"),
+            players=[],
+            tokens=["token-0"],
+            policy_names=[],
+            artifacts=EpisodeArtifacts.create(tmp_path),
+            timeout_seconds=1,
+        ),
+        verify_replay=False,
+    )
+
+    env_values = [value for index, value in enumerate(commands[0]) if index > 0 and commands[0][index - 1] == "-e"]
+    assert all(not value.startswith("COGAMES_POLICY_NAMES=") for value in env_values)
 
 
 def test_wait_for_episode_artifacts_skips_pod_status_after_results_when_replay_not_required(tmp_path):
