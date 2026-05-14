@@ -4,6 +4,7 @@ import asyncio
 import gzip
 import json
 import os
+import zlib
 from contextlib import asynccontextmanager, suppress
 from pathlib import Path
 from typing import Any
@@ -61,7 +62,9 @@ def post_data(uri: str, data: bytes | str, *, content_type: str) -> None:
 
 def load_replay_data(replay_uri: str) -> dict[str, Any]:
     replay_data = read_data(replay_uri)
-    if replay_uri.endswith((".json.z", ".json.gz")):
+    if replay_uri.endswith(".json.z"):
+        replay_data = zlib.decompress(replay_data)
+    elif replay_uri.endswith(".json.gz"):
         replay_data = gzip.decompress(replay_data)
     return json.loads(replay_data)
 

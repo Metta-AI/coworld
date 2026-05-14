@@ -3,6 +3,7 @@ from __future__ import annotations
 import gzip
 import json
 import tempfile
+import zlib
 from contextlib import contextmanager
 from pathlib import Path
 from typing import Iterator
@@ -94,7 +95,9 @@ def _materialized_replay_name(path: str) -> str:
 
 
 def _decode_replay_bytes(path: str, data: bytes) -> bytes:
-    if _is_compressed_replay(path):
+    if path.endswith(".json.z"):
+        return zlib.decompress(data)
+    if path.endswith(".json.gz"):
         return gzip.decompress(data)
     return data
 
@@ -106,7 +109,7 @@ def _materialized_local_replay_path(replay_path: Path) -> Iterator[Path]:
         return
     with tempfile.TemporaryDirectory(prefix="coworld-replay-") as temp_dir:
         materialized_path = Path(temp_dir) / "replay.json"
-        materialized_path.write_bytes(gzip.decompress(replay_path.read_bytes()))
+        materialized_path.write_bytes(_decode_replay_bytes(replay_path.name, replay_path.read_bytes()))
         yield materialized_path
 
 

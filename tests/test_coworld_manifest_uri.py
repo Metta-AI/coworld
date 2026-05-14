@@ -1,5 +1,6 @@
 import gzip
 import json
+import zlib
 from pathlib import Path
 
 from pytest import MonkeyPatch
@@ -65,7 +66,7 @@ def test_materialized_manifest_path_resolves_bare_coworld_id_against_server(http
 
 
 def test_materialized_replay_path_downloads_replay_uri(httpserver: HTTPServer) -> None:
-    replay_bytes = gzip.compress(b'{"events":[]}')
+    replay_bytes = zlib.compress(b'{"events":[]}')
     httpserver.expect_request("/replay.json.z").respond_with_data(replay_bytes)
 
     with materialized_replay_path(httpserver.url_for("/replay.json.z")) as resolved:
@@ -75,7 +76,7 @@ def test_materialized_replay_path_downloads_replay_uri(httpserver: HTTPServer) -
 
 def test_materialized_replay_path_downloads_s3_uri(monkeypatch: MonkeyPatch) -> None:
     replay_uri = "s3://softmax-public/replays/episode.json.z"
-    replay_bytes = gzip.compress(b'{"events":[]}')
+    replay_bytes = zlib.compress(b'{"events":[]}')
 
     def read_data(uri: str) -> bytes:
         assert uri == replay_uri
@@ -90,6 +91,15 @@ def test_materialized_replay_path_downloads_s3_uri(monkeypatch: MonkeyPatch) -> 
 
 def test_materialized_replay_path_decompresses_local_replay(tmp_path: Path) -> None:
     replay_path = tmp_path / "episode.json.z"
+    replay_path.write_bytes(zlib.compress(b'{"events":[]}'))
+
+    with materialized_replay_path(str(replay_path)) as resolved:
+        assert resolved.name == "replay.json"
+        assert resolved.read_bytes() == b'{"events":[]}'
+
+
+def test_materialized_replay_path_decompresses_gzip_replay(tmp_path: Path) -> None:
+    replay_path = tmp_path / "episode.json.gz"
     replay_path.write_bytes(gzip.compress(b'{"events":[]}'))
 
     with materialized_replay_path(str(replay_path)) as resolved:
