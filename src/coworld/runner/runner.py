@@ -16,7 +16,7 @@ from urllib.parse import urlencode
 
 import httpx
 import websockets
-from websockets.exceptions import InvalidHandshake, InvalidStatus
+from websockets.exceptions import ConnectionClosed, InvalidHandshake, InvalidStatus
 
 from coworld.schema_validation import validate_json_schema
 from coworld.types import CoworldEpisodeJobSpec, CoworldPlayerSpec, CoworldRunnableSpec
@@ -334,13 +334,18 @@ def _require_http_ok(url: str, *, allow_redirect: bool = False) -> None:
 async def _require_bad_player_rejected(url: str) -> None:
     rejected = False
     try:
-        async with websockets.connect(url, open_timeout=5):
-            pass
+        async with websockets.connect(url, open_timeout=5) as websocket:
+            try:
+                await asyncio.wait_for(websocket.recv(), timeout=2.0)
+            except ConnectionClosed:
+                rejected = True
+            except asyncio.TimeoutError:
+                pass
     except InvalidStatus as exc:
         rejected = exc.response.status_code in {401, 403}
         if not rejected:
             raise
-    except InvalidHandshake:
+    except (ConnectionClosed, InvalidHandshake):
         rejected = True
     if not rejected:
         raise AssertionError(f"Bad player token was accepted: {url}")

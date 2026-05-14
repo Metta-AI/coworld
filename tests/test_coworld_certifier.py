@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import importlib
 import json
 import subprocess
@@ -13,6 +14,7 @@ import pytest
 from fastapi.testclient import TestClient
 from jsonschema.exceptions import ValidationError as JsonSchemaValidationError
 from starlette.websockets import WebSocketDisconnect
+from websockets.exceptions import ConnectionClosedOK
 
 from coworld.certifier import (
     build_episode_request,
@@ -31,6 +33,7 @@ from coworld.runner.runner import (
     RESULTS_ENV_VAR,
     EpisodeArtifacts,
     _image_command,
+    _require_bad_player_rejected,
     assert_docker_image_reachable,
     replay_client_url,
 )
@@ -354,6 +357,45 @@ def test_build_play_links_point_directly_at_engine_client_routes(tmp_path: Path)
     assert admin_link.netloc == "127.0.0.1:1234"
     assert admin_link.path == "/clients/admin"
     assert admin_link.query == ""
+
+
+def test_bad_player_probe_accepts_immediate_websocket_close(monkeypatch: pytest.MonkeyPatch) -> None:
+    class ClosingWebSocket:
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *_args: object) -> None:
+            return None
+
+        async def recv(self) -> bytes:
+            raise ConnectionClosedOK(None, None)
+
+    monkeypatch.setattr(
+        "coworld.runner.runner.websockets.connect",
+        lambda _url, **_kwargs: ClosingWebSocket(),
+    )
+
+    asyncio.run(_require_bad_player_rejected("ws://example.test/player?slot=0&token=bad"))
+
+
+def test_bad_player_probe_rejects_live_websocket(monkeypatch: pytest.MonkeyPatch) -> None:
+    class LiveWebSocket:
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *_args: object) -> None:
+            return None
+
+        async def recv(self) -> bytes:
+            return b"frame"
+
+    monkeypatch.setattr(
+        "coworld.runner.runner.websockets.connect",
+        lambda _url, **_kwargs: LiveWebSocket(),
+    )
+
+    with pytest.raises(AssertionError, match="Bad player token was accepted"):
+        asyncio.run(_require_bad_player_rejected("ws://example.test/player?slot=0&token=bad"))
 
 
 def test_play_coworld_starts_certification_player_containers(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
