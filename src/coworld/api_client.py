@@ -53,6 +53,7 @@ class LeaguePublic(CoworldAPIModel):
     commissioner_key: str | None = None
     public: bool = False
     hidden: bool = False
+    is_game_of_week: bool = False
     created_at: datetime
 
 
@@ -332,15 +333,15 @@ class CoworldApiClient:
             return {}
         return {"X-Auth-Token": self._token}
 
-    def _request(self, method: str, path: str, response_type: type[Any], **kwargs: Any) -> Any:
+    def _request(self, method: str, path: str, response_type: Any, **kwargs: Any) -> Any:
         response = self._http_client.request(method, path, headers=self._headers(), **kwargs)
         response.raise_for_status()
         return TypeAdapter(response_type).validate_python(response.json())
 
-    def _get(self, path: str, response_type: type[Any], **kwargs: Any) -> Any:
+    def _get(self, path: str, response_type: Any, **kwargs: Any) -> Any:
         return self._request("GET", path, response_type, **kwargs)
 
-    def _post(self, path: str, response_type: type[Any], **kwargs: Any) -> Any:
+    def _post(self, path: str, response_type: Any, **kwargs: Any) -> Any:
         return self._request("POST", path, response_type, **kwargs)
 
     def get_bytes(self, path: str) -> bytes:
@@ -362,6 +363,9 @@ class CoworldApiClient:
 
     def get_league(self, league_id: str) -> LeaguePublic:
         return self._get(f"/v2/leagues/{league_id}", LeaguePublic)
+
+    def get_game_of_week_league(self) -> LeaguePublic | None:
+        return self._get("/v2/leagues/game-of-week", LeaguePublic | None)
 
     def get_league_division_ladder(self, league_id: str) -> list[DivisionLadderEntryPublic]:
         return self._get(f"/v2/leagues/{league_id}/division-ladder", list[DivisionLadderEntryPublic])
