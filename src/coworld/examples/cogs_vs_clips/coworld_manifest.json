@@ -2,7 +2,7 @@
   "$schema": "../../coworld_manifest_schema.json",
   "game": {
     "name": "cogs_vs_clips",
-    "version": "0.2.6",
+    "version": "0.2.7",
     "description": "Cogs vs Clips packaged as a Coworld Cogame backed by Cogsguard and MettaGrid.",
     "owner": "cogames@softmax.com",
     "runnable": {

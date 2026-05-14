@@ -20,6 +20,8 @@ def test_cogs_vs_clips_snapshot_exposes_admin_slot_state(tmp_path: Path) -> None
     assert snapshot["policy_names"] == []
     assert snapshot["tick_mode"] == "fixed"
     assert snapshot["human_action_timeout_seconds"] == 5.0
+    assert game.episode.wait_for_all_players is True
+    assert game.episode.policy_action_timeout_seconds == 10.0
     assert snapshot["slots"][0]["control_state"] == {
         "control_mode": "policy",
         "human_controller_connection_id": None,
@@ -124,6 +126,10 @@ def test_cogs_vs_clips_rollout_routes_preserve_coworld_runtime_contract(tmp_path
     ):
         player_0_message = player_0.receive_json()
         player_1_message = player_1.receive_json()
+        player_0_observation = player_0.receive_json()
+        player_1_observation = player_1.receive_json()
+        player_0.send_json({"type": "action", "action_name": "noop", "request_id": "step-0"})
+        player_1.send_json({"type": "action", "action_name": "noop", "request_id": "step-0"})
         hello = global_viewer.receive_json()
         assign = global_viewer.receive_json()
         baseline = global_viewer.receive_json()
@@ -139,6 +145,10 @@ def test_cogs_vs_clips_rollout_routes_preserve_coworld_runtime_contract(tmp_path
     assert player_0_message["slot"] == 0
     assert player_1_message["type"] == "player_config"
     assert player_1_message["slot"] == 1
+    assert player_0_observation["type"] == "observation"
+    assert player_0_observation["step"] == 0
+    assert player_1_observation["type"] == "observation"
+    assert player_1_observation["step"] == 0
 
     assert hello["type"] == "hello"
     assert hello["protocol"] == "mettagrid.mettascope.live.v1"
