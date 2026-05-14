@@ -75,9 +75,14 @@ def test_cogs_vs_clips_clients_use_slot_admin_and_fullscreen_player() -> None:
     assert 'command: "takeover"' not in admin_html
     assert 'command: "release_takeover"' not in admin_html
     assert "background: #101418" in global_html
-    assert "background: #161c22" in global_html
     assert "ui-monospace" in global_html
     assert '<iframe id="mettascope" title="MettaScope"></iframe>' in global_html
+    assert "body.mettascope-ready main" in global_html
+    assert "body.mettascope-ready #mettascopeWrap" in global_html
+    assert "document.body.classList.add('mettascope-ready')" in global_html
+    assert "mettascope.style.display = 'block'" not in global_html
+    assert "<aside>" not in global_html
+    assert "Live State" not in global_html
     assert "mettascope.html?ws=" in global_html
     assert 'id="fallback"' in global_html
     assert '<canvas id="board" width="720" height="720"></canvas>' in global_html

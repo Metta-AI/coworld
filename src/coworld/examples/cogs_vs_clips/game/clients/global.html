@@ -34,9 +34,6 @@
     font-size: 13px;
   }
   main {
-    display: grid;
-    gap: 14px;
-    grid-template-columns: minmax(360px, 1fr) 320px;
     height: calc(100vh - 53px);
     padding: 14px;
   }
@@ -44,6 +41,7 @@
     background: #05070a;
     border: 1px solid #2b3540;
     border-radius: 6px;
+    height: 100%;
     min-height: 360px;
     overflow: hidden;
     position: relative;
@@ -66,51 +64,30 @@
     image-rendering: pixelated;
     width: min(78vh, 720px);
   }
-  aside {
-    background: #161c22;
-    border: 1px solid #2b3540;
-    border-radius: 6px;
-    display: flex;
-    flex-direction: column;
-    min-width: 0;
-    padding: 12px;
+  body.mettascope-ready {
+    overflow: hidden;
   }
-  h2 {
-    color: #f5f7fa;
-    font-size: 14px;
-    margin: 0 0 10px;
+  body.mettascope-ready header {
+    display: none;
   }
-  dl {
-    display: grid;
-    font-size: 13px;
-    gap: 7px 10px;
-    grid-template-columns: auto 1fr;
-    margin: 0 0 12px;
+  body.mettascope-ready main {
+    display: block;
+    height: 100vh;
+    padding: 0;
   }
-  dt {
-    color: #7d8b9c;
-  }
-  dd {
-    margin: 0;
-    overflow-wrap: anywhere;
-  }
-  pre {
-    background: #0f1419;
-    border: 1px solid #27313b;
-    border-radius: 4px;
-    color: #b7c4d3;
-    flex: 1;
-    margin: 0;
+  body.mettascope-ready #mettascopeWrap {
+    border: 0;
+    border-radius: 0;
+    inset: 0;
     min-height: 0;
-    overflow: auto;
-    padding: 10px;
-    white-space: pre-wrap;
+    position: fixed;
+  }
+  body.mettascope-ready #mettascope {
+    display: block;
+    height: 100%;
+    width: 100%;
   }
   @media (max-width: 820px) {
-    main {
-      grid-template-columns: 1fr;
-      height: auto;
-    }
     canvas {
       height: min(92vw, 680px);
       width: min(92vw, 680px);
@@ -126,22 +103,6 @@
     <iframe id="mettascope" title="MettaScope"></iframe>
     <div id="fallback"><canvas id="board" width="720" height="720"></canvas></div>
   </section>
-  <aside>
-    <h2>Live State</h2>
-    <dl>
-      <dt>Protocol</dt>
-      <dd id="protocol">-</dd>
-      <dt>Mission</dt>
-      <dd id="mission">-</dd>
-      <dt>Step</dt>
-      <dd id="step">-</dd>
-      <dt>Players</dt>
-      <dd id="players">-</dd>
-      <dt>Scores</dt>
-      <dd id="scores">-</dd>
-    </dl>
-    <pre id="latest"></pre>
-  </aside>
 </main>
 <script>
   const pageUrl = new URL(window.location.href)
@@ -159,12 +120,6 @@
   const websocketUrl = websocketAddress('/global')
 
   const status = document.getElementById('status')
-  const protocol = document.getElementById('protocol')
-  const mission = document.getElementById('mission')
-  const step = document.getElementById('step')
-  const players = document.getElementById('players')
-  const scores = document.getElementById('scores')
-  const latest = document.getElementById('latest')
   const mettascope = document.getElementById('mettascope')
   const fallback = document.getElementById('fallback')
   const canvas = document.getElementById('board')
@@ -180,7 +135,7 @@
       const response = await fetch('/mettascope/mettascope.html', { method: 'HEAD' })
       if (!response.ok) return
       mettascope.src = `/mettascope/mettascope.html?ws=${encodeURIComponent(websocketUrl.toString())}`
-      mettascope.style.display = 'block'
+      document.body.classList.add('mettascope-ready')
       fallback.style.display = 'none'
     } catch (error) {
       console.warn('MettaScope dist unavailable, using canvas fallback', error)
@@ -248,22 +203,7 @@
   function renderState(message) {
     const state = message.state || message.status || message
     const renderedStep = message.step ?? state.step ?? message.steps ?? state.steps
-    protocol.textContent = message.protocol || state.protocol || '-'
-    mission.textContent = state.mission || '-'
-    step.textContent = String(renderedStep ?? '-')
-    players.textContent = `${state.connected_players ?? 0}/${state.num_agents ?? 0}`
-    scores.textContent = JSON.stringify(state.scores || [])
     status.textContent = state.done ? (renderedStep == null ? 'Done' : `Done after ${renderedStep} steps`) : 'Connected'
-    latest.textContent = JSON.stringify(
-      {
-        type: message.type,
-        step: renderedStep,
-        objects: message.objects ? message.objects.length : undefined,
-        state,
-      },
-      null,
-      2
-    )
   }
 
   loadMettascope()
