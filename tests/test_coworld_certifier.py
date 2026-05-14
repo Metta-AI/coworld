@@ -649,7 +649,7 @@ def test_cogs_vs_clips_coworld_manifest_validates() -> None:
     config = build_game_config(package, tokens)
 
     assert package.manifest.game.name == "cogs_vs_clips"
-    assert package.cogame.image == "coworld-cogs-vs-clips-game:latest"
+    assert package.cogame.image == "ghcr.io/metta-ai/coworld-cogs-vs-clips-game:latest"
     assert package.cogame.run == ("python", "/app/server.py")
     assert package.manifest.game.protocols.player.value.endswith("/cogs_vs_clips/game/docs/player_protocol_spec.md")
     assert package.manifest.game.protocols.global_.value.endswith("/cogs_vs_clips/game/docs/global_protocol_spec.md")
@@ -657,7 +657,7 @@ def test_cogs_vs_clips_coworld_manifest_validates() -> None:
     assert package.manifest.game.docs.pages[0].id == "play_cogsvsclips.md"
     assert package.manifest.game.docs.pages[0].content.value == "https://softmax.com/play_cogsvsclips.md"
     assert package.manifest.player[0].id == "starter-policy-player"
-    assert package.manifest.player[0].image == "coworld-mettagrid-policy-player:latest"
+    assert package.manifest.player[0].image == "ghcr.io/metta-ai/coworld-mettagrid-policy-player:latest"
     assert package.manifest.player[0].run == ["python", "/app/coworld_policy_player.py"]
     assert package.manifest.player[0].env == {
         "COGAMES_POLICY_URI": "metta://policy/cogames.policy.starter_agent.StarterPolicy"

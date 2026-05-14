@@ -2,12 +2,12 @@
   "$schema": "../../coworld_manifest_schema.json",
   "game": {
     "name": "cogs_vs_clips",
-    "version": "0.2.4",
+    "version": "0.2.5",
     "description": "Cogs vs Clips packaged as a Coworld Cogame backed by Cogsguard and MettaGrid.",
     "owner": "cogames@softmax.com",
     "runnable": {
       "type": "game",
-      "image": "coworld-cogs-vs-clips-game:latest",
+      "image": "ghcr.io/metta-ai/coworld-cogs-vs-clips-game:latest",
       "run": ["python", "/app/server.py"]
     },
     "config_schema": {
@@ -97,7 +97,7 @@
       "id": "starter-policy-player",
       "name": "Starter Policy Player",
       "type": "player",
-      "image": "coworld-mettagrid-policy-player:latest",
+      "image": "ghcr.io/metta-ai/coworld-mettagrid-policy-player:latest",
       "run": ["python", "/app/coworld_policy_player.py"],
       "env": {
         "COGAMES_POLICY_URI": "metta://policy/cogames.policy.starter_agent.StarterPolicy"
