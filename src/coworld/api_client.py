@@ -532,11 +532,13 @@ class CoworldApiClient:
     def get_job_policy_log(self, job_id: UUID, agent_idx: int) -> str:
         return self.get_text(f"/jobs/{job_id}/policy-logs/{agent_idx}")
 
-    def create_replay_session(self, *, coworld_id: str, replay_uri: str) -> CoworldReplaySessionResponse:
+    def create_replay_session(
+        self, *, coworld_id: str, episode_id: UUID, replay_uri: str
+    ) -> CoworldReplaySessionResponse:
         return self._post(
             "/v2/coworlds/replays/session",
             CoworldReplaySessionResponse,
-            json={"coworld_id": coworld_id, "replay_uri": replay_uri},
+            json={"coworld_id": coworld_id, "episode_id": str(episode_id), "replay_uri": replay_uri},
         )
 
     def lookup_policy_version(self, *, name: str, version: int | None = None) -> PolicyVersionRow | None:

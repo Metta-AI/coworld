@@ -472,8 +472,15 @@ def register_tournament_commands(app: typer.Typer) -> None:
             if episode.coworld_id is None:
                 console.print("[red]Episode request is missing coworld_id.[/red]")
                 raise typer.Exit(1)
+            if episode.episode_id is None:
+                console.print("[red]Episode request is missing episode_id.[/red]")
+                raise typer.Exit(1)
             if hosted:
-                session = client.create_replay_session(coworld_id=episode.coworld_id, replay_uri=episode.replay_url)
+                session = client.create_replay_session(
+                    coworld_id=episode.coworld_id,
+                    episode_id=episode.episode_id,
+                    replay_uri=episode.replay_url,
+                )
                 console.print(session.viewer_url)
                 return
         with materialized_manifest_path(episode.coworld_id, server=server) as manifest_path:
