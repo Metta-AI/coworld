@@ -81,6 +81,9 @@ POD_UID
 }
 ```
 
+This is the only payload shape consumed by the coordinator. Backend bookkeeping such as the uploaded Coworld ID or
+manifest hash lives in the backend's stored job payload and is converted out before `spec.json` is uploaded.
+
 ## Player Pods
 
 The coordinator creates one pod per player:
