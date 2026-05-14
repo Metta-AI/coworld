@@ -142,7 +142,8 @@ def test_run_episode_uses_manifest_certification_players(monkeypatch: MonkeyPatc
     )
 
     assert [player.image for player in spec.players] == ["coworld-paintarena:latest", "coworld-paintarena:latest"]
-    assert [player.run for player in spec.players] == [["python", "/app/player/player.py"]] * 2
+    expected_run = ["python", "-m", "coworld.examples.paintarena.player.player"]
+    assert [player.run for player in spec.players] == [expected_run, expected_run]
     assert spec.game_config["max_ticks"] == 100
     assert kwargs == {"timeout_seconds": 12.0, "verify_replay": True}
 

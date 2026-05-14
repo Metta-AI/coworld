@@ -7,12 +7,19 @@ from typing import Any, cast
 
 import websockets
 
+from coworld.examples.paintarena.shared.log_shipper import get_logger
+
+logger = get_logger("paintarena.player")
+
 
 async def main() -> None:
-    async with websockets.connect(os.environ["COGAMES_ENGINE_WS_URL"]) as websocket:
+    url = os.environ["COGAMES_ENGINE_WS_URL"]
+    logger.info("connecting to %s", url)
+    async with websockets.connect(url) as websocket:
         async for raw_message in websocket:
             message = cast(dict[str, Any], json.loads(raw_message))
             if message["type"] == "final":
+                logger.info("received final message, exiting")
                 return
             if message["type"] == "observation":
                 slot = message["slot"]

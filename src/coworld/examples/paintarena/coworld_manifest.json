@@ -8,7 +8,7 @@
     "runnable": {
       "type": "game",
       "image": "coworld-paintarena:latest",
-      "run": ["python", "/app/game/server.py"]
+      "run": ["python", "-m", "coworld.examples.paintarena.game.server"]
     },
     "config_schema": {
       "$schema": "https://json-schema.org/draft/2020-12/schema",
@@ -114,7 +114,7 @@
       "name": "Sweep Painter",
       "type": "player",
       "image": "coworld-paintarena:latest",
-      "run": ["python", "/app/player/player.py"],
+      "run": ["python", "-m", "coworld.examples.paintarena.player.player"],
       "description": "Deterministic player that sweeps across the arena repainting tiles."
     }
   ],

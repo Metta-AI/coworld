@@ -15,7 +15,10 @@ import uvicorn
 from fastapi import FastAPI, WebSocket
 from fastapi.responses import HTMLResponse
 
+from coworld.examples.paintarena.shared.log_shipper import get_logger
+
 CLIENTS_DIR = Path(__file__).parent / "clients"
+logger = get_logger("paintarena.game")
 
 # urllib's default User-Agent ("Python-urllib/3.x") is blocked by some CDN
 # WAFs (Cloudflare's "Bad bot" rule, error 1010), so we set an explicit one
@@ -209,9 +212,11 @@ async def player(websocket: WebSocket) -> None:
 
     await websocket.accept()
     state.players[slot] = websocket
+    logger.info("player slot %d connected (%d/%d)", slot, len(state.players), len(TOKENS))
     await websocket.send_json(_player_observation(slot))
     if len(state.players) == len(TOKENS) and not state.started:
         state.started = True
+        logger.info("all players connected, starting game")
         asyncio.create_task(_play_game())
 
     try:
@@ -242,6 +247,7 @@ async def _play_game() -> None:
         await asyncio.sleep(1.0 / state.tick_rate)
 
     results = _results()
+    logger.info("game finished after %d ticks, scores=%s", state.tick, results["scores"])
     post_data(RESULTS_URI, json.dumps(results), content_type="application/json")
     post_data(REPLAY_URI, json.dumps(_replay_payload(results)), content_type="application/json")
 

@@ -44,7 +44,7 @@ Open both player links before playing. The episode starts after both player webs
 To run the full game with the bundled sweep-painter player image:
 
 ```bash
-uv run coworld run-episode examples/paintarena/coworld_manifest.json coworld-paintarena:latest --run python --run /app/player/player.py
+uv run coworld run-episode examples/paintarena/coworld_manifest.json coworld-paintarena:latest --run python --run -m --run coworld.examples.paintarena.player.player
 ```
 
 This is the same local smoke-test shape a league player would use with their own image.

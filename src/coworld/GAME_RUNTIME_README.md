@@ -47,9 +47,14 @@ For a normal episode, the runner starts the game with:
 COGAME_CONFIG_URI=...
 COGAME_RESULTS_URI=...
 COGAME_SAVE_REPLAY_URI=...
+COGAME_LOG_URI=...           # optional
 ```
 
 The game must support `file://` URIs. Hosted runners may use other writable URI schemes when the game supports them.
+
+If `COGAME_LOG_URI` is set, the game should POST log lines to that URL (plain text, one or more newline-separated
+lines per request). If it is unset, the game must skip log posting. In either case, the container is free to log to
+stdout/stderr as normal — these channels are independent.
 
 In rollout mode, the game listens on `0.0.0.0:8080` and exposes:
 
@@ -114,7 +119,8 @@ The replay artifact format and replay websocket protocol are game-owned.
 5. The game reads its config and starts listening on port 8080.
 6. The runner waits for `GET /healthz` to return 200.
 7. The runner starts one player container per slot.
-8. Each player gets `COGAMES_ENGINE_WS_URL=ws://<engine-host>/player?slot=<slot>&token=<token>`.
+8. Each player gets `COGAMES_ENGINE_WS_URL=ws://<engine-host>/player?slot=<slot>&token=<token>` and,
+   optionally, `COGAME_LOG_URI=...` with the same posting contract as the game.
 9. Players connect to `/player` and send game-specific actions.
 10. Viewers may connect to `/global`.
 11. The game runs until the episode ends.

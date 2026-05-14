@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-import importlib.util
+import importlib
 import json
 import subprocess
 import time
@@ -511,11 +511,11 @@ def test_example_coworld_manifest_validates() -> None:
     package = load_coworld_package(_example_root() / "coworld_manifest.json")
     config = build_game_config(package, ["token-0", "token-1"])
     assert package.cogame.image == "coworld-paintarena:latest"
-    assert package.cogame.run == ("python", "/app/game/server.py")
+    assert package.cogame.run == ("python", "-m", "coworld.examples.paintarena.game.server")
     assert package.manifest.game.protocols.player.value.endswith("/paintarena/game/docs/player_protocol_spec.md")
     assert package.manifest.game.protocols.global_.value.endswith("/paintarena/game/docs/global_protocol_spec.md")
     assert package.manifest.player[0].image == "coworld-paintarena:latest"
-    assert package.manifest.player[0].run == ["python", "/app/player/player.py"]
+    assert package.manifest.player[0].run == ["python", "-m", "coworld.examples.paintarena.player.player"]
     assert config["tokens"] == ["token-0", "token-1"]
 
 
@@ -538,11 +538,7 @@ def test_paintarena_snapshots_are_independent(tmp_path: Path, monkeypatch: pytes
     monkeypatch.setenv(REPLAY_SAVE_ENV_VAR, (tmp_path / "replay.json").as_uri())
     monkeypatch.delenv(REPLAY_SERVER_ENV_VAR, raising=False)
 
-    spec = importlib.util.spec_from_file_location("paintarena_server_test", _example_root() / "game" / "server.py")
-    assert spec is not None
-    assert spec.loader is not None
-    server_module = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(server_module)
+    server_module = _reload_paintarena_server()
 
     first_snapshot = server_module._snapshot()
     server_module._step()
@@ -585,11 +581,7 @@ def test_paintarena_starts_after_player_connect_timeout(tmp_path: Path, monkeypa
     monkeypatch.setenv(REPLAY_SAVE_ENV_VAR, replay_path.as_uri())
     monkeypatch.delenv(REPLAY_SERVER_ENV_VAR, raising=False)
 
-    spec = importlib.util.spec_from_file_location("paintarena_timeout_test", _example_root() / "game" / "server.py")
-    assert spec is not None
-    assert spec.loader is not None
-    server_module = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(server_module)
+    server_module = _reload_paintarena_server()
     server_module_typed = cast(Any, server_module)
     server_module_typed.server = SimpleNamespace(should_exit=False)
 
@@ -624,11 +616,7 @@ def test_paintarena_disconnected_player_noops_after_timeout(tmp_path: Path, monk
     monkeypatch.setenv(REPLAY_SAVE_ENV_VAR, replay_path.as_uri())
     monkeypatch.delenv(REPLAY_SERVER_ENV_VAR, raising=False)
 
-    spec = importlib.util.spec_from_file_location("paintarena_disconnect_test", _example_root() / "game" / "server.py")
-    assert spec is not None
-    assert spec.loader is not None
-    server_module = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(server_module)
+    server_module = _reload_paintarena_server()
     server_module_typed = cast(Any, server_module)
     server_module_typed.server = SimpleNamespace(should_exit=False)
 
@@ -900,6 +888,14 @@ def _game_manifest(*, config_schema_required: list[str] | None = None) -> dict[s
 
 def _example_root() -> Path:
     return Path(__file__).resolve().parents[1] / "src" / "coworld" / "examples" / "paintarena"
+
+
+def _reload_paintarena_server() -> Any:
+    # Each test patches the COGAME_* env vars before calling this, and
+    # server.py reads them at import time. import_module gets (or first-
+    # loads) the module under the patched environment; reload re-runs the
+    # module-level code on subsequent test cases.
+    return importlib.reload(importlib.import_module("coworld.examples.paintarena.game.server"))
 
 
 def _image_command_slice(command: list[str]) -> list[str]:
