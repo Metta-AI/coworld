@@ -9,19 +9,26 @@ COPY --from=ghcr.io/astral-sh/uv:0.11.6 /uv /uvx /bin/
 
 ENV UV_HTTP_TIMEOUT=300
 RUN uv python install 3.12 && uv venv /opt/coworld
-RUN uv pip install --python /opt/coworld/bin/python \
-    "httpx>=0.28.1" \
-    "jsonschema>=4.25.1" \
-    "kubernetes>=31.0.0" \
-    "packaging>=24.0.0" \
-    "pydantic>=2.11.5" \
-    "referencing>=0.36.2" \
-    "websockets>=15.0.1"
 
-COPY packages/coworld/src/coworld /workspace/packages/coworld/src/coworld
+ARG COWORLD_VERSION=""
+ARG GIT_COMMIT=""
+ENV COWORLD_VERSION=${COWORLD_VERSION}
+ENV GIT_COMMIT=${GIT_COMMIT}
+
+RUN --mount=type=bind,target=/ctx \
+    if ls /ctx/coworld-*.whl 1>/dev/null 2>&1; then \
+        COWORLD_WHEEL=$(ls /ctx/coworld-*.whl) && \
+        uv pip install --python /opt/coworld/bin/python "${COWORLD_WHEEL}"; \
+    elif [ -n "${COWORLD_VERSION}" ]; then \
+        uv pip install --python /opt/coworld/bin/python "coworld==${COWORLD_VERSION}"; \
+    else \
+        cp -a /ctx /tmp/coworld-src && \
+        uv build /tmp/coworld-src --wheel --out-dir /tmp/wheels && \
+        COWORLD_WHEEL=$(ls /tmp/wheels/coworld-*.whl) && \
+        uv pip install --python /opt/coworld/bin/python "${COWORLD_WHEEL}"; \
+    fi
 
 ENV PATH="/opt/coworld/bin:$PATH"
-ENV PYTHONPATH="/workspace/packages/coworld/src"
 
 RUN python -c "import coworld.runner.kubernetes_runner"
 
