@@ -13,7 +13,6 @@ import httpx
 from pydantic import BaseModel, ConfigDict, Field
 
 from coworld.schema_validation import JsonObject
-from mettagrid.util.file import read as read_data
 
 
 class RemoteCoworldManifestResponse(BaseModel):
@@ -82,6 +81,17 @@ def _download_bytes(uri: str) -> bytes:
     response = httpx.get(uri, follow_redirects=True, timeout=60.0)
     response.raise_for_status()
     return response.content
+
+
+def read_data(uri: str) -> bytes:
+    parsed = urlparse(uri)
+    if parsed.scheme == "s3":
+        return _download_bytes(f"https://{parsed.netloc}.s3.amazonaws.com/{parsed.path.lstrip('/')}")
+    if parsed.scheme in ("http", "https"):
+        return _download_bytes(uri)
+    if parsed.scheme == "file":
+        return Path(unquote(parsed.path)).read_bytes()
+    return Path(uri).read_bytes()
 
 
 def _is_compressed_replay(path: str) -> bool:

@@ -14,13 +14,13 @@ In a project, install the CLI with:
 
 ```bash
 uv init --bare --name coworld-player
-uv add "coworld[auth]"
+uv add coworld
 ```
 
 For one-off CLI use:
 
 ```bash
-uv tool install "coworld[auth]"
+uv tool install coworld
 ```
 
 Pass `--server` only when targeting a non-default Observatory API environment.
