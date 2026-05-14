@@ -592,10 +592,16 @@ def _print_division_leaderboard(division_id: str, rows: list[Any]) -> None:
     table = Table(title=f"Division Results {division_id}", box=box.SIMPLE_HEAVY, show_lines=False, pad_edge=False)
     table.add_column("Rank", justify="right")
     table.add_column("Player")
-    table.add_column("Avg Score", justify="right")
+    table.add_column("Score", justify="right")
     table.add_column("Rounds", justify="right")
     for rank, row in enumerate(rows, start=1):
-        table.add_row(str(rank), row.player_name or row.player_id, _format_score(row.avg_score), str(row.rounds_played))
+        display_rank = row.rank if row.rank is not None else rank
+        table.add_row(
+            str(display_rank),
+            row.player_name or row.player_id,
+            _format_score(row.score),
+            str(row.rounds_played),
+        )
     console.print(table)
 
 
