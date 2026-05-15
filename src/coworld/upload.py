@@ -577,10 +577,10 @@ def _local_image_client_hash(image: str) -> str:
     with tempfile.TemporaryFile() as archive:
         subprocess.run(["docker", "image", "save", image], check=True, stdout=archive)
         archive.seek(0)
-        return _docker_archive_client_hash(archive)
+        return _docker_archive_client_hash(archive, image=image)
 
 
-def _docker_archive_client_hash(archive: Any) -> str:
+def _docker_archive_client_hash(archive: Any, *, image: str | None = None) -> str:
     with tarfile.open(fileobj=archive, mode="r:*") as tar:
         manifest_json = _read_tar_member(tar, "manifest.json")
         manifest = json.loads(manifest_json)
@@ -595,6 +595,20 @@ def _docker_archive_client_hash(archive: Any) -> str:
         if not isinstance(config_name, str) or not isinstance(layers, list):
             raise RuntimeError("Docker image archive manifest has invalid config or layers")
 
+        config_bytes = _read_tar_member(tar, config_name)
+        config = json.loads(config_bytes)
+        if not isinstance(config, dict):
+            raise RuntimeError("Docker image archive config must be an object")
+        os_name = config.get("os")
+        architecture = config.get("architecture")
+        if os_name != "linux" or architecture != "amd64":
+            subject = f"Docker image {image}" if image is not None else "Docker image archive"
+            raise RuntimeError(
+                f"{subject} is {os_name or 'unknown'}/{architecture or 'unknown'}; "
+                "hosted Coworld episodes require linux/amd64 images. "
+                "Rebuild the image with: docker build --platform linux/amd64 ..."
+            )
+
         layer_hashes = []
         for layer in layers:
             if not isinstance(layer, str):
@@ -602,7 +616,7 @@ def _docker_archive_client_hash(archive: Any) -> str:
             layer_hashes.append(_sha256_digest(_read_tar_member(tar, layer)))
 
         content = {
-            "config": _sha256_digest(_read_tar_member(tar, config_name)),
+            "config": _sha256_digest(config_bytes),
             "layers": layer_hashes,
         }
     encoded = json.dumps(content, sort_keys=True, separators=(",", ":")).encode()

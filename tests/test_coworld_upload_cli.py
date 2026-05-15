@@ -829,7 +829,8 @@ def test_downloaded_image_tags_include_coworld_id() -> None:
 
 
 def test_local_image_client_hash_uses_docker_archive_content(monkeypatch: pytest.MonkeyPatch) -> None:
-    archive = _docker_archive(config=b'{"cmd":["python","game.py"]}', layers=[b"layer-one", b"layer-two"])
+    config = b'{"architecture":"amd64","cmd":["python","game.py"],"os":"linux"}'
+    archive = _docker_archive(config=config, layers=[b"layer-one", b"layer-two"])
 
     def fake_run(command: list[str], **kwargs: object) -> subprocess.CompletedProcess[str]:
         assert command == ["docker", "image", "save", "unit-test-runtime:latest"]
@@ -840,15 +841,30 @@ def test_local_image_client_hash_uses_docker_archive_content(monkeypatch: pytest
     monkeypatch.setattr("coworld.upload.subprocess.run", fake_run)
 
     assert _local_image_client_hash("unit-test-runtime:latest") == _expected_archive_hash(
-        b'{"cmd":["python","game.py"]}',
-        [b"layer-one", b"layer-two"],
+        config, [b"layer-one", b"layer-two"]
     )
 
 
 def test_docker_archive_client_hash_matches_config_and_layer_digests() -> None:
-    archive = io.BytesIO(_docker_archive(config=b'{"env":["A=B"]}', layers=[b"layer-one"]))
+    config = b'{"architecture":"amd64","env":["A=B"],"os":"linux"}'
+    archive = io.BytesIO(_docker_archive(config=config, layers=[b"layer-one"]))
 
-    assert _docker_archive_client_hash(archive) == _expected_archive_hash(b'{"env":["A=B"]}', [b"layer-one"])
+    assert _docker_archive_client_hash(archive) == _expected_archive_hash(config, [b"layer-one"])
+
+
+def test_local_image_client_hash_rejects_non_amd64_archive(monkeypatch: pytest.MonkeyPatch) -> None:
+    archive = _docker_archive(config=b'{"architecture":"arm64","os":"linux"}', layers=[b"layer-one"])
+
+    def fake_run(command: list[str], **kwargs: object) -> subprocess.CompletedProcess[str]:
+        assert command == ["docker", "image", "save", "unit-test-runtime:latest"]
+        stdout = cast(BinaryIO, kwargs["stdout"])
+        stdout.write(archive)
+        return subprocess.CompletedProcess(command, 0)
+
+    monkeypatch.setattr("coworld.upload.subprocess.run", fake_run)
+
+    with pytest.raises(RuntimeError, match="linux/arm64"):
+        _local_image_client_hash("unit-test-runtime:latest")
 
 
 def test_push_archive_to_registry_uploads_layers_config_and_manifest(httpserver: HTTPServer) -> None:
