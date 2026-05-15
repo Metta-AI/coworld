@@ -119,6 +119,7 @@ listed below.
 ```bash
 COWORLD_TIMEOUT_SECONDS=3600
 COWORLD_WORKLOAD_TYPE=coworld-jobs
+COWORLD_CAPACITY_TYPE=on-demand
 COWORLD_PLAYER_CPU_REQUEST=2
 COWORLD_PLAYER_MEMORY_REQUEST=2Gi
 LOG_LEVEL=...
@@ -126,6 +127,8 @@ LOG_LEVEL=...
 
 `COWORLD_WORKLOAD_TYPE` controls the node selector and toleration applied to child player pods. In production the app
 backend also applies the same workload-type selector and toleration to the parent Job.
+`COWORLD_CAPACITY_TYPE` optionally adds a Karpenter capacity-type node selector, such as `on-demand`, to the parent Job
+and child player pods.
 `COWORLD_PLAYER_CPU_REQUEST` and `COWORLD_PLAYER_MEMORY_REQUEST` override the resource requests applied to each child
 player pod.
 

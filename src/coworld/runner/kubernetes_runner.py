@@ -454,7 +454,11 @@ def _workload_node_selector() -> dict[str, str] | None:
     workload_type = os.environ.get("COWORLD_WORKLOAD_TYPE")
     if not workload_type:
         return None
-    return {"workload-type": workload_type}
+    selector = {"workload-type": workload_type}
+    capacity_type = os.environ.get("COWORLD_CAPACITY_TYPE")
+    if capacity_type:
+        selector["karpenter.sh/capacity-type"] = capacity_type
+    return selector
 
 
 def _workload_tolerations() -> list[client.V1Toleration] | None:

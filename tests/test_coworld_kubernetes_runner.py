@@ -410,11 +410,13 @@ def test_run_kubernetes_episode_defaults_player_resource_requests(monkeypatch, t
     assert created == [("2", "2Gi")]
 
 
-def test_create_player_pod_injects_policy_secret_env():
+def test_create_player_pod_injects_policy_secret_env(monkeypatch):
     created: dict[str, object] = {}
     core_v1 = SimpleNamespace(
         create_namespaced_pod=lambda *, namespace, body: created.update({"namespace": namespace, "body": body})
     )
+    monkeypatch.setenv("COWORLD_WORKLOAD_TYPE", "jobs")
+    monkeypatch.setenv("COWORLD_CAPACITY_TYPE", "on-demand")
     player = PlayerLaunchSpec(
         image="paintbot:latest",
         run=(),
@@ -445,6 +447,7 @@ def test_create_player_pod_injects_policy_secret_env():
     assert env["COGAMES_ENGINE_WS_URL"] == "ws://game-service:8080/player?slot=0&token=slot-token"
     assert container.resources.requests == {"cpu": "2", "memory": "2Gi"}
     assert pod.metadata.annotations == {"karpenter.sh/do-not-disrupt": "true"}
+    assert pod.spec.node_selector == {"workload-type": "jobs", "karpenter.sh/capacity-type": "on-demand"}
     assert pod.spec.service_account_name == "episode-runner"
 
 
