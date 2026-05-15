@@ -17,6 +17,8 @@ from coworld.certifier import (
 from coworld.runner.runner import (
     CONFIG_ENV_VAR,
     CONTAINER_WORKDIR,
+    LOCAL_DOCKER_NETWORK,
+    LOCAL_GAME_NETWORK_ALIAS_PREFIX,
     REPLAY_SAVE_ENV_VAR,
     REPLAY_SERVER_ENV_VAR,
     RESULTS_ENV_VAR,
@@ -24,10 +26,12 @@ from coworld.runner.runner import (
     PlayerLaunchSpec,
     RunnableLaunchSpec,
     _free_local_port,
+    _player_container_ws_url,
     _tail,
     _wait_for_health,
     _wait_for_player_exit,
     assert_docker_image_reachable,
+    ensure_local_docker_network,
     generate_tokens,
     replay_client_url,
     write_coworld_game_config,
@@ -101,9 +105,11 @@ def play_coworld(
     )
 
     run_id = secrets.token_hex(8)
+    game_network_alias = f"{LOCAL_GAME_NETWORK_ALIAS_PREFIX}{run_id}"
     game_container = f"coworld-play-game-{run_id}"
     player_containers: list[str] = []
     player_processes: list[tuple[subprocess.Popen[str], Path]] = []
+    ensure_local_docker_network()
     try:
         with ExitStack() as stack:
             game_stdout = stack.enter_context(artifacts.game_stdout_path.open("w"))
@@ -115,6 +121,10 @@ def play_coworld(
                     "--rm",
                     "--name",
                     game_container,
+                    "--network",
+                    LOCAL_DOCKER_NETWORK,
+                    "--network-alias",
+                    game_network_alias,
                     "-p",
                     f"127.0.0.1:{game_port}:8080",
                     *_env_args(package.cogame.env),
@@ -137,7 +147,7 @@ def play_coworld(
 
             for slot, player in enumerate(players):
                 container_name = f"coworld-play-player-{run_id}-{slot}"
-                engine_ws_url = _player_container_ws_url(game_port, slot, tokens[slot], player)
+                engine_ws_url = _player_container_ws_url(game_network_alias, slot, tokens[slot], player)
                 player_containers.append(container_name)
                 player_log_path = artifacts.policy_log_path(slot)
                 player_log = stack.enter_context(player_log_path.open("w"))
@@ -150,8 +160,8 @@ def play_coworld(
                                 "--rm",
                                 "--name",
                                 container_name,
-                                "--add-host",
-                                "host.docker.internal:host-gateway",
+                                "--network",
+                                LOCAL_DOCKER_NETWORK,
                                 *_env_args(player.env),
                                 "-e",
                                 f"COGAMES_ENGINE_WS_URL={engine_ws_url}",
@@ -262,10 +272,6 @@ def build_play_links(
 
 def _player_query(slot: int, token: str, player: PlayerLaunchSpec) -> str:
     return urlencode({"slot": slot, "token": token})
-
-
-def _player_container_ws_url(port: int, slot: int, token: str, player: PlayerLaunchSpec) -> str:
-    return f"ws://host.docker.internal:{port}/player?{_player_query(slot, token, player)}"
 
 
 def _env_args(env: Mapping[str, str]) -> list[str]:

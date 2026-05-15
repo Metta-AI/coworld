@@ -100,6 +100,11 @@ Before writing code, read the downloaded manifest:
 A player image receives `COGAMES_ENGINE_WS_URL`, connects to that websocket, follows the game protocol, plays until the
 episode ends, and exits.
 
+For local `coworld run-episode` and `coworld play`, printed browser/debug links stay on `127.0.0.1:<port>`. Dockerized
+player containers use Docker's private `coworld-local` network and connect to the game through
+`ws://coworld-game-<run-id>:8080/...`, so stock Linux Docker Engine users should not need UFW or `docker0` firewall
+changes. Hosted tournament episodes use Kubernetes Service DNS instead.
+
 Starter policy templates are available for games that ship one:
 
 ```bash

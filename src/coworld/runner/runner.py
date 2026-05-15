@@ -27,6 +27,8 @@ RESULTS_ENV_VAR = "COGAME_RESULTS_URI"
 REPLAY_SAVE_ENV_VAR = "COGAME_SAVE_REPLAY_URI"
 REPLAY_SERVER_ENV_VAR = "COGAME_REPLAY_SERVER"
 POLICY_NAMES_ENV_VAR = "COGAMES_POLICY_NAMES"
+LOCAL_DOCKER_NETWORK = "coworld-local"
+LOCAL_GAME_NETWORK_ALIAS_PREFIX = "coworld-game-"
 
 
 @dataclass(frozen=True)
@@ -174,14 +176,45 @@ def replay_client_url(port: int, replay_uri: str) -> str:
     return f"http://127.0.0.1:{port}/clients/replay?{urlencode({'uri': replay_uri})}"
 
 
+def ensure_local_docker_network() -> None:
+    inspect_command = ["docker", "network", "inspect", LOCAL_DOCKER_NETWORK]
+    inspect_result = subprocess.run(
+        inspect_command,
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+    )
+    if inspect_result.returncode == 0:
+        return
+
+    create_result = subprocess.run(
+        ["docker", "network", "create", LOCAL_DOCKER_NETWORK],
+        capture_output=True,
+        text=True,
+    )
+    if create_result.returncode == 0:
+        return
+
+    if (
+        subprocess.run(
+            inspect_command,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+        ).returncode
+        != 0
+    ):
+        raise RuntimeError(f"Failed to create Docker network {LOCAL_DOCKER_NETWORK}.\n{create_result.stderr[-2000:]}")
+
+
 def run_cogame_episode(spec: EpisodeRunSpec, *, verify_replay: bool = True) -> None:
     port = _free_local_port()
     run_id = secrets.token_hex(8)
+    game_network_alias = f"{LOCAL_GAME_NETWORK_ALIAS_PREFIX}{run_id}"
     game_container = f"coworld-cert-game-{run_id}"
     replay_container = f"coworld-cert-replay-{run_id}"
     player_containers: list[str] = []
     player_processes: list[tuple[subprocess.Popen[str], Path]] = []
 
+    ensure_local_docker_network()
     try:
         with ExitStack() as stack:
             game_stdout = stack.enter_context(spec.artifacts.game_stdout_path.open("w"))
@@ -193,6 +226,10 @@ def run_cogame_episode(spec: EpisodeRunSpec, *, verify_replay: bool = True) -> N
                     "--rm",
                     "--name",
                     game_container,
+                    "--network",
+                    LOCAL_DOCKER_NETWORK,
+                    "--network-alias",
+                    game_network_alias,
                     "-p",
                     f"127.0.0.1:{port}:8080",
                     *_env_args(spec.cogame.env),
@@ -220,7 +257,7 @@ def run_cogame_episode(spec: EpisodeRunSpec, *, verify_replay: bool = True) -> N
 
             for slot, player in enumerate(spec.players):
                 container_name = f"coworld-cert-player-{run_id}-{slot}"
-                engine_ws_url = _player_container_ws_url(port, slot, spec.tokens[slot], player)
+                engine_ws_url = _player_container_ws_url(game_network_alias, slot, spec.tokens[slot], player)
                 player_containers.append(container_name)
                 player_log_path = spec.artifacts.policy_log_path(slot)
                 player_log = stack.enter_context(player_log_path.open("w"))
@@ -233,8 +270,8 @@ def run_cogame_episode(spec: EpisodeRunSpec, *, verify_replay: bool = True) -> N
                                 "--rm",
                                 "--name",
                                 container_name,
-                                "--add-host",
-                                "host.docker.internal:host-gateway",
+                                "--network",
+                                LOCAL_DOCKER_NETWORK,
                                 *_env_args(player.env),
                                 "-e",
                                 f"COGAMES_ENGINE_WS_URL={engine_ws_url}",
@@ -305,8 +342,8 @@ def run_cogame_episode(spec: EpisodeRunSpec, *, verify_replay: bool = True) -> N
         subprocess.run(["docker", "rm", "-f", replay_container], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
 
 
-def _player_container_ws_url(port: int, slot: int, token: str, player: PlayerLaunchSpec) -> str:
-    return f"ws://host.docker.internal:{port}/player?{_player_query(slot, token, player)}"
+def _player_container_ws_url(host: str, slot: int, token: str, player: PlayerLaunchSpec) -> str:
+    return f"ws://{host}:8080/player?{_player_query(slot, token, player)}"
 
 
 def _player_client_url(port: int, slot: int, token: str, player: PlayerLaunchSpec) -> str:

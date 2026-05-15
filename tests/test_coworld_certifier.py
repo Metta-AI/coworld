@@ -28,6 +28,8 @@ from coworld.certifier import (
 from coworld.play import ReplaySession, build_play_links, play_coworld, replay_coworld
 from coworld.runner.runner import (
     CONFIG_ENV_VAR,
+    LOCAL_DOCKER_NETWORK,
+    LOCAL_GAME_NETWORK_ALIAS_PREFIX,
     REPLAY_SAVE_ENV_VAR,
     REPLAY_SERVER_ENV_VAR,
     RESULTS_ENV_VAR,
@@ -449,6 +451,7 @@ def test_play_coworld_starts_certification_player_containers(tmp_path: Path, mon
     )
     ready_sessions = []
     popen_commands: list[list[str]] = []
+    network_commands: list[list[str]] = []
     rm_commands: list[list[str]] = []
     waited_players: list[Path] = []
 
@@ -469,6 +472,9 @@ def test_play_coworld_starts_certification_player_containers(tmp_path: Path, mon
         waited_players.append(stderr_path)
 
     def fake_subprocess_run(cmd, **kwargs):
+        if cmd[:2] == ["docker", "network"]:
+            network_commands.append(cmd)
+            return subprocess.CompletedProcess(cmd, 0)
         rm_commands.append(cmd)
         return subprocess.CompletedProcess(cmd, 0)
 
@@ -493,13 +499,20 @@ def test_play_coworld_starts_certification_player_containers(tmp_path: Path, mon
     assert json.loads((tmp_path / "play-workspace" / "config.json").read_text())["difficulty"] == "watch"
     assert len(popen_commands) == 2
     game_command, player_command = popen_commands
+    assert network_commands == [["docker", "network", "inspect", LOCAL_DOCKER_NETWORK]]
     assert "coworld-play-game-session-1" in game_command
+    assert "--network" in game_command
+    assert game_command[game_command.index("--network") + 1] == LOCAL_DOCKER_NETWORK
+    assert "--network-alias" in game_command
+    assert game_command[game_command.index("--network-alias") + 1] == f"{LOCAL_GAME_NETWORK_ALIAS_PREFIX}session-1"
     assert f"{CONFIG_ENV_VAR}=file:///coworld/config.json" in game_command
     assert "coworld-play-player-session-1-0" in player_command
-    assert "--add-host" in player_command
-    assert "host.docker.internal:host-gateway" in player_command
+    assert "--network" in player_command
+    assert player_command[player_command.index("--network") + 1] == LOCAL_DOCKER_NETWORK
+    assert "--add-host" not in player_command
+    assert "host.docker.internal:host-gateway" not in player_command
     assert "PLAYER_MODE=test" in player_command
-    assert "COGAMES_ENGINE_WS_URL=ws://host.docker.internal:1234/player?slot=0&token=token-0" in player_command
+    assert "COGAMES_ENGINE_WS_URL=ws://coworld-game-session-1:8080/player?slot=0&token=token-0" in player_command
     assert _image_command_slice(player_command) == [
         "--entrypoint",
         "python",

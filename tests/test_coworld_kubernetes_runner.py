@@ -1,5 +1,6 @@
 import json
 import os
+import subprocess
 import zipfile
 import zlib
 from io import BytesIO
@@ -121,31 +122,41 @@ def test_require_http_ok_accepts_replay_client_redirect(monkeypatch):
     runner_module._require_http_ok("http://example.test/clients/replay", allow_redirect=True)
 
 
-def test_run_cogame_episode_omits_empty_policy_names_env(tmp_path, monkeypatch):
+def test_run_cogame_episode_uses_docker_dns_and_omits_empty_policy_names_env(tmp_path, monkeypatch):
     commands: list[list[str]] = []
+    run_commands: list[list[str]] = []
 
     class FakeProcess:
         def poll(self):
             return None
 
+    async def noop_async(*_args, **_kwargs):
+        return None
+
     monkeypatch.setattr(runner_module, "_free_local_port", lambda: 12345)
+    monkeypatch.setattr(runner_module.secrets, "token_hex", lambda _bytes: "session-1")
     monkeypatch.setattr(runner_module, "_wait_for_health", lambda *_args, **_kwargs: None)
     monkeypatch.setattr(runner_module, "_require_http_ok", lambda *_args, **_kwargs: None)
-    monkeypatch.setattr(runner_module, "_require_global_message", lambda *_args, **_kwargs: None)
+    monkeypatch.setattr(runner_module, "_require_bad_player_rejected", noop_async)
+    monkeypatch.setattr(runner_module, "_require_global_message", noop_async)
     monkeypatch.setattr(runner_module, "_wait_for_game_exit", lambda *_args, **_kwargs: None)
-    monkeypatch.setattr(runner_module.asyncio, "run", lambda _awaitable: None)
+    monkeypatch.setattr(runner_module, "_wait_for_player_exit", lambda *_args, **_kwargs: None)
 
     def fake_popen(command, **_kwargs):
         commands.append(command)
         return FakeProcess()
 
+    def fake_run(command, **_kwargs):
+        run_commands.append(command)
+        return subprocess.CompletedProcess(command, 0)
+
     monkeypatch.setattr(runner_module.subprocess, "Popen", fake_popen)
-    monkeypatch.setattr(runner_module.subprocess, "run", lambda *_args, **_kwargs: None)
+    monkeypatch.setattr(runner_module.subprocess, "run", fake_run)
 
     runner_module.run_cogame_episode(
         EpisodeRunSpec(
             cogame=RunnableLaunchSpec(image="game:latest"),
-            players=[],
+            players=[PlayerLaunchSpec(image="player:latest", env={"PLAYER_MODE": "test"})],
             tokens=["token-0"],
             policy_names=[],
             artifacts=EpisodeArtifacts.create(tmp_path),
@@ -154,8 +165,70 @@ def test_run_cogame_episode_omits_empty_policy_names_env(tmp_path, monkeypatch):
         verify_replay=False,
     )
 
-    env_values = [value for index, value in enumerate(commands[0]) if index > 0 and commands[0][index - 1] == "-e"]
+    game_command, player_command = commands
+    env_values = [value for index, value in enumerate(game_command) if index > 0 and game_command[index - 1] == "-e"]
     assert all(not value.startswith("COGAMES_POLICY_NAMES=") for value in env_values)
+    assert run_commands[0] == ["docker", "network", "inspect", runner_module.LOCAL_DOCKER_NETWORK]
+    assert "--network" in game_command
+    assert game_command[game_command.index("--network") + 1] == runner_module.LOCAL_DOCKER_NETWORK
+    assert "--network-alias" in game_command
+    assert game_command[game_command.index("--network-alias") + 1] == "coworld-game-session-1"
+    assert "--network" in player_command
+    assert player_command[player_command.index("--network") + 1] == runner_module.LOCAL_DOCKER_NETWORK
+    assert "--add-host" not in player_command
+    assert "host.docker.internal:host-gateway" not in player_command
+    assert "COGAMES_ENGINE_WS_URL=ws://coworld-game-session-1:8080/player?slot=0&token=token-0" in player_command
+
+
+def test_ensure_local_docker_network_reuses_existing_network(monkeypatch):
+    calls: list[list[str]] = []
+
+    def fake_run(command, **_kwargs):
+        calls.append(command)
+        return subprocess.CompletedProcess(command, 0)
+
+    monkeypatch.setattr(runner_module.subprocess, "run", fake_run)
+
+    runner_module.ensure_local_docker_network()
+
+    assert calls == [["docker", "network", "inspect", runner_module.LOCAL_DOCKER_NETWORK]]
+
+
+def test_ensure_local_docker_network_creates_missing_network(monkeypatch):
+    calls: list[list[str]] = []
+
+    def fake_run(command, **_kwargs):
+        calls.append(command)
+        return subprocess.CompletedProcess(command, 1 if command[1:3] == ["network", "inspect"] else 0)
+
+    monkeypatch.setattr(runner_module.subprocess, "run", fake_run)
+
+    runner_module.ensure_local_docker_network()
+
+    assert calls == [
+        ["docker", "network", "inspect", runner_module.LOCAL_DOCKER_NETWORK],
+        ["docker", "network", "create", runner_module.LOCAL_DOCKER_NETWORK],
+    ]
+
+
+def test_ensure_local_docker_network_accepts_concurrent_create(monkeypatch):
+    calls: list[list[str]] = []
+
+    def fake_run(command, **_kwargs):
+        calls.append(command)
+        if command[1:3] == ["network", "inspect"]:
+            return subprocess.CompletedProcess(command, 0 if len(calls) == 3 else 1)
+        return subprocess.CompletedProcess(command, 1, stderr="network with name coworld-local already exists")
+
+    monkeypatch.setattr(runner_module.subprocess, "run", fake_run)
+
+    runner_module.ensure_local_docker_network()
+
+    assert calls == [
+        ["docker", "network", "inspect", runner_module.LOCAL_DOCKER_NETWORK],
+        ["docker", "network", "create", runner_module.LOCAL_DOCKER_NETWORK],
+        ["docker", "network", "inspect", runner_module.LOCAL_DOCKER_NETWORK],
+    ]
 
 
 def test_wait_for_episode_artifacts_skips_pod_status_after_results_when_replay_not_required(tmp_path):
