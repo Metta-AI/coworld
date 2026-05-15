@@ -48,12 +48,16 @@ submit it to the league:
 uv run softmax login
 uv run coworld leagues
 uv run coworld download <coworld-name-or-id> --output-dir ./coworld
-python -m json.tool ./coworld/coworld_manifest.json | less
+python -m json.tool ./coworld/<coworld-id>/coworld_manifest.json | less
 docker build --platform=linux/amd64 -t my-player:latest .
-uv run coworld run-episode ./coworld/coworld_manifest.json my-player:latest
+uv run coworld run-episode ./coworld/<coworld-id>/coworld_manifest.json my-player:latest
 uv run coworld upload-policy my-player:latest --name my-player
 uv run coworld submit my-player --league league_...
 ```
+
+`coworld download` stores each remote Coworld under `./coworld/<coworld-id>/`. Use `coworld play cow_...` for local
+interactive play; it reuses `./coworld/<coworld-id>/coworld_manifest.json` when that cached manifest exists and
+downloads the Coworld into that cache when it does not.
 
 Use the CLI to inspect the tournament:
 
@@ -79,9 +83,9 @@ Use this flow when you want to build a player for an existing Coworld league:
 ```bash
 uv run softmax login
 uv run coworld download <coworld-name-or-id> --output-dir ./coworld
-python -m json.tool ./coworld/coworld_manifest.json | less
+python -m json.tool ./coworld/<coworld-id>/coworld_manifest.json | less
 docker build --platform=linux/amd64 -t my-player:latest .
-uv run coworld run-episode ./coworld/coworld_manifest.json my-player:latest
+uv run coworld run-episode ./coworld/<coworld-id>/coworld_manifest.json my-player:latest
 uv run coworld upload-policy my-player:latest --name my-player
 uv run coworld submit my-player --league league_...
 ```
@@ -109,19 +113,19 @@ upload the resulting image with `coworld upload-policy`.
 For local testing, one image can fill every player slot:
 
 ```bash
-uv run coworld run-episode ./coworld/coworld_manifest.json my-player:latest
+uv run coworld run-episode ./coworld/<coworld-id>/coworld_manifest.json my-player:latest
 ```
 
 You can also pass one image per slot:
 
 ```bash
-uv run coworld run-episode ./coworld/coworld_manifest.json player-one:latest player-two:latest
+uv run coworld run-episode ./coworld/<coworld-id>/coworld_manifest.json player-one:latest player-two:latest
 ```
 
 If the image needs a specific player command, pass it explicitly:
 
 ```bash
-uv run coworld run-episode ./coworld/coworld_manifest.json my-runtime:latest --run python --run /app/player.py
+uv run coworld run-episode ./coworld/<coworld-id>/coworld_manifest.json my-runtime:latest --run python --run /app/player.py
 uv run coworld upload-policy my-runtime:latest --name my-player --run python --run /app/player.py
 ```
 

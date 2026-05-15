@@ -37,6 +37,78 @@ def test_coworld_play_accepts_backend_coworld_path(httpserver: HTTPServer, monke
     assert captured["manifest"] == manifest
 
 
+def test_coworld_play_prefers_cached_coworld_id_manifest(tmp_path: Path, monkeypatch: MonkeyPatch) -> None:
+    manifest = {"game": {"name": "cached"}}
+    manifest_path = tmp_path / "coworld" / COWORLD_ID / "coworld_manifest.json"
+    manifest_path.parent.mkdir(parents=True)
+    manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
+    captured: dict[str, object] = {}
+
+    def fake_play_coworld(resolved_manifest_path: Path, **_kwargs: object) -> SimpleNamespace:
+        captured["manifest_path"] = resolved_manifest_path
+        captured["manifest"] = json.loads(resolved_manifest_path.read_text())
+        artifacts = SimpleNamespace(
+            workspace=Path("/tmp/workspace"),
+            results_path=Path("/tmp/results.json"),
+            replay_path=Path("/tmp/replay.json"),
+            logs_dir=Path("/tmp/logs"),
+        )
+        return SimpleNamespace(session=SimpleNamespace(artifacts=artifacts), results={})
+
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr("coworld.cli.play_coworld", fake_play_coworld)
+
+    result = CliRunner().invoke(app, ["play", COWORLD_ID, "--no-open-browser"])
+
+    assert result.exit_code == 0, result.output
+    assert captured["manifest_path"] == manifest_path.resolve()
+    assert captured["manifest"] == manifest
+
+
+def test_coworld_play_downloads_missing_coworld_id_cache(tmp_path: Path, monkeypatch: MonkeyPatch) -> None:
+    manifest = {"game": {"name": "downloaded-cache"}}
+    captured: dict[str, object] = {}
+    downloads: list[tuple[str, Path, str, bool]] = []
+
+    def fake_download_coworld_cmd(
+        coworld_ref: str,
+        output_dir: Path,
+        *,
+        server: str,
+        refresh: bool = False,
+    ) -> None:
+        downloads.append((coworld_ref, output_dir, server, refresh))
+        manifest_path = output_dir / coworld_ref / "coworld_manifest.json"
+        manifest_path.parent.mkdir(parents=True)
+        manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
+        (output_dir / coworld_ref / "coworld_images.json").write_text("{}", encoding="utf-8")
+
+    def fake_play_coworld(resolved_manifest_path: Path, **_kwargs: object) -> SimpleNamespace:
+        captured["manifest_path"] = resolved_manifest_path
+        captured["manifest"] = json.loads(resolved_manifest_path.read_text())
+        artifacts = SimpleNamespace(
+            workspace=Path("/tmp/workspace"),
+            results_path=Path("/tmp/results.json"),
+            replay_path=Path("/tmp/replay.json"),
+            logs_dir=Path("/tmp/logs"),
+        )
+        return SimpleNamespace(session=SimpleNamespace(artifacts=artifacts), results={})
+
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr("coworld.cli.download_coworld_cmd", fake_download_coworld_cmd)
+    monkeypatch.setattr("coworld.cli.play_coworld", fake_play_coworld)
+
+    result = CliRunner().invoke(
+        app,
+        ["play", COWORLD_ID, "--server", "http://example.test", "--no-open-browser"],
+    )
+
+    assert result.exit_code == 0, result.output
+    assert downloads == [(COWORLD_ID, Path("./coworld"), "http://example.test", False)]
+    assert captured["manifest_path"] == (tmp_path / "coworld" / COWORLD_ID / "coworld_manifest.json").resolve()
+    assert captured["manifest"] == manifest
+
+
 def test_coworld_play_accepts_player_image_override(monkeypatch: MonkeyPatch) -> None:
     captured: dict[str, object] = {}
 

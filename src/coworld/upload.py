@@ -6,6 +6,7 @@ import json
 import logging
 import os
 import re
+import shlex
 import subprocess
 import tarfile
 import tempfile
@@ -396,17 +397,42 @@ def download_coworld(
     *,
     server: str = DEFAULT_SUBMIT_SERVER,
 ) -> CoworldUploadResponse:
-    if not coworld_ref.startswith("cow_"):
-        with CoworldUploadClient.from_login(server_url=server) as client:
-            coworld = client.find_canonical_coworld(coworld_ref)
-        if coworld is None:
-            raise RuntimeError(f"Canonical Coworld not found: {coworld_ref}")
-        coworld_ref = coworld.id
+    coworld_id = resolve_coworld_download_id(coworld_ref, server=server)
 
     with httpx.Client(base_url=server, timeout=30.0) as http_client:
-        response = http_client.get(f"/v2/coworlds/{coworld_ref}", timeout=120.0)
+        response = http_client.get(f"/v2/coworlds/{coworld_id}", timeout=120.0)
     response.raise_for_status()
     return CoworldUploadResponse.model_validate(response.json())
+
+
+def resolve_coworld_download_id(
+    coworld_ref: str,
+    *,
+    server: str = DEFAULT_SUBMIT_SERVER,
+) -> str:
+    if coworld_ref.startswith("cow_"):
+        return coworld_ref
+
+    with CoworldUploadClient.from_login(server_url=server) as client:
+        coworld = client.find_canonical_coworld(coworld_ref)
+    if coworld is None:
+        raise RuntimeError(f"Canonical Coworld not found: {coworld_ref}")
+    return coworld.id
+
+
+def downloaded_coworld_manifest_path(output_dir: Path, coworld_id: str) -> Path:
+    return output_dir / coworld_id / "coworld_manifest.json"
+
+
+def downloaded_coworld_images_path(output_dir: Path, coworld_id: str) -> Path:
+    return output_dir / coworld_id / "coworld_images.json"
+
+
+def downloaded_coworld_exists(output_dir: Path, coworld_id: str) -> bool:
+    return (
+        downloaded_coworld_manifest_path(output_dir, coworld_id).is_file()
+        and downloaded_coworld_images_path(output_dir, coworld_id).is_file()
+    )
 
 
 def download_coworld_cmd(
@@ -414,8 +440,17 @@ def download_coworld_cmd(
     output_dir: Path,
     *,
     server: str = DEFAULT_SUBMIT_SERVER,
+    refresh: bool = False,
 ) -> None:
-    coworld = download_coworld(coworld_ref, server=server)
+    coworld_id = resolve_coworld_download_id(coworld_ref, server=server)
+    manifest_path = downloaded_coworld_manifest_path(output_dir, coworld_id)
+    image_map_path = downloaded_coworld_images_path(output_dir, coworld_id)
+    if downloaded_coworld_exists(output_dir, coworld_id) and not refresh:
+        typer.echo(f"Coworld already downloaded: {coworld_id}")
+        _print_download_paths(coworld_id, manifest_path, image_map_path)
+        return
+
+    coworld = download_coworld(coworld_id, server=server)
 
     image_tags = _local_image_tags(coworld)
     for public_image_uri, local_tag in image_tags.items():
@@ -430,11 +465,9 @@ def download_coworld_cmd(
             subprocess.run(["docker", "pull", public_image_uri], check=True)
         subprocess.run(["docker", "tag", public_image_uri, local_tag], check=True)
 
-    output_dir.mkdir(parents=True, exist_ok=True)
+    (output_dir / coworld.id).mkdir(parents=True, exist_ok=True)
     manifest = _manifest_with_local_images(coworld.manifest, image_tags)
-    manifest_path = output_dir / "coworld_manifest.json"
     manifest_path.write_text(json.dumps(manifest, indent=2) + "\n", encoding="utf-8")
-    image_map_path = output_dir / "coworld_images.json"
     image_map_path.write_text(
         json.dumps(
             {
@@ -456,8 +489,14 @@ def download_coworld_cmd(
     )
 
     typer.echo(f"Downloaded Coworld: {coworld.name}:{coworld.version}")
+    _print_download_paths(coworld.id, manifest_path, image_map_path)
+
+
+def _print_download_paths(coworld_id: str, manifest_path: Path, image_map_path: Path) -> None:
+    typer.echo(f"Coworld: {coworld_id}")
     typer.echo(f"Manifest: {manifest_path}")
     typer.echo(f"Images: {image_map_path}")
+    typer.echo(f"Play: {shlex.join(['uv', 'run', 'coworld', 'play', coworld_id])}")
 
 
 def _manifest_with_softmax_image_ids(client: CoworldUploadClient, manifest: dict[str, object]) -> dict[str, object]:

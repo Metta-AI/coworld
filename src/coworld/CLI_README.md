@@ -42,15 +42,20 @@ command you ran, the Coworld or league name, and any relevant logs or replay lin
 uv run coworld download <coworld-name-or-id> --output-dir ./coworld
 uv run coworld make-policy <starter-policy-name> -o policy.py  # optional, when the game ships a template
 docker build --platform=linux/amd64 -t my-player:latest .
-uv run coworld run-episode ./coworld/coworld_manifest.json my-player:latest
+uv run coworld run-episode ./coworld/<coworld-id>/coworld_manifest.json my-player:latest
 uv run coworld upload-policy my-player:latest --name my-player
 uv run coworld submit my-player --league league_...
 ```
 
+`coworld download` stores each package under `./coworld/<coworld-id>/`, including `coworld_manifest.json` and
+`coworld_images.json`. `coworld play cow_...` starts the downloaded game and bundled player containers for local
+interactive play; when `./coworld/<coworld-id>/coworld_manifest.json` already exists, `play` uses that cached manifest
+instead of fetching it again. When the cache is missing, `play` downloads the Coworld into that directory first.
+
 If the image needs a specific player command:
 
 ```bash
-uv run coworld run-episode ./coworld/coworld_manifest.json my-runtime:latest --run python --run /app/player.py
+uv run coworld run-episode ./coworld/<coworld-id>/coworld_manifest.json my-runtime:latest --run python --run /app/player.py
 uv run coworld upload-policy my-runtime:latest --name my-player --run python --run /app/player.py
 ```
 

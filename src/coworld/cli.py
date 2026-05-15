@@ -30,6 +30,7 @@ from coworld.upload import (
     CoworldUploadClient,
     CoworldUploadResponse,
     download_coworld_cmd,
+    downloaded_coworld_manifest_path,
     upload_coworld_cmd,
     upload_policy_cmd,
 )
@@ -102,15 +103,28 @@ def play(
         if open_browser:
             webbrowser.open(session.links.global_)
 
-    with materialized_manifest_path(manifest_uri, server=server) as manifest_path:
+    if manifest_uri.startswith("cow_") and "/" not in manifest_uri:
+        cached_manifest_path = downloaded_coworld_manifest_path(Path("./coworld"), manifest_uri)
+        if not cached_manifest_path.is_file():
+            download_coworld_cmd(manifest_uri, Path("./coworld"), server=server)
         result = play_coworld(
-            manifest_path,
+            cached_manifest_path.resolve(),
             variant_id=variant_id,
             player_images=player_images,
             player_run=run,
             timeout_seconds=timeout_seconds,
             on_ready=on_ready,
         )
+    else:
+        with materialized_manifest_path(manifest_uri, server=server) as manifest_path:
+            result = play_coworld(
+                manifest_path,
+                variant_id=variant_id,
+                player_images=player_images,
+                player_run=run,
+                timeout_seconds=timeout_seconds,
+                on_ready=on_ready,
+            )
     typer.echo(f"Results: {result.session.artifacts.results_path}")
     typer.echo(f"Replay: {result.session.artifacts.replay_path}")
     typer.echo(f"Logs: {result.session.artifacts.logs_dir}")
@@ -191,14 +205,19 @@ def download(
         typer.Argument(help="Coworld ID to download, or Coworld name to download its canonical version."),
     ],
     output_dir: Annotated[Path, typer.Option("--output-dir", "-o", help="Directory for downloaded files.")] = Path(
-        "./coworld-download"
+        "./coworld"
     ),
     server: Annotated[str, typer.Option("--server", help="Observatory API server URL.")] = DEFAULT_SUBMIT_SERVER,
+    refresh: Annotated[
+        bool,
+        typer.Option("--refresh", help="Re-fetch the Coworld and re-pull images even when it is already cached."),
+    ] = False,
 ) -> None:
     download_coworld_cmd(
         coworld_ref,
         output_dir,
         server=server,
+        refresh=refresh,
     )
 
 
