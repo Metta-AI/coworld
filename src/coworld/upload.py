@@ -171,7 +171,7 @@ class CoworldUploadClient:
             json={"manifest": manifest},
             timeout=120.0,
         )
-        response.raise_for_status()
+        _raise_for_status(response)
         return CoworldUploadResponse.model_validate(response.json())
 
     def list_coworlds(self, *, limit: int = 200, offset: int = 0) -> list[CoworldListEntry]:
@@ -181,7 +181,7 @@ class CoworldUploadClient:
             params={"limit": limit, "offset": offset},
             timeout=60.0,
         )
-        response.raise_for_status()
+        _raise_for_status(response)
         return [CoworldListEntry.model_validate(item) for item in response.json()]
 
     def find_coworld(self, coworld_id: str) -> CoworldListEntry | None:
@@ -219,7 +219,7 @@ class CoworldUploadClient:
             params=params,
             timeout=60.0,
         )
-        response.raise_for_status()
+        _raise_for_status(response)
         versions = PolicyVersionsResponse.model_validate(response.json()).entries
         return versions[0] if versions else None
 
@@ -230,7 +230,7 @@ class CoworldUploadClient:
             json={"league_id": league_id, "policy_version_id": str(policy_version_id)},
             timeout=120.0,
         )
-        response.raise_for_status()
+        _raise_for_status(response)
         return LeagueSubmissionResponse.model_validate(response.json())
 
     def create_hosted_game(
@@ -250,7 +250,7 @@ class CoworldUploadClient:
             },
             timeout=120.0,
         )
-        response.raise_for_status()
+        _raise_for_status(response)
         return HostedGameCreateResponse.model_validate(response.json())
 
     def join_hosted_game(self, session_id: str) -> HostedGameJoinResponse:
@@ -259,7 +259,7 @@ class CoworldUploadClient:
             headers=self._headers(),
             timeout=120.0,
         )
-        response.raise_for_status()
+        _raise_for_status(response)
         return HostedGameJoinResponse.model_validate(response.json())
 
     def list_images(self, *, limit: int = 200, offset: int = 0) -> list[ContainerImageResponse]:
@@ -269,7 +269,7 @@ class CoworldUploadClient:
             params={"limit": limit, "offset": offset},
             timeout=60.0,
         )
-        response.raise_for_status()
+        _raise_for_status(response)
         return [ContainerImageResponse.model_validate(item) for item in response.json()]
 
     def get_image(self, image_id: str) -> ContainerImageResponse:
@@ -278,7 +278,7 @@ class CoworldUploadClient:
             headers=self._headers(),
             timeout=60.0,
         )
-        response.raise_for_status()
+        _raise_for_status(response)
         return ContainerImageResponse.model_validate(response.json())
 
     def request_image_upload(self, *, name: str, client_hash: str) -> ImageUploadResponse:
@@ -288,7 +288,7 @@ class CoworldUploadClient:
             json={"name": name, "client_hash": client_hash},
             timeout=60.0,
         )
-        response.raise_for_status()
+        _raise_for_status(response)
         return ImageUploadResponse.model_validate(response.json())
 
     def complete_image_upload(self, image_id: str) -> ContainerImageResponse:
@@ -298,7 +298,7 @@ class CoworldUploadClient:
             json={"id": image_id},
             timeout=120.0,
         )
-        response.raise_for_status()
+        _raise_for_status(response)
         return ContainerImageResponse.model_validate(response.json())
 
     def complete_docker_image_policy(
@@ -320,7 +320,7 @@ class CoworldUploadClient:
             json=payload,
             timeout=120.0,
         )
-        response.raise_for_status()
+        _raise_for_status(response)
         return PolicyVersionResponse.model_validate(response.json())
 
 
@@ -348,6 +348,17 @@ def upload_coworld(
         size_bytes=response.size_bytes,
         canonical=response.canonical,
     )
+
+
+def _raise_for_status(response: httpx.Response) -> None:
+    if response.status_code == 401:
+        raise RuntimeError("Authentication failed (401). Your token may be expired. Run: uv run softmax login")
+    if response.status_code == 403:
+        raise RuntimeError(
+            f"Access denied (403) for {response.request.url.path}. "
+            "You may lack permissions, or your token may be expired. Run: uv run softmax login"
+        )
+    response.raise_for_status()
 
 
 def _load_current_cogames_token() -> str | None:

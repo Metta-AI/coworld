@@ -347,7 +347,7 @@ class CoworldApiClient:
 
     def _request(self, method: str, path: str, response_type: Any, **kwargs: Any) -> Any:
         response = self._http_client.request(method, path, headers=self._headers(), **kwargs)
-        response.raise_for_status()
+        _raise_for_status(response)
         return TypeAdapter(response_type).validate_python(response.json())
 
     def _get(self, path: str, response_type: Any, **kwargs: Any) -> Any:
@@ -358,12 +358,12 @@ class CoworldApiClient:
 
     def get_bytes(self, path: str) -> bytes:
         response = self._http_client.get(path, headers=self._headers())
-        response.raise_for_status()
+        _raise_for_status(response)
         return response.content
 
     def get_text(self, path: str) -> str:
         response = self._http_client.get(path, headers=self._headers())
-        response.raise_for_status()
+        _raise_for_status(response)
         return response.text
 
     def list_games(self) -> list[GamePublic]:
@@ -563,6 +563,17 @@ class CoworldApiClient:
             params["version"] = version
         response = self._get("/stats/policy-versions", PolicyVersionsResponse, params=params)
         return response.entries[0] if response.entries else None
+
+
+def _raise_for_status(response: httpx.Response) -> None:
+    if response.status_code == 401:
+        raise RuntimeError("Authentication failed (401). Your token may be expired. Run: uv run softmax login")
+    if response.status_code == 403:
+        raise RuntimeError(
+            f"Access denied (403) for {response.request.url.path}. "
+            "You may lack permissions, or your token may be expired. Run: uv run softmax login"
+        )
+    response.raise_for_status()
 
 
 def _load_current_cogames_token() -> str | None:
