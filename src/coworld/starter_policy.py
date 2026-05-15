@@ -1,8 +1,7 @@
 from __future__ import annotations
 
 import importlib.resources
-import keyword
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 
 
@@ -10,16 +9,27 @@ from pathlib import Path
 class StarterPolicy:
     display_name: str
     package: str
-    resource: str
-    class_name: str
+    project_resources: dict[str, str] = field(default_factory=dict)
+
+
+@dataclass(frozen=True)
+class StarterPolicyWriteResult:
+    display_name: str
+    output_path: Path
+    source_path: Path | None = None
 
 
 STARTER_POLICIES = {
     "among_them": StarterPolicy(
         display_name="Among Them",
         package="coworld.policies",
-        resource="amongthem_policy_template.py",
-        class_name="AmongThemPolicy",
+        project_resources={
+            "amongthemstarter/amongthemstarter.nim": "amongthemstarter.nim",
+            "amongthemstarter/Dockerfile.amongthemstarter": "Dockerfile",
+            "amongthemstarter/.dockerignore": ".dockerignore",
+            "amongthemstarter/coplayer_manifest.json": "coplayer_manifest.json",
+            "amongthemstarter/README.md": "README.md",
+        },
     ),
 }
 
@@ -30,20 +40,21 @@ STARTER_POLICY_ALIASES = {
 }
 
 
-def write_starter_policy(policy: str, output: Path) -> tuple[str, str, Path]:
+def write_starter_policy(policy: str, output: Path) -> StarterPolicyWriteResult:
     key = STARTER_POLICY_ALIASES[policy]
     output_path = Path.cwd() / output
     starter = STARTER_POLICIES[key]
-    template = importlib.resources.files(starter.package).joinpath(starter.resource).read_text()
-    output_path.write_text(template, encoding="utf-8")
-    return starter.display_name, starter.class_name, output_path
+    output_path.mkdir(parents=True, exist_ok=True)
+    for resource, target in starter.project_resources.items():
+        _write_resource(starter.package, resource, output_path / target)
+    return StarterPolicyWriteResult(
+        display_name=starter.display_name,
+        output_path=output_path,
+        source_path=output_path / "amongthemstarter.nim",
+    )
 
 
-def policy_module_name_error(path: Path) -> str | None:
-    module_name = path.stem
-    if not module_name.isidentifier() or keyword.iskeyword(module_name):
-        return (
-            f"Output filename stem '{module_name}' is not importable as a Python module. "
-            "Use letters, numbers, and underscores, and do not start with a number."
-        )
-    return None
+def _write_resource(package: str, resource: str, output: Path) -> None:
+    output.parent.mkdir(parents=True, exist_ok=True)
+    content = importlib.resources.files(package).joinpath(resource).read_bytes()
+    output.write_bytes(content)

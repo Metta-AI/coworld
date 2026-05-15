@@ -40,8 +40,8 @@ command you ran, the Coworld or league name, and any relevant logs or replay lin
 
 ```bash
 uv run coworld download <coworld-name-or-id> --output-dir ./coworld
-uv run coworld make-policy <starter-policy-name> -o policy.py  # optional, when the game ships a template
-docker build --platform=linux/amd64 -t my-player:latest .
+uv run coworld make-policy <starter-policy-name> -o my-player  # optional, when the game ships a template
+docker build --platform=linux/amd64 -t my-player:latest ./my-player
 uv run coworld run-episode ./coworld/<coworld-id>/coworld_manifest.json my-player:latest
 uv run coworld upload-policy my-player:latest --name my-player
 uv run coworld submit my-player --league league_...
@@ -70,11 +70,11 @@ uv run coworld episodes --division div_... --mine --with-replay
 `make-policy` writes a game-specific starter policy when the package ships one:
 
 ```bash
-uv run coworld make-policy <starter-policy-name> -o policy.py
+uv run coworld make-policy <starter-policy-name> -o my-player
 ```
 
-Use `uv run coworld make-policy --help` to list packaged templates. The copied file is a policy logic template. Wrap it
-in a Docker player process before uploading.
+Use `uv run coworld make-policy --help` to list packaged templates. The copied starter policy directory is a policy
+template and may include a Dockerfile. Build and test it before uploading.
 
 ## Coworld Packages
 

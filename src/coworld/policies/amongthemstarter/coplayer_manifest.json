@@ -1,0 +1,6 @@
+{
+  "author": "treeform@softmax.com",
+  "name": "amongthemstarter",
+  "image_uri": "ghcr.io/metta-ai/amongthemstarter:latest",
+  "games": ["among_them"]
+}

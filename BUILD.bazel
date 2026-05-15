@@ -12,8 +12,9 @@ py_library(
     #                         schema validator loads
     #   - examples/**/*.html: client UIs the example servers serve via
     #                         FastAPI's HTMLResponse((CLIENTS_DIR/...))
-    # Excluded by omission: Dockerfiles (container-build only), README.md
-    # and *_spec.md (docs), __pycache__/*.pyc (build artifacts).
+    #   - policies/amongthemstarter: project files copied by make-policy
+    # Excluded by omission: unrelated Dockerfiles (container-build only),
+    # README.md and *_spec.md (docs), __pycache__/*.pyc (build artifacts).
     data = glob(
         [
             "src/coworld/*.json",
@@ -21,6 +22,8 @@ py_library(
             "src/coworld/examples/**/*.py",
             "src/coworld/examples/**/*.json",
             "src/coworld/examples/**/*.html",
+            "src/coworld/policies/amongthemstarter/**/*",
+            "src/coworld/policies/amongthemstarter/.dockerignore",
             "src/coworld/py.typed",
             "src/coworld/runner/*.md",
         ],

@@ -103,12 +103,12 @@ episode ends, and exits.
 Starter policy templates are available for games that ship one:
 
 ```bash
-uv run coworld make-policy <starter-policy-name> -o policy.py
+uv run coworld make-policy <starter-policy-name> -o my-player
 ```
 
-Use `uv run coworld make-policy --help` to list packaged templates. The copied policy file is a starting point for game
-logic. It is not a submitted policy by itself; package it behind a Docker player process, run a local episode, then
-upload the resulting image with `coworld upload-policy`.
+Use `uv run coworld make-policy --help` to list packaged templates. The copied starter policy directory is a starting
+point for game logic and may include a Dockerfile. Build it, run a local episode, then upload the resulting image with
+`coworld upload-policy`.
 
 For local testing, one image can fill every player slot:
 

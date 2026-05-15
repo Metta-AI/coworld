@@ -48,7 +48,15 @@ include = ["coworld", "coworld.*"]
 include-package-data = true
 
 [tool.setuptools.package-data]
-coworld = ["py.typed", "*.json", "*.md", "runner/*.md", "examples/**/*"]
+coworld = [
+  "py.typed",
+  "*.json",
+  "*.md",
+  "runner/*.md",
+  "examples/**/*",
+  "policies/amongthemstarter/**/*",
+  "policies/amongthemstarter/.dockerignore",
+]
 
 [tool.setuptools.exclude-package-data]
 coworld = [

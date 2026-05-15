@@ -19,7 +19,6 @@ from coworld.runner.runner import EpisodeArtifacts, run_coworld_episode
 from coworld.starter_policy import (
     STARTER_POLICIES,
     STARTER_POLICY_ALIASES,
-    policy_module_name_error,
     write_starter_policy,
 )
 from coworld.submit import submit_policy_to_league_cmd
@@ -227,22 +226,30 @@ def make_policy(
         str,
         typer.Argument(help=f"Starter policy to copy. Choices: {', '.join(sorted(STARTER_POLICIES))}."),
     ],
-    output: Annotated[Path, typer.Option("--output", "-o", help="Output Python file.")] = Path("policy.py"),
+    output: Annotated[
+        Path,
+        typer.Option("--output", "-o", help="Output starter policy project directory."),
+    ] = Path("amongthemstarter"),
 ) -> None:
     if policy not in STARTER_POLICY_ALIASES:
         choices = ", ".join(sorted(STARTER_POLICIES))
         console.print(f"[red]Unknown starter policy '{policy}'. Choices: {choices}[/red]")
         raise typer.Exit(1)
-    module_error = policy_module_name_error(output)
-    if module_error is not None:
-        console.print(f"[red]{module_error}[/red]")
+    if output.suffix:
+        console.print(
+            "[red]Among Them starter policy output must be a project directory, e.g. -o amongthemstarter[/red]"
+        )
         raise typer.Exit(1)
 
-    display_name, class_name, output_path = write_starter_policy(policy, output)
+    result = write_starter_policy(policy, output)
 
-    console.print(f"[green]{display_name} starter policy copied to: {output_path}[/green]")
-    console.print(f"[dim]Policy class: {output_path.stem}.{class_name}[/dim]")
-    console.print("[dim]Build a Docker player wrapper before uploading to a Coworld league.[/dim]")
+    console.print(f"[green]{result.display_name} starter policy copied to: {result.output_path}[/green]")
+    console.print(f"[dim]Policy source: {result.source_path}[/dim]")
+    console.print(
+        "[dim]Build: "
+        f"docker build --platform=linux/amd64 -t amongthemstarter:latest {shlex.quote(str(result.output_path))}"
+        "[/dim]"
+    )
     console.print("[dim]Guide: https://softmax.com/play_amongthem.md[/dim]")
 
 
