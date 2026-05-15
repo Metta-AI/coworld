@@ -10,7 +10,7 @@ import zipfile
 import zlib
 from io import BytesIO
 from pathlib import Path
-from typing import Mapping
+from typing import Mapping, Sequence
 
 import httpx
 from kubernetes import client, config
@@ -38,6 +38,26 @@ GAME_PORT = 8080
 _BEDROCK_SERVICE_ACCOUNT = "episode-runner"
 DEFAULT_PLAYER_CPU_REQUEST = "2"
 DEFAULT_PLAYER_MEMORY_REQUEST = "2Gi"
+
+
+class PlayerPodFailedError(RuntimeError):
+    def __init__(
+        self,
+        *,
+        slot: int,
+        pod_name: str,
+        image: str,
+        exit_code: int,
+        reason: str | None,
+        message: str | None,
+    ):
+        self.slot = slot
+        details = f"Player pod {pod_name} for slot {slot} using image {image} exited with code {exit_code}"
+        if reason:
+            details += f" ({reason})"
+        if message:
+            details += f": {message}"
+        super().__init__(details)
 
 
 def init_config_from_env() -> None:
@@ -75,7 +95,10 @@ def _write_error_info(exc: Exception) -> None:
     error_info_uri = os.environ.get("ERROR_INFO_URI")
     if error_info_uri is None:
         return
-    runner_error = RunnerError(error_type="crash", message=str(exc)[:2000])
+    if isinstance(exc, PlayerPodFailedError):
+        runner_error = RunnerError(error_type="policy_error", message=str(exc)[:2000], failed_policy_index=exc.slot)
+    else:
+        runner_error = RunnerError(error_type="crash", message=str(exc)[:2000])
     upload_data(error_info_uri, runner_error.model_dump_json(), content_type="application/json")
 
 
@@ -182,6 +205,7 @@ def _run_kubernetes_episode(
             pod_name,
             timeout_seconds=timeout_seconds,
             require_replay=os.environ.get("REPLAY_URI") is not None,
+            player_pods=[(name, player.image) for name, player in zip(child_names, players, strict=True)],
         )
         results = json.loads(artifacts.results_path.read_text(encoding="utf-8"))
         validate_json_schema(results, job.results_schema)
@@ -317,6 +341,7 @@ def _wait_for_episode_artifacts(
     *,
     timeout_seconds: float,
     require_replay: bool,
+    player_pods: Sequence[tuple[str, str]] = (),
 ) -> None:
     deadline = time.monotonic() + timeout_seconds
     expected = [artifacts.results_path]
@@ -340,6 +365,22 @@ def _wait_for_episode_artifacts(
             missing_list = ", ".join(str(path) for path in missing)
             raise TimeoutError(f"Game container exited before writing episode artifact(s): {missing_list}")
 
+        for slot, (player_pod_name, image) in enumerate(player_pods):
+            player_pod = core_v1.read_namespaced_pod(name=player_pod_name, namespace=namespace)
+            for status in player_pod.status.container_statuses or []:
+                if status.name != "player" or status.state.terminated is None:
+                    continue
+                terminated = status.state.terminated
+                if terminated.exit_code == 0:
+                    continue
+                raise PlayerPodFailedError(
+                    slot=slot,
+                    pod_name=player_pod_name,
+                    image=image,
+                    exit_code=terminated.exit_code,
+                    reason=getattr(terminated, "reason", None),
+                    message=getattr(terminated, "message", None),
+                )
         time.sleep(0.5)
     expected_list = ", ".join(str(path) for path in expected)
     raise TimeoutError(f"Timed out waiting for game container to finish writing episode artifact(s): {expected_list}")

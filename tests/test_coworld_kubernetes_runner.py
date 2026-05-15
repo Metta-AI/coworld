@@ -226,6 +226,38 @@ def test_wait_for_episode_artifacts_fails_when_game_exits_without_replay(tmp_pat
         )
 
 
+def test_wait_for_episode_artifacts_fails_when_player_pod_exits(tmp_path):
+    artifacts = EpisodeArtifacts.create(tmp_path)
+    core_v1 = _FakeLogCoreV1(
+        {
+            "game-pod": [],
+            "player-0": [
+                SimpleNamespace(
+                    name="player",
+                    state=SimpleNamespace(
+                        terminated=SimpleNamespace(
+                            exit_code=126,
+                            reason="Error",
+                            message="exec /bin/guided_bot: exec format error",
+                        )
+                    ),
+                )
+            ],
+        }
+    )
+
+    with pytest.raises(kubernetes_runner.PlayerPodFailedError, match="exec /bin/guided_bot: exec format error"):
+        _wait_for_episode_artifacts(
+            artifacts,
+            core_v1,
+            "default",
+            "game-pod",
+            timeout_seconds=1.0,
+            require_replay=True,
+            player_pods=[("player-0", "guided-bot:latest")],
+        )
+
+
 def test_collect_logs_skips_player_pods_that_have_not_started(tmp_path):
     artifacts = EpisodeArtifacts.create(tmp_path)
     core_v1 = _FakeLogCoreV1(
@@ -483,6 +515,28 @@ def test_run_from_env_writes_error_info_on_failure(monkeypatch, tmp_path):
         kubernetes_runner.run_from_env()
 
     assert events == ["episode failed"]
+
+
+def test_write_error_info_marks_player_pod_failure_as_policy_error(monkeypatch, tmp_path):
+    error_dest = tmp_path / "error_info.json"
+    monkeypatch.setenv("ERROR_INFO_URI", error_dest.as_uri())
+
+    kubernetes_runner._write_error_info(
+        kubernetes_runner.PlayerPodFailedError(
+            slot=3,
+            pod_name="job-test-game-player-3",
+            image="guided-bot:latest",
+            exit_code=126,
+            reason="Error",
+            message="exec /bin/guided_bot: exec format error",
+        )
+    )
+
+    error_info = json.loads(error_dest.read_text(encoding="utf-8"))
+    assert error_info["error_type"] == "policy_error"
+    assert error_info["failed_policy_index"] == 3
+    assert "guided-bot:latest" in error_info["message"]
+    assert "exec /bin/guided_bot: exec format error" in error_info["message"]
 
 
 def test_create_player_pod_keeps_default_service_account_without_bedrock():
