@@ -106,7 +106,7 @@ The admin route is game-owned. The platform must not expose `/admin` in producti
 
 ## Replay Mode
 
-For replay viewing, the runner starts or reuses the same game image with:
+For replay viewing, the runner starts the same game image with:
 
 ```bash
 COGAME_REPLAY_SERVER=1

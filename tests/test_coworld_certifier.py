@@ -34,6 +34,7 @@ from coworld.runner.runner import (
     EpisodeArtifacts,
     _image_command,
     _require_bad_player_rejected,
+    _require_bad_replay_uri_rejected,
     assert_docker_image_reachable,
     replay_client_url,
 )
@@ -396,6 +397,45 @@ def test_bad_player_probe_rejects_live_websocket(monkeypatch: pytest.MonkeyPatch
 
     with pytest.raises(AssertionError, match="Bad player token was accepted"):
         asyncio.run(_require_bad_player_rejected("ws://example.test/player?slot=0&token=bad"))
+
+
+def test_bad_replay_uri_probe_accepts_immediate_websocket_close(monkeypatch: pytest.MonkeyPatch) -> None:
+    class ClosingWebSocket:
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *_args: object) -> None:
+            return None
+
+        async def recv(self) -> bytes:
+            raise ConnectionClosedOK(None, None)
+
+    monkeypatch.setattr(
+        "coworld.runner.runner.websockets.connect",
+        lambda _url, **_kwargs: ClosingWebSocket(),
+    )
+
+    asyncio.run(_require_bad_replay_uri_rejected("ws://example.test/replay?uri=file:///missing-replay.json"))
+
+
+def test_bad_replay_uri_probe_rejects_live_websocket(monkeypatch: pytest.MonkeyPatch) -> None:
+    class LiveWebSocket:
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *_args: object) -> None:
+            return None
+
+        async def recv(self) -> bytes:
+            return b"frame"
+
+    monkeypatch.setattr(
+        "coworld.runner.runner.websockets.connect",
+        lambda _url, **_kwargs: LiveWebSocket(),
+    )
+
+    with pytest.raises(AssertionError, match="Bad replay URI returned replay data"):
+        asyncio.run(_require_bad_replay_uri_rejected("ws://example.test/replay?uri=file:///missing-replay.json"))
 
 
 def test_play_coworld_starts_certification_player_containers(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:

@@ -16,7 +16,7 @@ from urllib.parse import urlencode
 
 import httpx
 import websockets
-from websockets.exceptions import ConnectionClosed, InvalidHandshake, InvalidStatus
+from websockets.exceptions import ConnectionClosed, InvalidHandshake, InvalidMessage, InvalidStatus
 
 from coworld.schema_validation import validate_json_schema
 from coworld.types import CoworldEpisodeJobSpec, CoworldPlayerSpec, CoworldRunnableSpec
@@ -292,6 +292,12 @@ def run_cogame_episode(spec: EpisodeRunSpec, *, verify_replay: bool = True) -> N
                     timeout_seconds=spec.timeout_seconds,
                 )
             )
+            bad_replay_uri = f"file://{CONTAINER_WORKDIR}/missing-replay.json"
+            asyncio.run(
+                _require_bad_replay_uri_rejected(
+                    f"ws://127.0.0.1:{replay_port}{replay_session_path(bad_replay_uri)}",
+                )
+            )
     finally:
         for container_name in player_containers:
             subprocess.run(["docker", "rm", "-f", container_name], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
@@ -363,6 +369,26 @@ async def _require_replay_message(url: str, *, timeout_seconds: float) -> None:
         message = await asyncio.wait_for(websocket.recv(), timeout=min(timeout_seconds, 10.0))
         if not message:
             raise AssertionError(f"Replay viewer received an empty message from {url}")
+
+
+async def _require_bad_replay_uri_rejected(url: str) -> None:
+    try:
+        async with websockets.connect(url, open_timeout=5, max_size=None) as websocket:
+            try:
+                message = await asyncio.wait_for(websocket.recv(), timeout=2.0)
+                if message:
+                    raise AssertionError(f"Bad replay URI returned replay data: {url}")
+            except ConnectionClosed:
+                return
+            except asyncio.TimeoutError:
+                pass
+    except InvalidStatus as exc:
+        if exc.response.status_code in {400, 404}:
+            return
+        raise
+    except (ConnectionClosed, InvalidHandshake, InvalidMessage):
+        return
+    raise AssertionError(f"Bad replay URI was accepted: {url}")
 
 
 def _wait_for_health(
