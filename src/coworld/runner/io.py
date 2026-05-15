@@ -1,11 +1,16 @@
 from __future__ import annotations
 
+import time
 from pathlib import Path
 from typing import Literal
+from urllib.error import HTTPError
 from urllib.parse import unquote, urlparse
 from urllib.request import Request, urlopen
 
 from pydantic import BaseModel
+
+_WRITE_RETRY_DELAYS_SECONDS = (0.5, 1.0, 2.0)
+_RETRYABLE_WRITE_STATUS_CODES = {429, 500, 502, 503, 504}
 
 
 class RunnerError(BaseModel):
@@ -41,8 +46,14 @@ def _write_data(uri: str, data: bytes | str, *, content_type: str, http_method: 
     if parsed.scheme in ("http", "https"):
         request = Request(uri, data=data, method=http_method)
         request.add_header("Content-Type", content_type)
-        with urlopen(request, timeout=60):
-            return
+        for retry_index in range(len(_WRITE_RETRY_DELAYS_SECONDS) + 1):
+            try:
+                with urlopen(request, timeout=60):
+                    return
+            except HTTPError as exc:
+                if exc.code not in _RETRYABLE_WRITE_STATUS_CODES or retry_index == len(_WRITE_RETRY_DELAYS_SECONDS):
+                    raise
+                time.sleep(_WRITE_RETRY_DELAYS_SECONDS[retry_index])
     if parsed.scheme == "file":
         path = Path(unquote(parsed.path))
         path.parent.mkdir(parents=True, exist_ok=True)
