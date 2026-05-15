@@ -36,6 +36,8 @@ WORKDIR = Path(os.environ.get("COWORLD_WORKDIR", "/coworld"))
 STATE_PATH = WORKDIR / "state.json"
 GAME_PORT = 8080
 _BEDROCK_SERVICE_ACCOUNT = "episode-runner"
+DEFAULT_PLAYER_CPU_REQUEST = "2"
+DEFAULT_PLAYER_MEMORY_REQUEST = "2Gi"
 
 
 def init_config_from_env() -> None:
@@ -142,6 +144,8 @@ def _run_kubernetes_episode(
     tokens = json.loads(STATE_PATH.read_text(encoding="utf-8"))["tokens"]
     players = [PlayerLaunchSpec.from_model(player) for player in job.players]
     policy_secrets = _policy_secrets_from_env()
+    player_cpu_request = os.environ.get("COWORLD_PLAYER_CPU_REQUEST", DEFAULT_PLAYER_CPU_REQUEST)
+    player_memory_request = os.environ.get("COWORLD_PLAYER_MEMORY_REQUEST", DEFAULT_PLAYER_MEMORY_REQUEST)
     child_names: list[str] = []
 
     try:
@@ -165,6 +169,8 @@ def _run_kubernetes_episode(
                 policy_secrets.get(slot, {}),
                 job_id,
                 service_name,
+                player_cpu_request,
+                player_memory_request,
                 owner_references,
             )
 
@@ -227,6 +233,8 @@ def _create_player_pod(
     policy_secret_env: Mapping[str, str],
     job_id: str,
     service_name: str,
+    player_cpu_request: str,
+    player_memory_request: str,
     owner_references: list[client.V1OwnerReference],
 ) -> None:
     command, args = _command_args(player.run)
@@ -262,6 +270,9 @@ def _create_player_pod(
                             value=_player_service_ws_url(service_name, slot, token, player),
                         ),
                     ],
+                    resources=client.V1ResourceRequirements(
+                        requests={"cpu": player_cpu_request, "memory": player_memory_request}
+                    ),
                 )
             ],
         ),

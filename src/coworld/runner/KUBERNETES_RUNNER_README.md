@@ -91,6 +91,7 @@ The coordinator creates one pod per player:
 - image: `players[].image`
 - command/args: `players[].run`
 - env: `players[].env`
+- resource requests: 2 CPU and 2Gi memory by default
 - `COGAMES_ENGINE_WS_URL`: points at the parent game's Kubernetes Service.
 
 The player query string includes only the generated slot token and slot index.
@@ -118,11 +119,15 @@ listed below.
 ```bash
 COWORLD_TIMEOUT_SECONDS=3600
 COWORLD_WORKLOAD_TYPE=coworld-jobs
+COWORLD_PLAYER_CPU_REQUEST=2
+COWORLD_PLAYER_MEMORY_REQUEST=2Gi
 LOG_LEVEL=...
 ```
 
 `COWORLD_WORKLOAD_TYPE` controls the node selector and toleration applied to child player pods. In production the app
 backend also applies the same workload-type selector and toleration to the parent Job.
+`COWORLD_PLAYER_CPU_REQUEST` and `COWORLD_PLAYER_MEMORY_REQUEST` override the resource requests applied to each child
+player pod.
 
 ## Output URIs
 

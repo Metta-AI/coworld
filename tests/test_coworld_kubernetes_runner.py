@@ -352,6 +352,64 @@ def test_policy_secrets_from_env_loads_and_removes_uri(monkeypatch, tmp_path):
     assert "POLICY_SECRETS_URI" not in os.environ
 
 
+def test_run_kubernetes_episode_defaults_player_resource_requests(monkeypatch, tmp_path):
+    artifacts = EpisodeArtifacts.create(tmp_path)
+    artifacts.results_path.write_text("{}", encoding="utf-8")
+    state_path = tmp_path / "state.json"
+    state_path.write_text(json.dumps({"tokens": ["slot-token"]}), encoding="utf-8")
+    created: list[tuple[str, str]] = []
+
+    async def noop_async(*_args, **_kwargs):
+        return None
+
+    monkeypatch.setattr(kubernetes_runner, "STATE_PATH", state_path)
+    monkeypatch.setattr(kubernetes_runner.config, "load_incluster_config", lambda: None)
+    monkeypatch.setattr(kubernetes_runner.client, "CoreV1Api", lambda: object())
+    monkeypatch.setattr(kubernetes_runner, "_create_game_service", lambda *_args: None)
+    monkeypatch.setattr(kubernetes_runner, "_wait_for_health", lambda *_args, **_kwargs: None)
+    monkeypatch.setattr(kubernetes_runner, "_require_http_ok", lambda *_args, **_kwargs: None)
+    monkeypatch.setattr(kubernetes_runner, "_require_bad_player_rejected", noop_async)
+    monkeypatch.setattr(kubernetes_runner, "_require_global_message", noop_async)
+    monkeypatch.setattr(kubernetes_runner, "_wait_for_episode_artifacts", lambda *_args, **_kwargs: None)
+    monkeypatch.setattr(kubernetes_runner, "validate_json_schema", lambda *_args: None)
+    monkeypatch.setattr(kubernetes_runner, "_collect_logs", lambda *_args: None)
+    monkeypatch.setattr(kubernetes_runner, "_delete_child_resources", lambda *_args: None)
+    monkeypatch.setattr(kubernetes_runner, "_policy_secrets_from_env", lambda: {})
+    monkeypatch.delenv("COWORLD_PLAYER_CPU_REQUEST", raising=False)
+    monkeypatch.delenv("COWORLD_PLAYER_MEMORY_REQUEST", raising=False)
+    monkeypatch.setenv("JOB_NAMESPACE", "jobs")
+    monkeypatch.setenv("COWORLD_SERVICE_NAME", "game-service")
+    monkeypatch.setenv("JOB_ID", "job-id")
+    monkeypatch.setenv("POD_NAME", "game-pod")
+    monkeypatch.setenv("POD_UID", "pod-uid")
+
+    def create_player_pod(
+        _core_v1,
+        _namespace,
+        _name,
+        _slot,
+        _token,
+        _player,
+        _policy_secret_env,
+        _job_id,
+        _service_name,
+        player_cpu_request,
+        player_memory_request,
+        _owner_references,
+    ):
+        created.append((player_cpu_request, player_memory_request))
+
+    monkeypatch.setattr(kubernetes_runner, "_create_player_pod", create_player_pod)
+    job = SimpleNamespace(
+        players=[SimpleNamespace(image="paintbot:latest", run=[], env={})],
+        results_schema={},
+    )
+
+    kubernetes_runner._run_kubernetes_episode(job, artifacts, timeout_seconds=1.0)
+
+    assert created == [("2", "2Gi")]
+
+
 def test_create_player_pod_injects_policy_secret_env():
     created: dict[str, object] = {}
     core_v1 = SimpleNamespace(
@@ -373,15 +431,19 @@ def test_create_player_pod_injects_policy_secret_env():
         {"ANTHROPIC_API_KEY": "sk-ant-test", "USE_BEDROCK": "true"},
         "job-id",
         "game-service",
+        "2",
+        "2Gi",
         [],
     )
 
     pod = created["body"]
-    env = {env_var.name: env_var.value for env_var in pod.spec.containers[0].env}
+    container = pod.spec.containers[0]
+    env = {env_var.name: env_var.value for env_var in container.env}
     assert env["PUBLIC_SETTING"] == "visible"
     assert env["ANTHROPIC_API_KEY"] == "sk-ant-test"
     assert env["USE_BEDROCK"] == "true"
     assert env["COGAMES_ENGINE_WS_URL"] == "ws://game-service:8080/player?slot=0&token=slot-token"
+    assert container.resources.requests == {"cpu": "2", "memory": "2Gi"}
     assert pod.metadata.annotations == {"karpenter.sh/do-not-disrupt": "true"}
     assert pod.spec.service_account_name == "episode-runner"
 
@@ -441,6 +503,8 @@ def test_create_player_pod_keeps_default_service_account_without_bedrock():
         {"ANTHROPIC_API_KEY": "sk-ant-test"},
         "job-id",
         "game-service",
+        "2",
+        "2Gi",
         [],
     )
 
