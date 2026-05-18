@@ -43,7 +43,7 @@ def test_upload_coworld_posts_standalone_manifest(
         lambda source_image, push_info: pushed_images.append((source_image, push_info.image_uri)),
     )
     httpserver.expect_request(
-        "/v2/container_images/upload",
+        "/observatory/v2/container_images/upload",
         method="POST",
         headers={"X-Auth-Token": "token"},
         json={"name": "unit-test-runtime", "client_hash": "sha256:client-hash"},
@@ -73,7 +73,7 @@ def test_upload_coworld_posts_standalone_manifest(
         }
     )
     httpserver.expect_request(
-        "/v2/container_images/upload/complete",
+        "/observatory/v2/container_images/upload/complete",
         method="POST",
         headers={"X-Auth-Token": "token"},
         json={"id": image_id},
@@ -89,7 +89,7 @@ def test_upload_coworld_posts_standalone_manifest(
         }
     )
     httpserver.expect_request(
-        "/v2/coworlds/upload",
+        "/observatory/v2/coworlds/upload",
         method="POST",
         headers={"X-Auth-Token": "token"},
     ).respond_with_json(
@@ -118,7 +118,7 @@ def test_upload_coworld_posts_standalone_manifest(
     assert pushed_images == [
         ("unit-test-runtime:latest", "123456789012.dkr.ecr.us-east-1.amazonaws.com/cogames/user/unit-test-runtime:v1"),
     ]
-    upload_req = next(req for req, _ in httpserver.log if req.path == "/v2/coworlds/upload")
+    upload_req = next(req for req, _ in httpserver.log if req.path == "/observatory/v2/coworlds/upload")
     uploaded_manifest = upload_req.get_json()["manifest"]
     assert uploaded_manifest["game"]["runnable"]["image"] == image_id
     assert uploaded_manifest["player"][0]["image"] == image_id
@@ -149,7 +149,7 @@ def test_upload_coworld_command_certifies_before_uploading(
     )
     monkeypatch.setattr("coworld.upload._local_image_client_hash", lambda image: "sha256:client-hash")
     monkeypatch.setattr("coworld.upload._push_container_image", lambda source_image, push_info: None)
-    httpserver.expect_request("/v2/container_images/upload", method="POST").respond_with_json(
+    httpserver.expect_request("/observatory/v2/container_images/upload", method="POST").respond_with_json(
         {
             "image": {
                 "id": image_id,
@@ -163,7 +163,7 @@ def test_upload_coworld_command_certifies_before_uploading(
             "pre_signed_info": None,
         }
     )
-    httpserver.expect_request("/v2/coworlds/upload", method="POST").respond_with_json(
+    httpserver.expect_request("/observatory/v2/coworlds/upload", method="POST").respond_with_json(
         {
             "id": "cow_00000000-0000-0000-0000-000000000002",
             "name": "unit-test-game",
@@ -203,7 +203,7 @@ def test_upload_policy_command_creates_docker_image_policy(
     monkeypatch.setattr("coworld.upload._local_image_client_hash", lambda image: "sha256:client-hash")
     monkeypatch.setattr("coworld.upload._push_container_image", lambda source_image, push_info: None)
     httpserver.expect_request(
-        "/v2/container_images/upload",
+        "/observatory/v2/container_images/upload",
         method="POST",
         headers={"X-Auth-Token": "token"},
         json={"name": "unit-test-policy", "client_hash": "sha256:client-hash"},
@@ -222,7 +222,7 @@ def test_upload_policy_command_creates_docker_image_policy(
         }
     )
     httpserver.expect_request(
-        "/stats/policies/docker-img/complete",
+        "/observatory/stats/policies/docker-img/complete",
         method="POST",
         headers={"X-Auth-Token": "token"},
         json={
@@ -263,7 +263,7 @@ def test_upload_policy_command_sends_policy_secrets(
     monkeypatch.setattr("coworld.upload._local_image_client_hash", lambda image: "sha256:client-hash")
     monkeypatch.setattr("coworld.upload._push_container_image", lambda source_image, push_info: None)
     httpserver.expect_request(
-        "/v2/container_images/upload",
+        "/observatory/v2/container_images/upload",
         method="POST",
         headers={"X-Auth-Token": "token"},
         json={"name": "unit-test-policy", "client_hash": "sha256:client-hash"},
@@ -282,7 +282,7 @@ def test_upload_policy_command_sends_policy_secrets(
         }
     )
     httpserver.expect_request(
-        "/stats/policies/docker-img/complete",
+        "/observatory/stats/policies/docker-img/complete",
         method="POST",
         headers={"X-Auth-Token": "token"},
         json={
@@ -323,7 +323,7 @@ def test_upload_policy_command_sends_policy_secrets(
 def test_coworld_list_command_prints_json(httpserver: HTTPServer, monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr("coworld.upload._load_current_cogames_token", lambda: "token")
     httpserver.expect_request(
-        "/v2/coworlds",
+        "/observatory/v2/coworlds",
         method="GET",
         headers={"X-Auth-Token": "token"},
         query_string="limit=50&offset=0",
@@ -361,7 +361,7 @@ def test_hosted_game_create_posts_play_session(httpserver: HTTPServer, monkeypat
     coworld_id = "cow_00000000-0000-0000-0000-000000000001"
     monkeypatch.setattr("coworld.upload._load_current_cogames_token", lambda: "token")
     httpserver.expect_request(
-        "/v2/coworlds/play/session",
+        "/observatory/v2/coworlds/play/session",
         method="POST",
         headers={"X-Auth-Token": "token"},
         json={
@@ -407,7 +407,7 @@ def test_hosted_game_join_posts_join_session(httpserver: HTTPServer, monkeypatch
     session_id = "ps_00000000-0000-0000-0000-000000000011"
     monkeypatch.setattr("coworld.upload._load_current_cogames_token", lambda: "token")
     httpserver.expect_request(
-        f"/v2/coworlds/play/session/{session_id}/join",
+        f"/observatory/v2/coworlds/play/session/{session_id}/join",
         method="POST",
         headers={"X-Auth-Token": "token"},
     ).respond_with_json(
@@ -439,7 +439,7 @@ def test_coworld_show_command_prints_json(httpserver: HTTPServer, monkeypatch: p
     coworld_id = "cow_00000000-0000-0000-0000-000000000001"
     monkeypatch.setattr("coworld.upload._load_current_cogames_token", lambda: "token")
     httpserver.expect_request(
-        "/v2/coworlds",
+        "/observatory/v2/coworlds",
         method="GET",
         headers={"X-Auth-Token": "token"},
         query_string="limit=200&offset=0",
@@ -478,7 +478,7 @@ def test_coworld_show_command_pages_until_uploaded_world(
     coworld_id = "cow_00000000-0000-0000-0000-000000000001"
     monkeypatch.setattr("coworld.upload._load_current_cogames_token", lambda: "token")
     httpserver.expect_request(
-        "/v2/coworlds",
+        "/observatory/v2/coworlds",
         method="GET",
         headers={"X-Auth-Token": "token"},
         query_string="limit=200&offset=0",
@@ -498,7 +498,7 @@ def test_coworld_show_command_pages_until_uploaded_world(
         ]
     )
     httpserver.expect_request(
-        "/v2/coworlds",
+        "/observatory/v2/coworlds",
         method="GET",
         headers={"X-Auth-Token": "token"},
         query_string="limit=200&offset=200",
@@ -534,7 +534,7 @@ def test_coworld_show_command_pages_until_uploaded_world(
 def test_coworld_images_command_lists_uploaded_images(httpserver: HTTPServer, monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr("coworld.upload._load_current_cogames_token", lambda: "token")
     httpserver.expect_request(
-        "/v2/container_images",
+        "/observatory/v2/container_images",
         method="GET",
         headers={"X-Auth-Token": "token"},
         query_string="limit=25&offset=0",
@@ -571,7 +571,7 @@ def test_coworld_images_command_shows_uploaded_image(httpserver: HTTPServer, mon
     image_id = "img_00000000-0000-0000-0000-000000000010"
     monkeypatch.setattr("coworld.upload._load_current_cogames_token", lambda: "token")
     httpserver.expect_request(
-        f"/v2/container_images/{image_id}",
+        f"/observatory/v2/container_images/{image_id}",
         method="GET",
         headers={"X-Auth-Token": "token"},
     ).respond_with_json(
@@ -618,7 +618,7 @@ def test_download_coworld_command_writes_local_package(
 
     monkeypatch.setattr("coworld.upload.subprocess.run", fake_run)
     httpserver.expect_request(
-        f"/v2/coworlds/{coworld_id}",
+        f"/observatory/v2/coworlds/{coworld_id}",
         method="GET",
     ).respond_with_json(
         {
@@ -680,7 +680,7 @@ def test_download_coworld_command_resolves_canonical_name(
     monkeypatch.setattr("coworld.upload._load_current_cogames_token", lambda: "token")
     monkeypatch.setattr("coworld.upload.subprocess.run", fake_run)
     httpserver.expect_request(
-        "/v2/coworlds",
+        "/observatory/v2/coworlds",
         method="GET",
         headers={"X-Auth-Token": "token"},
         query_string="limit=200&offset=0",
@@ -699,7 +699,7 @@ def test_download_coworld_command_resolves_canonical_name(
         ]
     )
     httpserver.expect_request(
-        f"/v2/coworlds/{coworld_id}",
+        f"/observatory/v2/coworlds/{coworld_id}",
         method="GET",
     ).respond_with_json(
         {
@@ -782,7 +782,7 @@ def test_download_coworld_command_refreshes_cached_coworld(
 
     monkeypatch.setattr("coworld.upload.subprocess.run", fake_run)
     httpserver.expect_request(
-        f"/v2/coworlds/{coworld_id}",
+        f"/observatory/v2/coworlds/{coworld_id}",
         method="GET",
     ).respond_with_json(
         {

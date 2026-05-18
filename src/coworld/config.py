@@ -1,1 +1,1 @@
-DEFAULT_SUBMIT_SERVER = "https://api.observatory.softmax-research.net"
+DEFAULT_SUBMIT_SERVER = "https://softmax.com/api"

@@ -16,7 +16,7 @@ def test_submit_policy_to_league_posts_v2_submission(
     monkeypatch.setattr("coworld.upload._load_current_cogames_token", lambda: "token")
     _expect_policy_versions(httpserver, [_policy_version(version=3)])
     httpserver.expect_request(
-        "/v2/league-submissions",
+        "/observatory/v2/league-submissions",
         method="POST",
         headers={"X-Auth-Token": "token"},
         json={"league_id": LEAGUE_ID, "policy_version_id": POLICY_VERSION_ID},
@@ -46,10 +46,12 @@ def test_submit_policy_to_league_posts_v2_submission(
     assert "Status:" in result.output
     assert "placed" in result.output
     assert "lpm_00000000-0000-0000-0000-000000000061" in result.output
-    policy_query = next(request for request, _ in httpserver.log if request.path == "/stats/policy-versions")
+    policy_query = next(
+        request for request, _ in httpserver.log if request.path == "/observatory/stats/policy-versions"
+    )
     assert policy_query.args["name_exact"] == "paintbot"
     assert policy_query.args["version"] == "3"
-    assert not any(request.path == "/v2/leagues" for request, _ in httpserver.log)
+    assert not any(request.path == "/observatory/v2/leagues" for request, _ in httpserver.log)
 
 
 def test_submit_policy_requires_league_id_option() -> None:
@@ -89,12 +91,12 @@ def test_submit_policy_reports_missing_policy_without_posting_submission(
 
     assert result.exit_code == 1
     assert "Policy 'missing-policy' not found" in result.output
-    assert not any(request.path == "/v2/league-submissions" for request, _ in httpserver.log)
+    assert not any(request.path == "/observatory/v2/league-submissions" for request, _ in httpserver.log)
 
 
 def _expect_policy_versions(httpserver: HTTPServer, entries: list[dict[str, object]]) -> None:
     httpserver.expect_request(
-        "/stats/policy-versions",
+        "/observatory/stats/policy-versions",
         method="GET",
         headers={"X-Auth-Token": "token"},
     ).respond_with_json({"entries": entries, "total_count": len(entries)})

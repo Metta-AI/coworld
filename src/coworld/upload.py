@@ -142,7 +142,7 @@ class CoworldUploadResult:
 
 class CoworldUploadClient:
     def __init__(self, server_url: str, token: str):
-        self._http_client = httpx.Client(base_url=server_url, timeout=30.0)
+        self._http_client = httpx.Client(base_url=f"{server_url.rstrip('/')}/observatory", timeout=30.0)
         self._token = token
 
     @classmethod
@@ -362,9 +362,9 @@ def _raise_for_status(response: httpx.Response) -> None:
 
 
 def _load_current_cogames_token() -> str | None:
-    from softmax.auth import get_login_server, load_current_cogames_token  # noqa: PLC0415
+    from softmax.auth import get_api_server, load_current_cogames_token  # noqa: PLC0415
 
-    return load_current_cogames_token(login_server=get_login_server())
+    return load_current_cogames_token(api_server=get_api_server())
 
 
 def upload_coworld_cmd(
@@ -410,7 +410,7 @@ def download_coworld(
 ) -> CoworldUploadResponse:
     coworld_id = resolve_coworld_download_id(coworld_ref, server=server)
 
-    with httpx.Client(base_url=server, timeout=30.0) as http_client:
+    with httpx.Client(base_url=f"{server.rstrip('/')}/observatory", timeout=30.0) as http_client:
         response = http_client.get(f"/v2/coworlds/{coworld_id}", timeout=120.0)
     response.raise_for_status()
     return CoworldUploadResponse.model_validate(response.json())

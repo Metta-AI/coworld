@@ -34,7 +34,7 @@ def test_replays_downloads_mine_division_replays(
     replay_url = httpserver.url_for("/replay.json")
     _expect_round_scope(httpserver)
     httpserver.expect_request(
-        "/v2/episode-requests",
+        "/observatory/v2/episode-requests",
         method="GET",
         headers={"X-Auth-Token": "token"},
     ).respond_with_json(
@@ -74,9 +74,11 @@ def test_replays_downloads_mine_division_replays(
     assert replay_path.read_bytes() == replay_payload
     index = json.loads((tmp_path / "index.json").read_text())
     assert index == metadata
-    round_query = next(request for request, _ in httpserver.log if request.path == "/v2/rounds")
+    round_query = next(request for request, _ in httpserver.log if request.path == "/observatory/v2/rounds")
     assert round_query.args["division_id"] == DIVISION_ID
-    membership_query = next(request for request, _ in httpserver.log if request.path == "/v2/league-policy-memberships")
+    membership_query = next(
+        request for request, _ in httpserver.log if request.path == "/observatory/v2/league-policy-memberships"
+    )
     assert membership_query.args["mine"] == "true"
     assert membership_query.args["division_id"] == DIVISION_ID
 
@@ -84,12 +86,12 @@ def test_replays_downloads_mine_division_replays(
 def test_episode_stats_prints_job_stats_json(httpserver: HTTPServer, monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr("coworld.api_client._load_current_cogames_token", lambda: "token")
     httpserver.expect_request(
-        f"/v2/episode-requests/{EPISODE_REQUEST_ID}",
+        f"/observatory/v2/episode-requests/{EPISODE_REQUEST_ID}",
         method="GET",
         headers={"X-Auth-Token": "token"},
     ).respond_with_json(_episode_request(episode_request_id=EPISODE_REQUEST_ID, replay_url=None))
     httpserver.expect_request(
-        f"/jobs/{JOB_ID}/episode-stats",
+        f"/observatory/jobs/{JOB_ID}/episode-stats",
         method="GET",
         headers={"X-Auth-Token": "token"},
     ).respond_with_json(
@@ -136,18 +138,18 @@ def test_episode_logs_downloads_only_my_policy_agents(
 ) -> None:
     monkeypatch.setattr("coworld.api_client._load_current_cogames_token", lambda: "token")
     httpserver.expect_request(
-        f"/v2/episode-requests/{EPISODE_REQUEST_ID}",
+        f"/observatory/v2/episode-requests/{EPISODE_REQUEST_ID}",
         method="GET",
         headers={"X-Auth-Token": "token"},
     ).respond_with_json(_episode_request(episode_request_id=EPISODE_REQUEST_ID, replay_url=None))
     httpserver.expect_request(
-        f"/jobs/{JOB_ID}/policy-logs",
+        f"/observatory/jobs/{JOB_ID}/policy-logs",
         method="GET",
         headers={"X-Auth-Token": "token"},
     ).respond_with_json(["policy_agent_0.txt", "policy_agent_1.txt"])
     _expect_mine_memberships(httpserver, division_id=None)
     httpserver.expect_request(
-        f"/jobs/{JOB_ID}/policy-logs/0",
+        f"/observatory/jobs/{JOB_ID}/policy-logs/0",
         method="GET",
         headers={"X-Auth-Token": "token"},
     ).respond_with_data("mine log\n", content_type="text/plain")
@@ -172,12 +174,12 @@ def test_episode_logs_downloads_only_my_policy_agents(
 
 def _expect_round_scope(httpserver: HTTPServer) -> None:
     httpserver.expect_request(
-        "/v2/rounds",
+        "/observatory/v2/rounds",
         method="GET",
         headers={"X-Auth-Token": "token"},
     ).respond_with_json({"entries": [_round_public()], "total_count": 1, "limit": 200, "offset": 0})
     httpserver.expect_request(
-        f"/v2/rounds/{ROUND_ID}",
+        f"/observatory/v2/rounds/{ROUND_ID}",
         method="GET",
         headers={"X-Auth-Token": "token"},
     ).respond_with_json(_round_detail())
@@ -185,7 +187,7 @@ def _expect_round_scope(httpserver: HTTPServer) -> None:
 
 def _expect_mine_memberships(httpserver: HTTPServer, *, division_id: str | None = DIVISION_ID) -> None:
     httpserver.expect_request(
-        "/v2/league-policy-memberships",
+        "/observatory/v2/league-policy-memberships",
         method="GET",
         headers={"X-Auth-Token": "token"},
     ).respond_with_json([_membership(division_id=division_id or DIVISION_ID)])

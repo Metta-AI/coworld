@@ -321,7 +321,9 @@ class PolicyVersionsResponse(CoworldAPIModel):
 
 class CoworldApiClient:
     def __init__(self, *, server_url: str, token: str | None = None):
-        self._http_client = httpx.Client(base_url=server_url, timeout=30.0, follow_redirects=True)
+        self._http_client = httpx.Client(
+            base_url=f"{server_url.rstrip('/')}/observatory", timeout=30.0, follow_redirects=True
+        )
         self._token = token
 
     @classmethod
@@ -577,6 +579,6 @@ def _raise_for_status(response: httpx.Response) -> None:
 
 
 def _load_current_cogames_token() -> str | None:
-    from softmax.auth import get_login_server, load_current_cogames_token  # noqa: PLC0415
+    from softmax.auth import get_api_server, load_current_cogames_token  # noqa: PLC0415
 
-    return load_current_cogames_token(login_server=get_login_server())
+    return load_current_cogames_token(api_server=get_api_server())
