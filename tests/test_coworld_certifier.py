@@ -607,8 +607,14 @@ def test_example_coworld_manifest_validates() -> None:
     config = build_game_config(package, ["token-0", "token-1"])
     assert package.cogame.image == "coworld-paintarena:latest"
     assert package.cogame.run == ("python", "-m", "coworld.examples.paintarena.game.server")
-    assert package.manifest.game.protocols.player.value.endswith("/paintarena/game/docs/player_protocol_spec.md")
-    assert package.manifest.game.protocols.global_.value.endswith("/paintarena/game/docs/global_protocol_spec.md")
+    assert (
+        package.manifest.game.protocols.player.value
+        == "https://github.com/Metta-AI/coworld/blob/main/src/coworld/examples/paintarena/game/docs/player_protocol_spec.md"
+    )
+    assert (
+        package.manifest.game.protocols.global_.value
+        == "https://github.com/Metta-AI/coworld/blob/main/src/coworld/examples/paintarena/game/docs/global_protocol_spec.md"
+    )
     assert package.manifest.player[0].image == "coworld-paintarena:latest"
     assert package.manifest.player[0].run == ["python", "-m", "coworld.examples.paintarena.player.player"]
     assert config["tokens"] == ["token-0", "token-1"]
@@ -734,8 +740,14 @@ def test_cogs_vs_clips_coworld_manifest_validates() -> None:
     assert package.manifest.game.name == "cogs_vs_clips"
     assert package.cogame.image == "ghcr.io/metta-ai/coworld-cogs-vs-clips-game:latest"
     assert package.cogame.run == ("python", "/app/server.py")
-    assert package.manifest.game.protocols.player.value.endswith("/cogs_vs_clips/game/docs/player_protocol_spec.md")
-    assert package.manifest.game.protocols.global_.value.endswith("/cogs_vs_clips/game/docs/global_protocol_spec.md")
+    assert (
+        package.manifest.game.protocols.player.value
+        == "https://github.com/Metta-AI/coworld/blob/main/src/coworld/examples/cogs_vs_clips/game/docs/player_protocol_spec.md"
+    )
+    assert (
+        package.manifest.game.protocols.global_.value
+        == "https://github.com/Metta-AI/coworld/blob/main/src/coworld/examples/cogs_vs_clips/game/docs/global_protocol_spec.md"
+    )
     assert package.manifest.game.docs is not None
     assert package.manifest.game.docs.pages[0].id == "play_cogsvsclips.md"
     assert package.manifest.game.docs.pages[0].content.value == "https://softmax.com/play_cogsvsclips.md"

@@ -100,11 +100,11 @@
     "protocols": {
       "player": {
         "type": "uri",
-        "value": "https://github.com/Metta-AI/metta/blob/main/packages/coworld/src/coworld/examples/paintarena/game/docs/player_protocol_spec.md"
+        "value": "https://github.com/Metta-AI/coworld/blob/main/src/coworld/examples/paintarena/game/docs/player_protocol_spec.md"
       },
       "global": {
         "type": "uri",
-        "value": "https://github.com/Metta-AI/metta/blob/main/packages/coworld/src/coworld/examples/paintarena/game/docs/global_protocol_spec.md"
+        "value": "https://github.com/Metta-AI/coworld/blob/main/src/coworld/examples/paintarena/game/docs/global_protocol_spec.md"
       }
     }
   },
