@@ -8,6 +8,7 @@ from pytest_httpserver import HTTPServer
 from typer.testing import CliRunner
 
 from coworld.cli import app
+from coworld.runner.runner import EpisodeArtifacts
 from coworld.types import CoworldEpisodeJobSpec
 
 COWORLD_ID = "cow_00000000-0000-0000-0000-000000000001"
@@ -220,6 +221,58 @@ def test_run_episode_uses_manifest_certification_players(monkeypatch: MonkeyPatc
     assert kwargs == {"timeout_seconds": 12.0, "verify_replay": True}
 
 
+def test_run_episode_defaults_results_next_to_manifest(monkeypatch: MonkeyPatch, tmp_path: Path) -> None:
+    manifest_path = tmp_path / "paintarena" / "coworld_manifest.json"
+    manifest_path.parent.mkdir()
+    manifest_path.write_text(_example_manifest().read_text(encoding="utf-8"), encoding="utf-8")
+
+    artifacts = _invoke_run_episode_artifacts(monkeypatch, str(manifest_path))
+
+    assert artifacts.workspace == (manifest_path.parent / "results").resolve()
+    assert artifacts.results_path == (manifest_path.parent / "results" / "results.json").resolve()
+
+
+def test_run_episode_defaults_backend_coworld_results_to_coworld_id(
+    httpserver: HTTPServer,
+    monkeypatch: MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    manifest = json.loads(_example_manifest().read_text(encoding="utf-8"))
+    httpserver.expect_request(COWORLD_PATH).respond_with_json({"manifest": manifest})
+
+    monkeypatch.chdir(tmp_path)
+    artifacts = _invoke_run_episode_artifacts(monkeypatch, COWORLD_PATH, "--server", httpserver.url_for(""))
+
+    assert artifacts.workspace == (tmp_path / "coworld" / COWORLD_ID / "results").resolve()
+
+
+def test_run_episode_defaults_coworld_id_results_to_coworld_id(
+    httpserver: HTTPServer,
+    monkeypatch: MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    manifest = json.loads(_example_manifest().read_text(encoding="utf-8"))
+    httpserver.expect_request(COWORLD_PATH).respond_with_json({"manifest": manifest})
+
+    monkeypatch.chdir(tmp_path)
+    artifacts = _invoke_run_episode_artifacts(monkeypatch, COWORLD_ID, "--server", httpserver.url_for(""))
+
+    assert artifacts.workspace == (tmp_path / "coworld" / COWORLD_ID / "results").resolve()
+
+
+def test_run_episode_defaults_downloaded_id_manifest_results_to_coworld_id(
+    monkeypatch: MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    manifest_path = tmp_path / "coworld" / COWORLD_ID / "coworld_manifest.json"
+    manifest_path.parent.mkdir(parents=True)
+    manifest_path.write_text(_example_manifest().read_text(encoding="utf-8"), encoding="utf-8")
+
+    artifacts = _invoke_run_episode_artifacts(monkeypatch, str(manifest_path))
+
+    assert artifacts.workspace == (tmp_path / "coworld" / COWORLD_ID / "results").resolve()
+
+
 def test_run_episode_accepts_one_player_image_for_all_slots(monkeypatch: MonkeyPatch, tmp_path: Path) -> None:
     spec, kwargs = _invoke_run_episode(
         monkeypatch,
@@ -267,6 +320,19 @@ def test_run_episode_player_image_override_keeps_manifest_env(monkeypatch: Monke
     assert {tuple(player.env.items()) for player in spec.players} == {
         (("COGAMES_POLICY_URI", "metta://policy/cogames.policy.starter_agent.StarterPolicy"),)
     }
+
+
+def _invoke_run_episode_artifacts(monkeypatch: MonkeyPatch, *args: str) -> EpisodeArtifacts:
+    captured: dict[str, object] = {}
+
+    def fake_run_coworld_episode(_spec: CoworldEpisodeJobSpec, artifacts: object, **_kwargs: object) -> None:
+        captured["artifacts"] = artifacts
+
+    monkeypatch.setattr("coworld.cli.run_coworld_episode", fake_run_coworld_episode)
+    result = CliRunner().invoke(app, ["run-episode", *args])
+
+    assert result.exit_code == 0, result.output
+    return cast(EpisodeArtifacts, captured["artifacts"])
 
 
 def _invoke_run_episode(

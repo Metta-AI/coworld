@@ -12,7 +12,7 @@ Then test it against a downloaded Among Them Coworld. After `uv run coworld down
 `<coworld-id>` with the printed `Coworld:` ID:
 
 ```bash
-uv run coworld run-episode ./coworld/<coworld-id>/coworld_manifest.json amongthemstarter:latest --timeout-seconds 120 --output-dir ./my-player-results
+uv run coworld run-episode ./coworld/<coworld-id>/coworld_manifest.json amongthemstarter:latest --timeout-seconds 120
 ```
 
 The policy source is `amongthemstarter.nim`. It navigates to tasks, holds the action button while stopped to complete

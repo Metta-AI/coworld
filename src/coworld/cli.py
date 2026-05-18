@@ -330,9 +330,17 @@ def run_episode(
         list[str] | None,
         typer.Option("--run", help="Command argv for supplied player image(s)."),
     ] = None,
-    output_dir: Annotated[Path, typer.Option("--output-dir", "-o", help="Directory for episode artifacts.")] = Path(
-        "./coworld-episode-results"
-    ),
+    output_dir: Annotated[
+        Path | None,
+        typer.Option(
+            "--output-dir",
+            "-o",
+            help=(
+                "Directory for episode artifacts. Defaults to ./coworld/<coworld-id>/results for downloaded "
+                "Coworlds, or results next to coworld_manifest.json for ordinary local manifests."
+            ),
+        ),
+    ] = None,
     server: Annotated[str, typer.Option("--server", help="Observatory API server URL.")] = DEFAULT_SUBMIT_SERVER,
     timeout_seconds: Annotated[float, typer.Option("--timeout-seconds", min=1.0)] = 3600.0,
     verify_replay: Annotated[bool, typer.Option("--verify-replay/--no-verify-replay")] = False,
@@ -340,7 +348,20 @@ def run_episode(
     with materialized_manifest_path(manifest_uri, server=server) as manifest_path:
         package = load_coworld_package(manifest_path)
         spec = build_manifest_episode_job_spec(package, player_images=player_images, player_run=run)
-    artifacts = EpisodeArtifacts.create(output_dir.resolve(), prefix="coworld-run-")
+        parsed_manifest_uri = urlparse(manifest_uri)
+        if output_dir is not None:
+            artifacts_dir = output_dir
+        elif manifest_path.name == "coworld_manifest.json" and manifest_path.parent.name.startswith("cow_"):
+            artifacts_dir = manifest_path.parent / "results"
+        elif (manifest_uri.startswith("cow_") and "/" not in manifest_uri) or parsed_manifest_uri.path.startswith(
+            "/v2/coworlds/"
+        ):
+            artifacts_dir = Path("./coworld") / Path(parsed_manifest_uri.path).name / "results"
+        elif parsed_manifest_uri.scheme in ("http", "https"):
+            artifacts_dir = Path("./coworld-results")
+        else:
+            artifacts_dir = manifest_path.parent / "results"
+    artifacts = EpisodeArtifacts.create(artifacts_dir.resolve(), prefix="coworld-run-")
     run_coworld_episode(spec, artifacts, timeout_seconds=timeout_seconds, verify_replay=verify_replay)
     typer.echo(f"Artifacts: {artifacts.workspace}")
     typer.echo(f"Results: {artifacts.results_path}")
