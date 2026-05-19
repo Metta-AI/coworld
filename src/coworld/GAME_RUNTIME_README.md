@@ -67,7 +67,8 @@ The game must support `file://` URIs. Hosted runners may use other writable URI 
 
 If `COGAME_LOG_URI` is set, the game should POST log lines to that URL (plain text, one or more newline-separated
 lines per request). If it is unset, the game must skip log posting. In either case, the container is free to log to
-stdout/stderr as normal — these channels are independent.
+stdout/stderr as normal. Hosted Coworld episode jobs collect both stdout and stderr from the game pod and each started
+player pod; these container streams are independent from `COGAME_LOG_URI`.
 
 In rollout mode, the game listens on `0.0.0.0:8080` and exposes:
 

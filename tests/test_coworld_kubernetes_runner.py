@@ -82,7 +82,7 @@ class _FakeLogCoreV1:
         self.log_calls.append((name, container))
         if (name, container) in self._log_errors:
             raise self._log_errors[(name, container)]
-        return f"{name} {container} logs"
+        return f"{name} {container} combined stdout stderr logs"
 
 
 class _FailingCoreV1:
@@ -348,9 +348,11 @@ def test_collect_logs_skips_player_pods_that_have_not_started(tmp_path):
         artifacts,
     )
 
-    assert artifacts.game_stdout_path.read_text(encoding="utf-8") == "game-pod game logs"
+    assert artifacts.game_stdout_path.read_text(encoding="utf-8") == "game-pod game combined stdout stderr logs"
     assert not artifacts.policy_log_path(0).exists()
-    assert artifacts.policy_log_path(1).read_text(encoding="utf-8") == "player-running player logs"
+    assert artifacts.policy_log_path(1).read_text(encoding="utf-8") == (
+        "player-running player combined stdout stderr logs"
+    )
     assert core_v1.log_calls == [("game-pod", "game"), ("player-running", "player")]
 
 
@@ -372,9 +374,11 @@ def test_collect_logs_skips_missing_player_pods(tmp_path):
         artifacts,
     )
 
-    assert artifacts.game_stdout_path.read_text(encoding="utf-8") == "game-pod game logs"
+    assert artifacts.game_stdout_path.read_text(encoding="utf-8") == "game-pod game combined stdout stderr logs"
     assert not artifacts.policy_log_path(0).exists()
-    assert artifacts.policy_log_path(1).read_text(encoding="utf-8") == "player-running player logs"
+    assert artifacts.policy_log_path(1).read_text(encoding="utf-8") == (
+        "player-running player combined stdout stderr logs"
+    )
     assert core_v1.log_calls == [("game-pod", "game"), ("player-running", "player")]
 
 
@@ -397,12 +401,18 @@ def test_collect_logs_records_player_log_errors_without_failing(tmp_path):
         artifacts,
     )
 
-    assert artifacts.game_stdout_path.read_text(encoding="utf-8") == "game-pod game logs"
+    assert artifacts.game_stdout_path.read_text(encoding="utf-8") == "game-pod game combined stdout stderr logs"
     assert "Failed to collect Kubernetes logs for pod player-broken container player" in artifacts.policy_log_path(
         0
     ).read_text(encoding="utf-8")
-    assert artifacts.policy_log_path(1).read_text(encoding="utf-8") == "player-running player logs"
-    assert core_v1.log_calls == [("game-pod", "game"), ("player-broken", "player"), ("player-running", "player")]
+    assert artifacts.policy_log_path(1).read_text(encoding="utf-8") == (
+        "player-running player combined stdout stderr logs"
+    )
+    assert core_v1.log_calls == [
+        ("game-pod", "game"),
+        ("player-broken", "player"),
+        ("player-running", "player"),
+    ]
 
 
 def test_collect_logs_records_game_log_read_failures(tmp_path):
@@ -426,7 +436,9 @@ def test_collect_logs_records_game_log_read_failures(tmp_path):
     assert artifacts.game_stdout_path.read_text(encoding="utf-8").startswith(
         "Failed to collect Kubernetes logs for pod game-pod container game:"
     )
-    assert artifacts.policy_log_path(0).read_text(encoding="utf-8") == "player-running player logs"
+    assert artifacts.policy_log_path(0).read_text(encoding="utf-8") == (
+        "player-running player combined stdout stderr logs"
+    )
     assert core_v1.log_calls == [("game-pod", "game"), ("player-running", "player")]
 
 

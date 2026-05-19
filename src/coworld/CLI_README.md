@@ -148,6 +148,10 @@ uv run coworld episode-logs ereq_... --agent 0
 uv run coworld episode-logs ereq_... --mine --download-dir logs/
 ```
 
+Hosted Coworld episode jobs collect combined stdout and stderr from the game pod and from each started player pod. The
+`episode-logs` command lists and downloads the per-player files (`policy_agent_{position}.txt`); the full debug zip also
+contains the game log.
+
 Download replay files:
 
 ```bash
