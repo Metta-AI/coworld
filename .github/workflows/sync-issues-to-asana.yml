@@ -1,0 +1,28 @@
+name: Sync GitHub issues to Asana
+
+on:
+  issues:
+    types: [opened]
+
+jobs:
+  create-asana-task:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Create Asana task
+        env:
+          ASANA_TOKEN: ${{ secrets.ASANA_TOKEN }}
+          ASANA_PROJECT_GID: "1209016784099267"
+          ISSUE_TITLE: ${{ github.event.issue.title }}
+          ISSUE_URL: ${{ github.event.issue.html_url }}
+          ISSUE_AUTHOR: ${{ github.event.issue.user.login }}
+          ISSUE_BODY: ${{ github.event.issue.body }}
+        run: |
+          jq -n \
+            --arg name "$ISSUE_TITLE" \
+            --arg notes "GitHub Issue: $ISSUE_URL\n\nFiled by: $ISSUE_AUTHOR\n\n$ISSUE_BODY" \
+            --arg project "$ASANA_PROJECT_GID" \
+            '{data: {name: $name, notes: $notes, projects: [$project]}}' \
+          | curl -sf -X POST "https://app.asana.com/api/1.0/tasks" \
+              -H "Authorization: Bearer $ASANA_TOKEN" \
+              -H "Content-Type: application/json" \
+              -d @-

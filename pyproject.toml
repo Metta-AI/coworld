@@ -37,6 +37,10 @@ test = [
   "uvicorn>=0.34.0",
 ]
 
+[project.urls]
+Homepage = "https://github.com/Metta-AI/coworld"
+"Bug Tracker" = "https://github.com/Metta-AI/coworld/issues"
+
 [project.scripts]
 coworld = "coworld.cli:app"
 
