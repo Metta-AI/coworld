@@ -25,7 +25,7 @@ from coworld.certifier import (
     load_coworld_package,
     load_results,
 )
-from coworld.play import ReplaySession, build_play_links, play_coworld, replay_coworld
+from coworld.play import BedrockAwsEnv, ReplaySession, build_play_links, play_coworld, replay_coworld
 from coworld.runner.runner import (
     CONFIG_ENV_VAR,
     LOCAL_DOCKER_NETWORK,
@@ -523,6 +523,158 @@ def test_play_coworld_starts_certification_player_containers(tmp_path: Path, mon
     assert waited_players == [tmp_path / "play-workspace" / "logs" / "policy_agent_0.txt"]
     assert ["docker", "rm", "-f", "coworld-play-player-session-1-0"] in rm_commands
     assert ["docker", "rm", "-f", "coworld-play-game-session-1"] in rm_commands
+
+
+@pytest.mark.parametrize("session_token", ["session-token", None])
+def test_play_coworld_injects_bedrock_env_into_player_containers(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    session_token: str | None,
+) -> None:
+    coworld_manifest_path = _write_package_files(
+        tmp_path,
+        certification={
+            "game_config": {"difficulty": "smoke"},
+            "players": [{"player_id": "unit-test-player"}],
+        },
+        game_config={"difficulty": "watch"},
+    )
+    popen_commands: list[list[str]] = []
+    popen_envs: list[dict[str, str] | None] = []
+    rm_commands: list[list[str]] = []
+    events: list[str] = []
+
+    class FakeProcess:
+        def wait(self) -> int:
+            return 0
+
+    def fake_resolve_bedrock_aws_env(*, aws_profile: str | None, aws_region: str | None) -> BedrockAwsEnv:
+        events.append("resolve")
+        assert aws_profile == "bedrock-dev"
+        assert aws_region == "us-east-1"
+        return BedrockAwsEnv(
+            access_key_id="access-key",
+            secret_access_key="secret-key",
+            session_token=session_token,
+            region="us-east-1",
+        )
+
+    def fake_popen(cmd, **kwargs):
+        events.append("popen")
+        popen_commands.append(cmd)
+        popen_envs.append(kwargs.get("env"))
+        return FakeProcess()
+
+    def fake_subprocess_run(cmd, **kwargs):
+        if cmd[:2] != ["docker", "network"]:
+            rm_commands.append(cmd)
+        return subprocess.CompletedProcess(cmd, 0)
+
+    def fake_ensure_local_docker_network() -> None:
+        events.append("network")
+
+    monkeypatch.setattr("coworld.play.assert_docker_image_reachable", lambda image, *, label: None)
+    monkeypatch.setattr("coworld.play.ensure_local_docker_network", fake_ensure_local_docker_network)
+    monkeypatch.setattr("coworld.play._free_local_port", lambda: 1234)
+    monkeypatch.setattr("coworld.play._wait_for_health", lambda *_args, **_kwargs: None)
+    monkeypatch.setattr("coworld.play._wait_for_player_exit", lambda *_args, **_kwargs: None)
+    monkeypatch.setattr("coworld.play._resolve_bedrock_aws_env", fake_resolve_bedrock_aws_env)
+    monkeypatch.setattr("coworld.play.subprocess.Popen", fake_popen)
+    monkeypatch.setattr("coworld.play.subprocess.run", fake_subprocess_run)
+    monkeypatch.setattr("coworld.play.secrets.token_hex", lambda _bytes: "session-1")
+    monkeypatch.setattr("coworld.runner.runner.secrets.token_urlsafe", lambda _bytes: "token-0")
+    monkeypatch.setattr("coworld.play.load_results", lambda package, artifacts: {"scores": [1.0]})
+
+    play_coworld(
+        coworld_manifest_path,
+        use_bedrock=True,
+        aws_profile="bedrock-dev",
+        aws_region="us-east-1",
+        workspace=tmp_path / f"play-workspace-{session_token or 'static'}",
+        on_ready=lambda _session: None,
+    )
+
+    assert events[:3] == ["network", "resolve", "popen"]
+    assert len(popen_commands) == 2
+    game_command, player_command = popen_commands
+    game_env, player_env = popen_envs
+
+    assert game_env is None
+    assert not any(arg.startswith(("USE_BEDROCK", "AWS_")) for arg in game_command)
+
+    for key in ("USE_BEDROCK", "AWS_ACCESS_KEY_ID", "AWS_SECRET_ACCESS_KEY", "AWS_REGION", "AWS_DEFAULT_REGION"):
+        assert key in player_command
+    secret_value_prefixes = ("AWS_ACCESS_KEY_ID=", "AWS_SECRET_ACCESS_KEY=", "AWS_SESSION_TOKEN=")
+    assert not any(arg.startswith(secret_value_prefixes) for arg in player_command)
+
+    assert player_env is not None
+    assert player_env["USE_BEDROCK"] == "true"
+    assert player_env["AWS_ACCESS_KEY_ID"] == "access-key"
+    assert player_env["AWS_SECRET_ACCESS_KEY"] == "secret-key"
+    assert player_env["AWS_REGION"] == "us-east-1"
+    assert player_env["AWS_DEFAULT_REGION"] == "us-east-1"
+    if session_token is None:
+        assert "AWS_SESSION_TOKEN" not in player_env
+        assert "AWS_SESSION_TOKEN" not in player_command
+    else:
+        assert player_env["AWS_SESSION_TOKEN"] == "session-token"
+        assert "AWS_SESSION_TOKEN" in player_command
+
+    assert ["docker", "rm", "-f", "coworld-play-player-session-1-0"] in rm_commands
+    assert ["docker", "rm", "-f", "coworld-play-game-session-1"] in rm_commands
+
+
+def test_play_coworld_does_not_resolve_bedrock_env_when_docker_network_fails(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    coworld_manifest_path = _write_package_files(
+        tmp_path,
+        certification={
+            "game_config": {"difficulty": "smoke"},
+            "players": [{"player_id": "unit-test-player"}],
+        },
+        game_config={"difficulty": "watch"},
+    )
+    resolve_calls: list[tuple[str | None, str | None]] = []
+    popen_commands: list[list[str]] = []
+
+    def fake_resolve_bedrock_aws_env(*, aws_profile: str | None, aws_region: str | None) -> BedrockAwsEnv:
+        resolve_calls.append((aws_profile, aws_region))
+        return BedrockAwsEnv(
+            access_key_id="access-key",
+            secret_access_key="secret-key",
+            session_token=None,
+            region="us-east-1",
+        )
+
+    def fake_ensure_local_docker_network() -> None:
+        raise RuntimeError("Docker network unavailable")
+
+    def fake_popen(cmd, **_kwargs):
+        popen_commands.append(cmd)
+        raise AssertionError("Docker containers should not start when network setup fails")
+
+    monkeypatch.setattr("coworld.play.assert_docker_image_reachable", lambda image, *, label: None)
+    monkeypatch.setattr("coworld.play.ensure_local_docker_network", fake_ensure_local_docker_network)
+    monkeypatch.setattr("coworld.play._free_local_port", lambda: 1234)
+    monkeypatch.setattr("coworld.play._resolve_bedrock_aws_env", fake_resolve_bedrock_aws_env)
+    monkeypatch.setattr("coworld.play.subprocess.Popen", fake_popen)
+    monkeypatch.setattr("coworld.play.secrets.token_hex", lambda _bytes: "session-1")
+    monkeypatch.setattr("coworld.runner.runner.secrets.token_urlsafe", lambda _bytes: "token-0")
+
+    with pytest.raises(RuntimeError, match="Docker network unavailable"):
+        play_coworld(
+            coworld_manifest_path,
+            use_bedrock=True,
+            aws_profile="bedrock-dev",
+            aws_region="us-east-1",
+            workspace=tmp_path / "play-workspace-network-failure",
+            on_ready=lambda _session: None,
+        )
+
+    assert resolve_calls == []
+    assert popen_commands == []
 
 
 def test_replay_client_url_points_at_engine_replay_route() -> None:

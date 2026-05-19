@@ -92,11 +92,29 @@ def play(
         ),
     ] = None,
     timeout_seconds: Annotated[float, typer.Option("--timeout-seconds", min=1.0, help="Health check timeout.")] = 60.0,
+    use_bedrock: Annotated[
+        bool,
+        typer.Option(
+            "--use-bedrock",
+            help="Enable AWS Bedrock access for player containers using host AWS credentials.",
+        ),
+    ] = False,
+    aws_profile: Annotated[
+        str | None,
+        typer.Option("--aws-profile", help="AWS profile to use when resolving --use-bedrock credentials."),
+    ] = None,
+    aws_region: Annotated[
+        str | None,
+        typer.Option("--aws-region", help="AWS region to use for --use-bedrock player containers."),
+    ] = None,
     open_browser: Annotated[
         bool,
         typer.Option("--open-browser/--no-open-browser", help="Open the global viewer in a browser."),
     ] = True,
 ) -> None:
+    if not use_bedrock and (aws_profile is not None or aws_region is not None):
+        raise typer.BadParameter("--aws-profile and --aws-region require --use-bedrock")
+
     def on_ready(session: PlaySession) -> None:
         _print_play_session(session)
         if open_browser:
@@ -111,6 +129,9 @@ def play(
             variant_id=variant_id,
             player_images=player_images,
             player_run=run,
+            use_bedrock=use_bedrock,
+            aws_profile=aws_profile,
+            aws_region=aws_region,
             timeout_seconds=timeout_seconds,
             on_ready=on_ready,
         )
@@ -121,6 +142,9 @@ def play(
                 variant_id=variant_id,
                 player_images=player_images,
                 player_run=run,
+                use_bedrock=use_bedrock,
+                aws_profile=aws_profile,
+                aws_region=aws_region,
                 timeout_seconds=timeout_seconds,
                 on_ready=on_ready,
             )

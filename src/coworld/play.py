@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import json
+import os
 import secrets
 import subprocess
 from contextlib import ExitStack
@@ -68,12 +70,36 @@ class ReplaySession:
     link: str
 
 
+@dataclass(frozen=True)
+class BedrockAwsEnv:
+    access_key_id: str
+    secret_access_key: str
+    session_token: str | None
+    region: str
+
+    @property
+    def container_env(self) -> dict[str, str]:
+        env = {
+            "USE_BEDROCK": "true",
+            "AWS_ACCESS_KEY_ID": self.access_key_id,
+            "AWS_SECRET_ACCESS_KEY": self.secret_access_key,
+            "AWS_REGION": self.region,
+            "AWS_DEFAULT_REGION": self.region,
+        }
+        if self.session_token is not None:
+            env["AWS_SESSION_TOKEN"] = self.session_token
+        return env
+
+
 def play_coworld(
     manifest_path: Path,
     *,
     variant_id: str | None = None,
     player_images: list[str] | None = None,
     player_run: list[str] | None = None,
+    use_bedrock: bool = False,
+    aws_profile: str | None = None,
+    aws_region: str | None = None,
     workspace: Path | None = None,
     timeout_seconds: float = 60.0,
     on_ready: Callable[[PlaySession], None],
@@ -111,6 +137,13 @@ def play_coworld(
     player_processes: list[tuple[subprocess.Popen[str], Path]] = []
     ensure_local_docker_network()
     try:
+        bedrock_container_env = (
+            _resolve_bedrock_aws_env(aws_profile=aws_profile, aws_region=aws_region).container_env
+            if use_bedrock
+            else {}
+        )
+        bedrock_env_args = [arg for key in bedrock_container_env for arg in ("-e", key)]
+        player_subprocess_env = {**os.environ, **bedrock_container_env} if bedrock_container_env else None
         with ExitStack() as stack:
             game_stdout = stack.enter_context(artifacts.game_stdout_path.open("w"))
             game_stderr = stack.enter_context(artifacts.game_stderr_path.open("w"))
@@ -163,6 +196,7 @@ def play_coworld(
                                 "--network",
                                 LOCAL_DOCKER_NETWORK,
                                 *_env_args(player.env),
+                                *bedrock_env_args,
                                 "-e",
                                 f"COGAMES_ENGINE_WS_URL={engine_ws_url}",
                                 *_image_command(player),
@@ -170,6 +204,7 @@ def play_coworld(
                             stdout=player_log,
                             stderr=subprocess.STDOUT,
                             text=True,
+                            env=player_subprocess_env,
                         ),
                         player_log_path,
                     )
@@ -190,6 +225,41 @@ def play_coworld(
         subprocess.run(["docker", "rm", "-f", game_container], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
 
     return PlayResult(session=session, results=load_results(package, artifacts))
+
+
+def _resolve_bedrock_aws_env(*, aws_profile: str | None, aws_region: str | None) -> BedrockAwsEnv:
+    command = ["aws", "configure", "export-credentials", "--format", "process"]
+    if aws_profile is not None:
+        command.extend(["--profile", aws_profile])
+    result = subprocess.run(command, check=True, capture_output=True, text=True)
+    exported = json.loads(result.stdout)
+    if "AccessKeyId" not in exported or "SecretAccessKey" not in exported:
+        raise RuntimeError(
+            "aws configure export-credentials did not return AWS credentials. "
+            "Ensure your AWS profile is configured (try: aws sso login)."
+        )
+
+    region = _resolve_bedrock_aws_region(aws_profile=aws_profile, aws_region=aws_region)
+    return BedrockAwsEnv(
+        access_key_id=exported["AccessKeyId"],
+        secret_access_key=exported["SecretAccessKey"],
+        session_token=exported.get("SessionToken"),
+        region=region,
+    )
+
+
+def _resolve_bedrock_aws_region(*, aws_profile: str | None, aws_region: str | None) -> str:
+    region = aws_region or os.environ.get("AWS_REGION") or os.environ.get("AWS_DEFAULT_REGION")
+    if region:
+        return region
+
+    command = ["aws", "configure", "get", "region"]
+    if aws_profile is not None:
+        command.extend(["--profile", aws_profile])
+    result = subprocess.run(command, check=False, capture_output=True, text=True)
+    if region := result.stdout.strip():
+        return region
+    raise RuntimeError("AWS region required for --use-bedrock. Pass --aws-region or set AWS_REGION/AWS_DEFAULT_REGION.")
 
 
 def replay_coworld(
