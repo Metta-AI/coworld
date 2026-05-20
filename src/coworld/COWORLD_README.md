@@ -204,11 +204,16 @@ The game image owns the episode. It must:
 - serve a live viewer at `GET /clients/global` and `WEBSOCKET /global`;
 - write final results to `COGAME_RESULTS_URI`;
 - write a replay artifact to `COGAME_SAVE_REPLAY_URI`;
-- serve replay viewers when started with `COGAME_REPLAY_SERVER=1`.
+- serve replay clients at `GET /clients/replay?uri=<uri>` and replay websockets at
+  `WEBSOCKET /replay?uri=<uri>` when started with `COGAME_REPLAY_SERVER=1`.
 
 Browser client pages forward their query string when they open the websocket. Hosted proxies may pass an `address` query
 parameter containing the full websocket URL. See [GAME_RUNTIME_README.md](GAME_RUNTIME_README.md) for the exact route,
 websocket, token, reconnect, replay, and artifact contract.
+
+Coworld replays have one hosted entrypoint across games: the platform iframes the game-owned
+`/clients/replay?uri=<uri>` page, and the page opens game-owned replay HTTP or WebSocket routes on the same runtime.
+Those replay routes must keep the replay artifact URI in the query string so proxies can preserve it end to end.
 
 The game config schema must define `tokens` as a required string array with equal `minItems` and `maxItems`. That fixed
 length is the number of player slots. Coworld-authored configs omit `tokens`; the runner creates fresh tokens for each

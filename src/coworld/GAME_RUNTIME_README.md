@@ -122,6 +122,11 @@ In replay mode, the game listens on `0.0.0.0:8080` and exposes:
 `GET /clients/replay?uri=<uri>` serves a browser replay viewer. The served client opens `/replay?uri=<uri>`. The game
 loads the replay artifact and handles game-owned replay controls such as start, stop, seek, or speed changes.
 
+Hosted Observatory replay sessions use the same `/clients/replay?uri=<uri>` entrypoint for every Coworld game. After
+that page loads, replay HTTP routes and replay WebSocket routes are still game-owned, but they must preserve the replay
+artifact URI in their query string. Platform proxies forward the requested path and query rather than branching on game
+name, replay format, or viewer implementation.
+
 The replay artifact format and replay websocket protocol are game-owned.
 
 ## Episode Lifecycle

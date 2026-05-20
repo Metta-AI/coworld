@@ -39,6 +39,7 @@ from coworld.runner.runner import (
     _require_bad_replay_uri_rejected,
     assert_docker_image_reachable,
     replay_client_url,
+    replay_session_path,
 )
 from coworld.types import CoworldEpisodeJobSpec, CoworldManifest
 
@@ -677,15 +678,19 @@ def test_play_coworld_does_not_resolve_bedrock_env_when_docker_network_fails(
     assert popen_commands == []
 
 
-def test_replay_client_url_points_at_engine_replay_route() -> None:
-    replay_link = urlparse(replay_client_url(1234, "file:///coworld-replay/replay.json"))
+def test_replay_urls_match_canonical_runtime_contract() -> None:
+    replay_uri = "https://storage.example.com/replays/game.json.z?download=1"
+    replay_link = urlparse(replay_client_url(1234, replay_uri))
+    websocket_path = urlparse(replay_session_path(replay_uri))
 
     assert REPLAY_SAVE_ENV_VAR == "COGAME_SAVE_REPLAY_URI"
     assert REPLAY_SERVER_ENV_VAR == "COGAME_REPLAY_SERVER"
     assert replay_link.scheme == "http"
     assert replay_link.netloc == "127.0.0.1:1234"
     assert replay_link.path == "/clients/replay"
-    assert parse_qs(replay_link.query) == {"uri": ["file:///coworld-replay/replay.json"]}
+    assert parse_qs(replay_link.query) == {"uri": [replay_uri]}
+    assert websocket_path.path == "/replay"
+    assert parse_qs(websocket_path.query) == {"uri": [replay_uri]}
 
 
 def test_replay_coworld_starts_replay_container_and_reports_link(
