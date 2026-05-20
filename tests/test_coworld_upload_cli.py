@@ -16,6 +16,8 @@ from coworld.upload import (
     _docker_archive_client_hash,
     _local_image_client_hash,
     _local_image_tag,
+    _manifest_image_fields,
+    _manifest_with_local_images,
     _push_archive_to_registry,
     upload_coworld,
 )
@@ -917,6 +919,55 @@ def test_push_archive_to_registry_uploads_layers_config_and_manifest(httpserver:
     assert manifest_body["config"]["digest"] == config_digest
     assert len(manifest_body["layers"]) == 1
     assert manifest_body["layers"][0]["digest"] == layer_digest
+
+
+def test_manifest_image_helpers_substitute_player_and_reporter_images() -> None:
+    manifest: dict[str, object] = {
+        "game": {
+            "name": "unit-test-game",
+            "runnable": {"type": "game", "image": "unit-test-runtime:latest"},
+        },
+        "player": [
+            {
+                "id": "unit-test-player",
+                "type": "player",
+                "image": "player-img:latest",
+                "run": ["python", "-m", "unit_test.player"],
+            }
+        ],
+        "reporter": [
+            {
+                "id": "unit-test-reporter",
+                "type": "reporter",
+                "image": "reporter-img:latest",
+                "run": ["python", "/app/reporter.py"],
+            }
+        ],
+    }
+
+    discovered = {field["image"] for field in _manifest_image_fields(manifest)}
+    assert discovered == {"unit-test-runtime:latest", "player-img:latest", "reporter-img:latest"}
+
+    image_tags = {
+        "unit-test-runtime:latest": "img_game",
+        "player-img:latest": "img_player",
+        "reporter-img:latest": "img_reporter",
+    }
+    substituted = _manifest_with_local_images(manifest, image_tags)
+
+    game = substituted["game"]
+    assert isinstance(game, dict)
+    runnable = game["runnable"]
+    assert isinstance(runnable, dict)
+    assert runnable["image"] == "img_game"
+
+    players = substituted["player"]
+    assert isinstance(players, list)
+    assert players[0]["image"] == "img_player"
+
+    reporters = substituted["reporter"]
+    assert isinstance(reporters, list)
+    assert reporters[0]["image"] == "img_reporter"
 
 
 def _docker_archive(*, config: bytes, layers: list[bytes]) -> bytes:
