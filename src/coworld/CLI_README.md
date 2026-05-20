@@ -48,9 +48,10 @@ uv run coworld submit my-player --league league_...
 ```
 
 `coworld download` stores each package under `./coworld/<coworld-id>/`, including `coworld_manifest.json` and
-`coworld_images.json`. `coworld play cow_...` starts the downloaded game and bundled player containers for local
-interactive play; when `./coworld/<coworld-id>/coworld_manifest.json` already exists, `play` uses that cached manifest
-instead of fetching it again. When the cache is missing, `play` downloads the Coworld into that directory first.
+`coworld_images.json`. `coworld play cow_...` starts the downloaded game and bundled player containers, prints local
+player/global/admin links, and opens the global link by default; when `./coworld/<coworld-id>/coworld_manifest.json`
+already exists, `play` uses that cached manifest instead of fetching it again. When the cache is missing, `play`
+downloads the Coworld into that directory first.
 
 Local browser/debug URLs printed by `coworld play`, `coworld replay`, and `coworld run-episode` use
 `127.0.0.1:<port>`. Player containers do not connect back through the host; local runs attach the game and players to
@@ -63,6 +64,18 @@ If the image needs a specific player command:
 uv run coworld run-episode ./coworld/<coworld-id>/coworld_manifest.json my-runtime:latest --run python --run /app/player.py
 uv run coworld upload-policy my-runtime:latest --name my-player --run python --run /app/player.py
 ```
+
+`play` and `run-episode` both accept an explicit runner request:
+
+```bash
+uv run coworld run-episode ./coworld/<coworld-id>/coworld_manifest.json episode_request.json
+uv run coworld play ./coworld/<coworld-id>/coworld_manifest.json episode_request.json
+```
+
+The request file must match `coworld/runner/episode_request_schema.json`. Use it when you need exact game config,
+per-slot images, commands, environment variables, episode tags, or policy names. Without a request file, both commands use
+the manifest's `certification` fixture; `play --variant <variant-id>` can instead launch a named variant. `run-episode`
+waits headlessly and writes artifacts. `play` runs the same local episode path while also printing the browser/debug links.
 
 Check the submission and its first episodes:
 

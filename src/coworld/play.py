@@ -15,6 +15,7 @@ from coworld.certifier import (
     CoworldPackage,
     build_manifest_episode_job_spec,
     load_coworld_package,
+    load_manifest_episode_job_spec,
     load_results,
 )
 from coworld.runner.runner import (
@@ -32,6 +33,7 @@ from coworld.runner.runner import (
     _player_container_ws_url,
     _require_replay_message,
     _tail,
+    _wait_for_game_exit,
     _wait_for_health,
     _wait_for_player_exit,
     assert_docker_image_reachable,
@@ -99,30 +101,32 @@ def play_coworld(
     manifest_path: Path,
     *,
     variant_id: str | None = None,
+    episode_request_path: Path | None = None,
     player_images: list[str] | None = None,
     player_run: list[str] | None = None,
     use_bedrock: bool = False,
     aws_profile: str | None = None,
     aws_region: str | None = None,
     workspace: Path | None = None,
-    timeout_seconds: float = 60.0,
+    timeout_seconds: float = 3600.0,
     on_ready: Callable[[PlaySession], None],
 ) -> PlayResult:
     package = load_coworld_package(manifest_path)
     assert_docker_image_reachable(package.cogame.image, label="Cogame runnable.image")
     artifacts = EpisodeArtifacts.create(workspace, prefix="coworld-play-")
-    if variant_id is None:
-        variant_id = (
-            "default"
-            if any(variant.id == "default" for variant in package.manifest.variants)
-            else package.manifest.variants[0].id
+    if episode_request_path is not None and (variant_id is not None or player_images or player_run):
+        raise ValueError("episode_request_path cannot be combined with variant_id, player_images, or player_run")
+    if episode_request_path is not None:
+        job_spec = load_manifest_episode_job_spec(package, episode_request_path)
+        variant_label = "episode-request"
+    else:
+        job_spec = build_manifest_episode_job_spec(
+            package,
+            variant_id=variant_id,
+            player_images=player_images,
+            player_run=player_run,
         )
-    job_spec = build_manifest_episode_job_spec(
-        package,
-        variant_id=variant_id,
-        player_images=player_images,
-        player_run=player_run,
-    )
+        variant_label = variant_id if variant_id is not None else "certification"
     tokens = generate_tokens(len(job_spec.players))
     write_coworld_game_config(job_spec, artifacts, tokens)
     players = [PlayerLaunchSpec.from_model(player) for player in job_spec.players]
@@ -130,7 +134,7 @@ def play_coworld(
     session = PlaySession(
         package=package,
         artifacts=artifacts,
-        variant_id=variant_id,
+        variant_id=variant_label,
         links=build_play_links(players, tokens, game_port=game_port),
     )
 
@@ -215,11 +219,7 @@ def play_coworld(
                 )
 
             on_ready(session)
-            return_code = game_process.wait()
-            if return_code != 0:
-                raise RuntimeError(
-                    f"Game container exited with status {return_code}.\n{_tail(artifacts.game_stderr_path)}"
-                )
+            _wait_for_game_exit(game_process, artifacts.game_stderr_path, timeout_seconds=timeout_seconds)
 
             for player_process, player_log_path in player_processes:
                 _wait_for_player_exit(player_process, player_log_path)

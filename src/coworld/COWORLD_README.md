@@ -136,6 +136,22 @@ uv run coworld run-episode ./coworld/<coworld-id>/coworld_manifest.json my-runti
 uv run coworld upload-policy my-runtime:latest --name my-player --run python --run /app/player.py
 ```
 
+For exact local reproduction, pass the same runner request shape used by hosted Coworld jobs:
+
+```bash
+uv run coworld run-episode ./coworld/<coworld-id>/coworld_manifest.json episode_request.json
+uv run coworld play ./coworld/<coworld-id>/coworld_manifest.json episode_request.json
+```
+
+`episode_request.json` follows [runner/episode_request_schema.json](runner/episode_request_schema.json). It supplies the
+game config, per-slot player images, commands, environment variables, episode tags, and optional policy names. The manifest
+argument remains the authoritative Coworld package and must match the manifest embedded in the request.
+
+`run-episode` waits for the local episode and writes results, replay, compressed replay, and logs. `play` uses the same
+episode request/default fixture, but prints the local player/global/admin browser links and opens the global link unless
+`--no-open-browser` is passed. Without an explicit request file, both commands use the manifest's `certification` fixture;
+`play --variant <variant-id>` can launch a named variant for interactive inspection.
+
 ## Game Author Loop
 
 Use this flow when you want to package a new Coworld:

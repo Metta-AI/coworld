@@ -23,6 +23,7 @@ from coworld.certifier import (
     build_player_launch_specs,
     certify_coworld,
     load_coworld_package,
+    load_manifest_episode_job_spec,
     load_results,
 )
 from coworld.play import BedrockAwsEnv, ReplaySession, build_play_links, play_coworld, replay_coworld
@@ -315,6 +316,56 @@ def test_build_manifest_episode_job_spec_defaults_to_certification_config(tmp_pa
     assert spec.game_config == {"difficulty": "smoke"}
 
 
+def test_build_manifest_episode_job_spec_deep_copies_config_and_player_env(tmp_path: Path) -> None:
+    package = _write_package(
+        tmp_path,
+        certification={
+            "game_config": {
+                "players": [{"name": "one"}, {"name": "two"}],
+            },
+            "players": [{"player_id": "unit-test-player"}],
+        },
+        game_config={"difficulty": "watch"},
+    )
+
+    spec = build_manifest_episode_job_spec(package)
+    spec.game_config["players"][0]["name"] = "mutated"
+    spec.players[0].env["PLAYER_MODE"] = "mutated"
+
+    next_spec = build_manifest_episode_job_spec(package)
+    assert next_spec.game_config["players"][0]["name"] == "one"
+    assert next_spec.players[0].env == {"PLAYER_MODE": "test"}
+
+
+def test_load_manifest_episode_job_spec_uses_request_file(tmp_path: Path) -> None:
+    coworld_manifest_path = _write_package_files(tmp_path)
+    package = load_coworld_package(coworld_manifest_path)
+    request_path = tmp_path / "episode_request.json"
+    request_path.write_text(
+        json.dumps(
+            {
+                "manifest": json.loads(coworld_manifest_path.read_text(encoding="utf-8")),
+                "game_config": {"difficulty": "request"},
+                "players": [
+                    {
+                        "image": "request-player:latest",
+                        "run": ["python", "/request-player.py"],
+                        "env": {"PLAYER_MODE": "request"},
+                    }
+                ],
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    spec = load_manifest_episode_job_spec(package, request_path)
+
+    assert spec.game_config == {"difficulty": "request"}
+    assert spec.players[0].image == "request-player:latest"
+    assert spec.players[0].run == ["python", "/request-player.py"]
+    assert spec.players[0].env == {"PLAYER_MODE": "request"}
+
+
 def test_build_manifest_episode_job_spec_rejects_unknown_variant(tmp_path: Path) -> None:
     package = _write_package(tmp_path)
 
@@ -487,6 +538,7 @@ def test_play_coworld_starts_certification_player_containers(tmp_path: Path, mon
     monkeypatch.setattr("coworld.play.assert_docker_image_reachable", lambda image, *, label: None)
     monkeypatch.setattr("coworld.play._free_local_port", lambda: 1234)
     monkeypatch.setattr("coworld.play._wait_for_health", noop_wait_for_health)
+    monkeypatch.setattr("coworld.play._wait_for_game_exit", lambda *_args, **_kwargs: None)
     monkeypatch.setattr("coworld.play._wait_for_player_exit", fake_wait_for_player_exit)
     monkeypatch.setattr("coworld.play.subprocess.Popen", fake_popen)
     monkeypatch.setattr("coworld.play.subprocess.run", fake_subprocess_run)
@@ -501,8 +553,8 @@ def test_play_coworld_starts_certification_player_containers(tmp_path: Path, mon
     )
 
     assert ready_sessions == [result.session]
-    assert result.session.variant_id == "default"
-    assert json.loads((tmp_path / "play-workspace" / "config.json").read_text())["difficulty"] == "watch"
+    assert result.session.variant_id == "certification"
+    assert json.loads((tmp_path / "play-workspace" / "config.json").read_text())["difficulty"] == "smoke"
     assert len(popen_commands) == 2
     game_command, player_command = popen_commands
     assert network_commands == [["docker", "network", "inspect", LOCAL_DOCKER_NETWORK]]
@@ -583,6 +635,7 @@ def test_play_coworld_injects_bedrock_env_into_player_containers(
     monkeypatch.setattr("coworld.play.ensure_local_docker_network", fake_ensure_local_docker_network)
     monkeypatch.setattr("coworld.play._free_local_port", lambda: 1234)
     monkeypatch.setattr("coworld.play._wait_for_health", lambda *_args, **_kwargs: None)
+    monkeypatch.setattr("coworld.play._wait_for_game_exit", lambda *_args, **_kwargs: None)
     monkeypatch.setattr("coworld.play._wait_for_player_exit", lambda *_args, **_kwargs: None)
     monkeypatch.setattr("coworld.play._resolve_bedrock_aws_env", fake_resolve_bedrock_aws_env)
     monkeypatch.setattr("coworld.play.subprocess.Popen", fake_popen)
@@ -1150,9 +1203,7 @@ def test_cogs_vs_clips_coworld_manifest_validates(tmp_path: Path) -> None:
     assert package.manifest.player[0].id == "starter-policy-player"
     assert package.manifest.player[0].image == "coworld-mettagrid-policy-player:latest"
     assert package.manifest.player[0].run == ["python", "/app/coworld_policy_player.py"]
-    assert package.manifest.player[0].env == {
-        "COGAMES_POLICY_URI": "metta://policy/cogames.policy.starter_agent.StarterPolicy"
-    }
+    assert package.manifest.player[0].env == {}
     daily_variant = next(variant for variant in package.manifest.variants if variant.id == "machina-1-daily")
     assert daily_variant.game_config["max_steps"] == 10000
     assert config == {

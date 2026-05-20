@@ -2,8 +2,9 @@ from __future__ import annotations
 
 import shlex
 import webbrowser
+from contextlib import contextmanager
 from pathlib import Path
-from typing import Annotated
+from typing import Annotated, Iterator
 from urllib.parse import urlparse, urlunparse
 
 import typer
@@ -11,7 +12,12 @@ from rich import box
 from rich.table import Table
 
 from coworld.bundle import build_coworld_manifest
-from coworld.certifier import build_manifest_episode_job_spec, certify_coworld, load_coworld_package
+from coworld.certifier import (
+    build_manifest_episode_job_spec,
+    certify_coworld,
+    load_coworld_package,
+    load_manifest_episode_job_spec,
+)
 from coworld.cli_support import console, emit_json
 from coworld.config import DEFAULT_SUBMIT_SERVER
 from coworld.manifest_uri import materialized_manifest_path, materialized_replay_path
@@ -82,12 +88,12 @@ def build(
 @app.command("play")
 def play(
     manifest_uri: Annotated[str, typer.Argument(help="Path, URI, or Coworld ID for coworld_manifest.json.")],
-    player_images: Annotated[
+    episode_request_or_player_images: Annotated[
         list[str] | None,
         typer.Argument(
             help=(
-                "Optional local player image override. One image is reused for every player slot; otherwise provide "
-                "one image per slot."
+                "Optional episode_request.json, or local player image override(s). One image is reused for every "
+                "player slot; otherwise provide one image per slot."
             )
         ),
     ] = None,
@@ -100,10 +106,10 @@ def play(
         str | None,
         typer.Option(
             "--variant",
-            help="Coworld variant ID to play. Defaults to 'default' when present, otherwise the first variant.",
+            help="Coworld variant ID to play. Defaults to the certification fixture.",
         ),
     ] = None,
-    timeout_seconds: Annotated[float, typer.Option("--timeout-seconds", min=1.0, help="Health check timeout.")] = 60.0,
+    timeout_seconds: Annotated[float, typer.Option("--timeout-seconds", min=1.0, help="Episode timeout.")] = 3600.0,
     use_bedrock: Annotated[
         bool,
         typer.Option(
@@ -126,6 +132,9 @@ def play(
 ) -> None:
     if not use_bedrock and (aws_profile is not None or aws_region is not None):
         raise typer.BadParameter("--aws-profile and --aws-region require --use-bedrock")
+    episode_request_path, player_images = _split_episode_request_and_player_images(episode_request_or_player_images)
+    if episode_request_path is not None and (variant_id is not None or run):
+        raise typer.BadParameter("episode request files cannot be combined with --variant or --run")
 
     def on_ready(session: PlaySession) -> None:
         _print_play_session(session)
@@ -139,6 +148,7 @@ def play(
         result = play_coworld(
             cached_manifest_path.resolve(),
             variant_id=variant_id,
+            episode_request_path=episode_request_path,
             player_images=player_images,
             player_run=run,
             use_bedrock=use_bedrock,
@@ -152,6 +162,7 @@ def play(
             result = play_coworld(
                 manifest_path,
                 variant_id=variant_id,
+                episode_request_path=episode_request_path,
                 player_images=player_images,
                 player_run=run,
                 use_bedrock=use_bedrock,
@@ -354,12 +365,12 @@ def submit(
 @app.command("run-episode")
 def run_episode(
     manifest_uri: Annotated[str, typer.Argument(help="Path, URI, or Coworld ID for coworld_manifest.json.")],
-    player_images: Annotated[
+    episode_request_or_player_images: Annotated[
         list[str] | None,
         typer.Argument(
             help=(
-                "Optional local player image override. One image is reused for every player slot; otherwise provide "
-                "one image per slot."
+                "Optional episode_request.json, or local player image override(s). One image is reused for every "
+                "player slot; otherwise provide one image per slot."
             )
         ),
     ] = None,
@@ -382,9 +393,15 @@ def run_episode(
     timeout_seconds: Annotated[float, typer.Option("--timeout-seconds", min=1.0)] = 3600.0,
     verify_replay: Annotated[bool, typer.Option("--verify-replay/--no-verify-replay")] = False,
 ) -> None:
-    with materialized_manifest_path(manifest_uri, server=server) as manifest_path:
+    episode_request_path, player_images = _split_episode_request_and_player_images(episode_request_or_player_images)
+    if episode_request_path is not None and run:
+        raise typer.BadParameter("episode request files cannot be combined with --run")
+    with _materialized_manifest_path(manifest_uri, server=server) as manifest_path:
         package = load_coworld_package(manifest_path)
-        spec = build_manifest_episode_job_spec(package, player_images=player_images, player_run=run)
+        if episode_request_path is None:
+            spec = build_manifest_episode_job_spec(package, player_images=player_images, player_run=run)
+        else:
+            spec = load_manifest_episode_job_spec(package, episode_request_path)
         parsed_manifest_uri = urlparse(manifest_uri)
         if output_dir is not None:
             artifacts_dir = output_dir
@@ -404,6 +421,28 @@ def run_episode(
     typer.echo(f"Results: {artifacts.results_path}")
     _echo_replay_paths(artifacts)
     typer.echo(f"Logs: {artifacts.logs_dir}")
+
+
+@contextmanager
+def _materialized_manifest_path(manifest_uri: str, *, server: str) -> Iterator[Path]:
+    if manifest_uri.startswith("cow_") and "/" not in manifest_uri:
+        cached_manifest_path = downloaded_coworld_manifest_path(Path("./coworld"), manifest_uri)
+        if cached_manifest_path.is_file():
+            yield cached_manifest_path.resolve()
+            return
+    with materialized_manifest_path(manifest_uri, server=server) as manifest_path:
+        yield manifest_path
+
+
+def _split_episode_request_and_player_images(values: list[str] | None) -> tuple[Path | None, list[str] | None]:
+    if not values:
+        return None, None
+    first_path = Path(values[0])
+    if first_path.is_file() or first_path.suffix == ".json":
+        if len(values) > 1:
+            raise typer.BadParameter("episode request files cannot be combined with positional player image overrides")
+        return first_path, None
+    return None, values
 
 
 @app.command("replay")

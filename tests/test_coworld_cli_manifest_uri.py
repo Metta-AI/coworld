@@ -151,6 +151,34 @@ def test_coworld_play_accepts_player_image_override(monkeypatch: MonkeyPatch, tm
     assert kwargs["variant_id"] == "default"
     assert kwargs["player_images"] == ["my-player:latest"]
     assert kwargs["player_run"] == ["python", "/app/player.py"]
+    assert kwargs["episode_request_path"] is None
+
+
+def test_coworld_play_accepts_episode_request_file(monkeypatch: MonkeyPatch, tmp_path: Path) -> None:
+    captured: dict[str, object] = {}
+    manifest_path = _example_manifest(tmp_path)
+    request_path = _write_episode_request(tmp_path, manifest_path)
+
+    def fake_play_coworld(manifest_path: Path, **kwargs: object) -> SimpleNamespace:
+        captured["manifest_path"] = manifest_path
+        captured["kwargs"] = kwargs
+        artifacts = SimpleNamespace(
+            workspace=Path("/tmp/workspace"),
+            results_path=Path("/tmp/results.json"),
+            replay_path=Path("/tmp/replay.json"),
+            compressed_replay_path=Path("/tmp/replay.json.z"),
+            logs_dir=Path("/tmp/logs"),
+        )
+        return SimpleNamespace(session=SimpleNamespace(artifacts=artifacts), results={})
+
+    monkeypatch.setattr("coworld.cli.play_coworld", fake_play_coworld)
+
+    result = CliRunner().invoke(app, ["play", str(manifest_path), str(request_path), "--no-open-browser"])
+
+    assert result.exit_code == 0, result.output
+    kwargs = cast(dict[str, object], captured["kwargs"])
+    assert kwargs["episode_request_path"] == request_path
+    assert kwargs["player_images"] is None
 
 
 def test_coworld_play_accepts_variant(monkeypatch: MonkeyPatch, tmp_path: Path) -> None:
@@ -306,7 +334,8 @@ def test_run_episode_accepts_one_player_image_per_slot(monkeypatch: MonkeyPatch,
     )
 
     assert [player.image for player in spec.players] == ["player-one:latest", "player-two:latest"]
-    assert [player.run for player in spec.players] == [[], []]
+    expected_run = ["python", "-m", "coworld.examples.paintarena.player.player"]
+    assert [player.run for player in spec.players] == [expected_run, expected_run]
 
 
 def test_run_episode_player_image_override_keeps_manifest_env(monkeypatch: MonkeyPatch, tmp_path: Path) -> None:
@@ -323,9 +352,24 @@ def test_run_episode_player_image_override_keeps_manifest_env(monkeypatch: Monke
 
     assert [player.image for player in spec.players] == ["custom-policy-player:latest"] * 8
     assert [player.run for player in spec.players] == [["python", "/app/player.py"]] * 8
-    assert {tuple(player.env.items()) for player in spec.players} == {
-        (("COGAMES_POLICY_URI", "metta://policy/cogames.policy.starter_agent.StarterPolicy"),)
-    }
+    assert {tuple(player.env.items()) for player in spec.players} == {()}
+
+
+def test_run_episode_accepts_episode_request_file_with_per_slot_env(
+    monkeypatch: MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    manifest_path = _example_manifest(tmp_path)
+    request_path = _write_episode_request(tmp_path, manifest_path)
+
+    spec, kwargs = _invoke_run_episode(monkeypatch, tmp_path, str(manifest_path), str(request_path))
+
+    assert spec.game_config["max_ticks"] == 3
+    assert [player.image for player in spec.players] == ["slot-zero:latest", "slot-one:latest"]
+    assert [player.run for player in spec.players] == [["python", "/slot-zero.py"], ["python", "/slot-one.py"]]
+    assert [player.env for player in spec.players] == [{"PLAYER_SLOT": "0"}, {"PLAYER_SLOT": "1"}]
+    assert spec.policy_names == ["slot-zero:v1", "slot-one:v1"]
+    assert kwargs == {"timeout_seconds": 3600.0, "verify_replay": False}
 
 
 def _invoke_run_episode_artifacts(monkeypatch: MonkeyPatch, *args: str) -> EpisodeArtifacts:
@@ -405,3 +449,38 @@ def _materialized_template(tmp_path: Path, template_path: Path) -> Path:
     manifest_path.parent.mkdir(parents=True, exist_ok=True)
     manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
     return manifest_path
+
+
+def _write_episode_request(tmp_path: Path, manifest_path: Path) -> Path:
+    request_path = tmp_path / "episode_request.json"
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    request_path.write_text(
+        json.dumps(
+            {
+                "manifest": manifest,
+                "game_config": {
+                    "width": 12,
+                    "height": 8,
+                    "max_ticks": 3,
+                    "tick_rate": 5,
+                    "player_connect_timeout_seconds": 0.1,
+                    "players": [{"name": "Slot Zero"}, {"name": "Slot One"}],
+                },
+                "players": [
+                    {
+                        "image": "slot-zero:latest",
+                        "run": ["python", "/slot-zero.py"],
+                        "env": {"PLAYER_SLOT": "0"},
+                    },
+                    {
+                        "image": "slot-one:latest",
+                        "run": ["python", "/slot-one.py"],
+                        "env": {"PLAYER_SLOT": "1"},
+                    },
+                ],
+                "policy_names": ["slot-zero:v1", "slot-one:v1"],
+            }
+        ),
+        encoding="utf-8",
+    )
+    return request_path

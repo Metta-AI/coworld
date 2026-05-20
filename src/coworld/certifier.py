@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import copy
 from dataclasses import dataclass
 from pathlib import Path
 from typing import cast
@@ -18,7 +19,14 @@ from coworld.schema_validation import (
     load_json_object,
     validate_json_schema,
 )
-from coworld.types import CoworldDoc, CoworldEpisodeJobSpec, CoworldManifest, CoworldPlayerSpec, coworld_manifest_schema
+from coworld.types import (
+    CoworldDoc,
+    CoworldEpisodeJobSpec,
+    CoworldManifest,
+    CoworldPlayerSpec,
+    coworld_episode_request_schema,
+    coworld_manifest_schema,
+)
 
 
 @dataclass(frozen=True)
@@ -113,21 +121,22 @@ def build_manifest_episode_job_spec(
             expected_counts = "1" if slot_count == 1 else f"1 or {slot_count}"
             raise ValueError(f"expected {expected_counts} player images for {slot_count} player slots")
 
+        player_update = {"run": list(player_run)} if player_run is not None else {}
         players = [
-            players[slot].model_copy(update={"image": image, "run": list(player_run or [])})
+            players[slot].model_copy(deep=True, update={"image": image, **player_update})
             for slot, image in enumerate(slot_images)
         ]
 
     if variant_id is None:
-        game_config = dict(package.manifest.certification.game_config)
+        game_config = copy.deepcopy(package.manifest.certification.game_config)
     else:
         variants = {variant.id: variant for variant in package.manifest.variants}
         if variant_id not in variants:
             raise ValueError(f"unknown Coworld variant_id: {variant_id!r}")
-        game_config = dict(variants[variant_id].game_config)
+        game_config = copy.deepcopy(variants[variant_id].game_config)
 
     return CoworldEpisodeJobSpec(
-        manifest=package.manifest,
+        manifest=package.manifest.model_copy(deep=True),
         game_config=game_config,
         players=players,
     )
@@ -140,6 +149,19 @@ def build_player_launch_specs(episode_request: JsonObject) -> list[PlayerLaunchS
 
 def build_coworld_episode_job_spec(episode_request: JsonObject) -> CoworldEpisodeJobSpec:
     return CoworldEpisodeJobSpec.model_validate(episode_request)
+
+
+def load_coworld_episode_job_spec(episode_request_path: Path) -> CoworldEpisodeJobSpec:
+    episode_request = load_json_object(episode_request_path)
+    validate_json_schema(episode_request, coworld_episode_request_schema())
+    return build_coworld_episode_job_spec(episode_request)
+
+
+def load_manifest_episode_job_spec(package: CoworldPackage, episode_request_path: Path) -> CoworldEpisodeJobSpec:
+    spec = load_coworld_episode_job_spec(episode_request_path)
+    if spec.manifest != package.manifest:
+        raise ValueError(f"episode request manifest does not match {package.manifest_path}")
+    return spec
 
 
 def load_results(package: CoworldPackage, artifacts: EpisodeArtifacts) -> JsonObject:
