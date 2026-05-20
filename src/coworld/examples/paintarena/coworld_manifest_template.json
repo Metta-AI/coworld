@@ -1,13 +1,12 @@
 {
-  "$schema": "../../coworld_manifest_schema.json",
+  "$schema": "https://raw.githubusercontent.com/Metta-AI/coworld/main/src/coworld/coworld_manifest_schema.json",
   "game": {
     "name": "paintarena",
-    "version": "0.1.5",
     "description": "Continuous tick-based territory painting Cogame used to certify the Coworld contract.",
     "owner": "cogames@softmax.com",
     "runnable": {
       "type": "game",
-      "image": "coworld-paintarena:latest",
+      "image": "{{PAINTARENA_IMAGE}}",
       "run": ["python", "-m", "coworld.examples.paintarena.game.server"]
     },
     "config_schema": {
@@ -113,7 +112,7 @@
       "id": "sweep-painter",
       "name": "Sweep Painter",
       "type": "player",
-      "image": "coworld-paintarena:latest",
+      "image": "{{PAINTARENA_IMAGE}}",
       "run": ["python", "-m", "coworld.examples.paintarena.player.player"],
       "description": "Deterministic player that sweeps across the arena repainting tiles."
     }

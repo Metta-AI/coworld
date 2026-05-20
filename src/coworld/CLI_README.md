@@ -84,6 +84,7 @@ template and may include a Dockerfile. Build and test it before uploading.
 ## Coworld Packages
 
 ```bash
+uv run coworld build path/to/compose.yaml path/to/coworld_manifest_template.json 0.1.0 build/coworld_manifest.json
 uv run coworld certify path/to/coworld_manifest.json
 uv run coworld upload-coworld path/to/coworld_manifest.json
 uv run coworld list

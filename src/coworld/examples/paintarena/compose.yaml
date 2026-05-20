@@ -1,0 +1,6 @@
+services:
+  paintarena:
+    image: coworld-paintarena:latest
+    platform: linux/amd64
+    build:
+      context: .

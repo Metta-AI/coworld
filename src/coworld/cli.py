@@ -10,6 +10,7 @@ import typer
 from rich import box
 from rich.table import Table
 
+from coworld.bundle import build_coworld_manifest
 from coworld.certifier import build_manifest_episode_job_spec, certify_coworld, load_coworld_package
 from coworld.cli_support import console, emit_json
 from coworld.config import DEFAULT_SUBMIT_SERVER
@@ -65,6 +66,17 @@ def certify(
     typer.echo(f"Results: {result.artifacts.results_path}")
     typer.echo(f"Replay: {result.artifacts.replay_path}")
     typer.echo(f"Logs: {result.artifacts.logs_dir}")
+
+
+@app.command("build")
+def build(
+    compose_file: Annotated[Path, typer.Argument(help="Path to the Coworld compose.yaml build file.")],
+    template_path: Annotated[Path, typer.Argument(help="Path to coworld_manifest_template.json.")],
+    version: Annotated[str, typer.Argument(help="Version to write into the hydrated manifest.")],
+    output_path: Annotated[Path, typer.Argument(help="Output path for coworld_manifest.json.")],
+) -> None:
+    manifest_path = build_coworld_manifest(compose_file, template_path, version, output_path)
+    typer.echo(f"Built Coworld manifest: {manifest_path}")
 
 
 @app.command("play")

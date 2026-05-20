@@ -3,21 +3,21 @@
 This example packages Cogsguard Cogs vs Clips as a Coworld. The game image runs the MettaGrid game server, and the
 player image runs a policy player that connects to the game's `/player` websocket.
 
-## Build Images
+## Build And Upload
 
-From the repo root:
+From the repository root:
 
 ```bash
-docker build -f packages/coworld/src/coworld/examples/cogs_vs_clips/game/Dockerfile -t ghcr.io/metta-ai/coworld-cogs-vs-clips-game:latest .
-docker build -f packages/coworld/src/coworld/examples/cogs_vs_clips/player/Dockerfile -t ghcr.io/metta-ai/coworld-mettagrid-policy-player:latest .
+uv run coworld build worlds/cogs_vs_clips/compose.yaml worlds/cogs_vs_clips/coworld_manifest_template.json 0.1.0 tmp/cogs_vs_clips/coworld_manifest.json
+uv run coworld upload-coworld tmp/cogs_vs_clips/coworld_manifest.json
 ```
 
 ## Play Locally
 
-From the repo root:
+From the repository root:
 
 ```bash
-uv run coworld play packages/coworld/src/coworld/examples/cogs_vs_clips/coworld_manifest.json
+uv run coworld play tmp/cogs_vs_clips/coworld_manifest.json
 ```
 
 Open the printed `/clients/global` URL to watch the live MettaGrid replay stream. The game image serves a
@@ -27,26 +27,26 @@ the policy player.
 
 ## Certify
 
-From the repo root:
+From the repository root:
 
 ```bash
-uv run coworld certify packages/coworld/src/coworld/examples/cogs_vs_clips/coworld_manifest.json
+uv run coworld certify tmp/cogs_vs_clips/coworld_manifest.json
 ```
 
 ## Run A Local Episode
 
-From the repo root, run the game with the bundled policy player image:
+From the repository root, run the game with the bundled policy player image:
 
 ```bash
-uv run coworld run-episode packages/coworld/src/coworld/examples/cogs_vs_clips/coworld_manifest.json ghcr.io/metta-ai/coworld-mettagrid-policy-player:latest --run python --run /app/coworld_policy_player.py
+uv run coworld run-episode tmp/cogs_vs_clips/coworld_manifest.json
 ```
 
 This is the same command shape a league player would use after building their own player image.
 
 ## View A Replay
 
-After `play` or `certify` writes a replay artifact, start a replay viewer from the repo root:
+After `play` or `certify` writes a replay artifact, start a replay viewer from the repository root:
 
 ```bash
-uv run coworld replay packages/coworld/src/coworld/examples/cogs_vs_clips/coworld_manifest.json path/to/replay.json
+uv run coworld replay tmp/cogs_vs_clips/coworld_manifest.json path/to/replay.json
 ```

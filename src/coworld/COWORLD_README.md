@@ -139,16 +139,19 @@ uv run coworld upload-policy my-runtime:latest --name my-player --run python --r
 Use this flow when you want to package a new Coworld:
 
 ```bash
-docker build --platform=linux/amd64 -t my-coworld-game:latest .
-uv run coworld certify path/to/coworld_manifest.json
-uv run coworld upload-coworld path/to/coworld_manifest.json
+uv run coworld build path/to/compose.yaml path/to/coworld_manifest_template.json 0.1.0 build/coworld_manifest.json
+uv run coworld certify build/coworld_manifest.json
+uv run coworld upload-coworld build/coworld_manifest.json
 ```
 
 The smallest complete example is [examples/paintarena/](examples/paintarena/).
 
+`coworld build` runs the Compose build, copies the manifest template to a hydrated manifest, writes the requested
+`game.version`, and replaces build image tags with content-derived local tags. Keep `coworld_manifest_template.json`
+checked in without a version; use the hydrated `coworld_manifest.json` for certify, play, run, and upload.
+
 Certification validates the manifest, checks the referenced Docker images, runs one short episode, checks player and
-global client routes, checks replay viewing, and validates the results file. The certifier does not build images; build
-or pull them first.
+global client routes, checks replay viewing, and validates the results file.
 
 Publishing a Coworld is separate from submitting a policy. `upload-coworld` uploads the game package and bundled player
 images. `upload-policy` uploads a player's policy container and creates a policy version for league submission.

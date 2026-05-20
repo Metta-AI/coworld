@@ -3,8 +3,6 @@ from pathlib import Path
 from types import SimpleNamespace
 from typing import Callable, cast
 
-import pytest
-import typer
 from pytest import MonkeyPatch
 from pytest_httpserver import HTTPServer
 from typer.testing import CliRunner
@@ -112,7 +110,7 @@ def test_coworld_play_downloads_missing_coworld_id_cache(tmp_path: Path, monkeyp
     assert captured["manifest"] == manifest
 
 
-def test_coworld_play_accepts_player_image_override(monkeypatch: MonkeyPatch) -> None:
+def test_coworld_play_accepts_player_image_override(monkeypatch: MonkeyPatch, tmp_path: Path) -> None:
     captured: dict[str, object] = {}
 
     def fake_play_coworld(manifest_path: Path, **kwargs: object) -> SimpleNamespace:
@@ -132,7 +130,7 @@ def test_coworld_play_accepts_player_image_override(monkeypatch: MonkeyPatch) ->
         app,
         [
             "play",
-            str(_example_manifest()),
+            str(_example_manifest(tmp_path)),
             "my-player:latest",
             "--variant",
             "default",
@@ -151,11 +149,10 @@ def test_coworld_play_accepts_player_image_override(monkeypatch: MonkeyPatch) ->
     assert kwargs["player_run"] == ["python", "/app/player.py"]
 
 
-def test_coworld_play_accepts_bedrock_options(monkeypatch: MonkeyPatch) -> None:
+def test_coworld_play_accepts_variant(monkeypatch: MonkeyPatch, tmp_path: Path) -> None:
     captured: dict[str, object] = {}
 
     def fake_play_coworld(manifest_path: Path, **kwargs: object) -> SimpleNamespace:
-        captured["manifest_path"] = manifest_path
         captured["kwargs"] = kwargs
         artifacts = SimpleNamespace(
             workspace=Path("/tmp/workspace"),
@@ -168,65 +165,15 @@ def test_coworld_play_accepts_bedrock_options(monkeypatch: MonkeyPatch) -> None:
     monkeypatch.setattr("coworld.cli.play_coworld", fake_play_coworld)
 
     result = CliRunner().invoke(
-        app,
-        [
-            "play",
-            str(_example_manifest()),
-            "--use-bedrock",
-            "--aws-profile",
-            "bedrock-dev",
-            "--aws-region",
-            "us-west-2",
-            "--no-open-browser",
-        ],
+        app, ["play", str(_example_manifest(tmp_path)), "--variant", "daily", "--no-open-browser"]
     )
-
-    assert result.exit_code == 0, result.output
-    kwargs = cast(dict[str, object], captured["kwargs"])
-    assert kwargs["use_bedrock"] is True
-    assert kwargs["aws_profile"] == "bedrock-dev"
-    assert kwargs["aws_region"] == "us-west-2"
-
-
-def test_coworld_play_rejects_aws_options_without_bedrock() -> None:
-    with pytest.raises(typer.BadParameter, match="--aws-profile and --aws-region require --use-bedrock"):
-        CliRunner().invoke(
-            app,
-            [
-                "play",
-                str(_example_manifest()),
-                "--aws-profile",
-                "bedrock-dev",
-                "--no-open-browser",
-            ],
-            standalone_mode=False,
-            catch_exceptions=False,
-        )
-
-
-def test_coworld_play_accepts_variant(monkeypatch: MonkeyPatch) -> None:
-    captured: dict[str, object] = {}
-
-    def fake_play_coworld(manifest_path: Path, **kwargs: object) -> SimpleNamespace:
-        captured["kwargs"] = kwargs
-        artifacts = SimpleNamespace(
-            workspace=Path("/tmp/workspace"),
-            results_path=Path("/tmp/results.json"),
-            replay_path=Path("/tmp/replay.json"),
-            logs_dir=Path("/tmp/logs"),
-        )
-        return SimpleNamespace(session=SimpleNamespace(artifacts=artifacts), results={})
-
-    monkeypatch.setattr("coworld.cli.play_coworld", fake_play_coworld)
-
-    result = CliRunner().invoke(app, ["play", str(_example_manifest()), "--variant", "daily", "--no-open-browser"])
 
     assert result.exit_code == 0, result.output
     kwargs = cast(dict[str, object], captured["kwargs"])
     assert kwargs["variant_id"] == "daily"
 
 
-def test_coworld_play_opens_global_client_by_default(monkeypatch: MonkeyPatch) -> None:
+def test_coworld_play_opens_global_client_by_default(monkeypatch: MonkeyPatch, tmp_path: Path) -> None:
     opened_urls: list[str] = []
 
     def fake_play_coworld(manifest_path: Path, **kwargs: object) -> SimpleNamespace:
@@ -251,7 +198,7 @@ def test_coworld_play_opens_global_client_by_default(monkeypatch: MonkeyPatch) -
     monkeypatch.setattr("coworld.cli.play_coworld", fake_play_coworld)
     monkeypatch.setattr("coworld.cli.webbrowser.open", opened_urls.append)
 
-    result = CliRunner().invoke(app, ["play", str(_example_manifest())])
+    result = CliRunner().invoke(app, ["play", str(_example_manifest(tmp_path))])
 
     assert result.exit_code == 0, result.output
     assert opened_urls == ["http://127.0.0.1/global"]
@@ -263,7 +210,7 @@ def test_run_episode_uses_manifest_certification_players(monkeypatch: MonkeyPatc
     spec, kwargs = _invoke_run_episode(
         monkeypatch,
         tmp_path,
-        str(_example_manifest()),
+        str(_example_manifest(tmp_path)),
         "--timeout-seconds",
         "12",
         "--verify-replay",
@@ -277,9 +224,7 @@ def test_run_episode_uses_manifest_certification_players(monkeypatch: MonkeyPatc
 
 
 def test_run_episode_defaults_results_next_to_manifest(monkeypatch: MonkeyPatch, tmp_path: Path) -> None:
-    manifest_path = tmp_path / "paintarena" / "coworld_manifest.json"
-    manifest_path.parent.mkdir()
-    manifest_path.write_text(_example_manifest().read_text(encoding="utf-8"), encoding="utf-8")
+    manifest_path = _example_manifest(tmp_path)
 
     artifacts = _invoke_run_episode_artifacts(monkeypatch, str(manifest_path))
 
@@ -292,7 +237,7 @@ def test_run_episode_defaults_backend_coworld_results_to_coworld_id(
     monkeypatch: MonkeyPatch,
     tmp_path: Path,
 ) -> None:
-    manifest = json.loads(_example_manifest().read_text(encoding="utf-8"))
+    manifest = json.loads(_example_manifest(tmp_path).read_text(encoding="utf-8"))
     httpserver.expect_request(COWORLD_PATH).respond_with_json({"manifest": manifest})
 
     monkeypatch.chdir(tmp_path)
@@ -306,7 +251,7 @@ def test_run_episode_defaults_coworld_id_results_to_coworld_id(
     monkeypatch: MonkeyPatch,
     tmp_path: Path,
 ) -> None:
-    manifest = json.loads(_example_manifest().read_text(encoding="utf-8"))
+    manifest = json.loads(_example_manifest(tmp_path).read_text(encoding="utf-8"))
     httpserver.expect_request(COWORLD_PATH).respond_with_json({"manifest": manifest})
 
     monkeypatch.chdir(tmp_path)
@@ -321,7 +266,7 @@ def test_run_episode_defaults_downloaded_id_manifest_results_to_coworld_id(
 ) -> None:
     manifest_path = tmp_path / "coworld" / COWORLD_ID / "coworld_manifest.json"
     manifest_path.parent.mkdir(parents=True)
-    manifest_path.write_text(_example_manifest().read_text(encoding="utf-8"), encoding="utf-8")
+    manifest_path.write_text(_example_manifest(tmp_path).read_text(encoding="utf-8"), encoding="utf-8")
 
     artifacts = _invoke_run_episode_artifacts(monkeypatch, str(manifest_path))
 
@@ -332,7 +277,7 @@ def test_run_episode_accepts_one_player_image_for_all_slots(monkeypatch: MonkeyP
     spec, kwargs = _invoke_run_episode(
         monkeypatch,
         tmp_path,
-        str(_example_manifest()),
+        str(_example_manifest(tmp_path)),
         "my-player:latest",
         "--run",
         "python",
@@ -349,7 +294,7 @@ def test_run_episode_accepts_one_player_image_per_slot(monkeypatch: MonkeyPatch,
     spec, _kwargs = _invoke_run_episode(
         monkeypatch,
         tmp_path,
-        str(_example_manifest()),
+        str(_example_manifest(tmp_path)),
         "player-one:latest",
         "player-two:latest",
     )
@@ -362,7 +307,7 @@ def test_run_episode_player_image_override_keeps_manifest_env(monkeypatch: Monke
     spec, _kwargs = _invoke_run_episode(
         monkeypatch,
         tmp_path,
-        str(_cogs_vs_clips_manifest()),
+        str(_cogs_vs_clips_manifest(tmp_path)),
         "custom-policy-player:latest",
         "--run",
         "python",
@@ -411,11 +356,46 @@ def _invoke_run_episode(
     return cast(CoworldEpisodeJobSpec, captured["spec"]), cast(dict[str, object], captured["kwargs"])
 
 
-def _example_manifest() -> Path:
-    return Path(__file__).resolve().parents[1] / "src" / "coworld" / "examples" / "paintarena" / "coworld_manifest.json"
-
-
-def _cogs_vs_clips_manifest() -> Path:
-    return (
-        Path(__file__).resolve().parents[1] / "src" / "coworld" / "examples" / "cogs_vs_clips" / "coworld_manifest.json"
+def _example_manifest(tmp_path: Path) -> Path:
+    return _materialized_template(
+        tmp_path,
+        Path(__file__).resolve().parents[1]
+        / "src"
+        / "coworld"
+        / "examples"
+        / "paintarena"
+        / "coworld_manifest_template.json",
     )
+
+
+def _cogs_vs_clips_manifest(tmp_path: Path) -> Path:
+    return _materialized_template(
+        tmp_path,
+        Path(__file__).resolve().parents[3] / "worlds" / "cogs_vs_clips" / "coworld_manifest_template.json",
+    )
+
+
+def _materialized_template(tmp_path: Path, template_path: Path) -> Path:
+    manifest = json.loads(template_path.read_text(encoding="utf-8"))
+    manifest["game"]["version"] = "0.1.0"
+    image_placeholders = {
+        "cogs_vs_clips": {
+            "{{GAME_IMAGE}}": "coworld-cogs-vs-clips-game:latest",
+            "{{PLAYER_IMAGE}}": "coworld-mettagrid-policy-player:latest",
+        },
+        "paintarena": {"{{PAINTARENA_IMAGE}}": "coworld-paintarena:latest"},
+    }
+    placeholders = image_placeholders[template_path.parent.name]
+    game_image = manifest["game"]["runnable"]["image"]
+    if game_image in placeholders:
+        manifest["game"]["runnable"]["image"] = placeholders[game_image]
+    for section in ("player", "commissioner", "reporter", "optimizer"):
+        if section in manifest:
+            for runnable in manifest[section]:
+                image = runnable["image"]
+                if image in placeholders:
+                    runnable["image"] = placeholders[image]
+    manifest_path = tmp_path / template_path.parent.name / "coworld_manifest.json"
+    manifest_path.parent.mkdir(parents=True, exist_ok=True)
+    manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
+    return manifest_path

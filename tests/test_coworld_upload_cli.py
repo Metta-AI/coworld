@@ -31,13 +31,21 @@ def test_upload_coworld_posts_standalone_manifest(
     image_id = "img_00000000-0000-0000-0000-000000000010"
     softmax_image_uri = "123456789012.dkr.ecr.us-east-1.amazonaws.com/cogames/user/unit-test-runtime@sha256:digest"
     pushed_images: list[tuple[str, str]] = []
+    hashed_images: list[str] = []
+
+    def fake_certify(path: Path, *, timeout_seconds: float) -> None:
+        certification_calls.append((path, timeout_seconds))
+        manifest = json.loads(path.read_text(encoding="utf-8"))
+        assert manifest["game"]["runnable"]["image"] == "unit-test-runtime:latest"
+        assert manifest["player"][0]["image"] == "unit-test-runtime:latest"
+
+    def fake_hash(image: str) -> str:
+        hashed_images.append(image)
+        return "sha256:client-hash"
 
     monkeypatch.setattr("coworld.upload._load_current_cogames_token", lambda: "token")
-    monkeypatch.setattr(
-        "coworld.upload.certify_coworld",
-        lambda manifest_path, *, timeout_seconds: certification_calls.append((manifest_path, timeout_seconds)),
-    )
-    monkeypatch.setattr("coworld.upload._local_image_client_hash", lambda image: "sha256:client-hash")
+    monkeypatch.setattr("coworld.upload.certify_coworld", fake_certify)
+    monkeypatch.setattr("coworld.upload._local_image_client_hash", fake_hash)
     monkeypatch.setattr(
         "coworld.upload._push_container_image",
         lambda source_image, push_info: pushed_images.append((source_image, push_info.image_uri)),
@@ -114,9 +122,14 @@ def test_upload_coworld_posts_standalone_manifest(
     assert result.id == "cow_00000000-0000-0000-0000-000000000001"
     assert result.manifest_hash == "sha256:manifest-hash"
     assert result.canonical is True
-    assert certification_calls == [(manifest_path.resolve(), 60.0)]
+    assert certification_calls[0][0] == manifest_path.resolve()
+    assert certification_calls[0][1] == 60.0
+    assert hashed_images == ["unit-test-runtime:latest"]
     assert pushed_images == [
-        ("unit-test-runtime:latest", "123456789012.dkr.ecr.us-east-1.amazonaws.com/cogames/user/unit-test-runtime:v1"),
+        (
+            "unit-test-runtime:latest",
+            "123456789012.dkr.ecr.us-east-1.amazonaws.com/cogames/user/unit-test-runtime:v1",
+        ),
     ]
     upload_req = next(req for req, _ in httpserver.log if req.path == "/observatory/v2/coworlds/upload")
     uploaded_manifest = upload_req.get_json()["manifest"]

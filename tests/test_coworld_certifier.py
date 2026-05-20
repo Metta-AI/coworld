@@ -754,8 +754,8 @@ def test_runnable_run_overrides_docker_entrypoint(tmp_path: Path, monkeypatch: p
     assert player_command == ["--entrypoint", "python", "unit-test-runtime:latest", "-m", "unit_test.player"]
 
 
-def test_example_coworld_manifest_validates() -> None:
-    package = load_coworld_package(_example_root() / "coworld_manifest.json")
+def test_example_coworld_manifest_validates(tmp_path: Path) -> None:
+    package = load_coworld_package(_materialized_template(tmp_path, _example_root() / "coworld_manifest_template.json"))
     config = build_game_config(package, ["token-0", "token-1"])
     assert package.cogame.image == "coworld-paintarena:latest"
     assert package.cogame.run == ("python", "-m", "coworld.examples.paintarena.game.server")
@@ -884,13 +884,15 @@ def test_paintarena_disconnected_player_noops_after_timeout(tmp_path: Path, monk
     assert json.loads(replay_path.read_text())["frames"][0]["started"] is True
 
 
-def test_cogs_vs_clips_coworld_manifest_validates() -> None:
-    package = load_coworld_package(_cogs_vs_clips_root() / "coworld_manifest.json")
+def test_cogs_vs_clips_coworld_manifest_validates(tmp_path: Path) -> None:
+    package = load_coworld_package(
+        _materialized_template(tmp_path, _world_root("cogs_vs_clips") / "coworld_manifest_template.json")
+    )
     tokens = [f"token-{index}" for index in range(8)]
     config = build_game_config(package, tokens)
 
     assert package.manifest.game.name == "cogs_vs_clips"
-    assert package.cogame.image == "ghcr.io/metta-ai/coworld-cogs-vs-clips-game:latest"
+    assert package.cogame.image == "coworld-cogs-vs-clips-game:latest"
     assert package.cogame.run == ("python", "/app/server.py")
     assert (
         package.manifest.game.protocols.player.value
@@ -904,7 +906,7 @@ def test_cogs_vs_clips_coworld_manifest_validates() -> None:
     assert package.manifest.game.docs.pages[0].id == "play_cogsvsclips.md"
     assert package.manifest.game.docs.pages[0].content.value == "https://softmax.com/play_cogsvsclips.md"
     assert package.manifest.player[0].id == "starter-policy-player"
-    assert package.manifest.player[0].image == "ghcr.io/metta-ai/coworld-mettagrid-policy-player:latest"
+    assert package.manifest.player[0].image == "coworld-mettagrid-policy-player:latest"
     assert package.manifest.player[0].run == ["python", "/app/coworld_policy_player.py"]
     assert package.manifest.player[0].env == {
         "COGAMES_POLICY_URI": "metta://policy/cogames.policy.starter_agent.StarterPolicy"
@@ -1019,7 +1021,11 @@ def test_paintarena_example_certifies_with_docker(tmp_path: Path) -> None:
         timeout=300,
     )
 
-    result = certify_coworld(example_root / "coworld_manifest.json", workspace=tmp_path / "cert", timeout_seconds=60)
+    result = certify_coworld(
+        _materialized_template(tmp_path, _example_root() / "coworld_manifest_template.json"),
+        workspace=tmp_path / "cert",
+        timeout_seconds=60,
+    )
 
     scores = cast(list[int], result.results["scores"])
     assert sum(scores) > 0
@@ -1065,6 +1071,33 @@ def _write_package_files(
         )
     )
     return coworld_manifest_path
+
+
+def _materialized_template(tmp_path: Path, template_path: Path) -> Path:
+    manifest = json.loads(template_path.read_text(encoding="utf-8"))
+    manifest["game"]["version"] = "0.1.0"
+    image_placeholders = {
+        "cogs_vs_clips": {
+            "{{GAME_IMAGE}}": "coworld-cogs-vs-clips-game:latest",
+            "{{PLAYER_IMAGE}}": "coworld-mettagrid-policy-player:latest",
+        },
+        "paintarena": {"{{PAINTARENA_IMAGE}}": "coworld-paintarena:latest"},
+    }
+    if template_path.parent.name in image_placeholders:
+        placeholders = image_placeholders[template_path.parent.name]
+        game_image = manifest["game"]["runnable"]["image"]
+        if game_image in placeholders:
+            manifest["game"]["runnable"]["image"] = placeholders[game_image]
+        for section in ("player", "commissioner", "reporter", "optimizer"):
+            if section in manifest:
+                for runnable in manifest[section]:
+                    image = runnable["image"]
+                    if image in placeholders:
+                        runnable["image"] = placeholders[image]
+    manifest_path = tmp_path / template_path.parent.name / "coworld_manifest.json"
+    manifest_path.parent.mkdir(parents=True, exist_ok=True)
+    manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
+    return manifest_path
 
 
 def _coworld_manifest(
@@ -1147,6 +1180,10 @@ def _game_manifest(*, config_schema_required: list[str] | None = None) -> dict[s
 
 def _example_root() -> Path:
     return Path(__file__).resolve().parents[1] / "src" / "coworld" / "examples" / "paintarena"
+
+
+def _world_root(coworld_name: str) -> Path:
+    return Path(__file__).resolve().parents[3] / "worlds" / coworld_name
 
 
 def _reload_paintarena_server() -> Any:

@@ -6,28 +6,22 @@ entrypoint.
 The game is two-player and tick-based. Each player moves around a grid and paints the tile they are standing on.
 Painting overwrites the previous owner. Final scores are the number of tiles painted with each player's color.
 
-## Build Images
+## Build And Upload
 
-From this directory:
-
-```bash
-docker build --platform=linux/amd64 -t coworld-paintarena:latest .
-```
-
-From the Coworld package root (`packages/coworld/src/coworld`):
+The repository root keeps the canonical Compose build at `worlds/paintarena/compose.yaml`. This example keeps the same
+build path locally:
 
 ```bash
-docker build --platform=linux/amd64 -t coworld-paintarena:latest examples/paintarena
+uv run coworld build worlds/paintarena/compose.yaml worlds/paintarena/coworld_manifest_template.json 0.1.0 tmp/paintarena/coworld_manifest.json
+uv run coworld upload-coworld tmp/paintarena/coworld_manifest.json
 ```
-
-Use `linux/amd64` for images that will be uploaded to Softmax, including when building from Apple Silicon.
 
 ## Play Locally
 
-From the Coworld package root (`packages/coworld/src/coworld`):
+From the repository root:
 
 ```bash
-uv run coworld play examples/paintarena/coworld_manifest.json
+uv run coworld play tmp/paintarena/coworld_manifest.json
 ```
 
 The command prints:
@@ -44,17 +38,17 @@ Open both player links before playing. The episode starts after both player webs
 To run the full game with the bundled sweep-painter player image:
 
 ```bash
-uv run coworld run-episode examples/paintarena/coworld_manifest.json coworld-paintarena:latest --run python --run -m --run coworld.examples.paintarena.player.player
+uv run coworld run-episode tmp/paintarena/coworld_manifest.json
 ```
 
 This is the same local smoke-test shape a league player would use with their own image.
 
 ## Certify
 
-From the Coworld package root (`packages/coworld/src/coworld`):
+From the repository root:
 
 ```bash
-uv run coworld certify examples/paintarena/coworld_manifest.json
+uv run coworld certify tmp/paintarena/coworld_manifest.json
 ```
 
 Certification runs the game and bundled sweep-painter policy containers end to end, then validates the results and replay
@@ -62,18 +56,17 @@ artifacts.
 
 ## View A Replay
 
-After `play` or `certify` writes a replay artifact, start a replay viewer from the Coworld package root
-(`packages/coworld/src/coworld`):
+After `play` or `certify` writes a replay artifact, start a replay viewer from the repository root:
 
 ```bash
-uv run coworld replay examples/paintarena/coworld_manifest.json path/to/replay.json
+uv run coworld replay tmp/paintarena/coworld_manifest.json path/to/replay.json
 ```
 
 The command prints a replay client link and waits for the replay container to exit.
 
 ## Default Episode
 
-The default variant is configured in `coworld_manifest.json`:
+The default variant is configured in `coworld_manifest_template.json`:
 
 - `width`: 12
 - `height`: 8
