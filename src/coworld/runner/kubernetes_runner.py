@@ -7,7 +7,6 @@ import os
 import sys
 import time
 import zipfile
-import zlib
 from io import BytesIO
 from pathlib import Path
 from typing import Mapping, Sequence
@@ -23,6 +22,7 @@ from coworld.runner.runner import (
     _require_bad_player_rejected,
     _require_global_message,
     _require_http_ok,
+    compress_replay,
     coworld_game_config,
     generate_tokens,
 )
@@ -122,7 +122,7 @@ def _upload_outputs(artifacts: EpisodeArtifacts) -> None:
 
     replay_uri = os.environ.get("REPLAY_URI")
     if replay_uri is not None:
-        upload_data(replay_uri, _compress_replay(artifacts).read_bytes(), content_type="application/x-compress")
+        upload_data(replay_uri, compress_replay(artifacts).read_bytes(), content_type="application/x-compress")
 
     debug_uri = os.environ.get("DEBUG_URI")
     if debug_uri is not None:
@@ -134,12 +134,6 @@ def _upload_outputs(artifacts: EpisodeArtifacts) -> None:
             log_path = artifacts.policy_log_path(int(slot))
             if log_path.exists():
                 upload_data(log_uri, log_path.read_bytes(), content_type="text/plain")
-
-
-def _compress_replay(artifacts: EpisodeArtifacts) -> Path:
-    compressed_path = artifacts.workspace / "replay.json.z"
-    compressed_path.write_bytes(zlib.compress(artifacts.replay_path.read_bytes()))
-    return compressed_path
 
 
 def _zip_logs(logs_dir: Path) -> bytes:

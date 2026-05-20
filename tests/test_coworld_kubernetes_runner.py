@@ -96,17 +96,25 @@ def test_runner_compress_replay_writes_zlib_json_z(tmp_path):
 
     compressed_path = runner_module.compress_replay(artifacts)
 
+    assert compressed_path == artifacts.compressed_replay_path
     assert compressed_path.name == "replay.json.z"
     assert zlib.decompress(compressed_path.read_bytes()) == b'{"events":[]}'
 
 
-def test_kubernetes_compress_replay_writes_zlib_json_z(tmp_path):
+def test_finalize_replay_artifacts_skips_when_replay_missing(tmp_path):
+    artifacts = EpisodeArtifacts.create(tmp_path)
+
+    assert runner_module.finalize_replay_artifacts(artifacts) is None
+    assert not artifacts.compressed_replay_path.exists()
+
+
+def test_finalize_replay_artifacts_compresses_when_replay_present(tmp_path):
     artifacts = EpisodeArtifacts.create(tmp_path)
     artifacts.replay_path.write_bytes(b'{"events":[]}')
 
-    compressed_path = kubernetes_runner._compress_replay(artifacts)
+    compressed_path = runner_module.finalize_replay_artifacts(artifacts)
 
-    assert compressed_path.name == "replay.json.z"
+    assert compressed_path == artifacts.compressed_replay_path
     assert zlib.decompress(compressed_path.read_bytes()) == b'{"events":[]}'
 
 

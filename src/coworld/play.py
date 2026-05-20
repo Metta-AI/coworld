@@ -36,6 +36,7 @@ from coworld.runner.runner import (
     _wait_for_player_exit,
     assert_docker_image_reachable,
     ensure_local_docker_network,
+    finalize_replay_artifacts,
     generate_tokens,
     replay_client_url,
     replay_session_path,
@@ -222,6 +223,7 @@ def play_coworld(
 
             for player_process, player_log_path in player_processes:
                 _wait_for_player_exit(player_process, player_log_path)
+            finalize_replay_artifacts(artifacts)
     finally:
         for container_name in player_containers:
             subprocess.run(["docker", "rm", "-f", container_name], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)

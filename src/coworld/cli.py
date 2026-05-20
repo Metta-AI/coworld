@@ -64,7 +64,7 @@ def certify(
     typer.echo(f"Certified {manifest_uri}")
     typer.echo(f"Artifacts: {result.artifacts.workspace}")
     typer.echo(f"Results: {result.artifacts.results_path}")
-    typer.echo(f"Replay: {result.artifacts.replay_path}")
+    _echo_replay_paths(result.artifacts)
     typer.echo(f"Logs: {result.artifacts.logs_dir}")
 
 
@@ -161,7 +161,7 @@ def play(
                 on_ready=on_ready,
             )
     typer.echo(f"Results: {result.session.artifacts.results_path}")
-    typer.echo(f"Replay: {result.session.artifacts.replay_path}")
+    _echo_replay_paths(result.session.artifacts)
     typer.echo(f"Logs: {result.session.artifacts.logs_dir}")
 
 
@@ -401,7 +401,7 @@ def run_episode(
     run_coworld_episode(spec, artifacts, timeout_seconds=timeout_seconds, verify_replay=verify_replay)
     typer.echo(f"Artifacts: {artifacts.workspace}")
     typer.echo(f"Results: {artifacts.results_path}")
-    typer.echo(f"Replay: {artifacts.replay_path}")
+    _echo_replay_paths(artifacts)
     typer.echo(f"Logs: {artifacts.logs_dir}")
 
 
@@ -464,6 +464,12 @@ def hosted_game_join(
     typer.echo(f"Slot: {join.slot}")
     typer.echo(f"Player: {join.player.label}")
     typer.echo(f"URL: {join.player_url}")
+
+
+def _echo_replay_paths(artifacts: EpisodeArtifacts) -> None:
+    typer.echo(f"Replay: {artifacts.replay_path}")
+    if artifacts.compressed_replay_path.exists():
+        typer.echo(f"Replay (compressed): {artifacts.compressed_replay_path}")
 
 
 def _print_play_session(session: PlaySession) -> None:

@@ -26,6 +26,7 @@ def test_coworld_play_accepts_backend_coworld_path(httpserver: HTTPServer, monke
             workspace=Path("/tmp/workspace"),
             results_path=Path("/tmp/results.json"),
             replay_path=Path("/tmp/replay.json"),
+            compressed_replay_path=Path("/tmp/replay.json.z"),
             logs_dir=Path("/tmp/logs"),
         )
         return SimpleNamespace(session=SimpleNamespace(artifacts=artifacts), results={})
@@ -52,6 +53,7 @@ def test_coworld_play_prefers_cached_coworld_id_manifest(tmp_path: Path, monkeyp
             workspace=Path("/tmp/workspace"),
             results_path=Path("/tmp/results.json"),
             replay_path=Path("/tmp/replay.json"),
+            compressed_replay_path=Path("/tmp/replay.json.z"),
             logs_dir=Path("/tmp/logs"),
         )
         return SimpleNamespace(session=SimpleNamespace(artifacts=artifacts), results={})
@@ -91,6 +93,7 @@ def test_coworld_play_downloads_missing_coworld_id_cache(tmp_path: Path, monkeyp
             workspace=Path("/tmp/workspace"),
             results_path=Path("/tmp/results.json"),
             replay_path=Path("/tmp/replay.json"),
+            compressed_replay_path=Path("/tmp/replay.json.z"),
             logs_dir=Path("/tmp/logs"),
         )
         return SimpleNamespace(session=SimpleNamespace(artifacts=artifacts), results={})
@@ -120,6 +123,7 @@ def test_coworld_play_accepts_player_image_override(monkeypatch: MonkeyPatch, tm
             workspace=Path("/tmp/workspace"),
             results_path=Path("/tmp/results.json"),
             replay_path=Path("/tmp/replay.json"),
+            compressed_replay_path=Path("/tmp/replay.json.z"),
             logs_dir=Path("/tmp/logs"),
         )
         return SimpleNamespace(session=SimpleNamespace(artifacts=artifacts), results={})
@@ -158,6 +162,7 @@ def test_coworld_play_accepts_variant(monkeypatch: MonkeyPatch, tmp_path: Path) 
             workspace=Path("/tmp/workspace"),
             results_path=Path("/tmp/results.json"),
             replay_path=Path("/tmp/replay.json"),
+            compressed_replay_path=Path("/tmp/replay.json.z"),
             logs_dir=Path("/tmp/logs"),
         )
         return SimpleNamespace(session=SimpleNamespace(artifacts=artifacts), results={})
@@ -181,6 +186,7 @@ def test_coworld_play_opens_global_client_by_default(monkeypatch: MonkeyPatch, t
             workspace=Path("/tmp/workspace"),
             results_path=Path("/tmp/results.json"),
             replay_path=Path("/tmp/replay.json"),
+            compressed_replay_path=Path("/tmp/replay.json.z"),
             logs_dir=Path("/tmp/logs"),
         )
         session = SimpleNamespace(
