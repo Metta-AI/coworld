@@ -129,12 +129,30 @@ class CoworldManifest(BaseModel):
 
     schema_: str | None = Field(default=None, alias="$schema")
     game: CoworldGameManifest
-    player: list[CoworldDeclaredRoleSpec] = Field(min_length=1)
-    grader: list[CoworldDeclaredRoleSpec] = Field(default_factory=list)
-    reporter: list[CoworldDeclaredRoleSpec] = Field(default_factory=list)
-    commissioner: list[CoworldDeclaredRoleSpec] = Field(default_factory=list)
-    diagnoser: list[CoworldDeclaredRoleSpec] = Field(default_factory=list)
-    optimizer: list[CoworldDeclaredRoleSpec] = Field(default_factory=list)
+    player: list[CoworldDeclaredRoleSpec] = Field(
+        min_length=1,
+        description="Bundled player runnables that can connect to the game and play an episode.",
+    )
+    grader: list[CoworldDeclaredRoleSpec] = Field(
+        default_factory=list,
+        description="Optional grader runnables. Use an empty array when no grader is bundled.",
+    )
+    reporter: list[CoworldDeclaredRoleSpec] = Field(
+        default_factory=list,
+        description="Optional reporter runnables. Use an empty array when no reporter is bundled.",
+    )
+    commissioner: list[CoworldDeclaredRoleSpec] = Field(
+        default_factory=list,
+        description="Optional commissioner runnables. Use an empty array when no commissioner is bundled.",
+    )
+    diagnoser: list[CoworldDeclaredRoleSpec] = Field(
+        default_factory=list,
+        description="Optional diagnoser runnables. Use an empty array when no diagnoser is bundled.",
+    )
+    optimizer: list[CoworldDeclaredRoleSpec] = Field(
+        default_factory=list,
+        description="Optional optimizer runnables. Use an empty array when no optimizer is bundled.",
+    )
     variants: list[CoworldVariant] = Field(min_length=1)
     certification: CoworldCertificationFixture
 

@@ -271,6 +271,7 @@
           "$ref": "#/$defs/CoworldGameManifest"
         },
         "player": {
+          "description": "Bundled player runnables that can connect to the game and play an episode.",
           "items": {
             "$ref": "#/$defs/CoworldDeclaredRoleSpec"
           },
@@ -279,6 +280,7 @@
           "type": "array"
         },
         "grader": {
+          "description": "Optional grader runnables. Use an empty array when no grader is bundled.",
           "items": {
             "$ref": "#/$defs/CoworldDeclaredRoleSpec"
           },
@@ -286,6 +288,7 @@
           "type": "array"
         },
         "reporter": {
+          "description": "Optional reporter runnables. Use an empty array when no reporter is bundled.",
           "items": {
             "$ref": "#/$defs/CoworldDeclaredRoleSpec"
           },
@@ -293,6 +296,7 @@
           "type": "array"
         },
         "commissioner": {
+          "description": "Optional commissioner runnables. Use an empty array when no commissioner is bundled.",
           "items": {
             "$ref": "#/$defs/CoworldDeclaredRoleSpec"
           },
@@ -300,6 +304,7 @@
           "type": "array"
         },
         "diagnoser": {
+          "description": "Optional diagnoser runnables. Use an empty array when no diagnoser is bundled.",
           "items": {
             "$ref": "#/$defs/CoworldDeclaredRoleSpec"
           },
@@ -307,6 +312,7 @@
           "type": "array"
         },
         "optimizer": {
+          "description": "Optional optimizer runnables. Use an empty array when no optimizer is bundled.",
           "items": {
             "$ref": "#/$defs/CoworldDeclaredRoleSpec"
           },

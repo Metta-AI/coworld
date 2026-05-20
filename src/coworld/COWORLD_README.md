@@ -162,11 +162,13 @@ Every Coworld package has a `coworld_manifest.json` file that follows
 [coworld_manifest_schema.json](coworld_manifest_schema.json). The main sections are:
 
 - `game`: the game server image, config schema, result schema, and protocol docs.
-- `player`: bundled player images that can play the game.
+- `player`: bundled player images that can play the game. This section is required.
+- `commissioner`, `reporter`, `grader`, `diagnoser`, and `optimizer`: optional role runnable sections. Declare the
+  section as an empty array when the Coworld supports the role in its manifest contract but has no bundled runnable yet.
 - `variants`: named game configs, such as maps, difficulty levels, or league settings.
 - `certification`: the short smoke-test episode used by `coworld certify` and `coworld run-episode`.
 
-The game, player, grader, reporter, commissioner, diagnoser, and optimizer sections all use the same runnable shape: an
+The game and role sections all use the same runnable shape: an
 image, an optional command (`run`), and optional public environment variables (`env`). Secrets do not belong in the
 manifest.
 

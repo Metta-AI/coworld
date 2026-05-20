@@ -117,6 +117,7 @@
       "description": "Deterministic player that sweeps across the arena repainting tiles."
     }
   ],
+  "commissioner": [],
   "reporter": [
     {
       "id": "paint-arena-summarizer",
@@ -131,6 +132,9 @@
       ]
     }
   ],
+  "grader": [],
+  "diagnoser": [],
+  "optimizer": [],
   "variants": [
     {
       "id": "default",

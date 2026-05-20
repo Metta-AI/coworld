@@ -11,6 +11,7 @@ COWORLD_SRC = COWORLD_PACKAGE_ROOT / "src" / "coworld"
 WORLDS = REPO_ROOT / "worlds"
 PAINTARENA_EXAMPLE = COWORLD_SRC / "examples" / "paintarena"
 PUBLIC_COWORLD_PACKAGE_DOCS = "https://pypi.org/project/coworld/"
+VIABILITY_ROLE_SECTIONS = ("player", "optimizer", "commissioner", "reporter", "grader", "diagnoser")
 
 
 def test_canonical_worlds_use_compose_builds() -> None:
@@ -64,7 +65,7 @@ def test_canonical_world_compose_files_build_manifest_images() -> None:
         compose_text = (template_path.parent / "compose.yaml").read_text(encoding="utf-8")
 
         image_placeholders = [template["game"]["runnable"]["image"]]
-        for section in ("player", "commissioner", "reporter", "grader", "diagnoser", "optimizer"):
+        for section in VIABILITY_ROLE_SECTIONS:
             if section in template:
                 for runnable in template[section]:
                     image_placeholders.append(runnable["image"])
@@ -114,12 +115,32 @@ def test_canonical_among_them_template_points_to_source_repos(tmp_path: Path) ->
 def test_canonical_among_them_template_declares_all_viability_role_sections() -> None:
     template = json.loads((WORLDS / "among_them" / "coworld_manifest_template.json").read_text(encoding="utf-8"))
 
-    assert set(("player", "optimizer", "commissioner", "reporter", "grader", "diagnoser")).issubset(template)
+    assert set(VIABILITY_ROLE_SECTIONS).issubset(template)
     assert template["commissioner"] == []
     assert template["reporter"] == []
     assert template["grader"] == []
     assert template["diagnoser"] == []
     assert template["optimizer"] == []
+
+
+def test_cogs_vs_clips_and_paintarena_templates_declare_all_viability_role_sections() -> None:
+    for world_name in ("cogs_vs_clips", "paintarena"):
+        template = json.loads((WORLDS / world_name / "coworld_manifest_template.json").read_text(encoding="utf-8"))
+
+        assert set(VIABILITY_ROLE_SECTIONS).issubset(template)
+        for section in VIABILITY_ROLE_SECTIONS:
+            assert isinstance(template[section], list)
+
+    cogs_vs_clips = json.loads(
+        (WORLDS / "cogs_vs_clips" / "coworld_manifest_template.json").read_text(encoding="utf-8")
+    )
+    for section in ("optimizer", "commissioner", "reporter", "grader", "diagnoser"):
+        assert cogs_vs_clips[section] == []
+
+    paintarena = json.loads((WORLDS / "paintarena" / "coworld_manifest_template.json").read_text(encoding="utf-8"))
+    for section in ("optimizer", "commissioner", "grader", "diagnoser"):
+        assert paintarena[section] == []
+    assert [role["type"] for role in paintarena["reporter"]] == ["reporter"]
 
 
 def test_paintarena_example_keeps_template_and_build_copy() -> None:
@@ -167,7 +188,7 @@ def _materialized_template(base_dir: Path, template_path: Path) -> Path:
     game_image = manifest["game"]["runnable"]["image"]
     if game_image in placeholders:
         manifest["game"]["runnable"]["image"] = placeholders[game_image]
-    for section in ("player", "commissioner", "reporter", "grader", "diagnoser", "optimizer"):
+    for section in VIABILITY_ROLE_SECTIONS:
         if section in manifest:
             for runnable in manifest[section]:
                 image = runnable["image"]
