@@ -11,18 +11,27 @@ jobs:
       - name: Create Asana task
         env:
           ASANA_TOKEN: ${{ secrets.ASANA_TOKEN }}
-          ASANA_PROJECT_GID: "1209016784099267"
+          ASANA_PROJECT_GID: "1210062854657778"
           ISSUE_TITLE: ${{ github.event.issue.title }}
           ISSUE_URL: ${{ github.event.issue.html_url }}
           ISSUE_AUTHOR: ${{ github.event.issue.user.login }}
           ISSUE_BODY: ${{ github.event.issue.body }}
         run: |
-          jq -n \
+          NOTES=$(printf "GitHub Issue: %s\n\nFiled by: %s\n\n%s" "$ISSUE_URL" "$ISSUE_AUTHOR" "$ISSUE_BODY")
+          BODY=$(jq -n \
             --arg name "$ISSUE_TITLE" \
-            --arg notes "GitHub Issue: $ISSUE_URL\n\nFiled by: $ISSUE_AUTHOR\n\n$ISSUE_BODY" \
+            --arg notes "$NOTES" \
             --arg project "$ASANA_PROJECT_GID" \
-            '{data: {name: $name, notes: $notes, projects: [$project]}}' \
-          | curl -sf -X POST "https://app.asana.com/api/1.0/tasks" \
-              -H "Authorization: Bearer $ASANA_TOKEN" \
-              -H "Content-Type: application/json" \
-              -d @-
+            '{data: {name: $name, notes: $notes, projects: [$project]}}')
+
+          RESPONSE=$(curl -s -w "\n%{http_code}" -X POST "https://app.asana.com/api/1.0/tasks" \
+            -H "Authorization: Bearer $ASANA_TOKEN" \
+            -H "Content-Type: application/json" \
+            -d "$BODY")
+
+          HTTP_CODE=$(echo "$RESPONSE" | tail -1)
+
+          if [ "$HTTP_CODE" -lt 200 ] || [ "$HTTP_CODE" -ge 300 ]; then
+            echo "Asana API returned HTTP $HTTP_CODE"
+            exit 1
+          fi
