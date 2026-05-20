@@ -318,7 +318,7 @@ def _agent_policy_names(objects: list[dict]) -> dict[int, str]:
 
 
 def _cogs_vs_clips_root() -> Path:
-    return Path(__file__).resolve().parents[1] / "src" / "coworld" / "examples" / "cogs_vs_clips"
+    return Path(__file__).resolve().parents[3] / "worlds" / "cogs_vs_clips"
 
 
 def _load_cogs_vs_clips_server_module():

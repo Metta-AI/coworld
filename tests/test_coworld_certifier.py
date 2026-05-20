@@ -1136,14 +1136,8 @@ def test_cogs_vs_clips_coworld_manifest_validates(tmp_path: Path) -> None:
     assert package.manifest.game.name == "cogs_vs_clips"
     assert package.cogame.image == "coworld-cogs-vs-clips-game:latest"
     assert package.cogame.run == ("python", "/app/server.py")
-    assert (
-        package.manifest.game.protocols.player.value
-        == "https://github.com/Metta-AI/coworld/blob/main/src/coworld/examples/cogs_vs_clips/game/docs/player_protocol_spec.md"
-    )
-    assert (
-        package.manifest.game.protocols.global_.value
-        == "https://github.com/Metta-AI/coworld/blob/main/src/coworld/examples/cogs_vs_clips/game/docs/global_protocol_spec.md"
-    )
+    assert package.manifest.game.protocols.player.value == "https://softmax.com/cogs_vs_clips_player_protocol.md"
+    assert package.manifest.game.protocols.global_.value == "https://softmax.com/cogs_vs_clips_global_protocol.md"
     assert package.manifest.game.docs is not None
     assert package.manifest.game.docs.pages[0].id == "play_cogsvsclips.md"
     assert package.manifest.game.docs.pages[0].content.value == "https://softmax.com/play_cogsvsclips.md"
@@ -1442,7 +1436,7 @@ def _image_command_slice(command: list[str]) -> list[str]:
 
 
 def _cogs_vs_clips_root() -> Path:
-    return Path(__file__).resolve().parents[1] / "src" / "coworld" / "examples" / "cogs_vs_clips"
+    return Path(__file__).resolve().parents[3] / "worlds" / "cogs_vs_clips"
 
 
 def _load_cogs_vs_clips_server_module():

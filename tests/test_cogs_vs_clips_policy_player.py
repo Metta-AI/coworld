@@ -14,15 +14,7 @@ from mettagrid.policy.policy import AgentPolicy, MultiAgentPolicy
 from mettagrid.policy.policy_env_interface import PolicyEnvInterface
 from mettagrid.simulator import Action, AgentObservation
 
-POLICY_PLAYER_PATH = (
-    Path(__file__).resolve().parents[1]
-    / "src"
-    / "coworld"
-    / "examples"
-    / "cogs_vs_clips"
-    / "player"
-    / "policy_player.py"
-)
+POLICY_PLAYER_PATH = Path(__file__).resolve().parents[3] / "worlds" / "cogs_vs_clips" / "player" / "policy_player.py"
 
 policy_player_spec = importlib.util.spec_from_file_location("cogs_vs_clips_policy_player", POLICY_PLAYER_PATH)
 assert policy_player_spec is not None

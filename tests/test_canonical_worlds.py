@@ -25,12 +25,14 @@ def test_canonical_worlds_use_compose_builds() -> None:
 
 def test_canonical_worlds_live_outside_coworld_package() -> None:
     assert not (COWORLD_SRC / "bundles").exists()
+    assert not (COWORLD_SRC / "examples" / "cogs_vs_clips").exists()
     assert WORLDS.parent == REPO_ROOT
     assert COWORLD_PACKAGE_ROOT not in WORLDS.parents
     for compose_file in _world_compose_files():
         compose_text = compose_file.read_text(encoding="utf-8")
         assert "METTA_REPO" not in compose_text
         assert str(COWORLD_SRC) not in compose_text
+        assert "src/coworld/examples/cogs_vs_clips" not in compose_text
 
 
 def test_canonical_world_templates_do_not_publish_metta_repo_links() -> None:
@@ -39,6 +41,7 @@ def test_canonical_world_templates_do_not_publish_metta_repo_links() -> None:
         assert "github.com/Metta-AI/metta" not in template_text
         assert "raw.githubusercontent.com/Metta-AI/metta" not in template_text
         assert "ghcr.io/treeform" not in template_text
+        assert "src/coworld/examples/cogs_vs_clips" not in template_text
         assert '"version"' not in json.loads(template_text)["game"]
 
 
