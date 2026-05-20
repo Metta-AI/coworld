@@ -96,6 +96,8 @@ def test_canonical_among_them_template_points_to_source_repos(tmp_path: Path) ->
     assert package.manifest.grader == []
     assert package.manifest.diagnoser == []
     assert package.manifest.optimizer == []
+    assert pages["rules.md"] == "https://github.com/Metta-AI/bitworld/blob/master/among_them/README.md"
+    assert pages["play_amongthem.md"] == "https://softmax.com/play_amongthem.md"
     assert pages["game-source"] == "https://github.com/Metta-AI/bitworld/tree/master/among_them"
     assert pages["player"] == (
         "https://github.com/Metta-AI/bitworld/blob/master/among_them/players/how_to_make_a_bot.md"
@@ -137,6 +139,9 @@ def test_cogs_vs_clips_and_paintarena_templates_declare_all_viability_role_secti
     cogs_vs_clips = json.loads(
         (WORLDS / "cogs_vs_clips" / "coworld_manifest_template.json").read_text(encoding="utf-8")
     )
+    cogs_vs_clips_pages = {page["id"]: page["content"]["value"] for page in cogs_vs_clips["game"]["docs"]["pages"]}
+    assert cogs_vs_clips_pages["rules.md"] == "https://softmax.com/play_cogsvsclips.md#game-rules"
+    assert cogs_vs_clips_pages["play_cogsvsclips.md"] == "https://softmax.com/play_cogsvsclips.md"
     for section in ("optimizer", "commissioner", "reporter", "grader", "diagnoser"):
         assert cogs_vs_clips[section] == []
 

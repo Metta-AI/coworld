@@ -105,6 +105,26 @@
         "type": "uri",
         "value": "https://github.com/Metta-AI/coworld/blob/main/src/coworld/examples/paintarena/game/docs/global_protocol_spec.md"
       }
+    },
+    "docs": {
+      "pages": [
+        {
+          "id": "rules.md",
+          "title": "rules.md",
+          "content": {
+            "type": "text",
+            "value": "# Paint Arena Rules\n\nTwo players move around a grid and paint the tile they stand on. Painting overwrites the previous owner. Final scores are the number of tiles painted with each player's color."
+          }
+        },
+        {
+          "id": "play_paintarena.md",
+          "title": "play_paintarena.md",
+          "content": {
+            "type": "uri",
+            "value": "https://github.com/Metta-AI/coworld/blob/main/src/coworld/examples/paintarena/README.md"
+          }
+        }
+      ]
     }
   },
   "player": [

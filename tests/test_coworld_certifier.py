@@ -102,9 +102,14 @@ def test_load_coworld_package_allows_named_game_docs(tmp_path: Path) -> None:
         "readme": {"type": "uri", "value": "https://example.com/README.md"},
         "pages": [
             {
-                "id": "play",
-                "title": "play.md",
-                "content": {"type": "uri", "value": "https://example.com/play.md"},
+                "id": "rules.md",
+                "title": "rules.md",
+                "content": {"type": "text", "value": "# Rules\n\nScore one point."},
+            },
+            {
+                "id": "play_unittest.md",
+                "title": "play_unittest.md",
+                "content": {"type": "uri", "value": "https://example.com/play_unittest.md"},
             },
             {
                 "id": "diagnoser",
@@ -120,10 +125,10 @@ def test_load_coworld_package_allows_named_game_docs(tmp_path: Path) -> None:
     assert package.manifest.game.docs is not None
     assert package.manifest.game.docs.readme is not None
     assert package.manifest.game.docs.readme.value == "https://example.com/README.md"
-    assert package.manifest.game.docs.pages[0].title == "play.md"
-    assert package.manifest.game.docs.pages[0].content.value == "https://example.com/play.md"
-    assert package.manifest.game.docs.pages[1].title == "diagnoser.md"
-    assert package.manifest.game.docs.pages[1].content.value.startswith("# Diagnoser")
+    assert package.manifest.game.docs.pages[0].title == "rules.md"
+    assert package.manifest.game.docs.pages[0].content.value.startswith("# Rules")
+    assert package.manifest.game.docs.pages[1].title == "play_unittest.md"
+    assert package.manifest.game.docs.pages[1].content.value == "https://example.com/play_unittest.md"
 
 
 def test_load_coworld_package_rejects_invalid_certification_player_entry(tmp_path: Path) -> None:
@@ -1139,8 +1144,9 @@ def test_cogs_vs_clips_coworld_manifest_validates(tmp_path: Path) -> None:
     assert package.manifest.game.protocols.player.value == "https://softmax.com/cogs_vs_clips_player_protocol.md"
     assert package.manifest.game.protocols.global_.value == "https://softmax.com/cogs_vs_clips_global_protocol.md"
     assert package.manifest.game.docs is not None
-    assert package.manifest.game.docs.pages[0].id == "play_cogsvsclips.md"
-    assert package.manifest.game.docs.pages[0].content.value == "https://softmax.com/play_cogsvsclips.md"
+    assert package.manifest.game.docs.pages[0].id == "rules.md"
+    assert package.manifest.game.docs.pages[1].id == "play_cogsvsclips.md"
+    assert package.manifest.game.docs.pages[1].content.value == "https://softmax.com/play_cogsvsclips.md"
     assert package.manifest.player[0].id == "starter-policy-player"
     assert package.manifest.player[0].image == "coworld-mettagrid-policy-player:latest"
     assert package.manifest.player[0].run == ["python", "/app/coworld_policy_player.py"]
@@ -1410,6 +1416,20 @@ def _game_manifest(*, config_schema_required: list[str] | None = None) -> dict[s
         "protocols": {
             "player": {"type": "uri", "value": "https://example.com/player_protocol_spec.md"},
             "global": {"type": "uri", "value": "https://example.com/global_protocol_spec.md"},
+        },
+        "docs": {
+            "pages": [
+                {
+                    "id": "rules.md",
+                    "title": "rules.md",
+                    "content": {"type": "text", "value": "# Rules\n\nScore one point."},
+                },
+                {
+                    "id": "play_unittest.md",
+                    "title": "play_unittest.md",
+                    "content": {"type": "uri", "value": "https://example.com/play_unittest.md"},
+                },
+            ]
         },
     }
 

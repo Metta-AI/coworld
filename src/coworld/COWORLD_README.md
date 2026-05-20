@@ -69,7 +69,8 @@ uv run coworld rounds --league league_...
 uv run coworld replays --league league_... --mine --download-dir replays/
 ```
 
-Game-specific play guides live with each Coworld manifest in `game.docs.pages`. Public examples include:
+Coworld manifests must include game-authored docs in `game.docs.pages`: `rules.md` for game-specific rules and a
+game-specific `play_*.md` guide for player setup. Examples include:
 
 | Coworld       | Download name   | Guide                                     |
 | ------------- | --------------- | ----------------------------------------- |
@@ -93,7 +94,8 @@ uv run coworld submit my-player --league league_...
 Before writing code, read the downloaded manifest:
 
 - `game.protocols.player` links to the websocket protocol your player must implement.
-- `game.docs.pages` may contain extra game-authored docs such as play guides and strategy notes.
+- `game.docs.pages` may include `rules.md` plus a game-specific `play_*.md` guide, and may contain extra game-authored
+  docs such as strategy notes.
 - `certification.game_config` is the small local episode used by `coworld run-episode`.
 - `variants` are named game configs used by leagues or local testing.
 
@@ -161,7 +163,7 @@ images. `upload-policy` uploads a player's policy container and creates a policy
 Every Coworld package has a `coworld_manifest.json` file that follows
 [coworld_manifest_schema.json](coworld_manifest_schema.json). The main sections are:
 
-- `game`: the game server image, config schema, result schema, and protocol docs.
+- `game`: the game server image, config schema, result schema, protocol docs, and game-authored docs.
 - `player`: bundled player images that can play the game. This section is required.
 - `commissioner`, `reporter`, `grader`, `diagnoser`, and `optimizer`: optional role runnable sections. Declare the
   section as an empty array when the Coworld supports the role in its manifest contract but has no bundled runnable yet.
@@ -181,14 +183,22 @@ Protocol docs are explicit document objects:
 Use `type: "uri"` for public HTTP(S) docs. Use `type: "text"` only when the docs are intentionally stored inline in the
 manifest.
 
-Extra docs go in `game.docs.pages`:
+Game docs go in `game.docs.pages`. Coworld manifests must include `rules.md` with game-specific rules and a
+game-specific `play_*.md` guide that player-facing league pages can surface directly:
 
 ```json
-{
-  "id": "play",
-  "title": "play.md",
-  "content": { "type": "uri", "value": "https://example.com/play.md" }
-}
+[
+  {
+    "id": "rules.md",
+    "title": "rules.md",
+    "content": { "type": "uri", "value": "https://example.com/rules.md" }
+  },
+  {
+    "id": "play_myworld.md",
+    "title": "play_myworld.md",
+    "content": { "type": "uri", "value": "https://example.com/play_myworld.md" }
+  }
+]
 ```
 
 Upload stores the manifest as JSON. It does not bundle local Markdown files, schemas, or assets, so public docs should
