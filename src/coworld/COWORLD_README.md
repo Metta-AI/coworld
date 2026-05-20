@@ -181,14 +181,19 @@ Every Coworld package has a `coworld_manifest.json` file that follows
 
 - `game`: the game server image, config schema, result schema, protocol docs, and game-authored docs.
 - `player`: bundled player images that can play the game. This section is required.
-- `commissioner`, `reporter`, `grader`, `diagnoser`, and `optimizer`: optional role runnable sections. Declare the
-  section as an empty array when the Coworld supports the role in its manifest contract but has no bundled runnable yet.
+- `commissioner`, `reporter`, `diagnoser`, and `optimizer`: optional runnable role sections. Declare the section as an
+  empty array when the Coworld has no bundled runnable for that role yet.
 - `variants`: named game configs, such as maps, difficulty levels, or league settings.
 - `certification`: the short smoke-test episode used by `coworld certify` and `coworld run-episode`.
 
-The game and role sections all use the same runnable shape: an
-image, an optional command (`run`), and optional public environment variables (`env`). Secrets do not belong in the
+Role sections use the same runnable shape: a `type`, image, optional command (`run`), and optional public environment
+variables (`env`). The role `type` selects the platform contract for that runnable. Secrets do not belong in the
 manifest.
+
+Role-specific docs live under `docs/roles/`: [game](docs/roles/game.md), [player](docs/roles/player.md),
+[commissioner](docs/roles/commissioner.md), [reporter](docs/roles/reporter.md),
+[diagnoser](docs/roles/diagnoser.md), and [optimizer](docs/roles/optimizer.md). The generated manifest schema
+references these docs from the corresponding role fields.
 
 Protocol docs are explicit document objects:
 
@@ -219,6 +224,32 @@ game-specific `play_*.md` guide that player-facing league pages can surface dire
 
 Upload stores the manifest as JSON. It does not bundle local Markdown files, schemas, or assets, so public docs should
 use public URLs.
+
+## Role Artifact Flow
+
+The role `type` on each runnable is the manifest-level contract selector. The current Coworld artifact flow is:
+
+```text
+episode config -> (game <-one-to-many-> players) -> replay and results
+replay and results -> reporter -> HTML, commentary, parquet stats, or other experience reports
+policy, coworld manifest, and optional experience reports -> diagnoser -> policy advice
+coworld manifest, many experience reports, and optional diagnoser output -> optimizer
+```
+
+Reporters compress sparse episode experience into dense highlight signals: narrative color, news-caster summaries,
+interesting moments, structured stats, or machine-usable parquet dumps. A stats parquet reporter should write
+`COGAME_REPLAY_STATS_PARQUET_URI` with `ts`, `player`, `key`, and `value` columns, where `player` is the player slot or
+`-1` for global facts. Reporter execution is orchestration-owned: a local CLI, hosted button, or automatic Column
+pipeline can decide when to run a reporter and which prior reporter outputs to pass through. The exact archive shape is
+runner-defined so reporters can include whatever assets their output needs.
+
+Diagnosers consume a target policy, plus optional Coworld manifest and experience reports, and emit policy-facing assay
+results or advice. They are the canonical Coworld home for a battery of policy tests such as "your policy does X with Y
+skill" across many X/Y checks. This is the contract boundary with reporters: reporters explain experience; diagnosers
+evaluate a policy using that experience and any additional local assays.
+
+Optimizers are game-agnostic improvement apps. They target a Coworld plus optional policy workspace, ingest any useful
+experience reports, diagnoser output, and game/protocol docs, and drive local policy iteration.
 
 ## Runtime Contract
 

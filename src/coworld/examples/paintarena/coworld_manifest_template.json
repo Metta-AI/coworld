@@ -148,7 +148,6 @@
       "run": ["python", "-m", "coworld.examples.paintarena.reporter.paint_arena_summarizer"]
     }
   ],
-  "grader": [],
   "diagnoser": [],
   "optimizer": [],
   "variants": [
@@ -161,7 +160,14 @@
         "max_ticks": 100,
         "tick_rate": 5,
         "player_connect_timeout_seconds": 180,
-        "players": [{ "name": "Sweep Painter 1" }, { "name": "Sweep Painter 2" }]
+        "players": [
+          {
+            "name": "Sweep Painter 1"
+          },
+          {
+            "name": "Sweep Painter 2"
+          }
+        ]
       },
       "description": "Short two-player territory painting smoke-test configuration."
     }
@@ -173,7 +179,14 @@
       "max_ticks": 100,
       "tick_rate": 5,
       "player_connect_timeout_seconds": 180,
-      "players": [{ "name": "Sweep Painter 1" }, { "name": "Sweep Painter 2" }]
+      "players": [
+        {
+          "name": "Sweep Painter 1"
+        },
+        {
+          "name": "Sweep Painter 2"
+        }
+      ]
     },
     "players": [
       {

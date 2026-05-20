@@ -70,7 +70,7 @@
           "type": "string"
         },
         "type": {
-          "enum": ["player", "grader", "reporter", "commissioner", "diagnoser", "optimizer"],
+          "enum": ["player", "reporter", "commissioner", "diagnoser", "optimizer"],
           "title": "Type",
           "type": "string"
         }
@@ -390,10 +390,11 @@
       "title": "$Schema"
     },
     "game": {
-      "$ref": "#/$defs/CoworldGameManifest"
+      "$ref": "#/$defs/CoworldGameManifest",
+      "description": "Game runnable and protocol metadata. Role docs: docs/roles/game.md."
     },
     "player": {
-      "description": "Bundled player runnables that can connect to the game and play an episode.",
+      "description": "Bundled player runnables. Role docs: docs/roles/player.md.",
       "items": {
         "$ref": "#/$defs/CoworldDeclaredRoleSpec"
       },
@@ -401,16 +402,8 @@
       "title": "Player",
       "type": "array"
     },
-    "grader": {
-      "description": "Optional grader runnables. Use an empty array when no grader is bundled.",
-      "items": {
-        "$ref": "#/$defs/CoworldDeclaredRoleSpec"
-      },
-      "title": "Grader",
-      "type": "array"
-    },
     "reporter": {
-      "description": "Optional reporter runnables. Use an empty array when no reporter is bundled.",
+      "description": "Optional reporter runnables. Role docs: docs/roles/reporter.md.",
       "items": {
         "$ref": "#/$defs/CoworldDeclaredRoleSpec"
       },
@@ -418,7 +411,7 @@
       "type": "array"
     },
     "commissioner": {
-      "description": "Optional commissioner runnables. Use an empty array when no commissioner is bundled.",
+      "description": "Optional commissioner runnables. Role docs: docs/roles/commissioner.md.",
       "items": {
         "$ref": "#/$defs/CoworldDeclaredRoleSpec"
       },
@@ -426,7 +419,7 @@
       "type": "array"
     },
     "diagnoser": {
-      "description": "Optional diagnoser runnables. Use an empty array when no diagnoser is bundled.",
+      "description": "Optional diagnoser runnables. Role docs: docs/roles/diagnoser.md.",
       "items": {
         "$ref": "#/$defs/CoworldDeclaredRoleSpec"
       },
@@ -434,7 +427,7 @@
       "type": "array"
     },
     "optimizer": {
-      "description": "Optional optimizer runnables. Use an empty array when no optimizer is bundled.",
+      "description": "Optional optimizer runnables. Role docs: docs/roles/optimizer.md.",
       "items": {
         "$ref": "#/$defs/CoworldDeclaredRoleSpec"
       },

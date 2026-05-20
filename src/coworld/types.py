@@ -8,6 +8,7 @@ from pydantic import BaseModel, ConfigDict, Field, model_validator
 SCHEMA_VERSION = "https://json-schema.org/draft/2020-12/schema"
 HTTP_URL_PATTERN = r"^https?://"
 JsonSchema = dict[str, Any]
+CoworldRunnableRole = Literal["player", "reporter", "commissioner", "diagnoser", "optimizer"]
 
 
 class CoworldRunnableSpec(BaseModel):
@@ -33,7 +34,7 @@ class CoworldGameRunnableSpec(CoworldRunnableSpec):
 
 
 class CoworldDeclaredRoleSpec(CoworldDeclaredRunnableSpec):
-    type: Literal["player", "grader", "reporter", "commissioner", "diagnoser", "optimizer"]
+    type: CoworldRunnableRole
 
 
 class CoworldTextDoc(BaseModel):
@@ -128,30 +129,26 @@ class CoworldManifest(BaseModel):
     )
 
     schema_: str | None = Field(default=None, alias="$schema")
-    game: CoworldGameManifest
+    game: CoworldGameManifest = Field(description="Game runnable and protocol metadata. Role docs: docs/roles/game.md.")
     player: list[CoworldDeclaredRoleSpec] = Field(
         min_length=1,
-        description="Bundled player runnables that can connect to the game and play an episode.",
-    )
-    grader: list[CoworldDeclaredRoleSpec] = Field(
-        default_factory=list,
-        description="Optional grader runnables. Use an empty array when no grader is bundled.",
+        description="Bundled player runnables. Role docs: docs/roles/player.md.",
     )
     reporter: list[CoworldDeclaredRoleSpec] = Field(
         default_factory=list,
-        description="Optional reporter runnables. Use an empty array when no reporter is bundled.",
+        description="Optional reporter runnables. Role docs: docs/roles/reporter.md.",
     )
     commissioner: list[CoworldDeclaredRoleSpec] = Field(
         default_factory=list,
-        description="Optional commissioner runnables. Use an empty array when no commissioner is bundled.",
+        description="Optional commissioner runnables. Role docs: docs/roles/commissioner.md.",
     )
     diagnoser: list[CoworldDeclaredRoleSpec] = Field(
         default_factory=list,
-        description="Optional diagnoser runnables. Use an empty array when no diagnoser is bundled.",
+        description="Optional diagnoser runnables. Role docs: docs/roles/diagnoser.md.",
     )
     optimizer: list[CoworldDeclaredRoleSpec] = Field(
         default_factory=list,
-        description="Optional optimizer runnables. Use an empty array when no optimizer is bundled.",
+        description="Optional optimizer runnables. Role docs: docs/roles/optimizer.md.",
     )
     variants: list[CoworldVariant] = Field(min_length=1)
     certification: CoworldCertificationFixture

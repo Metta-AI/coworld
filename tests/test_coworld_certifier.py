@@ -113,9 +113,9 @@ def test_load_coworld_package_allows_named_game_docs(tmp_path: Path) -> None:
                 "content": {"type": "uri", "value": "https://example.com/play_unittest.md"},
             },
             {
-                "id": "diagnoser",
-                "title": "diagnoser.md",
-                "content": {"type": "text", "value": "# Diagnoser\n\nRun diagnostic episodes."},
+                "id": "optimizer",
+                "title": "optimizer.md",
+                "content": {"type": "text", "value": "# Optimizer\n\nImprove policies."},
             },
         ],
     }
@@ -130,6 +130,8 @@ def test_load_coworld_package_allows_named_game_docs(tmp_path: Path) -> None:
     assert package.manifest.game.docs.pages[0].content.value.startswith("# Rules")
     assert package.manifest.game.docs.pages[1].title == "play_unittest.md"
     assert package.manifest.game.docs.pages[1].content.value == "https://example.com/play_unittest.md"
+    assert package.manifest.game.docs.pages[2].title == "optimizer.md"
+    assert package.manifest.game.docs.pages[2].content.value.startswith("# Optimizer")
 
 
 def test_load_coworld_package_rejects_invalid_certification_player_entry(tmp_path: Path) -> None:

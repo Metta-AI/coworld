@@ -3,7 +3,11 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
+import pytest
+from pydantic import ValidationError
+
 from coworld.certifier import load_coworld_package
+from coworld.types import CoworldManifest
 
 COWORLD_PACKAGE_ROOT = Path(__file__).resolve().parents[1]
 REPO_ROOT = COWORLD_PACKAGE_ROOT.parents[1]
@@ -11,7 +15,7 @@ COWORLD_SRC = COWORLD_PACKAGE_ROOT / "src" / "coworld"
 WORLDS = REPO_ROOT / "worlds"
 PAINTARENA_EXAMPLE = COWORLD_SRC / "examples" / "paintarena"
 PUBLIC_COWORLD_PACKAGE_DOCS = "https://pypi.org/project/coworld/"
-VIABILITY_ROLE_SECTIONS = ("player", "optimizer", "commissioner", "reporter", "grader", "diagnoser")
+VIABILITY_ROLE_SECTIONS = ("player", "optimizer", "commissioner", "reporter", "diagnoser")
 
 
 def test_canonical_worlds_use_compose_builds() -> None:
@@ -85,6 +89,27 @@ def test_canonical_world_templates_hydrate_to_valid_manifests(tmp_path: Path) ->
         load_coworld_package(_materialized_template(tmp_path, template_path))
 
 
+def test_canonical_world_templates_use_role_types_as_contracts() -> None:
+    for template_path in (*_world_templates(), PAINTARENA_EXAMPLE / "coworld_manifest_template.json"):
+        template = json.loads(template_path.read_text(encoding="utf-8"))
+        assert "contracts" not in template
+        assert "grader" not in template
+        assert "debugger" not in template
+        assert "extractor" not in template
+        for section in VIABILITY_ROLE_SECTIONS:
+            for runnable in template[section]:
+                assert runnable["type"] == section
+
+
+def test_coworld_manifest_rejects_unknown_role_type(tmp_path: Path) -> None:
+    manifest_path = _materialized_template(tmp_path, WORLDS / "paintarena" / "coworld_manifest_template.json")
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    manifest["reporter"][0]["type"] = "archivist"
+
+    with pytest.raises(ValidationError, match="reporter.0.type"):
+        CoworldManifest.model_validate(manifest)
+
+
 def test_canonical_among_them_template_points_to_source_repos(tmp_path: Path) -> None:
     package = load_coworld_package(
         _materialized_template(tmp_path, WORLDS / "among_them" / "coworld_manifest_template.json")
@@ -93,7 +118,6 @@ def test_canonical_among_them_template_points_to_source_repos(tmp_path: Path) ->
 
     assert package.manifest.commissioner == []
     assert package.manifest.reporter == []
-    assert package.manifest.grader == []
     assert package.manifest.diagnoser == []
     assert package.manifest.optimizer == []
     assert pages["rules.md"] == "https://github.com/Metta-AI/bitworld/blob/master/among_them/README.md"
@@ -110,7 +134,6 @@ def test_canonical_among_them_template_points_to_source_repos(tmp_path: Path) ->
     )
     assert pages["commissioner"] == PUBLIC_COWORLD_PACKAGE_DOCS
     assert pages["reporter"] == PUBLIC_COWORLD_PACKAGE_DOCS
-    assert pages["grader"] == PUBLIC_COWORLD_PACKAGE_DOCS
     assert pages["diagnoser"] == PUBLIC_COWORLD_PACKAGE_DOCS
     assert all("github.com/Metta-AI/coworld" not in source for source in pages.values())
     assert all("github.com/Metta-AI/players" not in source for source in pages.values())
@@ -123,7 +146,6 @@ def test_canonical_among_them_template_declares_all_viability_role_sections() ->
     assert set(VIABILITY_ROLE_SECTIONS).issubset(template)
     assert template["commissioner"] == []
     assert template["reporter"] == []
-    assert template["grader"] == []
     assert template["diagnoser"] == []
     assert template["optimizer"] == []
 
@@ -142,11 +164,11 @@ def test_cogs_vs_clips_and_paintarena_templates_declare_all_viability_role_secti
     cogs_vs_clips_pages = {page["id"]: page["content"]["value"] for page in cogs_vs_clips["game"]["docs"]["pages"]}
     assert cogs_vs_clips_pages["rules.md"] == "https://softmax.com/play_cogsvsclips.md#game-rules"
     assert cogs_vs_clips_pages["play_cogsvsclips.md"] == "https://softmax.com/play_cogsvsclips.md"
-    for section in ("optimizer", "commissioner", "reporter", "grader", "diagnoser"):
+    for section in ("optimizer", "commissioner", "reporter", "diagnoser"):
         assert cogs_vs_clips[section] == []
 
     paintarena = json.loads((WORLDS / "paintarena" / "coworld_manifest_template.json").read_text(encoding="utf-8"))
-    for section in ("optimizer", "commissioner", "grader", "diagnoser"):
+    for section in ("optimizer", "commissioner", "diagnoser"):
         assert paintarena[section] == []
     assert [role["type"] for role in paintarena["reporter"]] == ["reporter"]
 

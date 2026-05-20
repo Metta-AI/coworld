@@ -56,6 +56,7 @@ coworld = [
   "py.typed",
   "*.json",
   "*.md",
+  "docs/**/*.md",
   "runner/*.md",
   "examples/**/*",
   "policies/amongthemstarter/**/*",
