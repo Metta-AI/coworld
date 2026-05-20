@@ -160,6 +160,7 @@ def play(
                 timeout_seconds=timeout_seconds,
                 on_ready=on_ready,
             )
+    typer.echo(f"Artifacts: {result.session.artifacts.workspace}")
     typer.echo(f"Results: {result.session.artifacts.results_path}")
     _echo_replay_paths(result.session.artifacts)
     typer.echo(f"Logs: {result.session.artifacts.logs_dir}")
