@@ -713,9 +713,13 @@ def test_replay_coworld_starts_replay_container_and_reports_link(
     ) -> None:
         pass
 
+    async def noop_require_replay_message(url, *, timeout_seconds):
+        return None
+
     monkeypatch.setattr("coworld.play.assert_docker_image_reachable", noop_assert_docker_image_reachable)
     monkeypatch.setattr("coworld.play._free_local_port", lambda: 1234)
     monkeypatch.setattr("coworld.play._wait_for_health", noop_wait_for_health)
+    monkeypatch.setattr("coworld.play._require_replay_message", noop_require_replay_message)
     monkeypatch.setattr("coworld.play.subprocess.Popen", fake_popen)
     monkeypatch.setattr("coworld.play.secrets.token_hex", lambda _bytes: "session-1")
     monkeypatch.setattr(
@@ -742,6 +746,231 @@ def test_replay_coworld_starts_replay_container_and_reports_link(
         "-m",
         "unit_test.game",
     ]
+
+
+def _replay_coworld_with_probe(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    *,
+    probe_behavior,
+    timeout_seconds: float = 60.0,
+):
+    """Run replay_coworld with the readiness-probe coroutine swapped for a controlled fake.
+
+    `probe_behavior` is an async callable invoked as `await probe_behavior(url, timeout_seconds=...)`.
+    Returns (replay_coworld result or raised exception, popen_commands, rm_commands, probe_calls).
+    """
+    coworld_manifest_path = _write_package_files(tmp_path)
+    replay_path = tmp_path / "replay.json"
+    replay_path.write_text("{}")
+    popen_commands: list[list[str]] = []
+    rm_commands: list[list[str]] = []
+    probe_calls: list[tuple[str, float]] = []
+
+    class FakeProcess:
+        def wait(self) -> int:
+            return 0
+
+    def fake_popen(cmd, **kwargs):
+        popen_commands.append(cmd)
+        return FakeProcess()
+
+    def noop_assert_docker_image_reachable(image: str, *, label: str) -> None:
+        pass
+
+    def noop_wait_for_health(
+        port: int, process: subprocess.Popen, stderr_path: Path, *, timeout_seconds: float
+    ) -> None:
+        pass
+
+    async def wrapped_probe(url, *, timeout_seconds):
+        probe_calls.append((url, timeout_seconds))
+        return await probe_behavior(url, timeout_seconds=timeout_seconds)
+
+    def fake_run(cmd, **kwargs):
+        rm_commands.append(cmd)
+        return subprocess.CompletedProcess(cmd, 0)
+
+    monkeypatch.setattr("coworld.play.assert_docker_image_reachable", noop_assert_docker_image_reachable)
+    monkeypatch.setattr("coworld.play._free_local_port", lambda: 1234)
+    monkeypatch.setattr("coworld.play._wait_for_health", noop_wait_for_health)
+    monkeypatch.setattr("coworld.play.subprocess.Popen", fake_popen)
+    monkeypatch.setattr("coworld.play.secrets.token_hex", lambda _bytes: "session-1")
+    monkeypatch.setattr("coworld.play.subprocess.run", fake_run)
+    monkeypatch.setattr("coworld.play._require_replay_message", wrapped_probe)
+
+    ready_sessions: list[ReplaySession] = []
+
+    try:
+        result = replay_coworld(
+            coworld_manifest_path,
+            replay_path,
+            workspace=tmp_path / "replay-workspace",
+            on_ready=ready_sessions.append,
+            timeout_seconds=timeout_seconds,
+        )
+    except BaseException as exc:
+        return exc, popen_commands, rm_commands, probe_calls, ready_sessions
+
+    return result, popen_commands, rm_commands, probe_calls, ready_sessions
+
+
+def test_replay_coworld_probes_replay_websocket_after_health_check(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Probe is invoked with /replay?uri=<container_replay_uri> using timeout_seconds, succeeds,
+    replay_coworld returns ReplaySession."""
+
+    async def succeed(url, *, timeout_seconds):
+        return None
+
+    result, _, _, probe_calls, ready_sessions = _replay_coworld_with_probe(
+        tmp_path, monkeypatch, probe_behavior=succeed, timeout_seconds=42.0
+    )
+
+    assert isinstance(result, ReplaySession), f"expected ReplaySession, got {result!r}"
+    assert len(probe_calls) == 1, f"probe should be called exactly once, got {probe_calls}"
+    probe_url, probe_timeout = probe_calls[0]
+    parsed = urlparse(probe_url)
+    assert parsed.scheme == "ws"
+    assert parsed.netloc == "127.0.0.1:1234"
+    assert parsed.path == "/replay"
+    assert parse_qs(parsed.query) == {"uri": ["file:///coworld-replay/replay.json"]}
+    assert probe_timeout == 42.0
+    assert ready_sessions == [result]
+
+
+def test_replay_coworld_raises_when_replay_probe_times_out(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """Probe asyncio.TimeoutError surfaces as a RuntimeError naming COGAME_REPLAY_SERVER + the URI."""
+
+    async def time_out(url, *, timeout_seconds):
+        raise asyncio.TimeoutError("no frame received")
+
+    result, _, _, _, ready_sessions = _replay_coworld_with_probe(tmp_path, monkeypatch, probe_behavior=time_out)
+
+    assert isinstance(result, RuntimeError), f"expected RuntimeError, got {result!r}"
+    message = str(result)
+    assert "COGAME_REPLAY_SERVER" in message, message
+    assert "replay-server mode" in message.lower() or "replay mode" in message.lower(), message
+    assert "file:///coworld-replay/replay.json" in message, message
+    # The original error should be chained for debuggability.
+    assert isinstance(result.__cause__, asyncio.TimeoutError)
+    # Probe failure surfaces before on_ready, so the user never sees a bad URL.
+    assert ready_sessions == []
+
+
+@pytest.mark.parametrize(
+    "exc_factory",
+    [
+        lambda: asyncio.TimeoutError("timed out"),
+        lambda: ConnectionRefusedError("connection refused"),
+        lambda: AssertionError("Replay viewer received an empty message from ws://..."),
+        lambda: RuntimeError("upgrade rejected with HTTP 404"),
+    ],
+)
+def test_replay_coworld_wraps_any_probe_failure(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, exc_factory) -> None:
+    """Any normal exception raised by the probe is wrapped in a single RuntimeError with our diagnostic message."""
+
+    async def raise_specific(url, *, timeout_seconds):
+        raise exc_factory()
+
+    result, _, _, _, _ = _replay_coworld_with_probe(tmp_path, monkeypatch, probe_behavior=raise_specific)
+
+    assert isinstance(result, RuntimeError)
+    assert "COGAME_REPLAY_SERVER" in str(result)
+
+
+def test_replay_coworld_tears_down_container_on_probe_failure(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """On probe failure, docker rm -f for the replay container still runs via the finally block."""
+
+    async def time_out(url, *, timeout_seconds):
+        raise asyncio.TimeoutError("no frame")
+
+    result, popen_commands, rm_commands, _, _ = _replay_coworld_with_probe(
+        tmp_path, monkeypatch, probe_behavior=time_out
+    )
+
+    assert isinstance(result, RuntimeError)
+    # The replay container was started.
+    assert len(popen_commands) == 1
+    # The replay container was torn down even though the probe failed.
+    replay_container_names = [cmd[-1] for cmd in rm_commands if cmd[:3] == ["docker", "rm", "-f"]]
+    assert replay_container_names, f"expected docker rm -f cleanup, got {rm_commands}"
+    assert replay_container_names[0].startswith("coworld-replay-game-")
+
+
+@pytest.mark.parametrize(
+    "exc_factory",
+    [
+        lambda: KeyboardInterrupt(),
+        lambda: SystemExit(1),
+        lambda: asyncio.CancelledError(),
+    ],
+)
+def test_replay_coworld_lets_interrupts_escape_probe_wrapper(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, exc_factory
+) -> None:
+    """Operator interrupts (Ctrl-C, SystemExit) and runner cancellation must propagate
+    out of the readiness-probe wrapper, not get reported as a replay-server-mode failure."""
+
+    async def interrupt(url, *, timeout_seconds):
+        raise exc_factory()
+
+    expected_exc_type = type(exc_factory())
+    result, _, rm_commands, _, _ = _replay_coworld_with_probe(tmp_path, monkeypatch, probe_behavior=interrupt)
+
+    assert isinstance(result, expected_exc_type), f"expected {expected_exc_type.__name__} to propagate, got {result!r}"
+    # Even when an interrupt propagates, the container teardown finally still runs.
+    assert any(cmd[:3] == ["docker", "rm", "-f"] for cmd in rm_commands), (
+        f"expected docker rm -f cleanup even on interrupt, got {rm_commands}"
+    )
+
+
+def test_replay_coworld_does_not_call_on_ready_until_probe_succeeds(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """on_ready must be invoked AFTER the readiness probe returns, so the user only sees a working URL."""
+
+    order: list[str] = []
+
+    async def record_probe(url, *, timeout_seconds):
+        order.append("probe")
+        return None
+
+    coworld_manifest_path = _write_package_files(tmp_path)
+    replay_path = tmp_path / "replay.json"
+    replay_path.write_text("{}")
+
+    class FakeProcess:
+        def wait(self) -> int:
+            order.append("wait")
+            return 0
+
+    monkeypatch.setattr("coworld.play.assert_docker_image_reachable", lambda image, *, label: None)
+    monkeypatch.setattr("coworld.play._free_local_port", lambda: 1234)
+    monkeypatch.setattr(
+        "coworld.play._wait_for_health",
+        lambda *args, **kwargs: order.append("health"),
+    )
+    monkeypatch.setattr("coworld.play.subprocess.Popen", lambda cmd, **kwargs: FakeProcess())
+    monkeypatch.setattr("coworld.play.secrets.token_hex", lambda _bytes: "session-1")
+    monkeypatch.setattr(
+        "coworld.play.subprocess.run",
+        lambda cmd, **kwargs: subprocess.CompletedProcess(cmd, 0),
+    )
+    monkeypatch.setattr("coworld.play._require_replay_message", record_probe)
+
+    def on_ready(_session):
+        order.append("on_ready")
+
+    replay_coworld(
+        coworld_manifest_path,
+        replay_path,
+        workspace=tmp_path / "replay-workspace",
+        on_ready=on_ready,
+    )
+
+    assert order.index("health") < order.index("probe") < order.index("on_ready") < order.index("wait"), order
 
 
 def test_runnable_run_overrides_docker_entrypoint(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:

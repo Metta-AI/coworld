@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import json
 import os
 import secrets
@@ -29,6 +30,7 @@ from coworld.runner.runner import (
     RunnableLaunchSpec,
     _free_local_port,
     _player_container_ws_url,
+    _require_replay_message,
     _tail,
     _wait_for_health,
     _wait_for_player_exit,
@@ -36,6 +38,7 @@ from coworld.runner.runner import (
     ensure_local_docker_network,
     generate_tokens,
     replay_client_url,
+    replay_session_path,
     write_coworld_game_config,
 )
 from coworld.schema_validation import JsonObject
@@ -311,6 +314,17 @@ def replay_coworld(
             )
 
             _wait_for_health(replay_port, replay_process, artifacts.game_stderr_path, timeout_seconds=timeout_seconds)
+            probe_url = f"ws://127.0.0.1:{replay_port}{replay_session_path(container_replay_uri)}"
+            try:
+                asyncio.run(_require_replay_message(probe_url, timeout_seconds=timeout_seconds))
+            except Exception as probe_error:
+                raise RuntimeError(
+                    f"Replay container did not enter replay-server mode "
+                    f"(no frame from {probe_url} within {timeout_seconds:.1f}s for uri={container_replay_uri}). "
+                    f"The game image may not implement COGAME_REPLAY_SERVER=1, "
+                    f"or the replay file may not be reachable inside the container. "
+                    f"See packages/coworld/src/coworld/GAME_RUNTIME_README.md for the contract."
+                ) from probe_error
             on_ready(session)
             return_code = replay_process.wait()
             if return_code != 0:
