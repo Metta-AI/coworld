@@ -145,11 +145,7 @@
       "name": "Paint Arena Summarizer",
       "description": "Per-episode summarizer: Markdown summary and JSON stats from PaintArena results.",
       "image": "{{PAINTARENA_IMAGE}}",
-      "run": [
-        "python",
-        "-c",
-        "import json; print('# PaintArena summary'); print(json.dumps({'note': 'paintarena reporter stub'}))"
-      ]
+      "run": ["python", "-m", "coworld.examples.paintarena.reporter.paint_arena_summarizer"]
     }
   ],
   "grader": [],

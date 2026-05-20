@@ -1,6 +1,6 @@
 FROM docker.io/library/python:3.12-slim
 
-RUN pip install --no-cache-dir fastapi==0.115.5 uvicorn[standard]==0.34.2 websockets==15.0.1
+RUN pip install --no-cache-dir fastapi==0.115.5 uvicorn[standard]==0.34.2 websockets==15.0.1 requests==2.32.3
 
 ENV PYTHONPATH=/app
 WORKDIR /app
@@ -16,5 +16,6 @@ COPY __init__.py /app/coworld/examples/paintarena/__init__.py
 COPY shared /app/coworld/examples/paintarena/shared
 COPY game /app/coworld/examples/paintarena/game
 COPY player /app/coworld/examples/paintarena/player
+COPY reporter /app/coworld/examples/paintarena/reporter
 
 CMD ["python", "-m", "coworld.examples.paintarena.game.server"]
