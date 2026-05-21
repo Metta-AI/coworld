@@ -108,6 +108,7 @@ def test_build_coworld_manifest_tags_primary_role_images(tmp_path: Path, monkeyp
         role_images={
             "commissioner": "{{COMMISSIONER_IMAGE}}",
             "reporter": "{{REPORTER_IMAGE}}",
+            "grader": "{{GRADER_IMAGE}}",
             "optimizer": "{{OPTIMIZER_IMAGE}}",
         },
     )
@@ -120,6 +121,7 @@ def test_build_coworld_manifest_tags_primary_role_images(tmp_path: Path, monkeyp
                 "player": "player-runtime:latest",
                 "commissioner": "commissioner-runtime:latest",
                 "reporter": "reporter-runtime:latest",
+                "grader": "grader-runtime:latest",
                 "optimizer": "optimizer-runtime:latest",
             },
             {
@@ -127,7 +129,8 @@ def test_build_coworld_manifest_tags_primary_role_images(tmp_path: Path, monkeyp
                 "player-runtime:latest": "sha256:222222222222",
                 "commissioner-runtime:latest": "sha256:333333333333",
                 "reporter-runtime:latest": "sha256:444444444444",
-                "optimizer-runtime:latest": "sha256:555555555555",
+                "grader-runtime:latest": "sha256:555555555555",
+                "optimizer-runtime:latest": "sha256:666666666666",
             },
         ),
     )
@@ -139,7 +142,8 @@ def test_build_coworld_manifest_tags_primary_role_images(tmp_path: Path, monkeyp
     assert built_manifest["player"][0]["image"] == "player-runtime:coworld-222222222222"
     assert built_manifest["commissioner"][0]["image"] == "commissioner-runtime:coworld-333333333333"
     assert built_manifest["reporter"][0]["image"] == "reporter-runtime:coworld-444444444444"
-    assert built_manifest["optimizer"][0]["image"] == "optimizer-runtime:coworld-555555555555"
+    assert built_manifest["grader"][0]["image"] == "grader-runtime:coworld-555555555555"
+    assert built_manifest["optimizer"][0]["image"] == "optimizer-runtime:coworld-666666666666"
 
 
 def test_build_coworld_manifest_tags_digest_stripped_image_refs(

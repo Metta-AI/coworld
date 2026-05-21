@@ -70,7 +70,7 @@
           "type": "string"
         },
         "type": {
-          "enum": ["player", "reporter", "commissioner", "diagnoser", "optimizer"],
+          "enum": ["player", "reporter", "commissioner", "grader", "diagnoser", "optimizer"],
           "title": "Type",
           "type": "string"
         }
@@ -416,6 +416,14 @@
         "$ref": "#/$defs/CoworldDeclaredRoleSpec"
       },
       "title": "Commissioner",
+      "type": "array"
+    },
+    "grader": {
+      "description": "Optional grader runnables. Role docs: docs/roles/grader.md.",
+      "items": {
+        "$ref": "#/$defs/CoworldDeclaredRoleSpec"
+      },
+      "title": "Grader",
       "type": "array"
     },
     "diagnoser": {

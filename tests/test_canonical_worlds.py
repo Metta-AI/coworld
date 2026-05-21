@@ -14,8 +14,7 @@ REPO_ROOT = COWORLD_PACKAGE_ROOT.parents[1]
 COWORLD_SRC = COWORLD_PACKAGE_ROOT / "src" / "coworld"
 WORLDS = REPO_ROOT / "worlds"
 PAINTARENA_EXAMPLE = COWORLD_SRC / "examples" / "paintarena"
-PUBLIC_COWORLD_PACKAGE_DOCS = "https://pypi.org/project/coworld/"
-VIABILITY_ROLE_SECTIONS = ("player", "optimizer", "commissioner", "reporter", "diagnoser")
+VIABILITY_ROLE_SECTIONS = ("player", "optimizer", "commissioner", "reporter", "grader", "diagnoser")
 
 
 def test_canonical_worlds_use_compose_builds() -> None:
@@ -56,11 +55,15 @@ def test_canonical_among_them_build_declares_role_starter_contexts() -> None:
     assert "PLAYER_CONTEXT" in compose_text
     assert "COMMISSIONER_CONTEXT" in compose_text
     assert "REPORTER_CONTEXT" in compose_text
+    assert "GRADER_CONTEXT" in compose_text
+    assert "DIAGNOSER_CONTEXT" in compose_text
     assert "OPTIMIZER_CONTEXT" in compose_text
     assert "players/players/among_them/starter" in compose_text
-    assert "commissioners/amongthem/starter" in compose_text
-    assert "reporters/amongthem/starter" in compose_text
-    assert "optimizers/amongthem/starter" in compose_text
+    assert "commissioners/commissioners/among_them/among_them_commissioner" in compose_text
+    assert "reporters/reporters/among_them/among_them_summarizer" in compose_text
+    assert "graders/graders/among_them/among_them_grader" in compose_text
+    assert "diagnosers/diagnosers/among_them/among_them_diagnoser" in compose_text
+    assert "optimizers" in compose_text
     assert "ghcr.io/treeform" not in compose_text
     assert "policies/symbolic/bitworld/among-them/ivotewell" not in compose_text
     assert "WORLD_CONTEXT" not in compose_text
@@ -93,7 +96,6 @@ def test_canonical_world_templates_use_role_types_as_contracts() -> None:
     for template_path in (*_world_templates(), PAINTARENA_EXAMPLE / "coworld_manifest_template.json"):
         template = json.loads(template_path.read_text(encoding="utf-8"))
         assert "contracts" not in template
-        assert "grader" not in template
         assert "debugger" not in template
         assert "extractor" not in template
         for section in VIABILITY_ROLE_SECTIONS:
@@ -116,27 +118,30 @@ def test_canonical_among_them_template_points_to_source_repos(tmp_path: Path) ->
     )
     pages = {page.id: page.content.value for page in package.manifest.game.docs.pages}
 
-    assert package.manifest.commissioner == []
-    assert package.manifest.reporter == []
-    assert package.manifest.diagnoser == []
-    assert package.manifest.optimizer == []
+    assert [role.id for role in package.manifest.commissioner] == ["among-them-commissioner"]
+    assert [role.id for role in package.manifest.reporter] == ["among-them-summarizer"]
+    assert [role.id for role in package.manifest.grader] == ["among-them-grader"]
+    assert [role.id for role in package.manifest.diagnoser] == ["among-them-diagnoser"]
+    assert [role.id for role in package.manifest.optimizer] == ["coworld-optimizer"]
     assert pages["rules.md"] == "https://github.com/Metta-AI/bitworld/blob/master/among_them/README.md"
     assert pages["play_amongthem.md"] == "https://softmax.com/play_amongthem.md"
     assert pages["game-source"] == "https://github.com/Metta-AI/bitworld/tree/master/among_them"
-    assert pages["player"] == (
-        "https://github.com/Metta-AI/bitworld/blob/master/among_them/players/how_to_make_a_bot.md"
-    )
+    assert pages["player"] == "https://github.com/Metta-AI/players/tree/main/players/among_them/starter"
     assert pages["submit"] == (
         "https://github.com/Metta-AI/bitworld/blob/master/among_them/players/how_to_submit_coworld_policy.md"
     )
-    assert pages["optimizer"] == (
-        "https://github.com/Metta-AI/bitworld/blob/master/among_them/players/SMART_BOT_GUIDE.md"
+    assert pages["optimizer"] == "https://github.com/Metta-AI/optimizers"
+    assert pages["commissioner"] == (
+        "https://github.com/Metta-AI/commissioners/tree/main/commissioners/among_them/among_them_commissioner"
     )
-    assert pages["commissioner"] == PUBLIC_COWORLD_PACKAGE_DOCS
-    assert pages["reporter"] == PUBLIC_COWORLD_PACKAGE_DOCS
-    assert pages["diagnoser"] == PUBLIC_COWORLD_PACKAGE_DOCS
+    assert pages["reporter"] == (
+        "https://github.com/Metta-AI/reporters/tree/main/reporters/among_them/among_them_summarizer"
+    )
+    assert pages["grader"] == "https://github.com/Metta-AI/graders/tree/main/graders/among_them/among_them_grader"
+    assert pages["diagnoser"] == (
+        "https://github.com/Metta-AI/diagnosers/tree/main/diagnosers/among_them/among_them_diagnoser"
+    )
     assert all("github.com/Metta-AI/coworld" not in source for source in pages.values())
-    assert all("github.com/Metta-AI/players" not in source for source in pages.values())
     assert all("docs/bitworld/among-them" not in source for source in pages.values())
 
 
@@ -144,10 +149,11 @@ def test_canonical_among_them_template_declares_all_viability_role_sections() ->
     template = json.loads((WORLDS / "among_them" / "coworld_manifest_template.json").read_text(encoding="utf-8"))
 
     assert set(VIABILITY_ROLE_SECTIONS).issubset(template)
-    assert template["commissioner"] == []
-    assert template["reporter"] == []
-    assert template["diagnoser"] == []
-    assert template["optimizer"] == []
+    assert [role["type"] for role in template["commissioner"]] == ["commissioner"]
+    assert [role["type"] for role in template["reporter"]] == ["reporter"]
+    assert [role["type"] for role in template["grader"]] == ["grader"]
+    assert [role["type"] for role in template["diagnoser"]] == ["diagnoser"]
+    assert [role["type"] for role in template["optimizer"]] == ["optimizer"]
 
 
 def test_cogs_vs_clips_and_paintarena_templates_declare_all_viability_role_sections() -> None:
@@ -164,11 +170,11 @@ def test_cogs_vs_clips_and_paintarena_templates_declare_all_viability_role_secti
     cogs_vs_clips_pages = {page["id"]: page["content"]["value"] for page in cogs_vs_clips["game"]["docs"]["pages"]}
     assert cogs_vs_clips_pages["rules.md"] == "https://softmax.com/play_cogsvsclips.md#game-rules"
     assert cogs_vs_clips_pages["play_cogsvsclips.md"] == "https://softmax.com/play_cogsvsclips.md"
-    for section in ("optimizer", "commissioner", "reporter", "diagnoser"):
+    for section in ("optimizer", "commissioner", "reporter", "grader", "diagnoser"):
         assert cogs_vs_clips[section] == []
 
     paintarena = json.loads((WORLDS / "paintarena" / "coworld_manifest_template.json").read_text(encoding="utf-8"))
-    for section in ("optimizer", "commissioner", "diagnoser"):
+    for section in ("optimizer", "commissioner", "grader", "diagnoser"):
         assert paintarena[section] == []
     assert [role["type"] for role in paintarena["reporter"]] == ["reporter"]
 
@@ -207,6 +213,11 @@ def _materialized_template(base_dir: Path, template_path: Path) -> Path:
         "among_them": {
             "{{GAME_IMAGE}}": "coworld-among-them-game:latest",
             "{{PLAYER_IMAGE}}": "coworld-among-them-ivotewell:latest",
+            "{{COMMISSIONER_IMAGE}}": "coworld-among-them-commissioner:latest",
+            "{{REPORTER_IMAGE}}": "coworld-among-them-summarizer:latest",
+            "{{GRADER_IMAGE}}": "coworld-among-them-grader:latest",
+            "{{DIAGNOSER_IMAGE}}": "coworld-among-them-diagnoser:latest",
+            "{{OPTIMIZER_IMAGE}}": "coworld-optimizer:latest",
         },
         "cogs_vs_clips": {
             "{{GAME_IMAGE}}": "coworld-cogs-vs-clips-game:latest",

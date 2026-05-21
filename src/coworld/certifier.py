@@ -205,7 +205,7 @@ def _image_references(package: CoworldPackage) -> list[tuple[str, str]]:
         (f"Certification players[{slot}].image", player.image)
         for slot, player in enumerate(_certification_player_specs(package))
     )
-    for section in ("player", "reporter", "commissioner", "diagnoser", "optimizer"):
+    for section in ("player", "reporter", "commissioner", "grader", "diagnoser", "optimizer"):
         references.extend(
             (f"Coworld {section}[{index}].image", runnable.image)
             for index, runnable in enumerate(getattr(package.manifest, section))

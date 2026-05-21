@@ -181,8 +181,8 @@ Every Coworld package has a `coworld_manifest.json` file that follows
 
 - `game`: the game server image, config schema, result schema, protocol docs, and game-authored docs.
 - `player`: bundled player images that can play the game. This section is required.
-- `commissioner`, `reporter`, `diagnoser`, and `optimizer`: optional runnable role sections. Declare the section as an
-  empty array when the Coworld has no bundled runnable for that role yet.
+- `commissioner`, `reporter`, `grader`, `diagnoser`, and `optimizer`: optional runnable role sections. Declare the
+  section as an empty array when the Coworld has no bundled runnable for that role yet.
 - `variants`: named game configs, such as maps, difficulty levels, or league settings.
 - `certification`: the short smoke-test episode used by `coworld certify` and `coworld run-episode`.
 
@@ -192,7 +192,7 @@ manifest.
 
 Role-specific docs live under `docs/roles/`: [game](docs/roles/game.md), [player](docs/roles/player.md),
 [commissioner](docs/roles/commissioner.md), [reporter](docs/roles/reporter.md),
-[diagnoser](docs/roles/diagnoser.md), and [optimizer](docs/roles/optimizer.md). The generated manifest schema
+[grader](docs/roles/grader.md), [diagnoser](docs/roles/diagnoser.md), and [optimizer](docs/roles/optimizer.md). The generated manifest schema
 references these docs from the corresponding role fields.
 
 Protocol docs are explicit document objects:
@@ -232,8 +232,9 @@ The role `type` on each runnable is the manifest-level contract selector. The cu
 ```text
 episode config -> (game <-one-to-many-> players) -> replay and results
 replay and results -> reporter -> HTML, commentary, parquet stats, or other experience reports
+replay and results -> grader -> scalar creator-interest score
 policy, coworld manifest, and optional experience reports -> diagnoser -> policy advice
-coworld manifest, many experience reports, and optional diagnoser output -> optimizer
+coworld manifest, many experience reports, grades, and optional diagnoser output -> optimizer
 ```
 
 Reporters compress sparse episode experience into dense highlight signals: narrative color, news-caster summaries,
@@ -242,6 +243,10 @@ interesting moments, structured stats, or machine-usable parquet dumps. A stats 
 `-1` for global facts. Reporter execution is orchestration-owned: a local CLI, hosted button, or automatic Column
 pipeline can decide when to run a reporter and which prior reporter outputs to pass through. The exact archive shape is
 runner-defined so reporters can include whatever assets their output needs.
+
+Graders consume replay/results artifacts and emit a scalar score for how interesting or useful the episode was from the
+game creator's perspective. A grader is intentionally smaller than a reporter: it produces a ranking signal, not a full
+human-readable report.
 
 Diagnosers consume a target policy, plus optional Coworld manifest and experience reports, and emit policy-facing assay
 results or advice. They are the canonical Coworld home for a battery of policy tests such as "your policy does X with Y

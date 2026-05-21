@@ -8,7 +8,7 @@ from typing import Any
 from coworld.schema_validation import load_json_object
 from coworld.types import CoworldManifest
 
-ROLE_SECTIONS = ("player", "reporter", "commissioner", "diagnoser", "optimizer")
+ROLE_SECTIONS = ("player", "reporter", "commissioner", "grader", "diagnoser", "optimizer")
 
 
 def build_coworld_manifest(

@@ -439,7 +439,7 @@ def _materialized_template(tmp_path: Path, template_path: Path) -> Path:
     game_image = manifest["game"]["runnable"]["image"]
     if game_image in placeholders:
         manifest["game"]["runnable"]["image"] = placeholders[game_image]
-    for section in ("player", "commissioner", "reporter", "optimizer"):
+    for section in ("player", "commissioner", "reporter", "grader", "diagnoser", "optimizer"):
         if section in manifest:
             for runnable in manifest[section]:
                 image = runnable["image"]

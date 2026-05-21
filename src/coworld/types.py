@@ -8,7 +8,7 @@ from pydantic import BaseModel, ConfigDict, Field, model_validator
 SCHEMA_VERSION = "https://json-schema.org/draft/2020-12/schema"
 HTTP_URL_PATTERN = r"^https?://"
 JsonSchema = dict[str, Any]
-CoworldRunnableRole = Literal["player", "reporter", "commissioner", "diagnoser", "optimizer"]
+CoworldRunnableRole = Literal["player", "reporter", "commissioner", "grader", "diagnoser", "optimizer"]
 
 
 class CoworldRunnableSpec(BaseModel):
@@ -141,6 +141,10 @@ class CoworldManifest(BaseModel):
     commissioner: list[CoworldDeclaredRoleSpec] = Field(
         default_factory=list,
         description="Optional commissioner runnables. Role docs: docs/roles/commissioner.md.",
+    )
+    grader: list[CoworldDeclaredRoleSpec] = Field(
+        default_factory=list,
+        description="Optional grader runnables. Role docs: docs/roles/grader.md.",
     )
     diagnoser: list[CoworldDeclaredRoleSpec] = Field(
         default_factory=list,

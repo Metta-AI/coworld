@@ -148,6 +148,7 @@
       "run": ["python", "-m", "coworld.examples.paintarena.reporter.paint_arena_summarizer"]
     }
   ],
+  "grader": [],
   "diagnoser": [],
   "optimizer": [],
   "variants": [
