@@ -146,6 +146,14 @@
       "description": "Per-episode summarizer: zip with Markdown summary and JSON stats from PaintArena results, metadata, and replay config.",
       "image": "{{PAINTARENA_IMAGE}}",
       "run": ["python", "-m", "coworld.examples.paintarena.reporter.paint_arena_summarizer"]
+    },
+    {
+      "id": "paint-arena-parquet-stats-reporter",
+      "type": "reporter",
+      "name": "Paint Arena Parquet Stats Reporter",
+      "description": "Rich data reporter: converts PaintArena replay frames and results into replay stats parquet.",
+      "image": "{{PAINTARENA_IMAGE}}",
+      "run": ["python", "-m", "coworld.examples.paintarena.reporter.stats_reporter"]
     }
   ],
   "grader": [],

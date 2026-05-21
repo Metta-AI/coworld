@@ -176,7 +176,11 @@ def test_cogs_vs_clips_and_paintarena_templates_declare_all_viability_role_secti
     paintarena = json.loads((WORLDS / "paintarena" / "coworld_manifest_template.json").read_text(encoding="utf-8"))
     for section in ("optimizer", "commissioner", "grader", "diagnoser"):
         assert paintarena[section] == []
-    assert [role["type"] for role in paintarena["reporter"]] == ["reporter"]
+    assert [role["type"] for role in paintarena["reporter"]] == ["reporter", "reporter"]
+    assert [role["id"] for role in paintarena["reporter"]] == [
+        "paint-arena-summarizer",
+        "paint-arena-parquet-stats-reporter",
+    ]
 
 
 def test_paintarena_example_keeps_template_and_build_copy() -> None:

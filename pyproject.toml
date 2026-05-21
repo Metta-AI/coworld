@@ -24,7 +24,7 @@ dependencies = [
 
 [project.optional-dependencies]
 auth = ["softmax-cli==0.26.11"]
-examples = ["fastapi>=0.115.0", "uvicorn>=0.34.0"]
+examples = ["fastapi>=0.115.0", "pyarrow>=16.1.0", "uvicorn>=0.34.0"]
 test = [
   "cogsguard",
   "fastapi>=0.115.0",
