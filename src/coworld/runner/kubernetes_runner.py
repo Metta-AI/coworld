@@ -213,8 +213,8 @@ def _load_incluster_config() -> None:
     kube_config = client.Configuration.get_default_copy()
     scheme, token = kube_config.api_key["authorization"].split(" ", 1)
     assert scheme.lower() == "bearer"
-    kube_config.api_key["authorization"] = token
-    kube_config.api_key_prefix["authorization"] = "Bearer"
+    kube_config.api_key["BearerToken"] = token
+    kube_config.api_key_prefix["BearerToken"] = "Bearer"
     client.Configuration.set_default(kube_config)
 
 

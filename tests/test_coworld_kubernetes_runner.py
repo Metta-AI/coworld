@@ -17,7 +17,7 @@ from coworld.runner.kubernetes_runner import _collect_logs, _wait_for_episode_ar
 from coworld.runner.runner import EpisodeArtifacts, EpisodeRunSpec, PlayerLaunchSpec, RunnableLaunchSpec
 
 
-def test_load_incluster_config_normalizes_bearer_auth_header(monkeypatch):
+def test_load_incluster_config_sets_bearer_token_key(monkeypatch):
     kube_config = client.Configuration()
     kube_config.api_key["authorization"] = "bearer test-token"
     kube_config.api_key_prefix = {}
@@ -29,8 +29,9 @@ def test_load_incluster_config_normalizes_bearer_auth_header(monkeypatch):
 
     kubernetes_runner._load_incluster_config()
 
-    assert kube_config.api_key["authorization"] == "test-token"
-    assert kube_config.api_key_prefix["authorization"] == "Bearer"
+    assert kube_config.api_key["authorization"] == "bearer test-token"
+    assert kube_config.api_key["BearerToken"] == "test-token"
+    assert kube_config.api_key_prefix["BearerToken"] == "Bearer"
     assert captured_configs == [kube_config]
 
 
