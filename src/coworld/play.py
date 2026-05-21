@@ -108,6 +108,7 @@ def play_coworld(
     use_bedrock: bool = False,
     aws_profile: str | None = None,
     aws_region: str | None = None,
+    secret_env: Mapping[str, str] | None = None,
     workspace: Path | None = None,
     timeout_seconds: float = 3600.0,
     on_ready: Callable[[PlaySession], None],
@@ -151,8 +152,9 @@ def play_coworld(
             if use_bedrock
             else {}
         )
-        bedrock_env_args = [arg for key in bedrock_container_env for arg in ("-e", key)]
-        player_subprocess_env = {**os.environ, **bedrock_container_env} if bedrock_container_env else None
+        combined_secret_env = {**bedrock_container_env, **(secret_env or {})}
+        secret_env_args = [arg for key in combined_secret_env for arg in ("-e", key)]
+        player_subprocess_env = {**os.environ, **combined_secret_env} if combined_secret_env else None
         with ExitStack() as stack:
             game_stdout = stack.enter_context(artifacts.game_stdout_path.open("w"))
             game_stderr = stack.enter_context(artifacts.game_stderr_path.open("w"))
@@ -205,7 +207,7 @@ def play_coworld(
                                 "--network",
                                 LOCAL_DOCKER_NETWORK,
                                 *_env_args(player.env),
-                                *bedrock_env_args,
+                                *secret_env_args,
                                 "-e",
                                 f"COGAMES_ENGINE_WS_URL={engine_ws_url}",
                                 *_image_command(player),

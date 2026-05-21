@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import os
 import secrets
 import socket
 import subprocess
@@ -83,6 +84,7 @@ class EpisodeRunSpec:
     artifacts: EpisodeArtifacts
     timeout_seconds: float
     container_prefix: str = LOCAL_EPISODE_CONTAINER_PREFIX
+    secret_env: Mapping[str, str] = field(default_factory=dict)
 
 
 @dataclass(frozen=True)
@@ -161,6 +163,7 @@ def run_coworld_episode(
     timeout_seconds: float,
     verify_replay: bool = False,
     container_prefix: str = LOCAL_EPISODE_CONTAINER_PREFIX,
+    secret_env: Mapping[str, str] | None = None,
 ) -> None:
     assert_episode_images_reachable(job)
     tokens = generate_tokens(len(job.players))
@@ -174,6 +177,7 @@ def run_coworld_episode(
         artifacts=artifacts,
         timeout_seconds=timeout_seconds,
         container_prefix=container_prefix,
+        secret_env=secret_env or {},
     )
     run_cogame_episode(run_spec, verify_replay=verify_replay)
 
@@ -297,6 +301,9 @@ def run_cogame_episode(spec: EpisodeRunSpec, *, verify_replay: bool = True) -> N
                 asyncio.run(_require_bad_player_rejected(f"ws://127.0.0.1:{port}/player?slot=0&token=bad"))
             _require_http_ok(f"http://127.0.0.1:{port}/clients/global")
 
+            secret_env_key_args = [arg for key in spec.secret_env for arg in ("-e", key)]
+            player_subprocess_env = {**os.environ, **spec.secret_env} if spec.secret_env else None
+
             for slot, player in enumerate(spec.players):
                 container_name = f"{spec.container_prefix}-player-{run_id}-{slot}"
                 engine_ws_url = _player_container_ws_url(game_network_alias, slot, spec.tokens[slot], player)
@@ -315,6 +322,7 @@ def run_cogame_episode(spec: EpisodeRunSpec, *, verify_replay: bool = True) -> N
                                 "--network",
                                 LOCAL_DOCKER_NETWORK,
                                 *_env_args(player.env),
+                                *secret_env_key_args,
                                 "-e",
                                 f"COGAMES_ENGINE_WS_URL={engine_ws_url}",
                                 *_image_command(player),
@@ -322,6 +330,7 @@ def run_cogame_episode(spec: EpisodeRunSpec, *, verify_replay: bool = True) -> N
                             stdout=player_log,
                             stderr=subprocess.STDOUT,
                             text=True,
+                            env=player_subprocess_env,
                         ),
                         player_log_path,
                     )

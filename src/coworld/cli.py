@@ -21,7 +21,7 @@ from coworld.certifier import (
 from coworld.cli_support import console, emit_json
 from coworld.config import DEFAULT_SUBMIT_SERVER
 from coworld.manifest_uri import materialized_manifest_path, materialized_replay_path
-from coworld.play import PlaySession, ReplaySession, play_coworld, replay_coworld
+from coworld.play import PlaySession, ReplaySession, _resolve_bedrock_aws_env, play_coworld, replay_coworld
 from coworld.runner.runner import EpisodeArtifacts, run_coworld_episode
 from coworld.starter_policy import (
     STARTER_POLICIES,
@@ -129,6 +129,13 @@ def play(
         str | None,
         typer.Option("--aws-region", help="AWS region to use for --use-bedrock player containers."),
     ] = None,
+    secret_env: Annotated[
+        list[str] | None,
+        typer.Option(
+            "--secret-env",
+            help="Secret environment variable for player containers (KEY=VALUE, can be repeated).",
+        ),
+    ] = None,
     open_browser: Annotated[
         bool,
         typer.Option("--open-browser/--no-open-browser", help="Open the global viewer in a browser."),
@@ -136,6 +143,11 @@ def play(
 ) -> None:
     if not use_bedrock and (aws_profile is not None or aws_region is not None):
         raise typer.BadParameter("--aws-profile and --aws-region require --use-bedrock")
+    parsed_secret_env: dict[str, str] = {}
+    if secret_env:
+        for kv in secret_env:
+            key, val = _parse_secret_env(kv)
+            parsed_secret_env[key] = val
     episode_request_path, player_images = _split_episode_request_and_player_images(episode_request_or_player_images)
     if episode_request_path is not None and (variant_id is not None or run):
         raise typer.BadParameter("episode request files cannot be combined with --variant or --run")
@@ -156,6 +168,7 @@ def play(
             use_bedrock=use_bedrock,
             aws_profile=aws_profile,
             aws_region=aws_region,
+            secret_env=parsed_secret_env or None,
             timeout_seconds=timeout_seconds,
             on_ready=on_ready,
         )
@@ -380,7 +393,38 @@ def run_episode(
     server: Annotated[str, typer.Option("--server", help="Observatory API server URL.")] = DEFAULT_SUBMIT_SERVER,
     timeout_seconds: Annotated[float, typer.Option("--timeout-seconds", min=1.0)] = 3600.0,
     verify_replay: Annotated[bool, typer.Option("--verify-replay/--no-verify-replay")] = False,
+    use_bedrock: Annotated[
+        bool,
+        typer.Option(
+            "--use-bedrock",
+            help="Enable AWS Bedrock access for player containers using host AWS credentials.",
+        ),
+    ] = False,
+    aws_profile: Annotated[
+        str | None,
+        typer.Option("--aws-profile", help="AWS profile to use when resolving --use-bedrock credentials."),
+    ] = None,
+    aws_region: Annotated[
+        str | None,
+        typer.Option("--aws-region", help="AWS region to use for --use-bedrock player containers."),
+    ] = None,
+    secret_env: Annotated[
+        list[str] | None,
+        typer.Option(
+            "--secret-env",
+            help="Secret environment variable for player containers (KEY=VALUE, can be repeated).",
+        ),
+    ] = None,
 ) -> None:
+    if not use_bedrock and (aws_profile is not None or aws_region is not None):
+        raise typer.BadParameter("--aws-profile and --aws-region require --use-bedrock")
+    parsed_secret_env: dict[str, str] = {}
+    if use_bedrock:
+        parsed_secret_env.update(_resolve_bedrock_aws_env(aws_profile=aws_profile, aws_region=aws_region).container_env)
+    if secret_env:
+        for kv in secret_env:
+            key, val = _parse_secret_env(kv)
+            parsed_secret_env[key] = val
     episode_request_path, player_images = _split_episode_request_and_player_images(episode_request_or_player_images)
     if episode_request_path is not None and run:
         raise typer.BadParameter("episode request files cannot be combined with --run")
@@ -410,6 +454,7 @@ def run_episode(
         timeout_seconds=timeout_seconds,
         verify_replay=verify_replay,
         container_prefix="coworld-run",
+        **({"secret_env": parsed_secret_env} if parsed_secret_env else {}),
     )
     typer.echo(f"Artifacts: {artifacts.workspace}")
     typer.echo(f"Results: {artifacts.results_path}")

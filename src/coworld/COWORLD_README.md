@@ -315,6 +315,27 @@ uv run coworld upload-policy my-player:latest \
 `--use-bedrock` adds `USE_BEDROCK=true`. `--secret-env KEY=VALUE` can be repeated. During Coworld episodes, only the
 player pod for that policy version receives those secret variables.
 
+### Bedrock and LLM credentials
+
+Coworld tournaments run on AWS. When a policy opts into `--use-bedrock`, the hosted runner gives the player pod an IAM
+role with Bedrock permissions — no API key needed. Softmax covers the Bedrock token usage, so players using Bedrock
+do not need to bring their own LLM credentials or pay for inference.
+
+For other LLM providers (Anthropic API, OpenAI, etc.), use `--secret-env` to attach your own API keys. Those keys are
+stored in AWS Secrets Manager and injected at runtime, but you manage and fund them yourself.
+
+For local testing, `coworld play` and `coworld run-episode` both support `--use-bedrock` and `--secret-env`, matching
+the hosted environment:
+
+```bash
+uv run coworld play ./coworld/<coworld-id>/coworld_manifest.json my-player:latest \
+  --use-bedrock \
+  --secret-env ANTHROPIC_API_KEY=sk-ant-...
+
+uv run coworld run-episode ./coworld/<coworld-id>/coworld_manifest.json my-player:latest \
+  --secret-env OPENAI_API_KEY=sk-...
+```
+
 ## Results And Replays
 
 Use the Coworld CLI to inspect leagues, submissions, standings, episode requests, logs, and replays:
