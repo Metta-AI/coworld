@@ -172,6 +172,40 @@ def test_episode_logs_downloads_only_my_policy_agents(
     assert not (tmp_path / f"{EPISODE_REQUEST_ID}-policy_agent_1.txt").exists()
 
 
+def test_episode_logs_downloads_game_log(
+    httpserver: HTTPServer,
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    monkeypatch.setattr("coworld.api_client._load_current_cogames_token", lambda: "token")
+    httpserver.expect_request(
+        f"/observatory/v2/episode-requests/{EPISODE_REQUEST_ID}",
+        method="GET",
+        headers={"X-Auth-Token": "token"},
+    ).respond_with_json(_episode_request(episode_request_id=EPISODE_REQUEST_ID, replay_url=None))
+    httpserver.expect_request(
+        f"/observatory/v2/episode-requests/{EPISODE_REQUEST_ID}/artifacts/logs",
+        method="GET",
+        headers={"X-Auth-Token": "token"},
+    ).respond_with_data("game log\n", content_type="text/plain")
+
+    result = CliRunner().invoke(
+        app,
+        [
+            "episode-logs",
+            EPISODE_REQUEST_ID,
+            "--game",
+            "--download-dir",
+            str(tmp_path),
+            "--server",
+            httpserver.url_for(""),
+        ],
+    )
+
+    assert result.exit_code == 0, result.output
+    assert (tmp_path / f"{EPISODE_REQUEST_ID}-game.log").read_text() == "game log\n"
+
+
 def _expect_round_scope(httpserver: HTTPServer) -> None:
     httpserver.expect_request(
         "/observatory/v2/rounds",

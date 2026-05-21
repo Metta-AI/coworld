@@ -506,6 +506,9 @@ class CoworldApiClient:
     def get_episode_request(self, episode_request_id: str) -> V2EpisodeRequestRow:
         return self._get(f"/v2/episode-requests/{episode_request_id}", V2EpisodeRequestRow)
 
+    def get_episode_request_artifact_text(self, episode_request_id: str, artifact_type: str) -> str:
+        return self.get_text(f"/v2/episode-requests/{episode_request_id}/artifacts/{artifact_type}")
+
     def list_events(
         self,
         *,

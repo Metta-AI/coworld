@@ -360,6 +360,7 @@ def register_tournament_commands(app: typer.Typer) -> None:
     def episode_logs(
         episode_request_id: Annotated[str, typer.Argument(help="Episode request ID.")],
         list_logs: Annotated[bool, typer.Option("--list", help="List available policy log files.")] = False,
+        game: Annotated[bool, typer.Option("--game", help="Show/download the game log.")] = False,
         agent: Annotated[int | None, typer.Option("--agent", min=0, help="Show/download one agent log.")] = None,
         mine: Annotated[
             bool,
@@ -372,6 +373,16 @@ def register_tournament_commands(app: typer.Typer) -> None:
     ) -> None:
         with CoworldApiClient.from_login(server_url=server) as client:
             episode = client.get_episode_request(episode_request_id)
+            if game:
+                content = client.get_episode_request_artifact_text(episode_request_id, "logs")
+                if download_dir is None:
+                    typer.echo(content)
+                    return
+                output_path = download_dir / f"{episode_request_id}-game.log"
+                output_path.parent.mkdir(parents=True, exist_ok=True)
+                output_path.write_text(content, encoding="utf-8")
+                console.print(f"[green]Log saved to {output_path}[/green]")
+                return
             job_id = _require_job_id(episode)
             available_logs = client.list_job_policy_logs(job_id)
             agent_indices = _available_agent_indices(available_logs)
