@@ -32,7 +32,7 @@ from coworld.play import ReplaySession, replay_coworld
 from coworld.submit import parse_policy_identifier
 
 _UUID_RE = re.compile(r"^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$")
-_POLICY_LOG_RE = re.compile(r"^policy_agent_(\d+)\.txt$")
+_POLICY_LOG_RE = re.compile(r"^policy_agent_(\d+)\.log$")
 
 
 def register_tournament_commands(app: typer.Typer) -> None:
@@ -398,7 +398,7 @@ def register_tournament_commands(app: typer.Typer) -> None:
                 if download_dir is None:
                     typer.echo(content)
                     return
-                output_path = download_dir / f"{episode_request_id}-policy_agent_{agent}.txt"
+                output_path = download_dir / f"{episode_request_id}-policy_agent_{agent}.log"
                 output_path.parent.mkdir(parents=True, exist_ok=True)
                 output_path.write_text(content, encoding="utf-8")
                 console.print(f"[green]Log saved to {output_path}[/green]")
@@ -407,7 +407,7 @@ def register_tournament_commands(app: typer.Typer) -> None:
                 written: list[Path] = []
                 for agent_idx in agent_indices:
                     content = client.get_job_policy_log(job_id, agent_idx)
-                    output_path = download_dir / f"{episode_request_id}-policy_agent_{agent_idx}.txt"
+                    output_path = download_dir / f"{episode_request_id}-policy_agent_{agent_idx}.log"
                     output_path.parent.mkdir(parents=True, exist_ok=True)
                     output_path.write_text(content, encoding="utf-8")
                     written.append(output_path)
@@ -915,7 +915,7 @@ def _print_policy_logs(agent_indices: list[int]) -> None:
     table.add_column("Agent", justify="right")
     table.add_column("Filename")
     for agent_idx in agent_indices:
-        table.add_row(str(agent_idx), f"policy_agent_{agent_idx}.txt")
+        table.add_row(str(agent_idx), f"policy_agent_{agent_idx}.log")
     console.print(table)
 
 

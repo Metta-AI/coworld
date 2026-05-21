@@ -166,7 +166,7 @@ uv run coworld episode-logs ereq_... --mine --download-dir logs/
 
 Hosted Coworld episode jobs collect combined stdout and stderr from the game pod and from each started player pod. The
 `episode-logs` command can fetch the game log with `--game`, list per-player files, and download the per-player files
-(`policy_agent_{position}.txt`).
+(`policy_agent_{position}.log`).
 
 Download replay files:
 

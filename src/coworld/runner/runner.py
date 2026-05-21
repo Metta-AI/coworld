@@ -68,7 +68,7 @@ class EpisodeArtifacts:
         )
 
     def policy_log_path(self, slot: int) -> Path:
-        return self.logs_dir / f"policy_agent_{slot}.txt"
+        return self.logs_dir / f"policy_agent_{slot}.log"
 
     @property
     def compressed_replay_path(self) -> Path:

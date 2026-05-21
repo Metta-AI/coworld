@@ -590,7 +590,7 @@ def test_play_coworld_starts_certification_player_containers(tmp_path: Path, mon
         "-m",
         "unit_test.player",
     ]
-    assert waited_players == [tmp_path / "play-workspace" / "logs" / "policy_agent_0.txt"]
+    assert waited_players == [tmp_path / "play-workspace" / "logs" / "policy_agent_0.log"]
     assert ["docker", "rm", "-f", "coworld-play-player-session-1-0"] in rm_commands
     assert ["docker", "rm", "-f", "coworld-play-game-session-1"] in rm_commands
 

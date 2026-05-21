@@ -724,10 +724,10 @@ def test_run_from_env_uploads_debug_logs_on_failure(monkeypatch, tmp_path):
     with zipfile.ZipFile(BytesIO(debug_dest.read_bytes())) as zf:
         names = set(zf.namelist())
         assert "game.stdout.log" in names
-        assert "policy_agent_0.txt" in names
-        assert "policy_agent_1.txt" in names
+        assert "policy_agent_0.log" in names
+        assert "policy_agent_1.log" in names
         assert zf.read("game.stdout.log").decode() == "game crashed with segfault"
-        assert zf.read("policy_agent_0.txt").decode() == "player 0 timeout waiting for server"
+        assert zf.read("policy_agent_0.log").decode() == "player 0 timeout waiting for server"
 
     # Verify per-policy logs were uploaded individually
     assert policy0_dest.read_text(encoding="utf-8") == "player 0 timeout waiting for server"

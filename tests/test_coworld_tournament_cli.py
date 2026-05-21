@@ -146,7 +146,7 @@ def test_episode_logs_downloads_only_my_policy_agents(
         f"/observatory/jobs/{JOB_ID}/policy-logs",
         method="GET",
         headers={"X-Auth-Token": "token"},
-    ).respond_with_json(["policy_agent_0.txt", "policy_agent_1.txt"])
+    ).respond_with_json(["policy_agent_0.log", "policy_agent_1.log"])
     _expect_mine_memberships(httpserver, division_id=None)
     httpserver.expect_request(
         f"/observatory/jobs/{JOB_ID}/policy-logs/0",
@@ -168,8 +168,8 @@ def test_episode_logs_downloads_only_my_policy_agents(
     )
 
     assert result.exit_code == 0, result.output
-    assert (tmp_path / f"{EPISODE_REQUEST_ID}-policy_agent_0.txt").read_text() == "mine log\n"
-    assert not (tmp_path / f"{EPISODE_REQUEST_ID}-policy_agent_1.txt").exists()
+    assert (tmp_path / f"{EPISODE_REQUEST_ID}-policy_agent_0.log").read_text() == "mine log\n"
+    assert not (tmp_path / f"{EPISODE_REQUEST_ID}-policy_agent_1.log").exists()
 
 
 def test_episode_logs_downloads_game_log(
