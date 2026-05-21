@@ -188,6 +188,7 @@ def test_run_cogame_episode_uses_docker_dns_and_omits_empty_policy_names_env(tmp
             policy_names=[],
             artifacts=EpisodeArtifacts.create(tmp_path),
             timeout_seconds=1,
+            container_prefix="coworld-run",
         ),
         verify_replay=False,
     )
@@ -196,6 +197,8 @@ def test_run_cogame_episode_uses_docker_dns_and_omits_empty_policy_names_env(tmp
     env_values = [value for index, value in enumerate(game_command) if index > 0 and game_command[index - 1] == "-e"]
     assert all(not value.startswith("COGAMES_POLICY_NAMES=") for value in env_values)
     assert run_commands[0] == ["docker", "network", "inspect", runner_module.LOCAL_DOCKER_NETWORK]
+    assert "coworld-run-game-session-1" in game_command
+    assert "coworld-run-player-session-1-0" in player_command
     assert "--network" in game_command
     assert game_command[game_command.index("--network") + 1] == runner_module.LOCAL_DOCKER_NETWORK
     assert "--network-alias" in game_command

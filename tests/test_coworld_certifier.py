@@ -178,7 +178,7 @@ def test_assert_docker_image_reachable_accepts_local_image(monkeypatch: pytest.M
 
     def fake_run(cmd, **kwargs):
         calls.append(cmd)
-        return subprocess.CompletedProcess(cmd, 0, stdout="[]", stderr="")
+        return subprocess.CompletedProcess(cmd, 0, stdout='[{"Os":"linux","Architecture":"amd64"}]', stderr="")
 
     monkeypatch.setattr(subprocess, "run", fake_run)
 
@@ -212,6 +212,16 @@ def test_assert_docker_image_reachable_rejects_missing_image(monkeypatch: pytest
 
     with pytest.raises(RuntimeError, match="Missing image"):
         assert_docker_image_reachable("missing:latest", label="Missing image")
+
+
+def test_assert_docker_image_reachable_rejects_wrong_local_platform(monkeypatch: pytest.MonkeyPatch) -> None:
+    def fake_run(cmd, **kwargs):
+        return subprocess.CompletedProcess(cmd, 0, stdout='[{"Os":"linux","Architecture":"arm64"}]', stderr="")
+
+    monkeypatch.setattr(subprocess, "run", fake_run)
+
+    with pytest.raises(RuntimeError, match="linux/arm64"):
+        assert_docker_image_reachable("local-image:latest", label="Local image")
 
 
 def test_build_game_config_validates_after_tokens_are_injected_via_json_schema(tmp_path: Path) -> None:
@@ -537,7 +547,7 @@ def test_play_coworld_starts_certification_player_containers(tmp_path: Path, mon
         rm_commands.append(cmd)
         return subprocess.CompletedProcess(cmd, 0)
 
-    monkeypatch.setattr("coworld.play.assert_docker_image_reachable", lambda image, *, label: None)
+    monkeypatch.setattr("coworld.play.assert_episode_images_reachable", lambda _job: None)
     monkeypatch.setattr("coworld.play._free_local_port", lambda: 1234)
     monkeypatch.setattr("coworld.play._wait_for_health", noop_wait_for_health)
     monkeypatch.setattr("coworld.play._wait_for_game_exit", lambda *_args, **_kwargs: None)
@@ -633,7 +643,7 @@ def test_play_coworld_injects_bedrock_env_into_player_containers(
     def fake_ensure_local_docker_network() -> None:
         events.append("network")
 
-    monkeypatch.setattr("coworld.play.assert_docker_image_reachable", lambda image, *, label: None)
+    monkeypatch.setattr("coworld.play.assert_episode_images_reachable", lambda _job: None)
     monkeypatch.setattr("coworld.play.ensure_local_docker_network", fake_ensure_local_docker_network)
     monkeypatch.setattr("coworld.play._free_local_port", lambda: 1234)
     monkeypatch.setattr("coworld.play._wait_for_health", lambda *_args, **_kwargs: None)
@@ -716,7 +726,7 @@ def test_play_coworld_does_not_resolve_bedrock_env_when_docker_network_fails(
         popen_commands.append(cmd)
         raise AssertionError("Docker containers should not start when network setup fails")
 
-    monkeypatch.setattr("coworld.play.assert_docker_image_reachable", lambda image, *, label: None)
+    monkeypatch.setattr("coworld.play.assert_episode_images_reachable", lambda _job: None)
     monkeypatch.setattr("coworld.play.ensure_local_docker_network", fake_ensure_local_docker_network)
     monkeypatch.setattr("coworld.play._free_local_port", lambda: 1234)
     monkeypatch.setattr("coworld.play._resolve_bedrock_aws_env", fake_resolve_bedrock_aws_env)

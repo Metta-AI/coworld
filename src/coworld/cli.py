@@ -101,6 +101,10 @@ def play(
         list[str] | None,
         typer.Option("--run", help="Command argv for supplied player image(s)."),
     ] = None,
+    output_dir: Annotated[
+        Path | None,
+        typer.Option("--output-dir", "-o", help="Directory for play artifacts."),
+    ] = None,
     server: Annotated[str, typer.Option("--server", help="Observatory API server URL.")] = DEFAULT_SUBMIT_SERVER,
     variant_id: Annotated[
         str | None,
@@ -141,36 +145,20 @@ def play(
         if open_browser:
             webbrowser.open(session.links.global_)
 
-    if manifest_uri.startswith("cow_") and "/" not in manifest_uri:
-        cached_manifest_path = downloaded_coworld_manifest_path(Path("./coworld"), manifest_uri)
-        if not cached_manifest_path.is_file():
-            download_coworld_cmd(manifest_uri, Path("./coworld"), server=server)
+    with _materialized_manifest_path(manifest_uri, server=server) as manifest_path:
         result = play_coworld(
-            cached_manifest_path.resolve(),
+            manifest_path,
             variant_id=variant_id,
             episode_request_path=episode_request_path,
             player_images=player_images,
             player_run=run,
+            workspace=output_dir.resolve() if output_dir is not None else None,
             use_bedrock=use_bedrock,
             aws_profile=aws_profile,
             aws_region=aws_region,
             timeout_seconds=timeout_seconds,
             on_ready=on_ready,
         )
-    else:
-        with materialized_manifest_path(manifest_uri, server=server) as manifest_path:
-            result = play_coworld(
-                manifest_path,
-                variant_id=variant_id,
-                episode_request_path=episode_request_path,
-                player_images=player_images,
-                player_run=run,
-                use_bedrock=use_bedrock,
-                aws_profile=aws_profile,
-                aws_region=aws_region,
-                timeout_seconds=timeout_seconds,
-                on_ready=on_ready,
-            )
     typer.echo(f"Artifacts: {result.session.artifacts.workspace}")
     typer.echo(f"Results: {result.session.artifacts.results_path}")
     _echo_replay_paths(result.session.artifacts)
@@ -416,7 +404,13 @@ def run_episode(
         else:
             artifacts_dir = manifest_path.parent / "results"
     artifacts = EpisodeArtifacts.create(artifacts_dir.resolve(), prefix="coworld-run-")
-    run_coworld_episode(spec, artifacts, timeout_seconds=timeout_seconds, verify_replay=verify_replay)
+    run_coworld_episode(
+        spec,
+        artifacts,
+        timeout_seconds=timeout_seconds,
+        verify_replay=verify_replay,
+        container_prefix="coworld-run",
+    )
     typer.echo(f"Artifacts: {artifacts.workspace}")
     typer.echo(f"Results: {artifacts.results_path}")
     _echo_replay_paths(artifacts)
@@ -427,9 +421,10 @@ def run_episode(
 def _materialized_manifest_path(manifest_uri: str, *, server: str) -> Iterator[Path]:
     if manifest_uri.startswith("cow_") and "/" not in manifest_uri:
         cached_manifest_path = downloaded_coworld_manifest_path(Path("./coworld"), manifest_uri)
-        if cached_manifest_path.is_file():
-            yield cached_manifest_path.resolve()
-            return
+        if not cached_manifest_path.is_file():
+            download_coworld_cmd(manifest_uri, Path("./coworld"), server=server)
+        yield cached_manifest_path.resolve()
+        return
     with materialized_manifest_path(manifest_uri, server=server) as manifest_path:
         yield manifest_path
 

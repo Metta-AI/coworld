@@ -37,6 +37,7 @@ from coworld.runner.runner import (
     _wait_for_health,
     _wait_for_player_exit,
     assert_docker_image_reachable,
+    assert_episode_images_reachable,
     ensure_local_docker_network,
     finalize_replay_artifacts,
     generate_tokens,
@@ -112,7 +113,6 @@ def play_coworld(
     on_ready: Callable[[PlaySession], None],
 ) -> PlayResult:
     package = load_coworld_package(manifest_path)
-    assert_docker_image_reachable(package.cogame.image, label="Cogame runnable.image")
     artifacts = EpisodeArtifacts.create(workspace, prefix="coworld-play-")
     if episode_request_path is not None and (variant_id is not None or player_images or player_run):
         raise ValueError("episode_request_path cannot be combined with variant_id, player_images, or player_run")
@@ -127,6 +127,7 @@ def play_coworld(
             player_run=player_run,
         )
         variant_label = variant_id if variant_id is not None else "certification"
+    assert_episode_images_reachable(job_spec)
     tokens = generate_tokens(len(job_spec.players))
     write_coworld_game_config(job_spec, artifacts, tokens)
     players = [PlayerLaunchSpec.from_model(player) for player in job_spec.players]

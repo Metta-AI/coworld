@@ -16,6 +16,7 @@ from urllib.parse import urlencode
 
 import httpx
 import websockets
+from pydantic import BaseModel, ConfigDict, Field, TypeAdapter
 from websockets.exceptions import ConnectionClosed, InvalidHandshake, InvalidMessage, InvalidStatus
 
 from coworld.schema_validation import validate_json_schema
@@ -29,6 +30,14 @@ REPLAY_SERVER_ENV_VAR = "COGAME_REPLAY_SERVER"
 POLICY_NAMES_ENV_VAR = "COGAMES_POLICY_NAMES"
 LOCAL_DOCKER_NETWORK = "coworld-local"
 LOCAL_GAME_NETWORK_ALIAS_PREFIX = "coworld-game-"
+LOCAL_EPISODE_CONTAINER_PREFIX = "coworld-cert"
+
+
+class DockerImageInspectEntry(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+
+    os_name: str = Field(alias="Os")
+    architecture: str = Field(alias="Architecture")
 
 
 @dataclass(frozen=True)
@@ -73,6 +82,7 @@ class EpisodeRunSpec:
     policy_names: list[str] | None
     artifacts: EpisodeArtifacts
     timeout_seconds: float
+    container_prefix: str = LOCAL_EPISODE_CONTAINER_PREFIX
 
 
 @dataclass(frozen=True)
@@ -111,6 +121,7 @@ class PlayerLaunchSpec(RunnableLaunchSpec):
 def assert_docker_image_reachable(image: str, *, label: str = "Docker image") -> None:
     local_result = subprocess.run(["docker", "image", "inspect", image], capture_output=True, text=True, timeout=30)
     if local_result.returncode == 0:
+        _assert_linux_amd64_image(image, label=label, inspect_stdout=local_result.stdout)
         return
 
     remote_result = subprocess.run(["docker", "manifest", "inspect", image], capture_output=True, text=True, timeout=60)
@@ -124,13 +135,34 @@ def assert_docker_image_reachable(image: str, *, label: str = "Docker image") ->
     )
 
 
+def _assert_linux_amd64_image(image: str, *, label: str, inspect_stdout: str) -> None:
+    entries = TypeAdapter(list[DockerImageInspectEntry]).validate_json(inspect_stdout)
+    if len(entries) != 1:
+        raise RuntimeError(f"docker image inspect returned {len(entries)} entries for {image}")
+    entry = entries[0]
+    if entry.os_name != "linux" or entry.architecture != "amd64":
+        raise RuntimeError(
+            f"{label} {image} is {entry.os_name}/{entry.architecture}; "
+            "Coworld episodes require linux/amd64 images. "
+            "Rebuild the image with: docker build --platform linux/amd64 ..."
+        )
+
+
+def assert_episode_images_reachable(job: CoworldEpisodeJobSpec) -> None:
+    assert_docker_image_reachable(job.game_runnable.image, label="Cogame runnable.image")
+    for slot, player in enumerate(job.players):
+        assert_docker_image_reachable(player.image, label=f"players[{slot}].image")
+
+
 def run_coworld_episode(
     job: CoworldEpisodeJobSpec,
     artifacts: EpisodeArtifacts,
     *,
     timeout_seconds: float,
     verify_replay: bool = False,
+    container_prefix: str = LOCAL_EPISODE_CONTAINER_PREFIX,
 ) -> None:
+    assert_episode_images_reachable(job)
     tokens = generate_tokens(len(job.players))
     write_coworld_game_config(job, artifacts, tokens)
 
@@ -141,6 +173,7 @@ def run_coworld_episode(
         policy_names=job.policy_names,
         artifacts=artifacts,
         timeout_seconds=timeout_seconds,
+        container_prefix=container_prefix,
     )
     run_cogame_episode(run_spec, verify_replay=verify_replay)
 
@@ -218,8 +251,8 @@ def run_cogame_episode(spec: EpisodeRunSpec, *, verify_replay: bool = True) -> N
     port = _free_local_port()
     run_id = secrets.token_hex(8)
     game_network_alias = f"{LOCAL_GAME_NETWORK_ALIAS_PREFIX}{run_id}"
-    game_container = f"coworld-cert-game-{run_id}"
-    replay_container = f"coworld-cert-replay-{run_id}"
+    game_container = f"{spec.container_prefix}-game-{run_id}"
+    replay_container = f"{spec.container_prefix}-replay-{run_id}"
     player_containers: list[str] = []
     player_processes: list[tuple[subprocess.Popen[str], Path]] = []
 
@@ -265,7 +298,7 @@ def run_cogame_episode(spec: EpisodeRunSpec, *, verify_replay: bool = True) -> N
             _require_http_ok(f"http://127.0.0.1:{port}/clients/global")
 
             for slot, player in enumerate(spec.players):
-                container_name = f"coworld-cert-player-{run_id}-{slot}"
+                container_name = f"{spec.container_prefix}-player-{run_id}-{slot}"
                 engine_ws_url = _player_container_ws_url(game_network_alias, slot, spec.tokens[slot], player)
                 player_containers.append(container_name)
                 player_log_path = spec.artifacts.policy_log_path(slot)

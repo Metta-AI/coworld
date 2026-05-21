@@ -240,6 +240,33 @@ def test_coworld_play_opens_global_client_by_default(monkeypatch: MonkeyPatch, t
     assert "Player containers: 1 launched" in result.output
 
 
+def test_coworld_play_accepts_output_dir(monkeypatch: MonkeyPatch, tmp_path: Path) -> None:
+    captured: dict[str, object] = {}
+    output_dir = tmp_path / "play-results"
+
+    def fake_play_coworld(_manifest_path: Path, **kwargs: object) -> SimpleNamespace:
+        captured["kwargs"] = kwargs
+        artifacts = SimpleNamespace(
+            workspace=output_dir.resolve(),
+            results_path=output_dir.resolve() / "results.json",
+            replay_path=output_dir.resolve() / "replay.json",
+            compressed_replay_path=output_dir.resolve() / "replay.json.z",
+            logs_dir=output_dir.resolve() / "logs",
+        )
+        return SimpleNamespace(session=SimpleNamespace(artifacts=artifacts), results={})
+
+    monkeypatch.setattr("coworld.cli.play_coworld", fake_play_coworld)
+
+    result = CliRunner().invoke(
+        app,
+        ["play", str(_example_manifest(tmp_path)), "--output-dir", str(output_dir), "--no-open-browser"],
+    )
+
+    assert result.exit_code == 0, result.output
+    kwargs = cast(dict[str, object], captured["kwargs"])
+    assert kwargs["workspace"] == output_dir.resolve()
+
+
 def test_run_episode_uses_manifest_certification_players(monkeypatch: MonkeyPatch, tmp_path: Path) -> None:
     spec, kwargs = _invoke_run_episode(
         monkeypatch,
@@ -254,7 +281,7 @@ def test_run_episode_uses_manifest_certification_players(monkeypatch: MonkeyPatc
     expected_run = ["python", "-m", "coworld.examples.paintarena.player.player"]
     assert [player.run for player in spec.players] == [expected_run, expected_run]
     assert spec.game_config["max_ticks"] == 100
-    assert kwargs == {"timeout_seconds": 12.0, "verify_replay": True}
+    assert kwargs == {"timeout_seconds": 12.0, "verify_replay": True, "container_prefix": "coworld-run"}
 
 
 def test_run_episode_defaults_results_next_to_manifest(monkeypatch: MonkeyPatch, tmp_path: Path) -> None:
@@ -280,18 +307,52 @@ def test_run_episode_defaults_backend_coworld_results_to_coworld_id(
     assert artifacts.workspace == (tmp_path / "coworld" / COWORLD_ID / "results").resolve()
 
 
-def test_run_episode_defaults_coworld_id_results_to_coworld_id(
-    httpserver: HTTPServer,
+def test_run_episode_defaults_coworld_id_results_to_coworld_id(monkeypatch: MonkeyPatch, tmp_path: Path) -> None:
+    manifest_path = tmp_path / "coworld" / COWORLD_ID / "coworld_manifest.json"
+    manifest_path.parent.mkdir(parents=True)
+    manifest_path.write_text(_example_manifest(tmp_path).read_text(encoding="utf-8"), encoding="utf-8")
+
+    monkeypatch.chdir(tmp_path)
+    artifacts = _invoke_run_episode_artifacts(monkeypatch, COWORLD_ID)
+
+    assert artifacts.workspace == (tmp_path / "coworld" / COWORLD_ID / "results").resolve()
+
+
+def test_run_episode_downloads_missing_coworld_id_cache(
     monkeypatch: MonkeyPatch,
     tmp_path: Path,
 ) -> None:
     manifest = json.loads(_example_manifest(tmp_path).read_text(encoding="utf-8"))
-    httpserver.expect_request(COWORLD_PATH).respond_with_json({"manifest": manifest})
+    downloads: list[tuple[str, Path, str, bool]] = []
+    captured: dict[str, object] = {}
+
+    def fake_download_coworld_cmd(
+        coworld_ref: str,
+        output_dir: Path,
+        *,
+        server: str,
+        refresh: bool = False,
+    ) -> None:
+        downloads.append((coworld_ref, output_dir, server, refresh))
+        manifest_path = output_dir / coworld_ref / "coworld_manifest.json"
+        manifest_path.parent.mkdir(parents=True)
+        manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
+        (output_dir / coworld_ref / "coworld_images.json").write_text("{}", encoding="utf-8")
+
+    def fake_run_coworld_episode(spec: CoworldEpisodeJobSpec, artifacts: object, **_kwargs: object) -> None:
+        captured["spec"] = spec
+        captured["artifacts"] = artifacts
 
     monkeypatch.chdir(tmp_path)
-    artifacts = _invoke_run_episode_artifacts(monkeypatch, COWORLD_ID, "--server", httpserver.url_for(""))
+    monkeypatch.setattr("coworld.cli.download_coworld_cmd", fake_download_coworld_cmd)
+    monkeypatch.setattr("coworld.cli.run_coworld_episode", fake_run_coworld_episode)
 
-    assert artifacts.workspace == (tmp_path / "coworld" / COWORLD_ID / "results").resolve()
+    result = CliRunner().invoke(app, ["run-episode", COWORLD_ID, "--server", "http://example.test"])
+
+    assert result.exit_code == 0, result.output
+    assert downloads == [(COWORLD_ID, Path("./coworld"), "http://example.test", False)]
+    assert cast(CoworldEpisodeJobSpec, captured["spec"]).manifest.game.name == manifest["game"]["name"]
+    assert cast(EpisodeArtifacts, captured["artifacts"]).workspace == (tmp_path / "coworld" / COWORLD_ID / "results")
 
 
 def test_run_episode_defaults_downloaded_id_manifest_results_to_coworld_id(
@@ -321,7 +382,7 @@ def test_run_episode_accepts_one_player_image_for_all_slots(monkeypatch: MonkeyP
 
     assert [player.image for player in spec.players] == ["my-player:latest", "my-player:latest"]
     assert [player.run for player in spec.players] == [["python", "/app/player.py"]] * 2
-    assert kwargs == {"timeout_seconds": 3600.0, "verify_replay": False}
+    assert kwargs == {"timeout_seconds": 3600.0, "verify_replay": False, "container_prefix": "coworld-run"}
 
 
 def test_run_episode_accepts_one_player_image_per_slot(monkeypatch: MonkeyPatch, tmp_path: Path) -> None:
@@ -369,7 +430,7 @@ def test_run_episode_accepts_episode_request_file_with_per_slot_env(
     assert [player.run for player in spec.players] == [["python", "/slot-zero.py"], ["python", "/slot-one.py"]]
     assert [player.env for player in spec.players] == [{"PLAYER_SLOT": "0"}, {"PLAYER_SLOT": "1"}]
     assert spec.policy_names == ["slot-zero:v1", "slot-one:v1"]
-    assert kwargs == {"timeout_seconds": 3600.0, "verify_replay": False}
+    assert kwargs == {"timeout_seconds": 3600.0, "verify_replay": False, "container_prefix": "coworld-run"}
 
 
 def _invoke_run_episode_artifacts(monkeypatch: MonkeyPatch, *args: str) -> EpisodeArtifacts:
