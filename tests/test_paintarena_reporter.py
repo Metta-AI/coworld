@@ -1,15 +1,25 @@
 """Test suite for paint_arena_summarizer.
 
-Covers pure-function envelope construction (build_envelope, build_stats) plus
+Covers pure-function zip construction (build_zip_bytes, build_stats) plus
 end-to-end run() invocations against file:// URIs, exercising the failure-mode
 table in DESIGN.md. The reporter raises on every documented failure mode
 rather than returning an exit code; the entry-point lets the exception
 propagate so the process crashes with a non-zero status.
+
+Output contract is REPORTER_DESIGN.md D12 (zip + render.txt):
+- A single zip is written to COGAME_REPORT_OUTPUT_URI.
+- Top-level entries: summary.md, stats.json, render.txt.
+- render.txt lists summary.md (the only renderable file); stats.json is
+  download-only and not listed.
+- Every zip entry has a pinned mtime of (1980, 1, 1, 0, 0, 0) so identical
+  inputs produce byte-identical zips.
 """
 
 from __future__ import annotations
 
+import io
 import json
+import zipfile
 from copy import deepcopy
 from pathlib import Path
 from typing import Any
@@ -22,41 +32,30 @@ from coworld.examples.paintarena.reporter import paint_arena_summarizer as par
 # ---------- synthetic PaintArena episode fixtures ----------
 
 
-def make_manifest() -> dict[str, Any]:
+def make_replay(width: int = 12, height: int = 8) -> dict[str, Any]:
+    """Synthetic PaintArena replay payload.
+
+    Shape mirrors what the PaintArena game server writes
+    (packages/coworld/.../paintarena/game/server.py::_replay_payload):
+    `{config, player_names, frames, results}`. The reporter only reads
+    `config.width` and `config.height` (D11); other fields are present so the
+    fixture realistically exercises pydantic's extras-ignored behavior.
+    """
     return deepcopy(
         {
-            "game": {
-                "name": "paintarena",
-                "version": "0.1.5",
-                "results_schema": {},
+            "config": {
+                "width": width,
+                "height": height,
+                "max_ticks": 100,
+                "tick_rate": 5,
+                "players": [
+                    {"name": "Sweep Painter 1"},
+                    {"name": "Sweep Painter 2"},
+                ],
             },
-            "variants": [
-                {
-                    "id": "default",
-                    "name": "Default",
-                    "game_config": {
-                        "width": 12,
-                        "height": 8,
-                        "max_ticks": 100,
-                        "tick_rate": 5,
-                        "players": [
-                            {"name": "Sweep Painter 1"},
-                            {"name": "Sweep Painter 2"},
-                        ],
-                    },
-                },
-                {
-                    "id": "small",
-                    "name": "Small",
-                    "game_config": {
-                        "width": 4,
-                        "height": 4,
-                        "max_ticks": 20,
-                        "tick_rate": 5,
-                        "players": [{"name": "A"}, {"name": "B"}],
-                    },
-                },
-            ],
+            "player_names": ["Sweep Painter 1", "Sweep Painter 2"],
+            "frames": [],
+            "results": {},
         }
     )
 
@@ -114,58 +113,93 @@ def make_results_missing_field() -> dict[str, Any]:
 # ---------- helpers ----------
 
 
+_RENDERABLE_EXTS = {".md", ".txt", ".html", ".htm"}
+_PINNED_MTIME = (1980, 1, 1, 0, 0, 0)
+
+
 def _models(
     *,
     results: dict[str, Any] | None = None,
     metadata: dict[str, Any] | None = None,
-    manifest: dict[str, Any] | None = None,
-) -> tuple[par.PaintArenaResults, par.EpisodeMetadata, par.PartialManifest]:
+    replay: dict[str, Any] | None = None,
+) -> tuple[par.PaintArenaResults, par.EpisodeMetadata, par.PaintArenaReplay]:
     return (
         par.PaintArenaResults.model_validate(results or make_results_happy()),
         par.EpisodeMetadata.model_validate(metadata or make_metadata()),
-        par.PartialManifest.model_validate(manifest or make_manifest()),
+        par.PaintArenaReplay.model_validate(replay or make_replay()),
     )
 
 
-# ---------- pure build_envelope / build_stats ----------
+def _build_zip(
+    *,
+    results: dict[str, Any] | None = None,
+    metadata: dict[str, Any] | None = None,
+    replay: dict[str, Any] | None = None,
+) -> bytes:
+    r, m, p = _models(results=results, metadata=metadata, replay=replay)
+    return par.build_zip_bytes(results=r, metadata=m, replay=p)
 
 
-def test_happy_path_envelope_shape() -> None:
-    results, metadata, manifest = _models()
-    env = par.build_envelope(results=results, metadata=metadata, manifest=manifest)
-    assert env.version == "1"
-    assert [a.id for a in env.artifacts] == ["summary", "stats"]
-    assert env.artifacts[0].content_type == "text/markdown"
-    assert env.artifacts[1].content_type == "application/json"
+def _extract(payload: bytes) -> dict[str, bytes]:
+    with zipfile.ZipFile(io.BytesIO(payload)) as zf:
+        return {info.filename: zf.read(info.filename) for info in zf.infolist()}
 
 
-def test_envelope_key_order_is_intentional_not_alphabetical() -> None:
-    """Regression: serialized envelope must follow contract key order, not sort_keys.
+def _render_lines(payload: bytes) -> list[str]:
+    files = _extract(payload)
+    text = files["render.txt"].decode("utf-8")
+    return [line.strip() for line in text.splitlines() if line.strip()]
 
-    Top-level (version, artifacts); per-artifact (id, content_type, content);
-    the artifact list itself in primary-first order. The first artifact is
-    the primary one by D3 convention -- accidental sort_keys reintroduction
-    would clobber this and break the contract's primary-artifact rule.
-    """
-    results, metadata, manifest = _models()
-    env = par.build_envelope(results=results, metadata=metadata, manifest=manifest)
-    payload = env.to_json_bytes()
-    text = payload.decode("utf-8")
-    assert text.index('"version"') < text.index('"artifacts"')
-    first_id = text.index('"id"')
-    first_ct = text.index('"content_type"', first_id)
-    first_c = text.index('"content"', first_ct)
-    assert first_id < first_ct < first_c
-    assert text.index('"summary"') < text.index('"stats"')
-    parsed = json.loads(payload)
-    assert list(parsed.keys()) == ["version", "artifacts"]
-    assert list(parsed["artifacts"][0].keys())[:3] == ["id", "content_type", "content"]
+
+# ---------- pure build_zip_bytes / build_stats ----------
+
+
+def test_happy_path_zip_entries() -> None:
+    payload = _build_zip()
+    files = _extract(payload)
+    assert set(files.keys()) == {"summary.md", "stats.json", "render.txt"}
+
+
+def test_render_txt_contents_lists_summary_only() -> None:
+    """render.txt is a single line `summary.md\n`; stats.json is download-only."""
+    payload = _build_zip()
+    files = _extract(payload)
+    assert files["render.txt"] == b"summary.md\n"
+    assert _render_lines(payload) == ["summary.md"]
+
+
+def test_render_txt_consistency_with_d12_rules() -> None:
+    """Every render.txt entry must exist in the zip, have a renderable extension,
+    not list itself, and have no duplicates (D12 invalid_output triggers)."""
+    payload = _build_zip()
+    files = _extract(payload)
+    lines = _render_lines(payload)
+    assert "render.txt" not in lines  # MUST NOT list itself
+    assert len(lines) == len(set(lines))  # no duplicates
+    for line in lines:
+        assert line in files, f"render.txt entry {line!r} missing from zip"
+        assert Path(line).suffix.lower() in _RENDERABLE_EXTS
+
+
+def test_zip_entries_have_pinned_mtime() -> None:
+    """All entries pin date_time to (1980,1,1,0,0,0) for byte-identical reruns (D12)."""
+    payload = _build_zip()
+    with zipfile.ZipFile(io.BytesIO(payload)) as zf:
+        for info in zf.infolist():
+            assert info.date_time == _PINNED_MTIME, (
+                f"{info.filename} has date_time {info.date_time}, expected {_PINNED_MTIME}"
+            )
+
+
+def test_zip_is_well_formed() -> None:
+    """Zip bytes are readable (no testzip error) -- platform invalid_output check."""
+    with zipfile.ZipFile(io.BytesIO(_build_zip())) as zf:
+        assert zf.testzip() is None
 
 
 def test_happy_path_stats_numbers() -> None:
-    results, metadata, manifest = _models()
-    variant = next(v for v in manifest.variants if v.id == metadata.variant_id)
-    stats = par.build_stats(results=results, metadata=metadata, variant=variant)
+    results, metadata, replay = _models()
+    stats = par.build_stats(results=results, metadata=metadata, config=replay.config)
     assert stats.episode_id == "ep_abc123"
     assert stats.variant_id == "default"
     assert stats.grid.width == 12
@@ -182,68 +216,71 @@ def test_happy_path_stats_numbers() -> None:
     assert stats.slots[0].share_pct == pytest.approx(48.96, abs=0.01)
 
 
+def test_happy_path_summary_md_content() -> None:
+    payload = _build_zip()
+    summary = _extract(payload)["summary.md"].decode("utf-8")
+    assert "PaintArena" in summary
+    assert "ep_abc123" in summary
+    assert "champion-v3" in summary
+    assert "Winner" in summary
+
+
+def test_happy_path_stats_json_content() -> None:
+    payload = _build_zip()
+    stats = json.loads(_extract(payload)["stats.json"])
+    assert stats["episode_id"] == "ep_abc123"
+    assert stats["variant_id"] == "default"
+    assert stats["grid"] == {"width": 12, "height": 8, "total_tiles": 96}
+    assert stats["winner_slot"] == 0
+    assert stats["margin_tiles"] == 9
+    assert stats["tie"] is False
+
+
 def test_zero_paint_episode() -> None:
-    results, metadata, manifest = _models(results=make_results_zero_paint())
-    env = par.build_envelope(results=results, metadata=metadata, manifest=manifest)
-    stats = env.artifacts[1].content
+    payload = _build_zip(results=make_results_zero_paint())
+    files = _extract(payload)
+    stats = json.loads(files["stats.json"])
     assert stats["winner_slot"] is None
     assert stats["tie"] is False
     assert stats["margin_tiles"] == 0
     assert stats["unpainted_tiles"] == 96
-    summary = env.artifacts[0].content
+    summary = files["summary.md"].decode("utf-8")
     assert "no tiles" in summary.lower()
 
 
 def test_tie_episode() -> None:
-    results, metadata, manifest = _models(results=make_results_tie())
-    env = par.build_envelope(results=results, metadata=metadata, manifest=manifest)
-    stats = env.artifacts[1].content
+    payload = _build_zip(results=make_results_tie())
+    files = _extract(payload)
+    stats = json.loads(files["stats.json"])
     assert stats["winner_slot"] is None
     assert stats["tie"] is True
     assert stats["margin_tiles"] == 0
-    summary = env.artifacts[0].content
+    summary = files["summary.md"].decode("utf-8")
     assert "tied" in summary.lower()
 
 
 def test_policy_name_falls_back_to_slot_label() -> None:
     metadata_dict = make_metadata()
     metadata_dict["players"][1]["policy_name"] = None
-    results, metadata, manifest = _models(metadata=metadata_dict)
-    env = par.build_envelope(results=results, metadata=metadata, manifest=manifest)
-    stats = env.artifacts[1].content
+    payload = _build_zip(metadata=metadata_dict)
+    stats = json.loads(_extract(payload)["stats.json"])
     assert stats["slots"][1]["policy_name"] == "Slot 1"
 
 
-def test_lookup_variant_missing_raises() -> None:
-    results, metadata, manifest = _models(
-        metadata=make_metadata(variant_id="not-a-real-variant"),
-    )
-    with pytest.raises(KeyError):
-        par.build_envelope(results=results, metadata=metadata, manifest=manifest)
-
-
-def test_envelope_model_rejects_bad_shape() -> None:
-    """Pydantic enforces structural validity at Envelope/Artifact construction time."""
+def test_replay_missing_config_raises() -> None:
+    """Replay payload without a usable `config` block fails fast at validation."""
+    bad_replay = make_replay()
+    del bad_replay["config"]
     with pytest.raises(ValidationError):
-        # Missing top-level 'version'.
-        par.Envelope.model_validate({"artifacts": []})
+        par.PaintArenaReplay.model_validate(bad_replay)
+
+
+def test_replay_config_missing_dimensions_raises() -> None:
+    """A `config` block missing width/height is a contract violation, not a fallback case."""
+    bad_replay = make_replay()
+    del bad_replay["config"]["width"]
     with pytest.raises(ValidationError):
-        # Artifact missing required 'content_type' and 'content'.
-        par.Envelope.model_validate({"version": "1", "artifacts": [{"id": "x"}]})
-
-
-def test_envelope_rejects_duplicate_artifact_ids() -> None:
-    """Producer-side contract: artifact ids within an envelope must be unique."""
-    with pytest.raises(ValidationError, match="duplicate artifact id"):
-        par.Envelope.model_validate(
-            {
-                "version": "1",
-                "artifacts": [
-                    {"id": "a", "content_type": "text/plain", "content": ""},
-                    {"id": "a", "content_type": "text/plain", "content": ""},
-                ],
-            }
-        )
+        par.PaintArenaReplay.model_validate(bad_replay)
 
 
 # ---------- end-to-end via file:// URIs ----------
@@ -259,16 +296,16 @@ def _setup_inputs(
     *,
     results: dict[str, Any] | None = None,
     metadata: dict[str, Any] | None = None,
-    manifest: dict[str, Any] | None = None,
+    replay: dict[str, Any] | None = None,
 ) -> tuple[dict[str, str], Path]:
     results_uri = _write_json(tmp_path / "results.json", results or make_results_happy())
     metadata_uri = _write_json(tmp_path / "metadata.json", metadata or make_metadata())
-    manifest_uri = _write_json(tmp_path / "manifest.json", manifest or make_manifest())
-    out_path = tmp_path / "report.json"
+    replay_uri = _write_json(tmp_path / "replay.json", replay or make_replay())
+    out_path = tmp_path / "report.zip"
     env = {
         "COGAME_RESULTS_URI": results_uri,
+        "COGAME_REPLAY_URI": replay_uri,
         "COGAME_EPISODE_METADATA_URI": metadata_uri,
-        "COGAME_MANIFEST_URI": manifest_uri,
         "COGAME_REPORT_OUTPUT_URI": out_path.as_uri(),
         "COGAME_REPORTER_ID": "paint-arena-summarizer",
     }
@@ -281,15 +318,18 @@ def _invoke_run(monkeypatch: pytest.MonkeyPatch, env: dict[str, str]) -> None:
     par.run(par.load_reporter_inputs())
 
 
-def test_run_happy_path_writes_valid_envelope(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_run_happy_path_writes_valid_zip(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     env, out_path = _setup_inputs(tmp_path)
     _invoke_run(monkeypatch, env)
-    payload = json.loads(out_path.read_text())
-    parsed = par.Envelope.model_validate(payload)
-    assert parsed.artifacts[1].content["winner_slot"] == 0
+    payload = out_path.read_bytes()
+    files = _extract(payload)
+    assert set(files.keys()) == {"summary.md", "stats.json", "render.txt"}
+    stats = json.loads(files["stats.json"])
+    assert stats["winner_slot"] == 0
 
 
-def test_run_is_deterministic(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_run_is_byte_identical_on_rerun(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """D12 determinism: two runs over identical inputs must produce identical bytes."""
     env, out_path = _setup_inputs(tmp_path)
     _invoke_run(monkeypatch, env)
     first = out_path.read_bytes()
@@ -299,9 +339,12 @@ def test_run_is_deterministic(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -
     assert first == second
 
 
-def test_run_missing_variant_raises(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    env, out_path = _setup_inputs(tmp_path, metadata=make_metadata(variant_id="ghost"))
-    with pytest.raises(KeyError, match="ghost"):
+def test_run_malformed_replay_raises(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """Replay without a usable `config` surfaces as a ValidationError, no zip written."""
+    bad_replay = make_replay()
+    del bad_replay["config"]
+    env, out_path = _setup_inputs(tmp_path, replay=bad_replay)
+    with pytest.raises(ValidationError):
         _invoke_run(monkeypatch, env)
     assert not out_path.exists()
 
@@ -327,8 +370,8 @@ def test_load_reporter_inputs_missing_env_var_raises(
 ) -> None:
     for k in (
         "COGAME_RESULTS_URI",
+        "COGAME_REPLAY_URI",
         "COGAME_EPISODE_METADATA_URI",
-        "COGAME_MANIFEST_URI",
         "COGAME_REPORT_OUTPUT_URI",
         "COGAME_REPORTER_ID",
     ):

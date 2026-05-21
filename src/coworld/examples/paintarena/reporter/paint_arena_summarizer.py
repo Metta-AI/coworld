@@ -1,35 +1,39 @@
 """PaintArena summarizer reporter.
 
-Pure function of (results JSON, episode metadata JSON, manifest JSON) that
-produces a JSON envelope with two artifacts: a Markdown summary and a JSON
-stats blob. See DESIGN.md for the full specification.
+Pure function of (results JSON, episode metadata JSON, replay JSON) that
+produces a zip containing a Markdown summary and a JSON stats blob, per the
+D12 zip + `render.txt` contract. See DESIGN.md for the full specification.
+Grid dimensions come from the game-owned replay's `config` (per the reporter
+contract D11); PaintArena's replay format is defined by its game server in
+coworld.
 
-The inline primitives in this file (ReporterInputs, read_uri/write_uri,
-Envelope/Artifact) are SDK extraction candidates -- once a second reporter
-exists, they'll be lifted into reporter_sdk and this file will import them
-instead.
+The inline primitives in this file (ReporterInputs, read_uri/write_uri) are
+SDK extraction candidates -- once a second reporter exists, they'll be lifted
+into reporter_sdk and this file will import them instead.
 """
 
 from __future__ import annotations
 
+import io
 import json
 import os
 import sys
 import time
 import urllib.parse
+import zipfile
 from pathlib import Path
 from typing import Any
 
 import requests
-from pydantic import BaseModel, NonNegativeInt, model_validator
+from pydantic import BaseModel, NonNegativeInt
 
 # ---------- inline primitives (SDK extraction candidates) ----------
 
 
 class ReporterInputs(BaseModel):
     results_uri: str
+    replay_uri: str
     episode_metadata_uri: str
-    manifest_uri: str
     report_output_uri: str
     reporter_id: str
 
@@ -37,8 +41,8 @@ class ReporterInputs(BaseModel):
 def load_reporter_inputs() -> ReporterInputs:
     return ReporterInputs(
         results_uri=os.environ["COGAME_RESULTS_URI"],
+        replay_uri=os.environ["COGAME_REPLAY_URI"],
         episode_metadata_uri=os.environ["COGAME_EPISODE_METADATA_URI"],
-        manifest_uri=os.environ["COGAME_MANIFEST_URI"],
         report_output_uri=os.environ["COGAME_REPORT_OUTPUT_URI"],
         reporter_id=os.environ["COGAME_REPORTER_ID"],
     )
@@ -98,30 +102,26 @@ def read_json(uri: str) -> Any:
     return json.loads(read_uri(uri).decode("utf-8"))
 
 
-class Artifact(BaseModel):
-    # Field order matches the on-the-wire envelope contract: id, content_type,
-    # [encoding,] content. model_dump preserves declaration order; exclude_none
-    # in Envelope.to_json_bytes drops `encoding` when unset.
-    id: str
-    content_type: str
-    encoding: str | None = None
-    content: Any
+# Pinned zip-entry mtime for byte-identical determinism (D12). Anything other
+# than a fixed value would make reruns over identical inputs differ in the
+# zip's local-file headers.
+_DETERMINISTIC_ZIP_MTIME = (1980, 1, 1, 0, 0, 0)
 
 
-class Envelope(BaseModel):
-    version: str
-    artifacts: list[Artifact] = []
+def write_deterministic_zip(entries: list[tuple[str, bytes]]) -> bytes:
+    """Build a zip with pinned mtimes for byte-identical reruns (D12).
 
-    @model_validator(mode="after")
-    def _unique_artifact_ids(self) -> "Envelope":
-        ids = [a.id for a in self.artifacts]
-        duplicates = sorted({i for i in ids if ids.count(i) > 1})
-        if duplicates:
-            raise ValueError(f"duplicate artifact id(s): {duplicates}")
-        return self
-
-    def to_json_bytes(self) -> bytes:
-        return self.model_dump_json(indent=2, exclude_none=True).encode("utf-8")
+    Entry order is preserved as given. Each entry's date_time is pinned to
+    _DETERMINISTIC_ZIP_MTIME so two invocations over identical inputs produce
+    byte-identical output.
+    """
+    buf = io.BytesIO()
+    with zipfile.ZipFile(buf, mode="w", compression=zipfile.ZIP_DEFLATED) as zf:
+        for name, payload in entries:
+            info = zipfile.ZipInfo(filename=name, date_time=_DETERMINISTIC_ZIP_MTIME)
+            info.compress_type = zipfile.ZIP_DEFLATED
+            zf.writestr(info, payload)
+    return buf.getvalue()
 
 
 # ---------- PaintArena-specific input/output types ----------
@@ -145,18 +145,18 @@ class EpisodeMetadata(BaseModel):
     players: list[PlayerMetadata] = []
 
 
-class GameConfig(BaseModel):
+class ReplayConfig(BaseModel):
+    # Subset of the PaintArena replay's `config` dict that this reporter
+    # consumes. Other config fields (max_ticks, tick_rate, players, ...) are
+    # ignored. See packages/coworld/.../paintarena/game/server.py::_replay_payload.
     width: int
     height: int
 
 
-class Variant(BaseModel):
-    id: str
-    game_config: GameConfig
-
-
-class PartialManifest(BaseModel):
-    variants: list[Variant] = []
+class PaintArenaReplay(BaseModel):
+    # Subset of the PaintArena replay payload. Other top-level fields
+    # (player_names, frames, results) are ignored by this reporter.
+    config: ReplayConfig
 
 
 class SlotStats(BaseModel):
@@ -192,10 +192,10 @@ class PaintArenaStats(BaseModel):
 def build_stats(
     results: PaintArenaResults,
     metadata: EpisodeMetadata,
-    variant: Variant,
+    config: ReplayConfig,
 ) -> PaintArenaStats:
-    width = variant.game_config.width
-    height = variant.game_config.height
+    width = config.width
+    height = config.height
     total_tiles = width * height
 
     policy_by_slot = {p.slot: p.policy_name for p in metadata.players if p.policy_name}
@@ -283,21 +283,23 @@ def render_summary_markdown(stats: PaintArenaStats) -> str:
     return "\n".join(lines) + "\n"
 
 
-def build_envelope(
+def build_zip_bytes(
     results: PaintArenaResults,
     metadata: EpisodeMetadata,
-    manifest: PartialManifest,
-) -> Envelope:
-    variant = next((v for v in manifest.variants if v.id == metadata.variant_id), None)
-    if variant is None:
-        raise KeyError(f"variant_id {metadata.variant_id!r} not found in manifest.variants")
-    stats = build_stats(results, metadata, variant)
-    return Envelope(
-        version="1",
-        artifacts=[
-            Artifact(id="summary", content_type="text/markdown", content=render_summary_markdown(stats)),
-            Artifact(id="stats", content_type="application/json", content=stats.model_dump()),
-        ],
+    replay: PaintArenaReplay,
+) -> bytes:
+    """Build the D12 output zip: summary.md (rendered), stats.json (download),
+    render.txt (single line: `summary.md`)."""
+    stats = build_stats(results, metadata, replay.config)
+    summary_md = render_summary_markdown(stats).encode("utf-8")
+    stats_json = (json.dumps(stats.model_dump(), indent=2) + "\n").encode("utf-8")
+    render_txt = b"summary.md\n"
+    return write_deterministic_zip(
+        [
+            ("summary.md", summary_md),
+            ("stats.json", stats_json),
+            ("render.txt", render_txt),
+        ]
     )
 
 
@@ -307,10 +309,10 @@ def build_envelope(
 def run(inputs: ReporterInputs) -> None:
     results = PaintArenaResults.model_validate(read_json(inputs.results_uri))
     metadata = EpisodeMetadata.model_validate(read_json(inputs.episode_metadata_uri))
-    manifest = PartialManifest.model_validate(read_json(inputs.manifest_uri))
-    envelope = build_envelope(results=results, metadata=metadata, manifest=manifest)
-    write_uri(inputs.report_output_uri, envelope.to_json_bytes(), content_type="application/json")
-    print(f"[{inputs.reporter_id}] wrote envelope to {inputs.report_output_uri}", file=sys.stderr, flush=True)
+    replay = PaintArenaReplay.model_validate(read_json(inputs.replay_uri))
+    payload = build_zip_bytes(results=results, metadata=metadata, replay=replay)
+    write_uri(inputs.report_output_uri, payload, content_type="application/zip")
+    print(f"[{inputs.reporter_id}] wrote zip to {inputs.report_output_uri}", file=sys.stderr, flush=True)
 
 
 if __name__ == "__main__":
