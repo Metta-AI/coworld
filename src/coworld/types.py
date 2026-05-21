@@ -27,6 +27,7 @@ class CoworldDeclaredRunnableSpec(CoworldRunnableSpec):
     id: str = Field(min_length=1)
     name: str = Field(min_length=1)
     description: str = Field(min_length=1)
+    source_url: str | None = None
 
 
 class CoworldGameRunnableSpec(CoworldRunnableSpec):

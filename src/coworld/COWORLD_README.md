@@ -187,9 +187,9 @@ Every Coworld package has a `coworld_manifest.json` file that follows
 - `variants`: named game configs, such as maps, difficulty levels, or league settings.
 - `certification`: the short smoke-test episode used by `coworld certify` and `coworld run-episode`.
 
-Role sections use the same runnable shape: a `type`, image, optional command (`run`), and optional public environment
-variables (`env`). The role `type` selects the platform contract for that runnable. Secrets do not belong in the
-manifest.
+Role sections use the same runnable shape: a `type`, image, optional command (`run`), optional public environment
+variables (`env`), and optional `source_url` pointing at the repository, directory, or file that builds the
+runnable. The role `type` selects the platform contract for that runnable. Secrets do not belong in the manifest.
 
 Role-specific docs live under `docs/roles/`: [game](docs/roles/game.md), [player](docs/roles/player.md),
 [commissioner](docs/roles/commissioner.md), [reporter](docs/roles/reporter.md),

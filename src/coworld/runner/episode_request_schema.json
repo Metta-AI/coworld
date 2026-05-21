@@ -69,6 +69,18 @@
           "title": "Description",
           "type": "string"
         },
+        "source_url": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Source Url"
+        },
         "type": {
           "enum": ["player", "reporter", "commissioner", "grader", "diagnoser", "optimizer"],
           "title": "Type",

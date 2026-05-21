@@ -117,6 +117,14 @@ def test_canonical_among_them_template_points_to_source_repos(tmp_path: Path) ->
         _materialized_template(tmp_path, WORLDS / "among_them" / "coworld_manifest_template.json")
     )
     pages = {page.id: page.content.value for page in package.manifest.game.docs.pages}
+    role_source_urls = {
+        "player": package.manifest.player[0].source_url,
+        "optimizer": package.manifest.optimizer[0].source_url,
+        "commissioner": package.manifest.commissioner[0].source_url,
+        "reporter": package.manifest.reporter[0].source_url,
+        "grader": package.manifest.grader[0].source_url,
+        "diagnoser": package.manifest.diagnoser[0].source_url,
+    }
 
     assert [role.id for role in package.manifest.commissioner] == ["among-them-commissioner"]
     assert [role.id for role in package.manifest.reporter] == ["among-them-summarizer"]
@@ -141,6 +149,16 @@ def test_canonical_among_them_template_points_to_source_repos(tmp_path: Path) ->
     assert pages["diagnoser"] == (
         "https://github.com/Metta-AI/diagnosers/tree/main/diagnosers/among_them/among_them_diagnoser"
     )
+    assert role_source_urls == {
+        "player": "https://github.com/Metta-AI/bitworld/tree/master/among_them/players/ivotewell",
+        "optimizer": "https://github.com/Metta-AI/optimizers/tree/main",
+        "commissioner": (
+            "https://github.com/Metta-AI/commissioners/tree/main/commissioners/among_them/among_them_commissioner"
+        ),
+        "reporter": "https://github.com/Metta-AI/reporters/tree/main/reporters/among_them/among_them_summarizer",
+        "grader": "https://github.com/Metta-AI/graders/tree/main/graders/among_them/among_them_grader",
+        "diagnoser": "https://github.com/Metta-AI/diagnosers/tree/main/diagnosers/among_them/among_them_diagnoser",
+    }
     assert all("github.com/Metta-AI/coworld" not in source for source in pages.values())
     assert all("docs/bitworld/among-them" not in source for source in pages.values())
 
