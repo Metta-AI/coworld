@@ -48,19 +48,20 @@ py_library(
     #   - examples/**/*.html: client UIs the example servers serve via
     #                         FastAPI's HTMLResponse((CLIENTS_DIR/...))
     #   - policies/amongthemstarter: project files copied by make-policy
-    # Excluded by omission: unrelated Dockerfiles (container-build only),
-    # README.md and *_spec.md (docs), __pycache__/*.pyc (build artifacts).
+    #   - coworld_manifest_schema.json: jsonschema document loaded by
+    #                                   manifest_validation.py
+    # Excluded: top-level READMEs (CLI_README.md, COWORLD_README.md,
+    # GAME_RUNTIME_README.md, runner/*_README.md). They're docs; nothing
+    # in coworld/src/ opens them. PR #13209's narrowing missed them.
     data = glob(
         [
             "src/coworld/*.json",
-            "src/coworld/*.md",
             "src/coworld/examples/**/*.py",
             "src/coworld/examples/**/*.json",
             "src/coworld/examples/**/*.html",
             "src/coworld/policies/amongthemstarter/**/*",
             "src/coworld/policies/amongthemstarter/.dockerignore",
             "src/coworld/py.typed",
-            "src/coworld/runner/*.md",
         ],
         allow_empty = True,
     ),
