@@ -1,5 +1,40 @@
 load("@rules_python//python:defs.bzl", "py_binary", "py_library")
 
+# Build the paintarena example image via the host docker daemon. Tags the
+# image `coworld-paintarena:latest` in the local docker store and writes a
+# digest-pinned reference (`coworld-paintarena@sha256:<digest>`) to the
+# output file so downstream consumers can address the exact build.
+#
+# Tagged `manual` so it stays out of `//...` wildcard builds — CI runners
+# without a docker daemon would otherwise fail the wildcard.
+genrule(
+    name = "paintarena_image",
+    srcs = [
+        "src/coworld/examples/paintarena/Dockerfile",
+        "src/coworld/examples/paintarena/__init__.py",
+    ] + glob([
+        "src/coworld/examples/paintarena/game/**",
+        "src/coworld/examples/paintarena/player/**",
+        "src/coworld/examples/paintarena/shared/**",
+    ]),
+    outs = ["paintarena_image.ref"],
+    cmd = """
+set -euo pipefail
+# Bazel sanitizes PATH for actions; ensure standard host locations are
+# searched so the host docker (or podman shimming docker) is reachable.
+export PATH="/run/current-system/sw/bin:/usr/local/bin:/usr/bin:/bin$${PATH:+:$$PATH}"
+ctx=$$(dirname $(location src/coworld/examples/paintarena/Dockerfile))
+iidfile=$$(mktemp)
+trap 'rm -f "$$iidfile"' EXIT
+docker build --iidfile "$$iidfile" --tag coworld-paintarena:latest "$$ctx" >&2
+iid=$$(cat "$$iidfile")
+echo "coworld-paintarena@$$iid" > $@
+""",
+    local = 1,
+    tags = ["manual"],
+    visibility = ["//visibility:public"],
+)
+
 py_library(
     name = "coworld",
     srcs = glob(["src/coworld/**/*.py"]),
