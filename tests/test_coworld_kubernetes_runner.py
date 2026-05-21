@@ -8,12 +8,30 @@ from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
+from kubernetes import client
 from kubernetes.client.rest import ApiException
 
 from coworld.runner import kubernetes_runner
 from coworld.runner import runner as runner_module
 from coworld.runner.kubernetes_runner import _collect_logs, _wait_for_episode_artifacts
 from coworld.runner.runner import EpisodeArtifacts, EpisodeRunSpec, PlayerLaunchSpec, RunnableLaunchSpec
+
+
+def test_load_incluster_config_normalizes_bearer_auth_header(monkeypatch):
+    kube_config = client.Configuration()
+    kube_config.api_key["authorization"] = "bearer test-token"
+    kube_config.api_key_prefix = {}
+    captured_configs = []
+
+    monkeypatch.setattr(kubernetes_runner.config, "load_incluster_config", lambda: None)
+    monkeypatch.setattr(kubernetes_runner.client.Configuration, "get_default_copy", lambda: kube_config)
+    monkeypatch.setattr(kubernetes_runner.client.Configuration, "set_default", captured_configs.append)
+
+    kubernetes_runner._load_incluster_config()
+
+    assert kube_config.api_key["authorization"] == "test-token"
+    assert kube_config.api_key_prefix["authorization"] == "Bearer"
+    assert captured_configs == [kube_config]
 
 
 class _FakeCoreV1:
@@ -488,7 +506,7 @@ def test_run_kubernetes_episode_defaults_player_resource_requests(monkeypatch, t
         return None
 
     monkeypatch.setattr(kubernetes_runner, "STATE_PATH", state_path)
-    monkeypatch.setattr(kubernetes_runner.config, "load_incluster_config", lambda: None)
+    monkeypatch.setattr(kubernetes_runner, "_load_incluster_config", lambda: None)
     monkeypatch.setattr(kubernetes_runner.client, "CoreV1Api", lambda: object())
     monkeypatch.setattr(kubernetes_runner, "_create_game_service", lambda *_args: None)
     monkeypatch.setattr(kubernetes_runner, "_wait_for_health", lambda *_args, **_kwargs: None)

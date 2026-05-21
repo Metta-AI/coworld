@@ -151,7 +151,7 @@ def _run_kubernetes_episode(
     *,
     timeout_seconds: float,
 ) -> None:
-    config.load_incluster_config()
+    _load_incluster_config()
     core_v1 = client.CoreV1Api()
     namespace = os.environ["JOB_NAMESPACE"]
     service_name = os.environ["COWORLD_SERVICE_NAME"]
@@ -206,6 +206,16 @@ def _run_kubernetes_episode(
     finally:
         _collect_logs(core_v1, namespace, pod_name, child_names, artifacts)
         _delete_child_resources(core_v1, namespace, service_name, child_names)
+
+
+def _load_incluster_config() -> None:
+    config.load_incluster_config()
+    kube_config = client.Configuration.get_default_copy()
+    scheme, token = kube_config.api_key["authorization"].split(" ", 1)
+    assert scheme.lower() == "bearer"
+    kube_config.api_key["authorization"] = token
+    kube_config.api_key_prefix["authorization"] = "Bearer"
+    client.Configuration.set_default(kube_config)
 
 
 def _owner_references() -> list[client.V1OwnerReference]:
