@@ -4,18 +4,62 @@
 policies, run local episodes, upload game and policy containers, submit policies to leagues, and inspect standings,
 logs, and replays.
 
-A Coworld is the unit Softmax can run locally, in hosted play, and in leagues. It combines:
+A Coworld is the unit Softmax can run locally, in hosted play, and in leagues. At its core, it combines:
 
-- one game container that owns rules, state, viewers, results, and replays;
-- one or more player or policy containers that connect to the game and choose actions;
+- one **game** container that owns rules, state, viewers, results, and replays;
+- one or more **player** containers that connect to the game and choose actions;
 - a `coworld_manifest.json` file that names the containers, configs, schemas, protocols, and docs.
+
+Every Coworld also declares five **supporting runnables** in its manifest:
+
+- **commissioner**: drives league rounds — schedules episodes, assigns players to slots, collates results, and decides
+  promotions/relegations across divisions.
+- **reporter**: turns episode artifacts into rendered highlights (Markdown or HTML) and machine-readable event logs.
+- **grader**: emits a scalar score for how interesting or useful an episode was from the game creator's perspective.
+- **diagnoser**: evaluates a target policy against a Coworld's episode artifacts and emits policy-facing advice.
+- **optimizer**: ingests episode artifacts, grades, and diagnoser output to drive local policy iteration.
+
+**All seven role sections are required in every `coworld_manifest.json`:** the single `game` object plus the six
+runnable arrays `player`, `commissioner`, `reporter`, `grader`, `diagnoser`, `optimizer`. Each runnable array must
+contain at least one entry. Coworld authors who don't want to write a custom commissioner/reporter/grader/diagnoser/
+optimizer may reference Softmax's published default image for that role (e.g. `softmax/default-commissioner:latest`,
+`softmax/default-grader:latest`); the defaults are intentionally limited but functional baselines, not no-ops, and
+they do not constitute a formal role contract. See [Role Status](#role-status) below for which roles have a live
+platform contract today.
 
 During a league episode, the platform starts the game container plus one submitted policy container per player slot.
 Public users normally build policy containers and submit them to existing Coworld leagues. Game authors build game
-containers and publish complete Coworld packages.
+containers and publish complete Coworld packages including all seven role sections.
 
 Use [GAME_RUNTIME_README.md](GAME_RUNTIME_README.md) for the game-container runtime contract and
 [CLI_README.md](CLI_README.md) for the command reference.
+
+## Role Status
+
+Every Coworld role is documented with one of three status labels describing how complete its platform integration is
+today. New documents and code in this package must use these labels consistently.
+
+- **live**: the role has a full runtime contract that the platform exercises end to end. The contract is stable
+  enough to build against.
+- **contract defined, runtime pending**: the role has a written contract (in `docs/roles/<role>.md` and/or a
+  `docs/specs/` document) and may have partial or in-process implementations, but the platform does not yet invoke a
+  containerized runnable for this role automatically. Manifests must still declare an entry; expect the runtime
+  integration to land soon.
+- **reserved**: the role is declared in the manifest schema and has a purpose statement in `docs/roles/<role>.md`,
+  but no input/output contract or platform integration exists yet. A manifest entry is still required — reference the
+  Softmax-published default image (e.g. `softmax/default-grader:latest`) if a custom implementation does not exist
+  yet. A default image is not itself a contract; it may act as a temporary implicit contract for callers, but it
+  does not bump the role's documented status until a contract is written.
+
+| Role         | Status                              |
+| ------------ | ----------------------------------- |
+| game         | live                                |
+| player       | live                                |
+| commissioner | contract defined, runtime pending   |
+| reporter     | contract defined, runtime pending   |
+| grader       | reserved                            |
+| diagnoser    | reserved                            |
+| optimizer    | reserved                            |
 
 ## Install
 
@@ -181,9 +225,10 @@ Every Coworld package has a `coworld_manifest.json` file that follows
 [coworld_manifest_schema.json](coworld_manifest_schema.json). The main sections are:
 
 - `game`: the game server image, config schema, result schema, protocol docs, and game-authored docs.
-- `player`: bundled player images that can play the game. This section is required.
-- `commissioner`, `reporter`, `grader`, `diagnoser`, and `optimizer`: optional runnable role sections. Declare the
-  section as an empty array when the Coworld has no bundled runnable for that role yet.
+- `player`: bundled player images that can play the game. Must contain at least one entry.
+- `commissioner`, `reporter`, `grader`, `diagnoser`, `optimizer`: arrays of bundled supporting runnables. Each must
+  contain at least one entry; Coworlds without a custom implementation may reference the Softmax-published default
+  image for that role (see [Role Status](#role-status) for current contract status).
 - `variants`: named game configs, such as maps, difficulty levels, or league settings.
 - `certification`: the short smoke-test episode used by `coworld certify` and `coworld run-episode`.
 
