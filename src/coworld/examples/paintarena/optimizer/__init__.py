@@ -1,0 +1,1 @@
+"""PaintArena optimizer reference implementation."""

@@ -302,6 +302,11 @@ evaluate a policy using that experience and any additional local assays.
 Optimizers are game-agnostic improvement apps. They target a Coworld plus optional policy workspace, ingest any useful
 experience reports, diagnoser output, and game/protocol docs, and drive local policy iteration.
 
+An optimizer run receives `COWORLD_MANIFEST_URI`, `COGAME_OPTIMIZER_ID`, and `COGAME_OPTIMIZER_OUTPUT_URI`. Runners may
+also provide `COGAME_POLICY_WORKSPACE_URI`, `COGAME_REPORT_URIS`, `COGAME_GRADER_OUTPUT_URIS`, and
+`COGAME_DIAGNOSER_OUTPUT_URIS`. The reference output is deterministic JSON describing the target Coworld, supplied
+evidence counts, and next policy-iteration steps.
+
 ## Runtime Contract
 
 The game image owns the episode. It must:

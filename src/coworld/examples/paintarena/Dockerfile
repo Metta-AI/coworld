@@ -17,5 +17,6 @@ COPY shared /app/coworld/examples/paintarena/shared
 COPY game /app/coworld/examples/paintarena/game
 COPY player /app/coworld/examples/paintarena/player
 COPY reporter /app/coworld/examples/paintarena/reporter
+COPY optimizer /app/coworld/examples/paintarena/optimizer
 
 CMD ["python", "-m", "coworld.examples.paintarena.game.server"]

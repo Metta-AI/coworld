@@ -192,13 +192,15 @@ def test_cogs_vs_clips_and_paintarena_templates_declare_all_viability_role_secti
         assert cogs_vs_clips[section] == []
 
     paintarena = json.loads((WORLDS / "paintarena" / "coworld_manifest_template.json").read_text(encoding="utf-8"))
-    for section in ("optimizer", "commissioner", "grader", "diagnoser"):
+    for section in ("commissioner", "grader", "diagnoser"):
         assert paintarena[section] == []
     assert [role["type"] for role in paintarena["reporter"]] == ["reporter", "reporter"]
     assert [role["id"] for role in paintarena["reporter"]] == [
         "paint-arena-summarizer",
         "paint-arena-parquet-stats-reporter",
     ]
+    assert [role["type"] for role in paintarena["optimizer"]] == ["optimizer"]
+    assert [role["id"] for role in paintarena["optimizer"]] == ["paint-arena-reference-optimizer"]
 
 
 def test_paintarena_example_keeps_template_and_build_copy() -> None:
@@ -210,6 +212,9 @@ def test_paintarena_example_keeps_template_and_build_copy() -> None:
     assert (PAINTARENA_EXAMPLE / "compose.yaml").read_text(encoding="utf-8") == (
         WORLDS / "paintarena" / "compose.yaml"
     ).read_text(encoding="utf-8").replace("../../packages/coworld/src/coworld/examples/paintarena", ".")
+    dockerfile = (PAINTARENA_EXAMPLE / "Dockerfile").read_text(encoding="utf-8")
+    for package_dir in ("shared", "game", "player", "reporter", "optimizer"):
+        assert f"COPY {package_dir} /app/coworld/examples/paintarena/{package_dir}" in dockerfile
 
 
 def _world_compose_files() -> tuple[Path, ...]:
