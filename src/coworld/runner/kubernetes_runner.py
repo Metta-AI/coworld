@@ -169,7 +169,7 @@ def _run_kubernetes_episode(
         _create_game_service(core_v1, namespace, service_name, job_id, owner_references)
         _wait_for_health(core_v1, namespace, pod_name, timeout_seconds=timeout_seconds)
         if players:
-            _require_http_ok(_player_client_url(0, tokens[0], players[0]))
+            _require_http_ok(_player_client_url(0, tokens[0]))
             asyncio.run(_require_bad_player_rejected(f"ws://127.0.0.1:{GAME_PORT}/player?slot=0&token=bad"))
         _require_http_ok(f"http://127.0.0.1:{GAME_PORT}/client/global")
 
@@ -295,7 +295,7 @@ def _create_player_pod(
                         *_env_vars(player_env),
                         client.V1EnvVar(
                             name="COGAMES_ENGINE_WS_URL",
-                            value=_player_service_ws_url(service_name, slot, token, player),
+                            value=_player_service_ws_url(service_name, slot, token),
                         ),
                     ],
                     resources=client.V1ResourceRequirements(
@@ -473,16 +473,16 @@ def _delete_child_resources(core_v1, namespace: str, service_name: str, pod_name
             raise
 
 
-def _player_client_url(slot: int, token: str, player: PlayerLaunchSpec) -> str:
-    return f"http://127.0.0.1:{GAME_PORT}/client/player?{_player_query(slot, token, player)}"
+def _player_client_url(slot: int, token: str) -> str:
+    return f"http://127.0.0.1:{GAME_PORT}/client/player?{_player_query(slot, token)}"
 
 
-def _player_service_ws_url(service_name: str, slot: int, token: str, player: PlayerLaunchSpec) -> str:
-    return f"ws://{service_name}:{GAME_PORT}/player?{_player_query(slot, token, player)}"
+def _player_service_ws_url(service_name: str, slot: int, token: str) -> str:
+    return f"ws://{service_name}:{GAME_PORT}/player?{_player_query(slot, token)}"
 
 
-def _player_query(slot: int, token: str, player: PlayerLaunchSpec) -> str:
-    return _episode_player_query(slot, token, player)
+def _player_query(slot: int, token: str) -> str:
+    return _episode_player_query(slot, token)
 
 
 def _env_vars(env: Mapping[str, str]) -> list[client.V1EnvVar]:

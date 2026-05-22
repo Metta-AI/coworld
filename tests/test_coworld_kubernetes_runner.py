@@ -599,12 +599,10 @@ def test_create_player_pod_injects_policy_secret_env(monkeypatch):
 
 
 def test_kubernetes_runner_uses_direct_player_urls_without_address():
-    player = PlayerLaunchSpec(image="paintbot:latest", run=(), env={})
-
-    assert kubernetes_runner._player_client_url(1, "slot-token", player) == (
+    assert kubernetes_runner._player_client_url(1, "slot-token") == (
         "http://127.0.0.1:8080/client/player?slot=1&token=slot-token"
     )
-    assert kubernetes_runner._player_service_ws_url("game-service", 1, "slot-token", player) == (
+    assert kubernetes_runner._player_service_ws_url("game-service", 1, "slot-token") == (
         "ws://game-service:8080/player?slot=1&token=slot-token"
     )
 

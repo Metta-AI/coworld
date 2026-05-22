@@ -199,7 +199,7 @@ def play_coworld(
 
             for slot, player in enumerate(players):
                 container_name = f"coworld-play-player-{run_id}-{slot}"
-                engine_ws_url = _player_container_ws_url(game_network_alias, slot, tokens[slot], player)
+                engine_ws_url = _player_container_ws_url(game_network_alias, slot, tokens[slot])
                 player_containers.append(container_name)
                 player_log_path = artifacts.policy_log_path(slot)
                 player_log = stack.enter_context(player_log_path.open("w"))
@@ -363,8 +363,8 @@ def build_play_links(
     game_port: int,
 ) -> PlayLinks:
     player_links = [
-        f"http://127.0.0.1:{game_port}/client/player?{_player_query(slot, tokens[slot], player)}"
-        for slot, player in enumerate(players)
+        f"http://127.0.0.1:{game_port}/client/player?{_player_query(slot, tokens[slot])}"
+        for slot, _player in enumerate(players)
     ]
     return PlayLinks(
         players=player_links,
@@ -373,7 +373,7 @@ def build_play_links(
     )
 
 
-def _player_query(slot: int, token: str, player: PlayerLaunchSpec) -> str:
+def _player_query(slot: int, token: str) -> str:
     return urlencode({"slot": slot, "token": token})
 
 

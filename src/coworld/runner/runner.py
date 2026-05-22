@@ -305,7 +305,7 @@ def run_cogame_episode(spec: EpisodeRunSpec, *, verify_replay: bool = True) -> N
 
             _wait_for_health(port, game_process, spec.artifacts.game_stderr_path, timeout_seconds=spec.timeout_seconds)
             if spec.players:
-                _require_http_ok(_player_client_url(port, 0, spec.tokens[0], spec.players[0]))
+                _require_http_ok(_player_client_url(port, 0, spec.tokens[0]))
                 asyncio.run(_require_bad_player_rejected(f"ws://127.0.0.1:{port}/player?slot=0&token=bad"))
             _require_http_ok(f"http://127.0.0.1:{port}/client/global")
 
@@ -314,7 +314,7 @@ def run_cogame_episode(spec: EpisodeRunSpec, *, verify_replay: bool = True) -> N
 
             for slot, player in enumerate(spec.players):
                 container_name = f"{spec.container_prefix}-player-{run_id}-{slot}"
-                engine_ws_url = _player_container_ws_url(game_network_alias, slot, spec.tokens[slot], player)
+                engine_ws_url = _player_container_ws_url(game_network_alias, slot, spec.tokens[slot])
                 player_containers.append(container_name)
                 player_log_path = spec.artifacts.policy_log_path(slot)
                 player_log = stack.enter_context(player_log_path.open("w"))
@@ -405,15 +405,15 @@ def run_cogame_episode(spec: EpisodeRunSpec, *, verify_replay: bool = True) -> N
         subprocess.run(["docker", "rm", "-f", replay_container], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
 
 
-def _player_container_ws_url(host: str, slot: int, token: str, player: PlayerLaunchSpec) -> str:
-    return f"ws://{host}:{GAME_PORT}/player?{_player_query(slot, token, player)}"
+def _player_container_ws_url(host: str, slot: int, token: str) -> str:
+    return f"ws://{host}:{GAME_PORT}/player?{_player_query(slot, token)}"
 
 
-def _player_client_url(port: int, slot: int, token: str, player: PlayerLaunchSpec) -> str:
-    return f"http://127.0.0.1:{port}/client/player?{_player_query(slot, token, player)}"
+def _player_client_url(port: int, slot: int, token: str) -> str:
+    return f"http://127.0.0.1:{port}/client/player?{_player_query(slot, token)}"
 
 
-def _player_query(slot: int, token: str, player: PlayerLaunchSpec) -> str:
+def _player_query(slot: int, token: str) -> str:
     return urlencode({"slot": slot, "token": token})
 
 
