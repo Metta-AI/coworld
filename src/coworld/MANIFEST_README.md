@@ -74,6 +74,36 @@ A runnable's `type` must match the section it appears under; the manifest schema
 `type` is redundant with the array name by design — it makes individual runnable objects self-describing when
 extracted from the manifest, and it lets future tooling identify runnables without tracing the enclosing structure.
 
+## Container Images and Pinning
+
+Each runnable's `image` field references a Docker image. The Coworld system separates three related concepts:
+
+- **Container image** — an uploaded Docker image (`name:version`) stored by Softmax. Untyped on upload — the same
+  image can be referenced by runnables of any role.
+- **Runnable** — a typed role invocation of an image (`type`, `image`, optional `run`, optional `env`). The
+  runnable binds the image to a specific role contract. One Docker image can implement multiple roles by appearing
+  in different runnable entries with different `run` commands.
+- **Coworld release** — the published manifest plus its referenced runnables. A release is what users download via
+  `coworld download` and what leagues run against.
+
+This separation lets one image (e.g. `paintarena-runtime`) provide a Coworld's game, players, reporter, and other
+supporting runnables by appearing in multiple manifest entries with different `run` commands.
+
+### Image references at authoring time
+
+Runnable `image` fields may use either form:
+
+```text
+my-image:latest
+my-image:v7
+```
+
+Tags are preserved on publish for readability. At episode execution time the platform resolves them to immutable
+digests (`...@sha256:<digest>`); the resolved digest is what actually runs, and within a single round the resolved
+digest never changes. The resolution and registry mechanics are platform-internal — see
+[`COWORLD_MECHANICS.md`](../../../../app_backend/src/metta/app_backend/v2/COWORLD_MECHANICS.md) for the backend
+details (container-image storage, ECR layout, public mirror, pull access).
+
 ## Description Fields
 
 `description` is required at three levels of the manifest: `game.description`, every entry in `variants[]`, and every

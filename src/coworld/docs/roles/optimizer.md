@@ -8,12 +8,12 @@
 > uses it interactively to drive a policy-improvement loop. The contract below reflects this difference. The
 > design is under active development; expect changes as the workbench shape stabilizes. Coworlds with no custom
 > optimizer should reference `softmax/default-optimizer:latest`, which corresponds to a release of
-> [`Metta-AI/optimizer`](https://github.com/Metta-AI/optimizer).
+> [`Metta-AI/optimizers`](https://github.com/Metta-AI/optimizers).
 
 ## What it does
 
 The optimizer role is the workbench through which a developer (human or agent) iterates on a policy for a given
-Coworld. The canonical implementation, [`Metta-AI/optimizer`](https://github.com/Metta-AI/optimizer), is a local
+Coworld. The canonical implementation, [`Metta-AI/optimizers`](https://github.com/Metta-AI/optimizers), is a local
 Next.js application that integrates with the Coworld CLI to run episodes, inspect replays, coordinate agent tasks,
 edit policy source, and evaluate candidate policies against a champion.
 
@@ -26,7 +26,7 @@ version uploaded via `coworld upload-policy`.
 
 `manifest.optimizer[]`, with `type: "optimizer"` on every entry. The array must contain at least one runnable;
 Coworlds without a custom optimizer may reference `softmax/default-optimizer:latest`, which points at a release of
-`Metta-AI/optimizer`. See [`MANIFEST_README.md`](../../MANIFEST_README.md) for the full runnable shape.
+`Metta-AI/optimizers`. See [`MANIFEST_README.md`](../../MANIFEST_README.md) for the full runnable shape.
 
 ## Contract (tentative)
 
@@ -74,7 +74,7 @@ goal.
 
 - **Invocation contract.** What env vars, CLI args, or config files convey "you are optimizing for this Coworld,
   starting from these policies, with these episodes already loaded"? Not yet defined.
-- **Game-agnostic vs game-specific optimizers.** The canonical `Metta-AI/optimizer` is intentionally
+- **Game-agnostic vs game-specific optimizers.** The canonical `Metta-AI/optimizers` is intentionally
   game-agnostic. A specific Coworld might want to ship a game-specific optimizer image that bundles game-aware
   tooling. How a game-specific optimizer composes with (or replaces) the default is not yet defined.
 - **Output handoff to the platform.** Today a candidate policy reaches the platform via `coworld upload-policy`
@@ -91,11 +91,11 @@ practice today, the optimizer pulls episode artifacts directly via the Coworld C
 over the loop the other roles support.
 
 See [`OVERVIEW.md`](OVERVIEW.md) for the full artifact flow, and
-[`Metta-AI/optimizer`](https://github.com/Metta-AI/optimizer) for the canonical optimizer implementation.
+[`Metta-AI/optimizers`](https://github.com/Metta-AI/optimizers) for the canonical optimizer implementation.
 
 ## See Also
 
-- [`Metta-AI/optimizer`](https://github.com/Metta-AI/optimizer) — canonical game-agnostic optimizer
+- [`Metta-AI/optimizers`](https://github.com/Metta-AI/optimizers) — canonical game-agnostic optimizer
   implementation (Next.js workbench, Postgres + pgvector, agent coordination, replay debugger).
 - [`MANIFEST_README.md`](../../MANIFEST_README.md) — manifest field reference for `manifest.optimizer[]`.
 - [`COWORLD_README.md`](../../COWORLD_README.md) — Role Status framework, runnable conventions.
