@@ -674,7 +674,10 @@ def test_download_coworld_command_writes_local_package(
     assert manifest["player"][0]["image"] == local_image
     image_map = json.loads((output_dir / coworld_id / "coworld_images.json").read_text())
     assert image_map["images"] == [{"public_image_uri": public_image_uri, "local_image": local_image}]
+    agents_path = output_dir / coworld_id / "AGENTS.md"
+    assert "Champion means your nominated policy version" in agents_path.read_text(encoding="utf-8")
     assert "Downloaded Coworld: unit-test-game:0.1.0" in result.output
+    assert f"Agent guide: {agents_path}" in result.output
     assert f"Play: uv run coworld play {coworld_id}" in result.output
 
 
@@ -772,8 +775,10 @@ def test_download_coworld_command_skips_cached_coworld_by_id(
 
     assert result.exit_code == 0, result.output
     assert docker_calls == []
+    assert "Champion means your nominated policy version" in (cached_dir / "AGENTS.md").read_text(encoding="utf-8")
     assert f"Coworld already downloaded: {coworld_id}" in result.output
     assert f"Manifest: {cached_dir / 'coworld_manifest.json'}" in result.output
+    assert f"Agent guide: {cached_dir / 'AGENTS.md'}" in result.output
     assert f"Play: uv run coworld play {coworld_id}" in result.output
 
 
@@ -832,6 +837,7 @@ def test_download_coworld_command_refreshes_cached_coworld(
     ]
     manifest = json.loads((cached_dir / "coworld_manifest.json").read_text())
     assert manifest["game"]["runnable"]["image"] == local_image
+    assert "Champion means your nominated policy version" in (cached_dir / "AGENTS.md").read_text(encoding="utf-8")
 
 
 def test_downloaded_image_tags_include_coworld_id() -> None:

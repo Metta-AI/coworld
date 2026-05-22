@@ -25,6 +25,28 @@ from coworld.certifier import certify_coworld, load_coworld_package
 from coworld.config import DEFAULT_SUBMIT_SERVER
 
 _LOCAL_TAG_SEPARATOR_RE = re.compile(r"[^a-z0-9._-]+")
+DOWNLOAD_AGENTS_MD = """# AGENTS.md
+
+Guidance for coding agents working from this downloaded Coworld package.
+
+## Facts
+
+- Champion means your nominated policy version: the chosen participant you want to represent you in a league. It is not
+  a claim that the policy has won the tournament.
+
+## Start
+
+- Read `coworld_manifest.json` before changing policy code.
+- Treat `game.protocols.player`, `game.docs.pages`, `variants`, and `certification` as the local contract for this
+  package.
+- Run `uv run coworld run-episode ./coworld_manifest.json --timeout-seconds 120` with the bundled players before
+  testing your own image.
+
+## Policy Work
+
+- Keep policy source in your policy project, not in this downloaded Coworld cache.
+- Use the manifest path from this directory when building, running, and comparing policies.
+"""
 
 
 class CoworldUploadResponse(BaseModel):
@@ -458,7 +480,9 @@ def download_coworld_cmd(
     image_map_path = downloaded_coworld_images_path(output_dir, coworld_id)
     if downloaded_coworld_exists(output_dir, coworld_id) and not refresh:
         typer.echo(f"Coworld already downloaded: {coworld_id}")
-        _print_download_paths(coworld_id, manifest_path, image_map_path)
+        agents_path = manifest_path.with_name("AGENTS.md")
+        agents_path.write_text(DOWNLOAD_AGENTS_MD, encoding="utf-8")
+        _print_download_paths(coworld_id, manifest_path, image_map_path, agents_path)
         return
 
     coworld = download_coworld(coworld_id, server=server)
@@ -498,15 +522,18 @@ def download_coworld_cmd(
         + "\n",
         encoding="utf-8",
     )
+    agents_path = manifest_path.with_name("AGENTS.md")
+    agents_path.write_text(DOWNLOAD_AGENTS_MD, encoding="utf-8")
 
     typer.echo(f"Downloaded Coworld: {coworld.name}:{coworld.version}")
-    _print_download_paths(coworld.id, manifest_path, image_map_path)
+    _print_download_paths(coworld.id, manifest_path, image_map_path, agents_path)
 
 
-def _print_download_paths(coworld_id: str, manifest_path: Path, image_map_path: Path) -> None:
+def _print_download_paths(coworld_id: str, manifest_path: Path, image_map_path: Path, agents_path: Path) -> None:
     typer.echo(f"Coworld: {coworld_id}")
     typer.echo(f"Manifest: {manifest_path}")
     typer.echo(f"Images: {image_map_path}")
+    typer.echo(f"Agent guide: {agents_path}")
     typer.echo(f"Play: {shlex.join(['uv', 'run', 'coworld', 'play', coworld_id])}")
 
 
