@@ -51,7 +51,7 @@ COPY --from=build \
 COPY --from=build /workspace/bitworld/among_them/*.json ./among_them/
 COPY --from=build /workspace/bitworld/among_them/*.aseprite ./among_them/
 COPY --from=build /workspace/bitworld/among_them/*.png ./among_them/
-COPY --from=build /workspace/bitworld/clients/data ./clients/data
+COPY --from=build /workspace/bitworld/client/data ./client/data
 
 WORKDIR /workspace/bitworld/among_them/players
 CMD ["/bin/amongthemstarter", "--address:host.docker.internal", "--port:8080"]

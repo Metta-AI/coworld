@@ -14,7 +14,9 @@ genrule(
         "src/coworld/examples/paintarena/__init__.py",
     ] + glob([
         "src/coworld/examples/paintarena/game/**",
+        "src/coworld/examples/paintarena/optimizer/**",
         "src/coworld/examples/paintarena/player/**",
+        "src/coworld/examples/paintarena/reporter/**",
         "src/coworld/examples/paintarena/shared/**",
     ]),
     outs = ["paintarena_image.ref"],

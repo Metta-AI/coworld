@@ -21,10 +21,10 @@ documented in [`GAME_RUNTIME_README.md`](../../GAME_RUNTIME_README.md):
 
 - Reads its concrete game config from `COGAME_CONFIG_URI` at startup.
 - Serves `GET /healthz` (200 when ready).
-- Serves player HTML clients at `GET /clients/player?slot=…&token=…` and player websockets at
+- Serves player HTML clients at `GET /client/player?slot=…&token=…` and player websockets at
   `/player?slot=…&token=…`.
-- Serves a live global viewer at `GET /clients/global` and `/global`.
-- In replay mode (`COGAME_REPLAY_SERVER=1`), serves `GET /clients/replay?uri=…` and `/replay?uri=…`.
+- Serves a live global viewer at `GET /client/global` and `/global`.
+- In replay mode (`COGAME_REPLAY_SERVER=1`), serves `GET /client/replay?uri=…` and `/replay?uri=…`.
 - Writes a validated results file to `COGAME_RESULTS_URI` when the episode completes.
 - Writes a replay artifact to `COGAME_SAVE_REPLAY_URI`.
 

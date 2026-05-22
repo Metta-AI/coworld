@@ -216,7 +216,7 @@ A game container must:
   websocket's query string.
 
 The HTML and JavaScript may be game-styled; only the URL derivation contract is fixed. Reference implementations live
-in `examples/paintarena/game/clients/` (in this package) and `worlds/cogs_vs_clips/game/clients/` (in the repo root).
+in `examples/paintarena/game/client/` (in this package) and `worlds/cogs_vs_clips/game/client/` (in the repo root).
 
 ## Episode Lifecycle
 

@@ -16,9 +16,8 @@ from fastapi import FastAPI, WebSocket
 from fastapi.responses import HTMLResponse
 
 from coworld.examples.paintarena.shared.log_shipper import get_logger
-from coworld.runner.io import write_data
 
-CLIENTS_DIR = Path(__file__).parent / "clients"
+CLIENT_DIR = Path(__file__).parent / "client"
 logger = get_logger("paintarena.game")
 GAME_HOST = os.environ.get("COGAME_HOST", "0.0.0.0")
 GAME_PORT = int(os.environ.get("COGAME_PORT", "8080"))
@@ -47,6 +46,36 @@ def artifact_method(env_var: str) -> Literal["POST", "PUT"]:
     if method not in {"POST", "PUT"}:
         raise ValueError(f"{env_var} must be PUT or POST")
     return cast(Literal["POST", "PUT"], method)
+
+
+def write_data(
+    uri: str,
+    data: bytes | str,
+    *,
+    content_type: str,
+    http_method: Literal["POST", "PUT"],
+) -> None:
+    if isinstance(data, str):
+        data = data.encode()
+
+    parsed = urlparse(uri)
+    if parsed.scheme in ("http", "https"):
+        request = Request(uri, data=data, method=http_method)
+        request.add_header("Content-Type", content_type)
+        request.add_header("User-Agent", HTTP_USER_AGENT)
+        with urlopen(request, timeout=60):
+            return
+    if parsed.scheme == "file":
+        path = Path(unquote(parsed.path))
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_bytes(data)
+        return
+    if parsed.scheme == "":
+        path = Path(uri)
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_bytes(data)
+        return
+    raise ValueError(f"Unsupported URI for write_data: {uri}")
 
 
 def load_replay_data(replay_uri: str) -> dict[str, Any]:
@@ -120,22 +149,22 @@ def healthz() -> dict[str, bool]:
 
 @app.get("/client/global")
 def global_client() -> HTMLResponse:
-    return HTMLResponse((CLIENTS_DIR / "global.html").read_text())
+    return HTMLResponse((CLIENT_DIR / "global.html").read_text())
 
 
 @app.get("/client/admin")
 def admin_client() -> HTMLResponse:
-    return HTMLResponse((CLIENTS_DIR / "admin.html").read_text())
+    return HTMLResponse((CLIENT_DIR / "admin.html").read_text())
 
 
 @app.get("/client/replay")
 def replay_client() -> HTMLResponse:
-    return HTMLResponse((CLIENTS_DIR / "replay.html").read_text())
+    return HTMLResponse((CLIENT_DIR / "replay.html").read_text())
 
 
 @app.get("/client/player")
 def player_client() -> HTMLResponse:
-    return HTMLResponse((CLIENTS_DIR / "player.html").read_text())
+    return HTMLResponse((CLIENT_DIR / "player.html").read_text())
 
 
 @app.websocket("/global")

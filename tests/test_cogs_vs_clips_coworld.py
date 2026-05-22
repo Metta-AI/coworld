@@ -60,11 +60,11 @@ def test_cogs_vs_clips_admin_snapshot_exposes_takeover_player_links(tmp_path: Pa
 
 
 def test_cogs_vs_clips_clients_use_slot_admin_and_fullscreen_player() -> None:
-    clients_dir = _cogs_vs_clips_root() / "game" / "clients"
-    admin_html = (clients_dir / "admin.html").read_text()
-    global_html = (clients_dir / "global.html").read_text()
-    player_html = (clients_dir / "player.html").read_text()
-    replay_html = (clients_dir / "replay.html").read_text()
+    client_dir = _cogs_vs_clips_root() / "game" / "client"
+    admin_html = (client_dir / "admin.html").read_text()
+    global_html = (client_dir / "global.html").read_text()
+    player_html = (client_dir / "player.html").read_text()
+    replay_html = (client_dir / "replay.html").read_text()
 
     assert "takeover_url" in admin_html
     assert "boot_connection" in admin_html
