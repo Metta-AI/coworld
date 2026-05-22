@@ -85,16 +85,8 @@ In rollout mode, the game listens on `0.0.0.0:8080` and exposes:
 
 `GET /healthz` returns 200 when the game is ready.
 
-`GET /client/player` serves a browser client for one slot. `GET /client/global` serves a live viewer.
-
-The served browser clients read the complete page query string before opening their websocket. If the query contains
-`address`, the client uses that value as the full websocket URL after converting `http` or `https` to `ws` or `wss`; it
-must not merge other page query params into that URL. Otherwise, the client derives the websocket URL by replacing
-`/client/player` with `/player`, or `/client/global` with `/global`, and preserving the page query params such as
-`slot`, `token`, and game-owned params.
-
-For example, `/client/player?slot=0&token=abc&role=scout` should open `/player?slot=0&token=abc&role=scout`. A hosted
-proxy may instead serve `/client/player?address=wss://example.com/player?slot=0&token=abc`.
+`GET /client/player` serves a browser client for one slot. `GET /client/global` serves a live viewer. Both client
+pages and their websockets follow the contract in [Browser Clients](#browser-clients).
 
 The `/global` websocket must support late viewers. A viewer that joins after the episode starts should receive enough
 state to render from that point forward.
@@ -102,6 +94,13 @@ state to render from that point forward.
 The `/player` websocket must allow the same slot to reconnect with the same token while the episode is still running.
 The slot's game state survives disconnects. During a disconnect, the game may use no-op actions or another documented
 behavior.
+
+### Log visibility
+
+Game container stdout and stderr are surfaced to any user with episode access through the per-episode bundling layer
+(see [EPISODE_BUNDLE_README.md](EPISODE_BUNDLE_README.md)). Treat those streams as **public**: do not write secrets,
+private credentials, or other confidential information to stdout, stderr, or `COGAME_LOG_URI`. The same rule applies
+to the global viewer's `/global` websocket and any browser-served client pages.
 
 Games may expose local-only admin controls by convention:
 
@@ -124,15 +123,100 @@ In replay mode, the game listens on `0.0.0.0:8080` and exposes:
 - `GET /client/replay?uri=<uri>`
 - `WEBSOCKET /replay?uri=<uri>`
 
-`GET /client/replay?uri=<uri>` serves a browser replay viewer. The served client opens `/replay?uri=<uri>`. The game
-loads the replay artifact and handles game-owned replay controls such as start, stop, seek, or speed changes.
+`GET /client/replay?uri=<uri>` serves a browser replay viewer. The page and its websocket follow the contract in
+[Browser Clients](#browser-clients); the `uri` query param carries the replay artifact location end-to-end from the
+page URL into the websocket URL. The game loads the replay artifact and handles game-owned replay controls such as
+start, stop, seek, or speed changes.
 
-Hosted Observatory replay sessions use the same `/client/replay?uri=<uri>` entrypoint for every Coworld game. After
-that page loads, replay HTTP routes and replay WebSocket routes are still game-owned, but they must preserve the replay
-artifact URI in their query string. Platform proxies forward the requested path and query rather than branching on game
-name, replay format, or viewer implementation.
+Hosted Observatory replay sessions use the same `/client/replay?uri=<uri>` entrypoint for every Coworld game, so
+adding a new Coworld does not require frontend changes to expose its replays.
 
 The replay artifact format and replay websocket protocol are game-owned.
+
+## Browser Clients
+
+Every game container serves both static HTML viewer pages and websockets from the same port. The HTML pages are small
+JavaScript shims that open a websocket back to the same game container. This section documents the contract those JS
+shims must implement.
+
+The URL families:
+
+| Page (HTML)                            | WebSocket                       | Purpose                       |
+| -------------------------------------- | ------------------------------- | ----------------------------- |
+| `GET /client/player?slot=…&token=…&…` | `WEBSOCKET /player?slot=…&token=…&…` | Rollout mode: one player slot |
+| `GET /client/global`                  | `WEBSOCKET /global`             | Rollout mode: live viewer     |
+| `GET /client/replay?uri=…`            | `WEBSOCKET /replay?uri=…`       | Replay mode: replay viewer    |
+
+### Default URL derivation
+
+When the browser loads a client HTML page, that page's JavaScript derives the websocket URL it should open by taking
+`window.location.href`, applying two changes, and preserving everything else:
+
+1. Convert protocol: `http://` → `ws://`, `https://` → `wss://`.
+2. Replace path: `/client/player` → `/player`, `/client/global` → `/global`, `/client/replay` → `/replay`.
+
+The entire page query string carries over to the websocket URL unchanged. That is how `slot`, `token`, game-owned
+params (e.g. `role=scout`), and the replay `uri` all flow from the page URL into the websocket URL.
+
+Example:
+
+```text
+page URL:       http://game-host:8080/client/player?slot=0&token=abc&role=scout
+websocket URL:  ws://game-host:8080/player?slot=0&token=abc&role=scout
+```
+
+### The `address` override
+
+When the game is served through a hosted proxy that cannot preserve websocket query strings (notably the Kubernetes
+API server's websocket proxy, which strips them), the platform pre-computes the exact websocket URL it wants the
+browser to open and passes that URL as an `address` query parameter on the HTML page.
+
+When `address` is present:
+
+- The client uses `address` directly as the websocket URL, after the same `http`→`ws` / `https`→`wss` protocol
+  conversion.
+- The client must not merge any other page query params into the websocket URL. Everything the websocket needs is
+  already encoded inside `address`; mixing in other page params would corrupt the URL.
+
+When `address` is absent, the default URL derivation applies.
+
+Example:
+
+```text
+page URL:       https://stats.example.com/v2/.../proxy/client/player?address=wss%3A%2F%2Fstats.example.com%2F...%2Fproxy%2Fplayer%3Fslot%3D0%26token%3Dabc
+websocket URL:  wss://stats.example.com/v2/.../proxy/player?slot=0&token=abc
+```
+
+### Replay URI flow
+
+The replay path is a specific instance of the default mechanic. The replay artifact URI travels end-to-end through
+the page query string:
+
+1. **Source.** A local CLI prints a URL like
+   `http://127.0.0.1:<port>/client/replay?uri=file:///path/to/replay.json`. Hosted Observatory composes
+   `https://.../proxy/client/replay?uri=https://.../replay.json.z`.
+2. **Browser** opens the page (in a tab locally, or in an iframe in hosted Observatory).
+3. The game serves the replay viewer HTML.
+4. The JS applies the default derivation: protocol → `ws[s]`, path `/client/replay` → `/replay`, query preserved.
+5. The websocket opens at `/replay?uri=<replay-uri>`.
+6. The game's `/replay` websocket handler reads `uri` from the websocket's query params and streams replay data
+   loaded from that URI.
+
+Every component on the path — game, proxies, browser — must preserve the `uri` query param. Platform proxies forward
+the request path and query without inspecting or branching on them.
+
+### Contract summary for game authors
+
+A game container must:
+
+- Serve a small HTML viewer at each `/client/<view>` route.
+- Have that viewer's JavaScript implement the default URL derivation above, including the `address` override
+  behavior.
+- Have the corresponding `/<view>` websocket route read `slot`, `token`, `uri`, and any game-owned params from the
+  websocket's query string.
+
+The HTML and JavaScript may be game-styled; only the URL derivation contract is fixed. Reference implementations live
+in `examples/paintarena/game/clients/` (in this package) and `worlds/cogs_vs_clips/game/clients/` (in the repo root).
 
 ## Episode Lifecycle
 

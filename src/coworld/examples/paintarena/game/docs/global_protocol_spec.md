@@ -1,8 +1,8 @@
 # Paint Arena Global Protocol
 
-Browsers request `GET /client/global` to load the global client. The client opens `/global` by default. If the page
-query includes `address`, the client uses that as the complete websocket endpoint and does not merge other page query
-params.
+Browsers request `GET /client/global` to load the global client; the page and its websocket follow the contract in
+[GAME_RUNTIME_README.md § Browser Clients](../../../GAME_RUNTIME_README.md#browser-clients). By default the client
+opens `/global`.
 
 The server sends a JSON state snapshot immediately on connect and then sends updated snapshots while the episode runs:
 

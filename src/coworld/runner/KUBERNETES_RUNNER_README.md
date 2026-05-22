@@ -137,6 +137,9 @@ player pod.
 
 ## Output URIs
 
+The runner uploads each episode artifact to a separate URI. There is no single bundled output URI — bundling is a
+consumption-time concern handled by the bundling layer; see [EPISODE_BUNDLE_README.md](../EPISODE_BUNDLE_README.md).
+
 All output environment variables are optional, but hosted jobs normally provide them:
 
 ```bash
@@ -150,12 +153,16 @@ POLICY_LOG_URLS
 Outputs:
 
 - `RESULTS_URI`: game-defined `results.json`, validated against `manifest.game.results_schema`.
-- `REPLAY_URI`: gzip-compressed replay uploaded as `replay.json.z`.
-- `DEBUG_URI`: zip containing game logs and any available per-player logs. Kubernetes pod logs contain the container's
-  combined stdout and stderr by default.
-- `ERROR_INFO_URI`: crash JSON if the coordinator fails.
-- `POLICY_LOG_URLS`: JSON object mapping player position to a destination URI. Each player log is uploaded from
-  `policy_agent_{position}.log` and contains that player container's combined stdout and stderr.
+- `REPLAY_URI`: zlib-compressed replay uploaded as `replay.json.z`. Hosted upload and the hosted replay viewer both
+  consume the compressed form directly.
+- `DEBUG_URI`: zip of the runner's `logs/` directory, containing game container stdout/stderr (`game.stdout.log`,
+  `game.stderr.log`) plus any per-player log files (`policy_agent_{position}.log`) the coordinator captured. Game
+  container stdout/stderr is **public** to anyone with episode access — game authors must not write secrets or
+  private information to those streams.
+- `ERROR_INFO_URI`: crash JSON if the coordinator fails before the episode completes.
+- `POLICY_LOG_URLS`: JSON object mapping each player position to a destination URI. Each player log is uploaded from
+  `policy_agent_{position}.log` and contains that player container's combined stdout and stderr. Player logs are
+  also included in `DEBUG_URI`'s zip; `POLICY_LOG_URLS` exposes them individually for per-player consumption.
 
 Per-player logs are diagnostic only. After the game has produced valid results, the coordinator reads the last 10,000
 combined stdout/stderr lines from player pods whose `player` container has started and skips pods whose container is

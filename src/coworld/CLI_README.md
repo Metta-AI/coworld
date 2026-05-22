@@ -233,3 +233,18 @@ uv run coworld replay-open ereq_... --hosted
 
 The default `replay-open` path runs the replay locally with the Coworld manifest and replay artifact. `--hosted` creates
 an Observatory-hosted replay session and prints the viewer URL.
+
+## Episode Bundles
+
+Reporters, graders, diagnosers, and optimizers consume one Coworld episode's artifacts as a single zip — an episode
+bundle. The `coworld bundle` command assembles one on demand:
+
+```bash
+uv run coworld bundle ereq_... --output ep.zip
+uv run coworld bundle ereq_... --output ep.zip --include results,replay,config
+```
+
+Bundles can be assembled from local runner workspaces or from hosted artifact storage; the CLI uses the same library
+as the backend bundling endpoint. See [EPISODE_BUNDLE_README.md](EPISODE_BUNDLE_README.md) for the bundle contract,
+the available `--include` tokens, the access-control rules, and the `COGAME_EPISODE_BUNDLE_URI` env var that
+supporting runnables read.

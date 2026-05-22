@@ -221,10 +221,10 @@ images. `upload-policy` uploads a player's policy container and creates a policy
 
 ## Manifest
 
-Every Coworld package has a `coworld_manifest.json` file that follows
-[coworld_manifest_schema.json](coworld_manifest_schema.json). The main sections are:
+Every Coworld package has a `coworld_manifest.json` file describing its game, players, supporting runnables,
+variants, and certification fixture. The main sections are:
 
-- `game`: the game server image, config schema, result schema, protocol docs, and game-authored docs.
+- `game`: game container and its protocols, config schema, results schema, and game-authored docs.
 - `player`: bundled player images that can play the game. Must contain at least one entry.
 - `commissioner`, `reporter`, `grader`, `diagnoser`, `optimizer`: arrays of bundled supporting runnables. Each must
   contain at least one entry; Coworlds without a custom implementation may reference the Softmax-published default
@@ -232,44 +232,16 @@ Every Coworld package has a `coworld_manifest.json` file that follows
 - `variants`: named game configs, such as maps, difficulty levels, or league settings.
 - `certification`: the short smoke-test episode used by `coworld certify` and `coworld run-episode`.
 
-Role sections use the same runnable shape: a `type`, image, optional command (`run`), optional public environment
-variables (`env`), and optional `source_url` pointing at the repository, directory, or file that builds the
-runnable. The role `type` selects the platform contract for that runnable. Secrets do not belong in the manifest.
+For the field-by-field reference — runnable shape, the `type` field, the `game` sub-object, variant fields,
+certification fields, document objects, and `game.docs.pages` requirements — see
+[MANIFEST_README.md](MANIFEST_README.md). Role-specific contracts live under `docs/roles/`:
+[game](docs/roles/game.md), [player](docs/roles/player.md), [commissioner](docs/roles/commissioner.md),
+[reporter](docs/roles/reporter.md), [grader](docs/roles/grader.md), [diagnoser](docs/roles/diagnoser.md), and
+[optimizer](docs/roles/optimizer.md); [docs/roles/OVERVIEW.md](docs/roles/OVERVIEW.md) covers how the roles compose.
 
-Role-specific docs live under `docs/roles/`: [game](docs/roles/game.md), [player](docs/roles/player.md),
-[commissioner](docs/roles/commissioner.md), [reporter](docs/roles/reporter.md),
-[grader](docs/roles/grader.md), [diagnoser](docs/roles/diagnoser.md), and [optimizer](docs/roles/optimizer.md). The generated manifest schema
-references these docs from the corresponding role fields.
-
-Protocol docs are explicit document objects:
-
-```json
-{ "type": "uri", "value": "https://example.com/player_protocol.md" }
-```
-
-Use `type: "uri"` for public HTTP(S) docs. Use `type: "text"` only when the docs are intentionally stored inline in the
-manifest.
-
-Game docs go in `game.docs.pages`. Coworld manifests must include `rules.md` with game-specific rules and a
-game-specific `play_*.md` guide that player-facing league pages can surface directly:
-
-```json
-[
-  {
-    "id": "rules.md",
-    "title": "rules.md",
-    "content": { "type": "uri", "value": "https://example.com/rules.md" }
-  },
-  {
-    "id": "play_myworld.md",
-    "title": "play_myworld.md",
-    "content": { "type": "uri", "value": "https://example.com/play_myworld.md" }
-  }
-]
-```
-
-Upload stores the manifest as JSON. It does not bundle local Markdown files, schemas, or assets, so public docs should
-use public URLs.
+The manifest schema is generated at [coworld_manifest_schema.json](coworld_manifest_schema.json). Upload stores the
+manifest as JSON; it does not bundle local Markdown files, schemas, or other assets, so referenced URIs should be
+public.
 
 ## Role Artifact Flow
 
@@ -321,9 +293,11 @@ The game image owns the episode. It must:
 - serve replay clients at `GET /client/replay?uri=<uri>` and replay websockets at
   `WEBSOCKET /replay?uri=<uri>` when started with `COGAME_REPLAY_SERVER=1`.
 
-Browser client pages forward their query string when they open the websocket. Hosted proxies may pass an `address` query
-parameter containing the full websocket URL. See [GAME_RUNTIME_README.md](GAME_RUNTIME_README.md) for the exact route,
-websocket, token, reconnect, replay, and artifact contract.
+Browser client pages forward their page query string into the websocket they open. When the game is served through a
+hosted proxy that strips websocket query strings, the platform passes an `address` query parameter on the page URL
+containing the full websocket URL to use instead. See
+[GAME_RUNTIME_README.md § Browser Clients](GAME_RUNTIME_README.md#browser-clients) for the full contract, including
+the replay URI flow.
 
 Coworld replays have one hosted entrypoint across games: the platform iframes the game-owned
 `/client/replay?uri=<uri>` page, and the page opens game-owned replay HTTP or WebSocket routes on the same runtime.
@@ -332,6 +306,12 @@ Those replay routes must keep the replay artifact URI in the query string so pro
 The game config schema must define `tokens` as a required string array with equal `minItems` and `maxItems`. That fixed
 length is the number of player slots. Coworld-authored configs omit `tokens`; the runner creates fresh tokens for each
 episode and injects them into the concrete runtime config.
+
+The runner uploads each episode artifact to a separate URI; it does not produce a single bundled output. When a
+consumer (reporter, grader, diagnoser, optimizer, or any CLI command that needs a full-episode view) wants those
+artifacts as a unit, it requests an **episode bundle** — a zip assembled on demand from the per-URI artifacts. See
+[EPISODE_BUNDLE_README.md](EPISODE_BUNDLE_README.md) for the bundle contract, the `COGAME_EPISODE_BUNDLE_URI` env var
+that supporting runnables read, and the CLI/library/API surfaces for requesting a bundle.
 
 ## Upload And Inspect
 

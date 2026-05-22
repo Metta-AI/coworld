@@ -15,3 +15,20 @@ uv run coworld run-episode path/to/coworld_manifest.json my-player:latest
 
 The hosted production runner is `coworld.runner.kubernetes_runner`. That path uses Kubernetes containers instead of
 Docker on the runner machine, but it follows the same game and player contract.
+
+## Output Files
+
+The local runner writes episode artifacts to its workspace directory but does not upload anywhere. The workspace
+contains:
+
+- `config.json` — concrete game config used for the episode (with runner-injected tokens)
+- `results.json` — game-written results, validated against `game.results_schema`
+- `replay.json` — game-written replay artifact
+- `replay.json.z` — zlib-compressed copy of `replay.json` (used by hosted upload paths; locally just sits beside it)
+- `logs/game.stdout.log`, `logs/game.stderr.log` — game container stdout/stderr
+- `logs/policy_agent_{slot}.log` — combined stdout+stderr for each player container
+
+The runner does not bundle these into a single archive — bundling is a consumption-time concern. For the canonical
+per-URI output contract used by the hosted runner, see [KUBERNETES_RUNNER_README.md](KUBERNETES_RUNNER_README.md#output-uris).
+For how these files get assembled into a bundle for consumption by reporters, graders, diagnosers, and optimizers,
+see [EPISODE_BUNDLE_README.md](../EPISODE_BUNDLE_README.md).
