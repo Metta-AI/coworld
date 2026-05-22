@@ -36,6 +36,13 @@ Use [GAME_RUNTIME_README.md](GAME_RUNTIME_README.md) for the game-container runt
 
 ## Role Status
 
+> **Roles vs runnables.** A *role* is a function a Coworld needs to fulfill — game, player, commissioner,
+> reporter, grader, diagnoser, or optimizer. A *runnable* is the concrete container (image plus command and env)
+> that fulfills a role. The manifest declares one game runnable (at `manifest.game.runnable`) and one or more
+> runnables per supporting role (in `manifest.player[]`, `manifest.commissioner[]`, and so on). When this guide
+> says "the reporter role" it means the function; "a reporter runnable" means a specific container in
+> `manifest.reporter[]`.
+
 Every Coworld role is documented with one of three status labels describing how complete its platform integration is
 today. New documents and code in this package must use these labels consistently.
 
@@ -273,11 +280,6 @@ evaluate a policy using that experience and any additional local assays.
 
 Optimizers are game-agnostic improvement apps. They target a Coworld plus optional policy workspace, ingest any useful
 experience reports, diagnoser output, and game/protocol docs, and drive local policy iteration.
-
-An optimizer run receives `COWORLD_MANIFEST_URI`, `COGAME_OPTIMIZER_ID`, and `COGAME_OPTIMIZER_OUTPUT_URI`. Runners may
-also provide `COGAME_POLICY_WORKSPACE_URI`, `COGAME_REPORT_URIS`, `COGAME_GRADER_OUTPUT_URIS`, and
-`COGAME_DIAGNOSER_OUTPUT_URIS`. The reference output is deterministic JSON describing the target Coworld, supplied
-evidence counts, and next policy-iteration steps.
 
 ## Runtime Contract
 

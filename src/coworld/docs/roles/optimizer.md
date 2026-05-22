@@ -1,21 +1,104 @@
 # Optimizer Role
 
-Optimizers are game-agnostic improvement apps. They target a Coworld plus an optional policy workspace, ingest useful
-reporter artifacts, diagnoser output, replay/results, stats parquet, and game/protocol docs or markdowns, and drive
-local policy iteration.
+**Status:** reserved
 
-The optimizer can decide which reports, grades, and diagnoser outputs to ingest. It should stay game-agnostic at the
-orchestration layer: game-specific behavior should enter through game docs, reporter/diagnoser artifacts, grader scores,
-plugin adapters, or policy templates rather than hard-coded assumptions in the core optimizer.
+> **The optimizer role has a fundamentally different shape from the other supporting runnables.** Where reporter,
+> grader, and diagnoser are short-lived process-style containers that consume an episode bundle and emit a single
+> output artifact, the optimizer is a long-running workbench: a developer "opens" the optimizer for a Coworld and
+> uses it interactively to drive a policy-improvement loop. The contract below reflects this difference. The
+> design is under active development; expect changes as the workbench shape stabilizes. Coworlds with no custom
+> optimizer should reference `softmax/default-optimizer:latest`, which corresponds to a release of
+> [`Metta-AI/optimizer`](https://github.com/Metta-AI/optimizer).
 
-Runtime contract:
+## What it does
 
-- receive `COWORLD_MANIFEST_URI`, a JSON Coworld manifest;
-- receive `COGAME_OPTIMIZER_ID`, the selected manifest role id;
-- receive `COGAME_OPTIMIZER_OUTPUT_URI`, where the optimizer writes its output artifact;
-- optionally receive `COGAME_POLICY_WORKSPACE_URI`, a policy workspace to inspect or update;
-- optionally receive comma-separated artifact lists in `COGAME_REPORT_URIS`, `COGAME_GRADER_OUTPUT_URIS`, and
-  `COGAME_DIAGNOSER_OUTPUT_URIS`.
+The optimizer role is the workbench through which a developer (human or agent) iterates on a policy for a given
+Coworld. The canonical implementation, [`Metta-AI/optimizer`](https://github.com/Metta-AI/optimizer), is a local
+Next.js application that integrates with the Coworld CLI to run episodes, inspect replays, coordinate agent tasks,
+edit policy source, and evaluate candidate policies against a champion.
 
-The output artifact is runner-owned. For the reference flow, it is a deterministic JSON optimization plan that names the
-target Coworld, counts the supplied evidence artifacts, and records the concrete next policy-iteration steps.
+Unlike reporter, grader, and diagnoser, an optimizer is not a one-shot job. It is opened, used over a session
+(potentially many hours and many episodes), and closed. Its "output" is not a single artifact file but a series of
+side effects: policy workspaces, candidate policy versions, comparison evaluations, and ultimately a new policy
+version uploaded via `coworld upload-policy`.
+
+## Where it lives in the manifest
+
+`manifest.optimizer[]`, with `type: "optimizer"` on every entry. The array must contain at least one runnable;
+Coworlds without a custom optimizer may reference `softmax/default-optimizer:latest`, which points at a release of
+`Metta-AI/optimizer`. See [`MANIFEST_README.md`](../../MANIFEST_README.md) for the full runnable shape.
+
+## Contract (tentative)
+
+An optimizer runnable is a long-running workbench image. The invoker opens it for a Coworld; the workbench hosts
+the policy-improvement loop until the user closes it.
+
+### Invocation
+
+An optimizer is opened with a CLI command (planned: `coworld open-optimizer` — exact shape TBD) or directly via
+`docker run`. The optimizer container exposes a web UI; the developer connects to it (typically through a browser)
+and works in the workbench.
+
+The mechanism for passing Coworld context (manifest reference, initial policies, initial episodes) into a freshly
+opened optimizer instance is not yet defined.
+
+### Inputs
+
+The optimizer needs at least:
+
+- a reference to the Coworld being optimized (manifest path or `coworld_id`);
+- optionally, initial policies to load into a workspace;
+- optionally, episode references to seed the workbench with.
+
+Whether these arrive as env vars, CLI args, mounted config files, or some combination is not yet locked.
+
+### Outputs
+
+Optimizer outputs are side effects, not artifact files:
+
+- candidate policy versions written into the optimizer's local policy workspace, exportable via
+  `coworld upload-policy`;
+- task documents, comments, attachments, and run transcripts persisted in the optimizer's own database;
+- evaluation results comparing candidate policies against a champion.
+
+The platform does not consume optimizer output through a standard env-var artifact contract the way it does for
+reporter and grader. The optimizer is responsible for surfacing its own state through its UI.
+
+### Execution
+
+Optimizers are interactive and long-running. They are **not** run automatically by the episode runner or any
+batch pipeline; they are opened by a user (or an agent acting on a user's behalf) when policy iteration is the
+goal.
+
+## Open questions
+
+- **Invocation contract.** What env vars, CLI args, or config files convey "you are optimizing for this Coworld,
+  starting from these policies, with these episodes already loaded"? Not yet defined.
+- **Game-agnostic vs game-specific optimizers.** The canonical `Metta-AI/optimizer` is intentionally
+  game-agnostic. A specific Coworld might want to ship a game-specific optimizer image that bundles game-aware
+  tooling. How a game-specific optimizer composes with (or replaces) the default is not yet defined.
+- **Output handoff to the platform.** Today a candidate policy reaches the platform via `coworld upload-policy`
+  run by the user. Whether there is a more direct optimizer → platform handoff in the future (e.g. the optimizer
+  itself pushing policy versions) is undefined.
+- **Multi-Coworld instances.** Can one optimizer instance host multiple Coworlds at once? The canonical
+  implementation today does; the role-level contract has not been written.
+
+## How it fits with other roles
+
+The optimizer is the rightmost node in the Coworld supporting-runnable flow — it ingests episode evidence and, in
+principle, reporter renders, grader rankings, and diagnoser advice, and turns them into policy improvements. In
+practice today, the optimizer pulls episode artifacts directly via the Coworld CLI and is the human-facing surface
+over the loop the other roles support.
+
+See [`OVERVIEW.md`](OVERVIEW.md) for the full artifact flow, and
+[`Metta-AI/optimizer`](https://github.com/Metta-AI/optimizer) for the canonical optimizer implementation.
+
+## See Also
+
+- [`Metta-AI/optimizer`](https://github.com/Metta-AI/optimizer) — canonical game-agnostic optimizer
+  implementation (Next.js workbench, Postgres + pgvector, agent coordination, replay debugger).
+- [`MANIFEST_README.md`](../../MANIFEST_README.md) — manifest field reference for `manifest.optimizer[]`.
+- [`COWORLD_README.md`](../../COWORLD_README.md) — Role Status framework, runnable conventions.
+- [`reporter.md`](reporter.md), [`grader.md`](grader.md), [`diagnoser.md`](diagnoser.md) — sibling supporting
+  runnables; note the optimizer's shape differs.
+- [`OVERVIEW.md`](OVERVIEW.md) — full artifact flow.

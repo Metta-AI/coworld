@@ -32,7 +32,7 @@ contract today and which currently rely on Softmax-published default images.
 
 ## Runnable Shape
 
-Every runnable in the manifest — `game.runnable` and the seven array sections — shares a base shape:
+Every runnable in the manifest — `game.runnable` plus every entry in the six array sections — shares a base shape:
 
 | Field        | Type                 | Required? | Purpose                                                                          |
 | ------------ | -------------------- | --------- | -------------------------------------------------------------------------------- |
@@ -42,8 +42,8 @@ Every runnable in the manifest — `game.runnable` and the seven array sections 
 | `env`        | map of string→string | no        | Public environment variables to set on the container. Secrets do not belong in the manifest; see the policy-upload flow in [`COWORLD_README.md`](COWORLD_README.md). |
 | `source_url` | string               | no        | URL of the repository, directory, or file that builds this runnable. Informational; surfaced to humans inspecting the manifest. |
 
-Array-role runnables — every entry in `player`, `commissioner`, `reporter`, `grader`, `diagnoser`, or `optimizer` —
-add four more required fields:
+Declared role runnables — every entry in the six array sections (`player`, `commissioner`, `reporter`, `grader`,
+`diagnoser`, `optimizer`) — add four more required fields:
 
 | Field         | Type   | Required? | Purpose                                                                                            |
 | ------------- | ------ | --------- | -------------------------------------------------------------------------------------------------- |
