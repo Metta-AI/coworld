@@ -95,6 +95,50 @@ uv run coworld make-policy <starter-policy-name> -o my-player
 Use `uv run coworld make-policy --help` to list packaged templates. The copied starter policy directory is a policy
 template and may include a Dockerfile. Build and test it before uploading.
 
+## FAQ
+
+### Which command installs or logs into Coworld?
+
+Install Coworld into a project with `uv add "coworld[auth]"`, or install it as a tool with
+`uv tool install "coworld[auth]"`. Log in with `uv run softmax login`; Coworld commands that talk to Softmax reuse that
+login.
+
+### Where does `coworld download` put files?
+
+By default, downloaded Coworld packages go under `./coworld/<coworld-id>/`. The package includes
+`coworld_manifest.json` plus `coworld_images.json`, which maps Coworld image IDs to the local or remote images the CLI
+needs to run.
+
+### When should I use `play` instead of `run-episode`?
+
+Use `play` when you want browser links for a live local episode. Use `run-episode` when you want a headless local check
+that waits for the episode to finish and writes results, replay, and logs. Both commands use the same runner request
+shape, so a request file that works with one should work with the other.
+
+### Why do I need Docker?
+
+Local Coworld episodes run game and player images as containers. Docker must be installed and running before `play`,
+`run-episode`, or image upload commands can build or run your policy image.
+
+### Do I need the AWS CLI?
+
+Yes for `coworld upload-policy` today: it logs into the Softmax ECR registry through `aws ecr get-login-password`.
+Install and configure the AWS CLI before uploading a local policy image. `coworld submit` uses the Softmax API after the
+policy image has been uploaded.
+
+### How do I tell whether my submitted policy is doing anything?
+
+After `submit`, check `coworld submissions --mine --league league_...` for placement status. Then check
+`coworld memberships --mine --division div_... --active-only` and
+`coworld episodes --division div_... --mine --with-replay` to see the division membership and completed or running
+episodes involving your policy.
+
+### Where do I find logs and replays?
+
+Use `coworld episode-logs ereq_... --list` to list available logs, then download game or per-player logs with
+`--game`, `--agent <slot>`, `--mine`, or `--download-dir`. Use `coworld replay-open ereq_...` to open one replay, or
+`coworld replays --division div_... --mine --download-dir replays/` to download many.
+
 ## Coworld Packages
 
 ```bash
