@@ -5,7 +5,7 @@ from typing import Any, Self
 from uuid import UUID
 
 import httpx
-from pydantic import BaseModel, ConfigDict, TypeAdapter, computed_field, model_validator
+from pydantic import BaseModel, ConfigDict, TypeAdapter, computed_field
 
 
 class CoworldAPIModel(BaseModel):
@@ -198,17 +198,6 @@ class LeaderboardEntryPublic(CoworldAPIModel):
     score: float
     rounds_played: int
     recent_rounds: list[LeaderboardRecentRoundPublic] | None = None
-
-    @model_validator(mode="before")
-    @classmethod
-    def _accept_legacy_score_fields(cls, data: Any) -> Any:
-        if not isinstance(data, dict) or "score" in data:
-            return data
-        if "avg_score" in data:
-            return {**data, "score": data["avg_score"]}
-        if "ewma_rank" in data:
-            return {**data, "score": data["ewma_rank"]}
-        return data
 
 
 class V2EpisodeRequestParticipant(CoworldAPIModel):
