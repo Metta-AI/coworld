@@ -146,7 +146,7 @@ def test_require_http_ok_accepts_replay_client_redirect(monkeypatch):
 
     monkeypatch.setattr(runner_module.httpx, "get", lambda _url, timeout: RedirectResponse())
 
-    runner_module._require_http_ok("http://example.test/clients/replay", allow_redirect=True)
+    runner_module._require_http_ok("http://example.test/client/replay", allow_redirect=True)
 
 
 def test_run_cogame_episode_uses_docker_dns_and_omits_empty_policy_names_env(tmp_path, monkeypatch):
@@ -602,7 +602,7 @@ def test_kubernetes_runner_uses_direct_player_urls_without_address():
     player = PlayerLaunchSpec(image="paintbot:latest", run=(), env={})
 
     assert kubernetes_runner._player_client_url(1, "slot-token", player) == (
-        "http://127.0.0.1:8080/clients/player?slot=1&token=slot-token"
+        "http://127.0.0.1:8080/client/player?slot=1&token=slot-token"
     )
     assert kubernetes_runner._player_service_ws_url("game-service", 1, "slot-token", player) == (
         "ws://game-service:8080/player?slot=1&token=slot-token"

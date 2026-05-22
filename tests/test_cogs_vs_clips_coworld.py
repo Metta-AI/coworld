@@ -50,7 +50,7 @@ def test_cogs_vs_clips_admin_snapshot_exposes_takeover_player_links(tmp_path: Pa
     assert all("takeover_url" not in slot for slot in game.snapshot()["slots"])
     for slot_index, slot in enumerate(snapshot["slots"]):
         player_link = urlparse(slot["takeover_url"])
-        assert player_link.path == "/clients/player"
+        assert player_link.path == "/client/player"
         assert parse_qs(player_link.query) == {
             "slot": [str(slot_index)],
             "token": [game.tokens[slot_index]],
@@ -86,14 +86,14 @@ def test_cogs_vs_clips_clients_use_slot_admin_and_fullscreen_player() -> None:
     assert "mettascope.html?ws=" in global_html
     assert 'id="fallback"' in global_html
     assert '<canvas id="board" width="720" height="720"></canvas>' in global_html
-    assert "target.pathname = target.pathname.replace(/\\/clients\\/global$/, path)" in global_html
+    assert "target.pathname = target.pathname.replace(/\\/client\\/global$/, path)" in global_html
     assert '<canvas id="screen"></canvas>' in player_html
     assert 'id="actions"' not in player_html
-    assert "target.pathname = target.pathname.replace(/\\/clients\\/player$/, path)" in player_html
+    assert "target.pathname = target.pathname.replace(/\\/client\\/player$/, path)" in player_html
     assert "tag === `type:${name}`" in player_html
     assert "ArrowUp" in player_html
     assert "Escape" in player_html
-    assert 'websocketUrl.pathname.replace(/\\/clients\\/replay(\\/.*)?$/, "/replay$1")' in replay_html
+    assert 'websocketUrl.pathname.replace(/\\/client\\/replay(\\/.*)?$/, "/replay$1")' in replay_html
 
 
 def test_cogs_vs_clips_rollout_routes_preserve_coworld_runtime_contract(tmp_path: Path) -> None:
@@ -114,9 +114,9 @@ def test_cogs_vs_clips_rollout_routes_preserve_coworld_runtime_contract(tmp_path
     )
 
     assert client.get("/healthz").json() == {"ok": True}
-    assert client.get("/clients/player", params={"slot": 0, "token": "token-0"}).status_code == 200
-    assert client.get("/clients/global").status_code == 200
-    assert client.get("/clients/replay", params={"uri": (tmp_path / "replay.json").as_uri()}).status_code == 200
+    assert client.get("/client/player", params={"slot": 0, "token": "token-0"}).status_code == 200
+    assert client.get("/client/global").status_code == 200
+    assert client.get("/client/replay", params={"uri": (tmp_path / "replay.json").as_uri()}).status_code == 200
 
     with pytest.raises(WebSocketDisconnect) as exc_info:
         with client.websocket_connect("/player?slot=0&token=bad"):
@@ -219,6 +219,54 @@ def test_cogs_vs_clips_records_compact_mettascope_replay(tmp_path: Path, monkeyp
     assert "results" not in replay
 
 
+def test_cogs_vs_clips_uploads_http_result_and_replay_uris(tmp_path: Path, monkeypatch) -> None:
+    server_module = _load_cogs_vs_clips_server_module()
+    calls = []
+
+    def write_data(uri, data, *, content_type, http_method):
+        calls.append(
+            {
+                "uri": uri,
+                "data": data,
+                "content_type": content_type,
+                "http_method": http_method,
+            }
+        )
+
+    monkeypatch.setattr(server_module, "write_data", write_data)
+    monkeypatch.setenv("COGAME_SAVE_REPLAY_METHOD", "POST")
+    replay_path = tmp_path / "replay.json"
+    game = server_module.CogsVsClipsGame(
+        {
+            "mission": "machina_1",
+            "tokens": ["token-0", "token-1"],
+            "max_steps": 3,
+            "seed": 0,
+            "step_seconds": 0.02,
+        },
+        results_path=tmp_path / "results.json",
+        replay_path=replay_path,
+        request_shutdown=lambda: None,
+        results_uri="https://upload.example/results",
+        replay_uri="https://upload.example/replay",
+    )
+
+    game.episode.apply_actions()
+    game.sim.step()
+    game.record_replay_step()
+    results = game.results()
+
+    assert results["steps"] == 1
+    assert calls[0]["uri"] == "https://upload.example/results"
+    assert calls[0]["http_method"] == "PUT"
+    assert calls[0]["content_type"] == "application/json"
+    assert json.loads(calls[0]["data"]) == results
+    assert calls[1]["uri"] == "https://upload.example/replay"
+    assert calls[1]["http_method"] == "POST"
+    assert calls[1]["content_type"] == "application/json"
+    assert json.loads(calls[1]["data"])["version"] == 4
+
+
 def test_cogs_vs_clips_assign_payload_stays_under_proxy_frame_cap(tmp_path: Path) -> None:
     # Spectator `assign` traverses an Observatory websocket proxy whose upstream
     # `websockets.connect` defaults to max_size=1 MiB. The simulator-only `events`
@@ -269,7 +317,7 @@ def test_cogs_vs_clips_replay_client_redirects_to_mettascope(tmp_path: Path) -> 
 
     assert client.get("/healthz").json() == {"ok": True}
     response = client.get(
-        "/clients/replay",
+        "/client/replay",
         params={"uri": replay_path.as_uri()},
         follow_redirects=False,
     )

@@ -50,3 +50,23 @@ def test_upload_data_does_not_retry_client_errors(monkeypatch: pytest.MonkeyPatc
         runner_io.upload_data("https://example.test/results.json", "{}", content_type="application/json")
 
     assert len(calls) == 1
+
+
+def test_write_data_can_post_to_signed_uri(monkeypatch: pytest.MonkeyPatch) -> None:
+    calls = []
+
+    def urlopen(request, *, timeout: int):
+        calls.append((request, timeout))
+        return _Response()
+
+    monkeypatch.setattr(runner_io, "urlopen", urlopen)
+
+    runner_io.write_data(
+        "https://example.test/upload",
+        "{}",
+        content_type="application/json",
+        http_method="POST",
+    )
+
+    assert len(calls) == 1
+    assert calls[0][0].get_method() == "POST"

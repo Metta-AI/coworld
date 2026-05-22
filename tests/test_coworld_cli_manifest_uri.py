@@ -413,7 +413,9 @@ def test_run_episode_player_image_override_keeps_manifest_env(monkeypatch: Monke
 
     assert [player.image for player in spec.players] == ["custom-policy-player:latest"] * 8
     assert [player.run for player in spec.players] == [["python", "/app/player.py"]] * 8
-    assert {tuple(player.env.items()) for player in spec.players} == {()}
+    assert {tuple(player.env.items()) for player in spec.players} == {
+        (("COGAMES_POLICY_URI", "metta://policy/cogames.policy.starter_agent.StarterPolicy"),)
+    }
 
 
 def test_run_episode_accepts_episode_request_file_with_per_slot_env(

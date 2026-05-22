@@ -1,6 +1,6 @@
 # Paint Arena Player Protocol
 
-Browsers request `GET /clients/player?slot=<slot>&token=<token>` to load the player client. The client opens
+Browsers request `GET /client/player?slot=<slot>&token=<token>` to load the player client. The client opens
 `/player?slot=<slot>&token=<token>` by default. If the page query includes `address`, the client uses that as the
 complete websocket endpoint and does not merge other page query params.
 

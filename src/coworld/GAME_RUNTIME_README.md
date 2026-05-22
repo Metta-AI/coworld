@@ -60,10 +60,15 @@ For a normal episode, the runner starts the game with:
 COGAME_CONFIG_URI=...
 COGAME_RESULTS_URI=...
 COGAME_SAVE_REPLAY_URI=...
+COGAME_RESULTS_METHOD=PUT    # optional for HTTP(S) output URIs; POST is also valid
+COGAME_SAVE_REPLAY_METHOD=PUT # optional for HTTP(S) output URIs; POST is also valid
+COGAME_HOST=0.0.0.0
+COGAME_PORT=8080
 COGAME_LOG_URI=...           # optional
 ```
 
-The game must support `file://` URIs. Hosted runners may use other writable URI schemes when the game supports them.
+The game must support `file://` URIs and HTTP(S) read/write URIs. HTTP(S) output URIs are usually presigned upload URLs,
+with `PUT` as the default method.
 
 If `COGAME_LOG_URI` is set, the game should POST log lines to that URL (plain text, one or more newline-separated
 lines per request). If it is unset, the game must skip log posting. In either case, the container is free to log to
@@ -73,23 +78,23 @@ player pod; these container streams are independent from `COGAME_LOG_URI`.
 In rollout mode, the game listens on `0.0.0.0:8080` and exposes:
 
 - `GET /healthz`
-- `GET /clients/player?slot=0&token=...&...`
+- `GET /client/player?slot=0&token=...&...`
 - `WEBSOCKET /player?slot=0&token=...&...`
-- `GET /clients/global`
+- `GET /client/global`
 - `WEBSOCKET /global`
 
 `GET /healthz` returns 200 when the game is ready.
 
-`GET /clients/player` serves a browser client for one slot. `GET /clients/global` serves a live viewer.
+`GET /client/player` serves a browser client for one slot. `GET /client/global` serves a live viewer.
 
 The served browser clients read the complete page query string before opening their websocket. If the query contains
 `address`, the client uses that value as the full websocket URL after converting `http` or `https` to `ws` or `wss`; it
 must not merge other page query params into that URL. Otherwise, the client derives the websocket URL by replacing
-`/clients/player` with `/player`, or `/clients/global` with `/global`, and preserving the page query params such as
+`/client/player` with `/player`, or `/client/global` with `/global`, and preserving the page query params such as
 `slot`, `token`, and game-owned params.
 
-For example, `/clients/player?slot=0&token=abc&role=scout` should open `/player?slot=0&token=abc&role=scout`. A hosted
-proxy may instead serve `/clients/player?address=wss://example.com/player?slot=0&token=abc`.
+For example, `/client/player?slot=0&token=abc&role=scout` should open `/player?slot=0&token=abc&role=scout`. A hosted
+proxy may instead serve `/client/player?address=wss://example.com/player?slot=0&token=abc`.
 
 The `/global` websocket must support late viewers. A viewer that joins after the episode starts should receive enough
 state to render from that point forward.
@@ -100,7 +105,7 @@ behavior.
 
 Games may expose local-only admin controls by convention:
 
-- `GET /clients/admin`
+- `GET /client/admin`
 - `WEBSOCKET /admin?...`
 
 The admin route is game-owned. The platform must not expose `/admin` in production.
@@ -116,13 +121,13 @@ COGAME_REPLAY_SERVER=1
 In replay mode, the game listens on `0.0.0.0:8080` and exposes:
 
 - `GET /healthz`
-- `GET /clients/replay?uri=<uri>`
+- `GET /client/replay?uri=<uri>`
 - `WEBSOCKET /replay?uri=<uri>`
 
-`GET /clients/replay?uri=<uri>` serves a browser replay viewer. The served client opens `/replay?uri=<uri>`. The game
+`GET /client/replay?uri=<uri>` serves a browser replay viewer. The served client opens `/replay?uri=<uri>`. The game
 loads the replay artifact and handles game-owned replay controls such as start, stop, seek, or speed changes.
 
-Hosted Observatory replay sessions use the same `/clients/replay?uri=<uri>` entrypoint for every Coworld game. After
+Hosted Observatory replay sessions use the same `/client/replay?uri=<uri>` entrypoint for every Coworld game. After
 that page loads, replay HTTP routes and replay WebSocket routes are still game-owned, but they must preserve the replay
 artifact URI in their query string. Platform proxies forward the requested path and query rather than branching on game
 name, replay format, or viewer implementation.

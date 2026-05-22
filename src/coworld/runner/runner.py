@@ -28,6 +28,10 @@ CONFIG_ENV_VAR = "COGAME_CONFIG_URI"
 RESULTS_ENV_VAR = "COGAME_RESULTS_URI"
 REPLAY_SAVE_ENV_VAR = "COGAME_SAVE_REPLAY_URI"
 REPLAY_SERVER_ENV_VAR = "COGAME_REPLAY_SERVER"
+GAME_HOST_ENV_VAR = "COGAME_HOST"
+GAME_PORT_ENV_VAR = "COGAME_PORT"
+GAME_HOST = "0.0.0.0"
+GAME_PORT = 8080
 POLICY_NAMES_ENV_VAR = "COGAMES_POLICY_NAMES"
 LOCAL_DOCKER_NETWORK = "coworld-local"
 LOCAL_GAME_NETWORK_ALIAS_PREFIX = "coworld-game-"
@@ -219,7 +223,7 @@ def replay_session_path(replay_uri: str) -> str:
 
 
 def replay_client_url(port: int, replay_uri: str) -> str:
-    return f"http://127.0.0.1:{port}/clients/replay?{urlencode({'uri': replay_uri})}"
+    return f"http://127.0.0.1:{port}/client/replay?{urlencode({'uri': replay_uri})}"
 
 
 def ensure_local_docker_network() -> None:
@@ -277,8 +281,12 @@ def run_cogame_episode(spec: EpisodeRunSpec, *, verify_replay: bool = True) -> N
                     "--network-alias",
                     game_network_alias,
                     "-p",
-                    f"127.0.0.1:{port}:8080",
+                    f"127.0.0.1:{port}:{GAME_PORT}",
                     *_env_args(spec.cogame.env),
+                    "-e",
+                    f"{GAME_HOST_ENV_VAR}={GAME_HOST}",
+                    "-e",
+                    f"{GAME_PORT_ENV_VAR}={GAME_PORT}",
                     "-e",
                     f"{CONFIG_ENV_VAR}=file://{CONTAINER_WORKDIR}/config.json",
                     "-e",
@@ -299,7 +307,7 @@ def run_cogame_episode(spec: EpisodeRunSpec, *, verify_replay: bool = True) -> N
             if spec.players:
                 _require_http_ok(_player_client_url(port, 0, spec.tokens[0], spec.players[0]))
                 asyncio.run(_require_bad_player_rejected(f"ws://127.0.0.1:{port}/player?slot=0&token=bad"))
-            _require_http_ok(f"http://127.0.0.1:{port}/clients/global")
+            _require_http_ok(f"http://127.0.0.1:{port}/client/global")
 
             secret_env_key_args = [arg for key in spec.secret_env for arg in ("-e", key)]
             player_subprocess_env = {**os.environ, **spec.secret_env} if spec.secret_env else None
@@ -355,8 +363,12 @@ def run_cogame_episode(spec: EpisodeRunSpec, *, verify_replay: bool = True) -> N
                     "--name",
                     replay_container,
                     "-p",
-                    f"127.0.0.1:{replay_port}:8080",
+                    f"127.0.0.1:{replay_port}:{GAME_PORT}",
                     *_env_args(spec.cogame.env),
+                    "-e",
+                    f"{GAME_HOST_ENV_VAR}={GAME_HOST}",
+                    "-e",
+                    f"{GAME_PORT_ENV_VAR}={GAME_PORT}",
                     "-e",
                     f"{REPLAY_SERVER_ENV_VAR}=1",
                     "-v",
@@ -394,11 +406,11 @@ def run_cogame_episode(spec: EpisodeRunSpec, *, verify_replay: bool = True) -> N
 
 
 def _player_container_ws_url(host: str, slot: int, token: str, player: PlayerLaunchSpec) -> str:
-    return f"ws://{host}:8080/player?{_player_query(slot, token, player)}"
+    return f"ws://{host}:{GAME_PORT}/player?{_player_query(slot, token, player)}"
 
 
 def _player_client_url(port: int, slot: int, token: str, player: PlayerLaunchSpec) -> str:
-    return f"http://127.0.0.1:{port}/clients/player?{_player_query(slot, token, player)}"
+    return f"http://127.0.0.1:{port}/client/player?{_player_query(slot, token, player)}"
 
 
 def _player_query(slot: int, token: str, player: PlayerLaunchSpec) -> str:

@@ -34,7 +34,7 @@ from coworld.types import CoworldEpisodeJobSpec
 
 WORKDIR = Path(os.environ.get("COWORLD_WORKDIR", "/coworld"))
 STATE_PATH = WORKDIR / "state.json"
-GAME_PORT = 8080
+GAME_PORT = int(os.environ.get("COGAME_PORT", "8080"))
 _BEDROCK_SERVICE_ACCOUNT = "episode-runner"
 DEFAULT_PLAYER_CPU_REQUEST = "2"
 DEFAULT_PLAYER_MEMORY_REQUEST = "2Gi"
@@ -171,7 +171,7 @@ def _run_kubernetes_episode(
         if players:
             _require_http_ok(_player_client_url(0, tokens[0], players[0]))
             asyncio.run(_require_bad_player_rejected(f"ws://127.0.0.1:{GAME_PORT}/player?slot=0&token=bad"))
-        _require_http_ok(f"http://127.0.0.1:{GAME_PORT}/clients/global")
+        _require_http_ok(f"http://127.0.0.1:{GAME_PORT}/client/global")
 
         for slot, player in enumerate(players):
             name = f"{service_name}-player-{slot}"
@@ -474,7 +474,7 @@ def _delete_child_resources(core_v1, namespace: str, service_name: str, pod_name
 
 
 def _player_client_url(slot: int, token: str, player: PlayerLaunchSpec) -> str:
-    return f"http://127.0.0.1:{GAME_PORT}/clients/player?{_player_query(slot, token, player)}"
+    return f"http://127.0.0.1:{GAME_PORT}/client/player?{_player_query(slot, token, player)}"
 
 
 def _player_service_ws_url(service_name: str, slot: int, token: str, player: PlayerLaunchSpec) -> str:

@@ -7,7 +7,7 @@ import os
 import zlib
 from contextlib import asynccontextmanager, suppress
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal, cast
 from urllib.parse import unquote, urlparse
 from urllib.request import Request, urlopen
 
@@ -16,9 +16,12 @@ from fastapi import FastAPI, WebSocket
 from fastapi.responses import HTMLResponse
 
 from coworld.examples.paintarena.shared.log_shipper import get_logger
+from coworld.runner.io import write_data
 
 CLIENTS_DIR = Path(__file__).parent / "clients"
 logger = get_logger("paintarena.game")
+GAME_HOST = os.environ.get("COGAME_HOST", "0.0.0.0")
+GAME_PORT = int(os.environ.get("COGAME_PORT", "8080"))
 
 # urllib's default User-Agent ("Python-urllib/3.x") is blocked by some CDN
 # WAFs (Cloudflare's "Bad bot" rule, error 1010), so we set an explicit one
@@ -39,28 +42,11 @@ def read_data(uri: str) -> bytes:
     raise ValueError(f"Unsupported URI for read_data: {uri}")
 
 
-def post_data(uri: str, data: bytes | str, *, content_type: str) -> None:
-    if isinstance(data, str):
-        data = data.encode()
-
-    parsed = urlparse(uri)
-    if parsed.scheme in ("http", "https"):
-        request = Request(uri, data=data, method="POST")
-        request.add_header("Content-Type", content_type)
-        request.add_header("User-Agent", HTTP_USER_AGENT)
-        with urlopen(request, timeout=60):
-            return
-    if parsed.scheme == "file":
-        path = Path(unquote(parsed.path))
-        path.parent.mkdir(parents=True, exist_ok=True)
-        path.write_bytes(data)
-        return
-    if parsed.scheme == "":
-        path = Path(uri)
-        path.parent.mkdir(parents=True, exist_ok=True)
-        path.write_bytes(data)
-        return
-    raise ValueError(f"Unsupported URI for post_data: {uri}")
+def artifact_method(env_var: str) -> Literal["POST", "PUT"]:
+    method = os.environ.get(env_var, "PUT").upper()
+    if method not in {"POST", "PUT"}:
+        raise ValueError(f"{env_var} must be PUT or POST")
+    return cast(Literal["POST", "PUT"], method)
 
 
 def load_replay_data(replay_uri: str) -> dict[str, Any]:
@@ -132,22 +118,22 @@ def healthz() -> dict[str, bool]:
     return {"ok": True}
 
 
-@app.get("/clients/global")
+@app.get("/client/global")
 def global_client() -> HTMLResponse:
     return HTMLResponse((CLIENTS_DIR / "global.html").read_text())
 
 
-@app.get("/clients/admin")
+@app.get("/client/admin")
 def admin_client() -> HTMLResponse:
     return HTMLResponse((CLIENTS_DIR / "admin.html").read_text())
 
 
-@app.get("/clients/replay")
+@app.get("/client/replay")
 def replay_client() -> HTMLResponse:
     return HTMLResponse((CLIENTS_DIR / "replay.html").read_text())
 
 
-@app.get("/clients/player")
+@app.get("/client/player")
 def player_client() -> HTMLResponse:
     return HTMLResponse((CLIENTS_DIR / "player.html").read_text())
 
@@ -248,8 +234,18 @@ async def _play_game() -> None:
 
     results = _results()
     logger.info("game finished after %d ticks, scores=%s", state.tick, results["scores"])
-    post_data(RESULTS_URI, json.dumps(results), content_type="application/json")
-    post_data(REPLAY_URI, json.dumps(_replay_payload(results)), content_type="application/json")
+    write_data(
+        RESULTS_URI,
+        json.dumps(results),
+        content_type="application/json",
+        http_method=artifact_method("COGAME_RESULTS_METHOD"),
+    )
+    write_data(
+        REPLAY_URI,
+        json.dumps(_replay_payload(results)),
+        content_type="application/json",
+        http_method=artifact_method("COGAME_SAVE_REPLAY_METHOD"),
+    )
 
     state.done = True
     server.should_exit = True
@@ -334,5 +330,5 @@ state = GameState()
 
 
 if __name__ == "__main__":
-    server = uvicorn.Server(uvicorn.Config(app, host="0.0.0.0", port=8080))
+    server = uvicorn.Server(uvicorn.Config(app, host=GAME_HOST, port=GAME_PORT))
     server.run()

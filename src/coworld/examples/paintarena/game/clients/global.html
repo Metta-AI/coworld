@@ -184,7 +184,7 @@
     const target = new URL(address || window.location.href, window.location.href)
     if (target.protocol === 'http:') target.protocol = 'ws:'
     if (target.protocol === 'https:') target.protocol = 'wss:'
-    if (!address) target.pathname = target.pathname.replace(/\/clients\/global$/, path)
+    if (!address) target.pathname = target.pathname.replace(/\/client\/global$/, path)
     target.hash = ''
     return target
   }

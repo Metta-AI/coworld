@@ -390,7 +390,7 @@ def test_hosted_game_create_posts_play_session(httpserver: HTTPServer, monkeypat
             "join_url": "/observatory/v2/coworld-play/ps_00000000-0000-0000-0000-000000000011/join",
             "lobby_url": "/observatory/v2/coworld-play/ps_00000000-0000-0000-0000-000000000011",
             "player_count": 3,
-            "global_url": "https://api.example.com/v2/coworlds/play/session/ps_00000000/proxy/clients/global",
+            "global_url": "https://api.example.com/v2/coworlds/play/session/ps_00000000/proxy/client/global",
         }
     )
 
@@ -427,7 +427,7 @@ def test_hosted_game_join_posts_join_session(httpserver: HTTPServer, monkeypatch
         headers={"X-Auth-Token": "token"},
     ).respond_with_json(
         {
-            "player_url": "https://api.example.com/v2/coworlds/play/session/ps_00000000/proxy/clients/player",
+            "player_url": "https://api.example.com/v2/coworlds/play/session/ps_00000000/proxy/client/player",
             "slot": 1,
             "player": {"slot": 1, "label": "Player 2"},
         }

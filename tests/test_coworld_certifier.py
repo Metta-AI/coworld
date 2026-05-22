@@ -410,7 +410,7 @@ def test_build_play_links_point_directly_at_engine_client_routes(tmp_path: Path)
     player_link = urlparse(links.players[0])
     assert player_link.scheme == "http"
     assert player_link.netloc == "127.0.0.1:1234"
-    assert player_link.path == "/clients/player"
+    assert player_link.path == "/client/player"
     assert parse_qs(player_link.query) == {
         "slot": ["0"],
         "token": ["token-0"],
@@ -421,13 +421,13 @@ def test_build_play_links_point_directly_at_engine_client_routes(tmp_path: Path)
     global_link = urlparse(links.global_)
     assert global_link.scheme == "http"
     assert global_link.netloc == "127.0.0.1:1234"
-    assert global_link.path == "/clients/global"
+    assert global_link.path == "/client/global"
     assert global_link.query == ""
 
     admin_link = urlparse(links.admin)
     assert admin_link.scheme == "http"
     assert admin_link.netloc == "127.0.0.1:1234"
-    assert admin_link.path == "/clients/admin"
+    assert admin_link.path == "/client/admin"
     assert admin_link.query == ""
 
 
@@ -757,7 +757,7 @@ def test_replay_urls_match_canonical_runtime_contract() -> None:
     assert REPLAY_SERVER_ENV_VAR == "COGAME_REPLAY_SERVER"
     assert replay_link.scheme == "http"
     assert replay_link.netloc == "127.0.0.1:1234"
-    assert replay_link.path == "/clients/replay"
+    assert replay_link.path == "/client/replay"
     assert parse_qs(replay_link.query) == {"uri": [replay_uri]}
     assert websocket_path.path == "/replay"
     assert parse_qs(websocket_path.query) == {"uri": [replay_uri]}
@@ -809,7 +809,7 @@ def test_replay_coworld_starts_replay_container_and_reports_link(
         on_ready=ready_sessions.append,
     )
 
-    assert session.link == "http://127.0.0.1:1234/clients/replay?uri=file%3A%2F%2F%2Fcoworld-replay%2Freplay.json"
+    assert session.link == "http://127.0.0.1:1234/client/replay?uri=file%3A%2F%2F%2Fcoworld-replay%2Freplay.json"
     assert ready_sessions == [session]
     command = popen_commands[0]
     assert f"{REPLAY_SERVER_ENV_VAR}=1" in command
@@ -1215,7 +1215,9 @@ def test_cogs_vs_clips_coworld_manifest_validates(tmp_path: Path) -> None:
     assert package.manifest.player[0].id == "starter-policy-player"
     assert package.manifest.player[0].image == "coworld-mettagrid-policy-player:latest"
     assert package.manifest.player[0].run == ["python", "/app/coworld_policy_player.py"]
-    assert package.manifest.player[0].env == {}
+    assert package.manifest.player[0].env == {
+        "COGAMES_POLICY_URI": "metta://policy/cogames.policy.starter_agent.StarterPolicy"
+    }
     daily_variant = next(variant for variant in package.manifest.variants if variant.id == "machina-1-daily")
     assert daily_variant.game_config["max_steps"] == 10000
     assert config == {

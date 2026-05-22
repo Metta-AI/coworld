@@ -21,6 +21,10 @@ from coworld.certifier import (
 from coworld.runner.runner import (
     CONFIG_ENV_VAR,
     CONTAINER_WORKDIR,
+    GAME_HOST,
+    GAME_HOST_ENV_VAR,
+    GAME_PORT,
+    GAME_PORT_ENV_VAR,
     LOCAL_DOCKER_NETWORK,
     LOCAL_GAME_NETWORK_ALIAS_PREFIX,
     REPLAY_SAVE_ENV_VAR,
@@ -170,8 +174,12 @@ def play_coworld(
                     "--network-alias",
                     game_network_alias,
                     "-p",
-                    f"127.0.0.1:{game_port}:8080",
+                    f"127.0.0.1:{game_port}:{GAME_PORT}",
                     *_env_args(package.cogame.env),
+                    "-e",
+                    f"{GAME_HOST_ENV_VAR}={GAME_HOST}",
+                    "-e",
+                    f"{GAME_PORT_ENV_VAR}={GAME_PORT}",
                     "-e",
                     f"{CONFIG_ENV_VAR}=file://{CONTAINER_WORKDIR}/config.json",
                     "-e",
@@ -306,8 +314,12 @@ def replay_coworld(
                     "--name",
                     replay_container,
                     "-p",
-                    f"127.0.0.1:{replay_port}:8080",
+                    f"127.0.0.1:{replay_port}:{GAME_PORT}",
                     *_env_args(package.cogame.env),
+                    "-e",
+                    f"{GAME_HOST_ENV_VAR}={GAME_HOST}",
+                    "-e",
+                    f"{GAME_PORT_ENV_VAR}={GAME_PORT}",
                     "-e",
                     f"{REPLAY_SERVER_ENV_VAR}=1",
                     "-v",
@@ -351,13 +363,13 @@ def build_play_links(
     game_port: int,
 ) -> PlayLinks:
     player_links = [
-        f"http://127.0.0.1:{game_port}/clients/player?{_player_query(slot, tokens[slot], player)}"
+        f"http://127.0.0.1:{game_port}/client/player?{_player_query(slot, tokens[slot], player)}"
         for slot, player in enumerate(players)
     ]
     return PlayLinks(
         players=player_links,
-        global_=f"http://127.0.0.1:{game_port}/clients/global",
-        admin=f"http://127.0.0.1:{game_port}/clients/admin",
+        global_=f"http://127.0.0.1:{game_port}/client/global",
+        admin=f"http://127.0.0.1:{game_port}/client/admin",
     )
 
 

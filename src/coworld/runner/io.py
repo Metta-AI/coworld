@@ -31,12 +31,22 @@ def read_data(uri: str) -> bytes:
     raise ValueError(f"Unsupported URI for read_data: {uri}")
 
 
+def write_data(
+    uri: str,
+    data: bytes | str,
+    *,
+    content_type: str,
+    http_method: Literal["POST", "PUT"] = "PUT",
+) -> None:
+    _write_data(uri, data, content_type=content_type, http_method=http_method)
+
+
 def post_data(uri: str, data: bytes | str, *, content_type: str) -> None:
-    _write_data(uri, data, content_type=content_type, http_method="POST")
+    write_data(uri, data, content_type=content_type, http_method="POST")
 
 
 def upload_data(uri: str, data: bytes | str, *, content_type: str) -> None:
-    _write_data(uri, data, content_type=content_type, http_method="PUT")
+    write_data(uri, data, content_type=content_type, http_method="PUT")
 
 
 def _write_data(uri: str, data: bytes | str, *, content_type: str, http_method: Literal["POST", "PUT"]) -> None:
