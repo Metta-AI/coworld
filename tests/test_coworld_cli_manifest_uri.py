@@ -399,7 +399,10 @@ def test_run_episode_accepts_one_player_image_per_slot(monkeypatch: MonkeyPatch,
     assert [player.run for player in spec.players] == [expected_run, expected_run]
 
 
-def test_run_episode_player_image_override_keeps_manifest_env(monkeypatch: MonkeyPatch, tmp_path: Path) -> None:
+def test_run_episode_player_image_override_does_not_invent_manifest_env(
+    monkeypatch: MonkeyPatch,
+    tmp_path: Path,
+) -> None:
     spec, _kwargs = _invoke_run_episode(
         monkeypatch,
         tmp_path,
@@ -413,9 +416,7 @@ def test_run_episode_player_image_override_keeps_manifest_env(monkeypatch: Monke
 
     assert [player.image for player in spec.players] == ["custom-policy-player:latest"] * 8
     assert [player.run for player in spec.players] == [["python", "/app/player.py"]] * 8
-    assert {tuple(player.env.items()) for player in spec.players} == {
-        (("COGAMES_POLICY_URI", "metta://policy/cogames.policy.starter_agent.StarterPolicy"),)
-    }
+    assert [player.env for player in spec.players] == [{}] * 8
 
 
 def test_run_episode_accepts_episode_request_file_with_per_slot_env(

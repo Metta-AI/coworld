@@ -188,6 +188,7 @@ def test_cogs_vs_clips_and_paintarena_templates_declare_all_viability_role_secti
     cogs_vs_clips_pages = {page["id"]: page["content"]["value"] for page in cogs_vs_clips["game"]["docs"]["pages"]}
     assert cogs_vs_clips_pages["rules.md"] == "https://softmax.com/play_cogsvsclips.md#game-rules"
     assert cogs_vs_clips_pages["play_cogsvsclips.md"] == "https://softmax.com/play_cogsvsclips.md"
+    assert "env" not in cogs_vs_clips["player"][0]
     for section in ("optimizer", "commissioner", "reporter", "grader", "diagnoser"):
         assert cogs_vs_clips[section] == []
 
