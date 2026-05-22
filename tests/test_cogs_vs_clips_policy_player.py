@@ -124,12 +124,27 @@ def test_policy_player_main_defaults_to_starter_policy(monkeypatch: pytest.Monke
 
     monkeypatch.setattr(policy_player, "run_policy_player", fake_run_policy_player)
     monkeypatch.setenv("COGAMES_ENGINE_WS_URL", "ws://engine/player?slot=0&token=token")
-    monkeypatch.setenv("COGAMES_POLICY_URI", "metta://policy/ignored")
+    monkeypatch.delenv("COGAMES_POLICY_URI", raising=False)
 
     policy_player.main()
 
     assert captured["policy_uri"] == "metta://policy/cogames.policy.starter_agent.StarterPolicy"
     assert captured["engine_ws_url"] == "ws://engine/player?slot=0&token=token"
+
+
+def test_policy_player_main_respects_policy_uri_override(monkeypatch: pytest.MonkeyPatch) -> None:
+    captured: dict[str, Any] = {}
+
+    async def fake_run_policy_player(**kwargs: Any) -> None:
+        captured.update(kwargs)
+
+    monkeypatch.setattr(policy_player, "run_policy_player", fake_run_policy_player)
+    monkeypatch.setenv("COGAMES_ENGINE_WS_URL", "ws://engine/player?slot=0&token=token")
+    monkeypatch.setenv("COGAMES_POLICY_URI", "metta://policy/custom")
+
+    policy_player.main()
+
+    assert captured["policy_uri"] == "metta://policy/custom"
 
 
 def _player_config() -> dict[str, Any]:
