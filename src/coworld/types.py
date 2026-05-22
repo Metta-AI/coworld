@@ -174,7 +174,13 @@ class CoworldEpisodeJobSpec(BaseModel):
     game_config: dict[str, Any]
     players: list[CoworldPlayerSpec]
     episode_tags: dict[str, str] = Field(default_factory=dict)
-    policy_names: list[str] | None = None
+    policy_names: list[str] | None = Field(
+        default=None,
+        description=(
+            "Optional runner metadata with one display name per player slot. "
+            "These names stay outside game_config; runners expose them through runner-owned channels."
+        ),
+    )
 
     @model_validator(mode="after")
     def validate_player_lengths(self) -> "CoworldEpisodeJobSpec":

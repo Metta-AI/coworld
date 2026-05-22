@@ -83,6 +83,9 @@ POD_UID
 
 This is the only payload shape consumed by the coordinator. Backend bookkeeping such as the uploaded Coworld ID or
 manifest hash lives in the backend's stored job payload and is converted out before `spec.json` is uploaded.
+`policy_names` is runner metadata with one display name per player slot. It is not injected into `game_config`; the
+coordinator exposes it through runner-owned channels so each game can decide whether to include names in live viewers,
+results, or replays.
 
 ## Player Pods
 

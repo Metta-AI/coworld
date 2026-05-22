@@ -73,10 +73,12 @@ uv run coworld play ./coworld/<coworld-id>/coworld_manifest.json episode_request
 ```
 
 The request file must match `coworld/runner/episode_request_schema.json`. Use it when you need exact game config,
-per-slot images, commands, environment variables, episode tags, or policy names. Without a request file, both commands use
-the manifest's `certification` fixture; `play --variant <variant-id>` can instead launch a named variant. `run-episode`
-waits headlessly and writes artifacts. `play` runs the same local episode path while also printing the browser/debug links.
-Both commands accept `--output-dir` when you want artifacts somewhere specific.
+per-slot images, commands, environment variables, episode tags, or policy names. Policy names belong in the top-level
+`policy_names` field, one per player slot; keep them out of `game_config` unless the game itself has a game-defined
+config field for names. Without a request file, both commands use the manifest's `certification` fixture;
+`play --variant <variant-id>` can instead launch a named variant. `run-episode` waits headlessly and writes artifacts.
+`play` runs the same local episode path while also printing the browser/debug links. Both commands accept `--output-dir`
+when you want artifacts somewhere specific.
 
 Check the submission and its first episodes:
 
