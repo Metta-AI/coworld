@@ -14,6 +14,11 @@ the episode. Every Coworld manifest has exactly one game runnable.
 than an array; identifying metadata (`game.name`, `game.version`, `game.description`, `game.owner`) lives one level
 up on `manifest.game` itself. See [`MANIFEST_README.md` § `game` Section](../../MANIFEST_README.md#game-section).
 
+The `game` object also requires `game.docs.pages` to include both a `rules.md` entry and a `play_*.md` entry (the
+player-onboarding guide). See
+[`MANIFEST_README.md` § `game.docs.pages` Requirements](../../MANIFEST_README.md#gamedocspages-requirements) for
+the exact rule.
+
 ## Contract
 
 The game runnable is a long-running container that listens on `0.0.0.0:8080` and follows the runtime contract

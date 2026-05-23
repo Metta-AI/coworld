@@ -1,8 +1,8 @@
 # Coworld Guide
 
 `coworld` is the public CLI and Python package for Softmax v2 tournaments. Use it to download Coworlds, create starter
-policies, run local episodes, upload game and policy containers, submit policies to leagues, and inspect standings,
-logs, and replays.
+policies, run local episodes, host live play sessions for uploaded Coworlds, upload game and policy containers, submit
+policies to leagues, and inspect standings, logs, and replays.
 
 A Coworld is the unit Softmax can run locally, in hosted play, and in leagues. At its core, it combines:
 
@@ -223,13 +223,14 @@ checked in without a version; use the hydrated `coworld_manifest.json` for certi
 Certification validates the manifest, checks the referenced Docker images, runs one short episode, checks player and
 global client routes, checks replay viewing, and validates the results file.
 
-Publishing a Coworld is separate from submitting a policy. `upload-coworld` uploads the game package and bundled player
-images. `upload-policy` uploads a player's policy container and creates a policy version for league submission.
+Publishing a Coworld is separate from submitting a policy. `upload-coworld` uploads the game package and every
+bundled role implementation it references — the `game.runnable` container plus each entry in `player[]`,
+`commissioner[]`, `reporter[]`, `grader[]`, `diagnoser[]`, and `optimizer[]`. `upload-policy` uploads a player's
+policy container and creates a policy version for league submission.
 
 ## Manifest
 
-Every Coworld package has a `coworld_manifest.json` file describing its game, players, supporting runnables,
-variants, and certification fixture. The main sections are:
+Every Coworld package has a `coworld_manifest.json` file. The main sections are:
 
 - `game`: game container and its protocols, config schema, results schema, and game-authored docs.
 - `player`: bundled player images that can play the game. Must contain at least one entry.
@@ -249,6 +250,15 @@ certification fields, document objects, and `game.docs.pages` requirements — s
 The manifest schema is generated at [coworld_manifest_schema.json](coworld_manifest_schema.json). Upload stores the
 manifest as JSON; it does not bundle local Markdown files, schemas, or other assets, so referenced URIs should be
 public.
+
+Manifests live at the Coworld level only. Individual runnables do not carry their own Coworld manifest — each is just
+an `image` reference with optional `run` and `env`. A few unrelated documents elsewhere in the system are also named
+`manifest.json` but are not Coworld manifests: a reporter's output `.zip` contains an internal `manifest.json` that
+flags its render target and event log (see [`docs/roles/reporter.md`](docs/roles/reporter.md)); an episode bundle
+contains an internal `manifest.json` describing the files inside it (see
+[`EPISODE_BUNDLE_README.md`](EPISODE_BUNDLE_README.md)); and per-role-repo implementations carry a `CATALOG.yaml` for
+discoverability (see [`docs/specs/0045-coworld-role-repos.md`](../../../../docs/specs/0045-coworld-role-repos.md)).
+None of those are Coworld manifests.
 
 ## Role Artifact Flow
 

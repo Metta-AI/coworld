@@ -2,9 +2,16 @@
 
 Covers pure-function zip construction (build_zip_bytes, build_stats) plus
 end-to-end run() invocations against file:// URIs, exercising the failure-mode
-table in DESIGN.md. The reporter raises on every documented failure mode
-rather than returning an exit code; the entry-point lets the exception
-propagate so the process crashes with a non-zero status.
+table in the v1 reporter contract
+(``Metta-AI/reporters/docs/REPORTER_DESIGN.md`` —
+https://github.com/Metta-AI/reporters/blob/main/docs/REPORTER_DESIGN.md). The
+reporter raises on every documented failure mode rather than returning an exit
+code; the entry-point lets the exception propagate so the process crashes
+with a non-zero status.
+
+Note: the current Coworld reporter contract in ``docs/roles/reporter.md``
+(this package) supersedes the v1 contract these tests target; reconciliation
+is tracked separately.
 
 Output contract is REPORTER_DESIGN.md D12 (zip + render.txt):
 - A single zip is written to COGAME_REPORT_OUTPUT_URI.

@@ -104,6 +104,17 @@ digest never changes. The resolution and registry mechanics are platform-interna
 [`COWORLD_MECHANICS.md`](../../../../app_backend/src/metta/app_backend/v2/COWORLD_MECHANICS.md) for the backend
 details (container-image storage, ECR layout, public mirror, pull access).
 
+### Upload
+
+`coworld upload-coworld` walks the manifest, collects every distinct `image` reference (across `game.runnable.image`
+and every entry in `player[]`, `commissioner[]`, `reporter[]`, `grader[]`, `diagnoser[]`, and `optimizer[]`),
+deduplicates them by image string, and uploads each one independently. A single image string used in multiple
+runnable entries (e.g. one runtime backing both the game and a bundled player) is uploaded once and the manifest's
+references resolve to the same `container_image_id`. The backend additionally deduplicates by a `(user_id, name,
+client_hash)` key so re-uploading bytes you have already pushed is cheap. See
+[`COWORLD_MECHANICS.md`](../../../../app_backend/src/metta/app_backend/v2/COWORLD_MECHANICS.md) for the upload-preflight
+and storage details.
+
 ## Description Fields
 
 `description` is required at three levels of the manifest: `game.description`, every entry in `variants[]`, and every
@@ -230,11 +241,16 @@ referenced URIs should be publicly fetchable.
 
 Every Coworld manifest must include at least two pages in `game.docs.pages`:
 
-- `rules.md` — game-specific rules.
-- A `play_*.md` page (e.g. `play_paintarena.md`, `play_cogsvsclips.md`) — the player-onboarding guide that league
-  pages surface directly.
+- An entry with `id == "rules.md"` — game-specific rules.
+- An entry whose `id` matches the regex `^play_[A-Za-z0-9_-]+\.md$` (e.g. `play_paintarena.md`,
+  `play_cogsvsclips.md`, `play_amongthem.md`) — the player-onboarding guide that league pages surface directly.
 
-Additional pages (strategy notes, reference implementations, etc.) may be included as needed.
+Additional pages (strategy notes, reference implementations, role-source pointers, etc.) may be included as
+needed.
+
+The Pydantic manifest schema enforces both requirements at parse time — a manifest missing either entry fails to
+load, before `coworld certify` or `coworld upload-coworld` ever runs. The validation error names the missing
+entry so authors can fix it immediately.
 
 ## See Also
 

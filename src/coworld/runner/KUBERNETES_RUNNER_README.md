@@ -7,6 +7,25 @@ The runner is designed to run one episode inside a single Kubernetes `Job`. That
 coordinator container. The coordinator creates one child pod for each entry in `players`, waits for the episode to
 finish, gathers artifacts, then uploads them to the URIs provided in environment variables.
 
+## Hosted resource baseline
+
+Hosted Kubernetes runners schedule each episode component with explicit resource requests so the scheduler
+reserves real capacity:
+
+| Component                   | Resource request    |
+| --------------------------- | ------------------- |
+| Game container              | 2 CPU and 2Gi memory |
+| Runner worker container      | 2 CPU and 2Gi memory |
+| Each player container        | 2 CPU and 2Gi memory |
+| Replay container             | 2 CPU and 2Gi memory |
+
+These are scheduling **requests**, not CPU or memory limits. A container may use more if the node has spare
+capacity, but game and player authors should treat the requested capacity as the portable baseline available in
+hosted runs.
+
+Per-player resource requests are configurable per job via `COWORLD_PLAYER_CPU_REQUEST` and
+`COWORLD_PLAYER_MEMORY_REQUEST` (see [Optional Inputs](#optional-inputs)).
+
 ## Parent Job Shape
 
 The parent Job has:
@@ -156,12 +175,12 @@ Outputs:
 - `REPLAY_URI`: zlib-compressed replay uploaded as `replay.json.z`. Hosted upload and the hosted replay viewer both
   consume the compressed form directly.
 - `DEBUG_URI`: zip of the runner's `logs/` directory, containing game container stdout/stderr (`game.stdout.log`,
-  `game.stderr.log`) plus any per-player log files (`policy_agent_{position}.log`) the coordinator captured. Game
+  `game.stderr.log`) plus any per-player log files (`policy_agent_{slot}.log`) the coordinator captured. Game
   container stdout/stderr is **public** to anyone with episode access — game authors must not write secrets or
   private information to those streams.
 - `ERROR_INFO_URI`: crash JSON if the coordinator fails before the episode completes.
-- `POLICY_LOG_URLS`: JSON object mapping each player position to a destination URI. Each player log is uploaded from
-  `policy_agent_{position}.log` and contains that player container's combined stdout and stderr. Player logs are
+- `POLICY_LOG_URLS`: JSON object mapping each player slot to a destination URI. Each player log is uploaded from
+  `policy_agent_{slot}.log` and contains that player container's combined stdout and stderr. Player logs are
   also included in `DEBUG_URI`'s zip; `POLICY_LOG_URLS` exposes them individually for per-player consumption.
 
 Per-player logs are diagnostic only. After the game has produced valid results, the coordinator reads the last 10,000

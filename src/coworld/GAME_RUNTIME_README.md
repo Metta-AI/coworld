@@ -12,16 +12,12 @@ manifest describes how those containers fit together into a Coworld episode.
 
 ## Hosted Runtime Resources
 
-Hosted Kubernetes runners schedule Coworld containers with explicit resource requests so the scheduler reserves real
-capacity for each episode component:
-
-- Game container: 2 CPU and 2Gi memory
-- Runner worker container: 2 CPU and 2Gi memory
-- Each player container: 2 CPU and 2Gi memory
-- Replay container: 2 CPU and 2Gi memory
-
-These are scheduling requests, not CPU or memory limits. A container may use more if the node has spare capacity, but
-game and player authors should treat the requested capacity as the portable baseline available in hosted runs.
+Hosted Kubernetes runners schedule each episode component (game, runner worker, each player, replay) with a baseline
+of 2 CPU and 2Gi memory. These are scheduling requests, not limits — containers may use more if the node has spare
+capacity, but game and player authors should treat the requested capacity as the portable baseline available in
+hosted runs. See
+[`runner/KUBERNETES_RUNNER_README.md` § Hosted resource baseline](runner/KUBERNETES_RUNNER_README.md#hosted-resource-baseline)
+for the per-component breakdown and the configurable per-player overrides.
 
 ## Manifest Fields
 

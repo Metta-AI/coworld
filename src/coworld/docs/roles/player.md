@@ -38,6 +38,24 @@ Players may receive policy-scoped secret environment variables (uploaded via `co
 on top of the manifest's public `env`. Secrets land only in the pod for the specific policy version that uploaded
 them. See [`COWORLD_README.md`](../../COWORLD_README.md) for the policy-upload flow.
 
+## Bundled players vs submitted policies
+
+Player runnables reach Observatory through two distinct upload paths, and their container images have different
+visibility as a result. There is no per-player flag for this — the difference is purely which upload path produced
+the image.
+
+- **Bundled players** — referenced from a Coworld's `manifest.player[]` and uploaded via `coworld upload-coworld`.
+  After the upload completes, the backend's image publisher mirrors these images to ECR Public, so anyone can pull
+  them as part of `coworld download <coworld-id>`. Treat their contents as fully public; do not include secrets in
+  the image.
+- **Submitted policies** — uploaded via `coworld upload-policy` for league submission. These images stay private to
+  Observatory runtime and are never mirrored to ECR Public. Submitted policies substitute for the manifest's bundled
+  players at league episode time using the same runtime contract, but their container images are not
+  user-downloadable.
+
+See [`COWORLD_MECHANICS.md`](../../../../../../app_backend/src/metta/app_backend/v2/COWORLD_MECHANICS.md) for the
+container-image mirror mechanic and the distinction between Coworld-bundled images and policy upload images.
+
 ## Logging
 
 Player runnables produce diagnostic output through two independent channels:

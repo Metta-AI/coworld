@@ -153,6 +153,31 @@ uv run coworld images
 uv run coworld images img_...
 ```
 
+## Hosted Games
+
+Authenticated users can host live play sessions for any uploaded Coworld and share the player and spectator links
+with others.
+
+```bash
+uv run coworld hosted-game create <coworld-id>
+uv run coworld hosted-game create <coworld-id> --variant <variant-id>
+uv run coworld hosted-game create <coworld-id> --no-spectators
+uv run coworld hosted-game join <play-session-id>
+```
+
+`hosted-game create` returns a session ID and prints:
+
+- the player command (a `coworld hosted-game join …` line ready to copy);
+- a player URL pointing at Observatory's hosted-play proxy;
+- a spectator URL (when `--spectators` is on, which is the default).
+
+`hosted-game join` claims one open player slot in an existing session and prints the player URL to open in a
+browser. Each authenticated user can join a given session at most once; rejoining returns the same slot.
+
+Hosted games are not scored league matches — they're a lightweight lobby for human play. See
+[`app_backend/src/metta/app_backend/v2/COWORLD_MECHANICS.md`](../../../../app_backend/src/metta/app_backend/v2/COWORLD_MECHANICS.md)
+for the backend mechanics (Kubernetes Job lifecycle, the readiness-first join flow, proxy routing).
+
 ## Tournaments
 
 Inspect the tournament structure:
@@ -212,7 +237,7 @@ uv run coworld episode-logs ereq_... --mine --download-dir logs/
 
 Hosted Coworld episode jobs collect combined stdout and stderr from the game pod and from each started player pod. The
 `episode-logs` command can fetch the game log with `--game`, list per-player files, and download the per-player files
-(`policy_agent_{position}.log`).
+(`policy_agent_{slot}.log`).
 
 Download replay files:
 

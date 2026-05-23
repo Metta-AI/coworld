@@ -1,11 +1,16 @@
 """PaintArena summarizer reporter.
 
 Pure function of (results JSON, episode metadata JSON, replay JSON) that
-produces a zip containing a Markdown summary and a JSON stats blob, per the
-D12 zip + `render.txt` contract. See DESIGN.md for the full specification.
-Grid dimensions come from the game-owned replay's `config` (per the reporter
-contract D11); PaintArena's replay format is defined by its game server in
-coworld.
+produces a zip containing a Markdown summary and a JSON stats blob. This
+implementation targets the v1 reporter contract in
+``Metta-AI/reporters/docs/REPORTER_DESIGN.md``
+(https://github.com/Metta-AI/reporters/blob/main/docs/REPORTER_DESIGN.md) —
+per-episode auto-run, D12 zip + ``render.txt`` output. The current Coworld
+reporter contract in ``docs/roles/reporter.md`` (this package) uses a different
+shape (on-demand execution, ``manifest.json``-based output zip); reconciliation
+between the two contracts is tracked separately. Grid dimensions come from the
+game-owned replay's ``config`` (per D11 in the cross-repo design); PaintArena's
+replay format is defined by its game server in coworld.
 
 The inline primitives in this file (ReporterInputs, read_uri/write_uri) are
 SDK extraction candidates -- once a second reporter exists, they'll be lifted
