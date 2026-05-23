@@ -13,7 +13,7 @@ Note: the current Coworld reporter contract in ``docs/roles/reporter.md``
 (this package) supersedes the v1 contract these tests target; reconciliation
 is tracked separately.
 
-Output contract is REPORTER_DESIGN.md D12 (zip + render.txt):
+Output contract (REPORTER_DESIGN.md zip + render.txt):
 - A single zip is written to COGAME_REPORT_OUTPUT_URI.
 - Top-level entries: summary.md, stats.json, render.txt.
 - render.txt lists summary.md (the only renderable file); stats.json is
@@ -45,7 +45,7 @@ def make_replay(width: int = 12, height: int = 8) -> dict[str, Any]:
     Shape mirrors what the PaintArena game server writes
     (packages/coworld/.../paintarena/game/server.py::_replay_payload):
     `{config, player_names, frames, results}`. The reporter only reads
-    `config.width` and `config.height` (D11); other fields are present so the
+    `config.width` and `config.height`; other fields are present so the
     fixture realistically exercises pydantic's extras-ignored behavior.
     """
     return deepcopy(
@@ -175,9 +175,10 @@ def test_render_txt_contents_lists_summary_only() -> None:
     assert _render_lines(payload) == ["summary.md"]
 
 
-def test_render_txt_consistency_with_d12_rules() -> None:
+def test_render_txt_consistency() -> None:
     """Every render.txt entry must exist in the zip, have a renderable extension,
-    not list itself, and have no duplicates (D12 invalid_output triggers)."""
+    not list itself, and have no duplicates (REPORTER_DESIGN.md invalid_output
+    triggers)."""
     payload = _build_zip()
     files = _extract(payload)
     lines = _render_lines(payload)
@@ -189,7 +190,7 @@ def test_render_txt_consistency_with_d12_rules() -> None:
 
 
 def test_zip_entries_have_pinned_mtime() -> None:
-    """All entries pin date_time to (1980,1,1,0,0,0) for byte-identical reruns (D12)."""
+    """All entries pin date_time to (1980,1,1,0,0,0) for byte-identical reruns."""
     payload = _build_zip()
     with zipfile.ZipFile(io.BytesIO(payload)) as zf:
         for info in zf.infolist():
@@ -336,7 +337,7 @@ def test_run_happy_path_writes_valid_zip(tmp_path: Path, monkeypatch: pytest.Mon
 
 
 def test_run_is_byte_identical_on_rerun(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    """D12 determinism: two runs over identical inputs must produce identical bytes."""
+    """Determinism: two runs over identical inputs must produce identical bytes."""
     env, out_path = _setup_inputs(tmp_path)
     _invoke_run(monkeypatch, env)
     first = out_path.read_bytes()

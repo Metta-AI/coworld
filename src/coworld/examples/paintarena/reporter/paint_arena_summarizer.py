@@ -5,12 +5,12 @@ produces a zip containing a Markdown summary and a JSON stats blob. This
 implementation targets the v1 reporter contract in
 ``Metta-AI/reporters/docs/REPORTER_DESIGN.md``
 (https://github.com/Metta-AI/reporters/blob/main/docs/REPORTER_DESIGN.md) —
-per-episode auto-run, D12 zip + ``render.txt`` output. The current Coworld
-reporter contract in ``docs/roles/reporter.md`` (this package) uses a different
-shape (on-demand execution, ``manifest.json``-based output zip); reconciliation
-between the two contracts is tracked separately. Grid dimensions come from the
-game-owned replay's ``config`` (per D11 in the cross-repo design); PaintArena's
-replay format is defined by its game server in coworld.
+per-episode auto-run, deterministic output zip plus ``render.txt``. The
+current Coworld reporter contract in ``docs/roles/reporter.md`` (this package)
+uses a different shape (on-demand execution, ``manifest.json``-based output
+zip); reconciliation between the two contracts is tracked separately. Grid
+dimensions come from the game-owned replay's ``config``; PaintArena's replay
+format is defined by its game server in coworld.
 
 The inline primitives in this file (ReporterInputs, read_uri/write_uri) are
 SDK extraction candidates -- once a second reporter exists, they'll be lifted
@@ -107,14 +107,14 @@ def read_json(uri: str) -> Any:
     return json.loads(read_uri(uri).decode("utf-8"))
 
 
-# Pinned zip-entry mtime for byte-identical determinism (D12). Anything other
-# than a fixed value would make reruns over identical inputs differ in the
-# zip's local-file headers.
+# Pinned zip-entry mtime for byte-identical determinism. Anything other than a
+# fixed value would make reruns over identical inputs differ in the zip's
+# local-file headers.
 _DETERMINISTIC_ZIP_MTIME = (1980, 1, 1, 0, 0, 0)
 
 
 def write_deterministic_zip(entries: list[tuple[str, bytes]]) -> bytes:
-    """Build a zip with pinned mtimes for byte-identical reruns (D12).
+    """Build a zip with pinned mtimes for byte-identical reruns.
 
     Entry order is preserved as given. Each entry's date_time is pinned to
     _DETERMINISTIC_ZIP_MTIME so two invocations over identical inputs produce
@@ -293,7 +293,7 @@ def build_zip_bytes(
     metadata: EpisodeMetadata,
     replay: PaintArenaReplay,
 ) -> bytes:
-    """Build the D12 output zip: summary.md (rendered), stats.json (download),
+    """Build the output zip: summary.md (rendered), stats.json (download),
     render.txt (single line: `summary.md`)."""
     stats = build_stats(results, metadata, replay.config)
     summary_md = render_summary_markdown(stats).encode("utf-8")
