@@ -69,6 +69,18 @@ def test_canonical_among_them_build_declares_role_starter_contexts() -> None:
     assert "WORLD_CONTEXT" not in compose_text
 
 
+def test_canonical_cogs_vs_clips_build_declares_game_context() -> None:
+    compose_text = (WORLDS / "cogs_vs_clips" / "compose.yaml").read_text(encoding="utf-8")
+    dockerfile_text = (WORLDS / "cogs_vs_clips" / "Dockerfile.game").read_text(encoding="utf-8")
+
+    assert "GAME_CONTEXT" in compose_text
+    assert "games/games/cogsguard" in compose_text
+    assert "additional_contexts:" in compose_text
+    assert "cogsguard:" in compose_text
+    assert "COPY --from=cogsguard . /tmp/cogsguard" in dockerfile_text
+    assert "cogame-cogsguard.git" not in dockerfile_text
+
+
 def test_canonical_world_compose_files_build_manifest_images() -> None:
     for template_path in _world_templates():
         template = json.loads(template_path.read_text(encoding="utf-8"))
