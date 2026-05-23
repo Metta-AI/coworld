@@ -47,13 +47,11 @@ def validate_coworld_manifest_game_configs(manifest: CoworldManifest) -> int:
         raise ValueError("certification.players must match game.config_schema token count")
 
     tokens = [f"token-{slot}" for slot in range(token_count)]
-    for index, variant in enumerate(manifest.variants):
+    for variant in manifest.variants:
         validate_json_schema(
             game_config_with_tokens(variant.game_config, tokens),
             manifest.game.config_schema,
         )
-        if variant.parent_id is not None and variant.parent_id not in {v.id for v in manifest.variants}:
-            raise ValueError(f"unknown variants[{index}].parent_id: {variant.parent_id!r}")
 
     validate_json_schema(
         game_config_with_tokens(manifest.certification.game_config, tokens),

@@ -102,7 +102,6 @@ class CoworldVariant(BaseModel):
     id: str = Field(min_length=1)
     name: str = Field(min_length=1)
     game_config: dict[str, Any]
-    parent_id: str | None = Field(default=None, min_length=1)
     description: str = Field(min_length=1)
 
 
