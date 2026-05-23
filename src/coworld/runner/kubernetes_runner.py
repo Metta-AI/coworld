@@ -267,6 +267,7 @@ def _create_player_pod(
 ) -> None:
     command, args = _command_args(player.run)
     player_env = dict(player.env) | dict(policy_secret_env)
+    player_ws_url = _player_service_ws_url(service_name, slot, token)
     pod = client.V1Pod(
         metadata=client.V1ObjectMeta(
             name=name,
@@ -293,10 +294,8 @@ def _create_player_pod(
                     args=args,
                     env=[
                         *_env_vars(player_env),
-                        client.V1EnvVar(
-                            name="COWORLD_PLAYER_WS_URL",
-                            value=_player_service_ws_url(service_name, slot, token),
-                        ),
+                        client.V1EnvVar(name="COWORLD_PLAYER_WS_URL", value=player_ws_url),
+                        client.V1EnvVar(name="COGAMES_ENGINE_WS_URL", value=player_ws_url),
                     ],
                     resources=client.V1ResourceRequirements(
                         requests={"cpu": player_cpu_request, "memory": player_memory_request}

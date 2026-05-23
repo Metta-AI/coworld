@@ -332,6 +332,8 @@ def run_episode_containers(spec: EpisodeRunSpec, *, verify_replay: bool = True) 
                                 *secret_env_key_args,
                                 "-e",
                                 f"COWORLD_PLAYER_WS_URL={engine_ws_url}",
+                                "-e",
+                                f"COGAMES_ENGINE_WS_URL={engine_ws_url}",
                                 *_image_command(player),
                             ],
                             stdout=player_log,

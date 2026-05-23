@@ -218,6 +218,8 @@ def play_coworld(
                                 *secret_env_args,
                                 "-e",
                                 f"COWORLD_PLAYER_WS_URL={engine_ws_url}",
+                                "-e",
+                                f"COGAMES_ENGINE_WS_URL={engine_ws_url}",
                                 *_image_command(player),
                             ],
                             stdout=player_log,

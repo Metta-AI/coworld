@@ -592,6 +592,7 @@ def test_create_player_pod_injects_policy_secret_env(monkeypatch):
     assert env["ANTHROPIC_API_KEY"] == "sk-ant-test"
     assert env["USE_BEDROCK"] == "true"
     assert env["COWORLD_PLAYER_WS_URL"] == "ws://game-service:8080/player?slot=0&token=slot-token"
+    assert env["COGAMES_ENGINE_WS_URL"] == "ws://game-service:8080/player?slot=0&token=slot-token"
     assert container.resources.requests == {"cpu": "2", "memory": "2Gi"}
     assert pod.metadata.annotations == {"karpenter.sh/do-not-disrupt": "true"}
     assert pod.spec.node_selector == {"workload-type": "jobs", "karpenter.sh/capacity-type": "on-demand"}
