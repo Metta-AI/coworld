@@ -5,7 +5,7 @@ the current machine, waits for the episode to finish, and writes results, replay
 
 The runner creates or reuses one Docker network named `coworld-local`. Game containers publish browser/debug routes on
 `127.0.0.1:<port>` and also join that network as `coworld-game-<run-id>`. Player containers join the same network and
-receive `COGAMES_ENGINE_WS_URL=ws://coworld-game-<run-id>:8080/player?...`.
+receive `COWORLD_PLAYER_WS_URL=ws://coworld-game-<run-id>:8080/player?...`.
 
 Use it through the public CLI:
 

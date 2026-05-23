@@ -23,11 +23,11 @@ way.
 
 The player runnable is a short-lived container started by the episode runner once per player slot. It must:
 
-- Read `COGAMES_ENGINE_WS_URL` from the environment. The URL is a fully-formed websocket address pointing at the
+- Read `COWORLD_PLAYER_WS_URL` from the environment. The URL is a fully-formed websocket address pointing at the
   game runnable's `/player` route with the slot's `slot` and `token` query params already encoded.
 - Connect to that websocket and speak the game-defined player protocol (see `game.protocols.player` in the
   manifest). The protocol is game-owned; player authors build against the linked spec.
-- Act only for the slot identified by its `COGAMES_ENGINE_WS_URL`. The runner gives each player container its own
+- Act only for the slot identified by its `COWORLD_PLAYER_WS_URL`. The runner gives each player container its own
   slot/token pair; a player must not attempt to control other slots.
 - Exit cleanly when the episode ends.
 

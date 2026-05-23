@@ -149,7 +149,7 @@ def test_require_http_ok_accepts_replay_client_redirect(monkeypatch):
     runner_module._require_http_ok("http://example.test/client/replay", allow_redirect=True)
 
 
-def test_run_cogame_episode_uses_docker_dns_and_omits_empty_policy_names_env(tmp_path, monkeypatch):
+def test_run_episode_containers_uses_docker_dns_and_omits_empty_policy_names_env(tmp_path, monkeypatch):
     commands: list[list[str]] = []
     run_commands: list[list[str]] = []
 
@@ -180,9 +180,9 @@ def test_run_cogame_episode_uses_docker_dns_and_omits_empty_policy_names_env(tmp
     monkeypatch.setattr(runner_module.subprocess, "Popen", fake_popen)
     monkeypatch.setattr(runner_module.subprocess, "run", fake_run)
 
-    runner_module.run_cogame_episode(
+    runner_module.run_episode_containers(
         EpisodeRunSpec(
-            cogame=RunnableLaunchSpec(image="game:latest"),
+            game=RunnableLaunchSpec(image="game:latest"),
             players=[PlayerLaunchSpec(image="player:latest", env={"PLAYER_MODE": "test"})],
             tokens=["token-0"],
             policy_names=[],
@@ -195,7 +195,7 @@ def test_run_cogame_episode_uses_docker_dns_and_omits_empty_policy_names_env(tmp
 
     game_command, player_command = commands
     env_values = [value for index, value in enumerate(game_command) if index > 0 and game_command[index - 1] == "-e"]
-    assert all(not value.startswith("COGAMES_POLICY_NAMES=") for value in env_values)
+    assert all(not value.startswith("COWORLD_POLICY_NAMES=") for value in env_values)
     assert run_commands[0] == ["docker", "network", "inspect", runner_module.LOCAL_DOCKER_NETWORK]
     assert "coworld-run-game-session-1" in game_command
     assert "coworld-run-player-session-1-0" in player_command
@@ -207,7 +207,7 @@ def test_run_cogame_episode_uses_docker_dns_and_omits_empty_policy_names_env(tmp
     assert player_command[player_command.index("--network") + 1] == runner_module.LOCAL_DOCKER_NETWORK
     assert "--add-host" not in player_command
     assert "host.docker.internal:host-gateway" not in player_command
-    assert "COGAMES_ENGINE_WS_URL=ws://coworld-game-session-1:8080/player?slot=0&token=token-0" in player_command
+    assert "COWORLD_PLAYER_WS_URL=ws://coworld-game-session-1:8080/player?slot=0&token=token-0" in player_command
 
 
 def test_ensure_local_docker_network_reuses_existing_network(monkeypatch):
@@ -591,7 +591,7 @@ def test_create_player_pod_injects_policy_secret_env(monkeypatch):
     assert env["PUBLIC_SETTING"] == "visible"
     assert env["ANTHROPIC_API_KEY"] == "sk-ant-test"
     assert env["USE_BEDROCK"] == "true"
-    assert env["COGAMES_ENGINE_WS_URL"] == "ws://game-service:8080/player?slot=0&token=slot-token"
+    assert env["COWORLD_PLAYER_WS_URL"] == "ws://game-service:8080/player?slot=0&token=slot-token"
     assert container.resources.requests == {"cpu": "2", "memory": "2Gi"}
     assert pod.metadata.annotations == {"karpenter.sh/do-not-disrupt": "true"}
     assert pod.spec.node_selector == {"workload-type": "jobs", "karpenter.sh/capacity-type": "on-demand"}

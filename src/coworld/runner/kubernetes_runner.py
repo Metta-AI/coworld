@@ -294,7 +294,7 @@ def _create_player_pod(
                     env=[
                         *_env_vars(player_env),
                         client.V1EnvVar(
-                            name="COGAMES_ENGINE_WS_URL",
+                            name="COWORLD_PLAYER_WS_URL",
                             value=_player_service_ws_url(service_name, slot, token),
                         ),
                     ],

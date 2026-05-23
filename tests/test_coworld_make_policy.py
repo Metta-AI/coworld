@@ -21,7 +21,6 @@ def test_make_policy_writes_among_them_starter_project(tmp_path: Path) -> None:
     )
     assert (output / "amongthemstarter.nim").read_bytes() == expected_source
     assert (output / "README.md").is_file()
-    assert (output / "coplayer_manifest.json").is_file()
     assert (output / ".dockerignore").is_file()
 
     dockerfile = (output / "Dockerfile").read_text(encoding="utf-8")

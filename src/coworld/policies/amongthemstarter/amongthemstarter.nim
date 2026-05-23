@@ -4544,7 +4544,7 @@ when isMainModule and not defined(italkalotLibrary):
     gui = false
     name = ""
     mapPath = ""
-    url = getEnv("COGAMES_ENGINE_WS_URL")
+    url = getEnv("COWORLD_PLAYER_WS_URL")
     token = ""
     slot = -1
     exitOnDisconnect = url.len > 0

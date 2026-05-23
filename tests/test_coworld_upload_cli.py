@@ -31,7 +31,7 @@ def test_upload_coworld_posts_standalone_manifest(
     manifest_path = _write_manifest(tmp_path)
     certification_calls: list[tuple[Path, float]] = []
     image_id = "img_00000000-0000-0000-0000-000000000010"
-    softmax_image_uri = "123456789012.dkr.ecr.us-east-1.amazonaws.com/cogames/user/unit-test-runtime@sha256:digest"
+    softmax_image_uri = "123456789012.dkr.ecr.us-east-1.amazonaws.com/coworld/user/unit-test-runtime@sha256:digest"
     pushed_images: list[tuple[str, str]] = []
     hashed_images: list[str] = []
 
@@ -70,9 +70,9 @@ def test_upload_coworld_posts_standalone_manifest(
                 "kind": "ecr",
                 "region": "us-east-1",
                 "registry": "123456789012.dkr.ecr.us-east-1.amazonaws.com",
-                "repository": "cogames/user/unit-test-runtime",
+                "repository": "coworld/user/unit-test-runtime",
                 "tag": "v1",
-                "image_uri": "123456789012.dkr.ecr.us-east-1.amazonaws.com/cogames/user/unit-test-runtime:v1",
+                "image_uri": "123456789012.dkr.ecr.us-east-1.amazonaws.com/coworld/user/unit-test-runtime:v1",
                 "expires_at": "2026-05-06T22:00:00Z",
                 "credentials": {
                     "access_key_id": "access-key",
@@ -130,7 +130,7 @@ def test_upload_coworld_posts_standalone_manifest(
     assert pushed_images == [
         (
             "unit-test-runtime:latest",
-            "123456789012.dkr.ecr.us-east-1.amazonaws.com/cogames/user/unit-test-runtime:v1",
+            "123456789012.dkr.ecr.us-east-1.amazonaws.com/coworld/user/unit-test-runtime:v1",
         ),
     ]
     upload_req = next(req for req, _ in httpserver.log if req.path == "/observatory/v2/coworlds/upload")
@@ -155,7 +155,7 @@ def test_upload_coworld_command_certifies_before_uploading(
     manifest_path = _write_manifest(tmp_path)
     certification_calls: list[tuple[Path, float]] = []
     image_id = "img_00000000-0000-0000-0000-000000000020"
-    softmax_image_uri = "123456789012.dkr.ecr.us-east-1.amazonaws.com/cogames/user/unit-test-runtime@sha256:digest"
+    softmax_image_uri = "123456789012.dkr.ecr.us-east-1.amazonaws.com/coworld/user/unit-test-runtime@sha256:digest"
 
     monkeypatch.setattr("coworld.upload._load_current_cogames_token", lambda: "token")
     monkeypatch.setattr(
@@ -212,7 +212,7 @@ def test_upload_policy_command_creates_docker_image_policy(
     httpserver: HTTPServer,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    softmax_image_uri = "123456789012.dkr.ecr.us-east-1.amazonaws.com/cogames/user/unit-test-policy@sha256:digest"
+    softmax_image_uri = "123456789012.dkr.ecr.us-east-1.amazonaws.com/coworld/user/unit-test-policy@sha256:digest"
 
     monkeypatch.setattr("coworld.upload._load_current_cogames_token", lambda: "token")
     monkeypatch.setattr("coworld.upload._local_image_client_hash", lambda image: "sha256:client-hash")
@@ -272,7 +272,7 @@ def test_upload_policy_command_sends_policy_secrets(
     httpserver: HTTPServer,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    softmax_image_uri = "123456789012.dkr.ecr.us-east-1.amazonaws.com/cogames/user/unit-test-policy@sha256:digest"
+    softmax_image_uri = "123456789012.dkr.ecr.us-east-1.amazonaws.com/coworld/user/unit-test-policy@sha256:digest"
 
     monkeypatch.setattr("coworld.upload._load_current_cogames_token", lambda: "token")
     monkeypatch.setattr("coworld.upload._local_image_client_hash", lambda image: "sha256:client-hash")
@@ -621,7 +621,7 @@ def test_download_coworld_command_writes_local_package(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     coworld_id = "cow_00000000-0000-0000-0000-000000000040"
-    public_image_uri = "public.ecr.aws/softmax/cogames@sha256:public-digest"
+    public_image_uri = "public.ecr.aws/softmax/coworld@sha256:public-digest"
     output_dir = tmp_path / "downloaded"
     docker_calls: list[list[str]] = []
     docker_envs: list[dict[str, str] | None] = []
@@ -687,7 +687,7 @@ def test_download_coworld_command_resolves_canonical_name(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     coworld_id = "cow_00000000-0000-0000-0000-000000000040"
-    public_image_uri = "public.ecr.aws/softmax/cogames@sha256:public-digest"
+    public_image_uri = "public.ecr.aws/softmax/coworld@sha256:public-digest"
     output_dir = tmp_path / "downloaded"
     docker_calls: list[list[str]] = []
 
@@ -788,7 +788,7 @@ def test_download_coworld_command_refreshes_cached_coworld(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     coworld_id = "cow_00000000-0000-0000-0000-000000000040"
-    public_image_uri = "public.ecr.aws/softmax/cogames@sha256:public-digest"
+    public_image_uri = "public.ecr.aws/softmax/coworld@sha256:public-digest"
     output_dir = tmp_path / "downloaded"
     cached_dir = output_dir / coworld_id
     cached_dir.mkdir(parents=True)
@@ -1018,8 +1018,8 @@ def _manifest() -> dict[str, object]:
         "game": {
             "name": "unit-test-game",
             "version": "0.1.0",
-            "description": "Unit test Cogame manifest.",
-            "owner": "cogames@softmax.com",
+            "description": "Unit test Coworld manifest.",
+            "owner": "coworld@softmax.com",
             "runnable": {
                 "type": "game",
                 "image": "unit-test-runtime:latest",

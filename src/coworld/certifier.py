@@ -30,7 +30,7 @@ from coworld.types import (
 
 
 @dataclass(frozen=True)
-class CogameProtocolDocs:
+class CoworldProtocolDocs:
     player: CoworldDoc
     global_: CoworldDoc
 
@@ -39,10 +39,10 @@ class CogameProtocolDocs:
 class CoworldPackage:
     manifest_path: Path
     manifest: CoworldManifest
-    cogame: RunnableLaunchSpec
+    game: RunnableLaunchSpec
     config_schema: JsonSchema
     results_schema: JsonSchema
-    protocols: CogameProtocolDocs
+    protocols: CoworldProtocolDocs
 
 
 @dataclass(frozen=True)
@@ -63,10 +63,10 @@ def load_coworld_package(manifest_path: Path) -> CoworldPackage:
     package = CoworldPackage(
         manifest_path=manifest_path,
         manifest=typed_manifest,
-        cogame=RunnableLaunchSpec.from_model(typed_manifest.game.runnable),
+        game=RunnableLaunchSpec.from_model(typed_manifest.game.runnable),
         config_schema=typed_manifest.game.config_schema,
         results_schema=typed_manifest.game.results_schema,
-        protocols=CogameProtocolDocs(
+        protocols=CoworldProtocolDocs(
             player=typed_manifest.game.protocols.player,
             global_=typed_manifest.game.protocols.global_,
         ),
@@ -200,7 +200,7 @@ def certify_coworld(
 
 
 def _image_references(package: CoworldPackage) -> list[tuple[str, str]]:
-    references = [("Cogame runnable.image", package.cogame.image)]
+    references = [("game.runnable.image", package.game.image)]
     references.extend(
         (f"Certification players[{slot}].image", player.image)
         for slot, player in enumerate(_certification_player_specs(package))

@@ -223,7 +223,7 @@ in `examples/paintarena/game/client/` (in this package) and `worlds/cogs_vs_clip
 5. The game reads its config and starts listening on port 8080.
 6. The runner waits for `GET /healthz` to return 200.
 7. The runner starts one player container per slot.
-8. Each player gets `COGAMES_ENGINE_WS_URL=ws://<engine-host>/player?slot=<slot>&token=<token>` and,
+8. Each player gets `COWORLD_PLAYER_WS_URL=ws://<engine-host>/player?slot=<slot>&token=<token>` and,
    optionally, `COGAME_LOG_URI=...` with the same posting contract as the game.
 9. Players connect to `/player` and send game-specific actions.
 10. Viewers may connect to `/global`.

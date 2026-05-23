@@ -177,7 +177,7 @@ def test_cogs_vs_clips_global_action_updates_policy_action(tmp_path: Path) -> No
 
 
 def test_cogs_vs_clips_global_messages_include_policy_names(tmp_path: Path, monkeypatch) -> None:
-    monkeypatch.setenv("COGAMES_POLICY_NAMES", json.dumps(["slanky:v194", "slinky:v19"]))
+    monkeypatch.setenv("COWORLD_POLICY_NAMES", json.dumps(["slanky:v194", "slinky:v19"]))
     game = _new_game(tmp_path)
 
     message = game.global_baseline_message()
@@ -187,7 +187,7 @@ def test_cogs_vs_clips_global_messages_include_policy_names(tmp_path: Path, monk
 
 
 def test_cogs_vs_clips_records_compact_mettascope_replay(tmp_path: Path, monkeypatch) -> None:
-    monkeypatch.setenv("COGAMES_POLICY_NAMES", json.dumps(["slanky:v194", "slinky:v19"]))
+    monkeypatch.setenv("COWORLD_POLICY_NAMES", json.dumps(["slanky:v194", "slinky:v19"]))
     server_module = _load_cogs_vs_clips_server_module()
     replay_path = tmp_path / "replay.json"
     game = server_module.CogsVsClipsGame(

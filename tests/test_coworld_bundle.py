@@ -244,7 +244,7 @@ def _write_manifest(
                     "name": "unit-test-game",
                     **({"version": "0.1.0"} if include_version else {}),
                     "description": "Unit test Coworld.",
-                    "owner": "cogames@softmax.com",
+                    "owner": "coworld@softmax.com",
                     "runnable": {"type": "game", "image": game_image},
                     "config_schema": {
                         "$schema": "https://json-schema.org/draft/2020-12/schema",

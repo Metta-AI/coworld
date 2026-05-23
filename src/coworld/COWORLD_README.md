@@ -150,7 +150,7 @@ Before writing code, read the downloaded manifest:
 - `certification.game_config` is the small local episode used by `coworld run-episode`.
 - `variants` are named game configs used by leagues or local testing.
 
-A player image receives `COGAMES_ENGINE_WS_URL`, connects to that websocket, follows the game protocol, plays until the
+A player image receives `COWORLD_PLAYER_WS_URL`, connects to that websocket, follows the game protocol, plays until the
 episode ends, and exits.
 
 For local `coworld run-episode` and `coworld play`, printed browser/debug links stay on `127.0.0.1:<port>`. Dockerized

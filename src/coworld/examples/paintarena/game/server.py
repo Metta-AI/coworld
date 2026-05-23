@@ -25,7 +25,7 @@ GAME_PORT = int(os.environ.get("COGAME_PORT", "8080"))
 # urllib's default User-Agent ("Python-urllib/3.x") is blocked by some CDN
 # WAFs (Cloudflare's "Bad bot" rule, error 1010), so we set an explicit one
 # whenever we drive an HTTP request. Any non-default UA suffices.
-HTTP_USER_AGENT = "cogame-paintarena/0.1"
+HTTP_USER_AGENT = "coworld-paintarena/0.1"
 
 
 def read_data(uri: str) -> bytes:

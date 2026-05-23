@@ -55,7 +55,7 @@ downloads the Coworld into that directory first.
 
 Local browser/debug URLs printed by `coworld play`, `coworld replay`, and `coworld run-episode` use
 `127.0.0.1:<port>`. Player containers do not connect back through the host; local runs attach the game and players to
-Docker's private `coworld-local` network and give players a `COGAMES_ENGINE_WS_URL` under `coworld-game-<run-id>:8080`.
+Docker's private `coworld-local` network and give players a `COWORLD_PLAYER_WS_URL` under `coworld-game-<run-id>:8080`.
 Linux Docker Engine users should not need UFW or `docker0` firewall changes for local Coworld episodes.
 
 If the image needs a specific player command:

@@ -2,8 +2,8 @@
   "$schema": "https://raw.githubusercontent.com/Metta-AI/coworld/main/src/coworld/coworld_manifest_schema.json",
   "game": {
     "name": "paintarena",
-    "description": "Continuous tick-based territory painting Cogame used to certify the Coworld contract.",
-    "owner": "cogames@softmax.com",
+    "description": "Continuous tick-based territory painting game used to certify the Coworld contract.",
+    "owner": "coworld@softmax.com",
     "runnable": {
       "type": "game",
       "image": "{{PAINTARENA_IMAGE}}",

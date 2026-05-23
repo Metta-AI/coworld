@@ -27,7 +27,6 @@ STARTER_POLICIES = {
             "amongthemstarter/amongthemstarter.nim": "amongthemstarter.nim",
             "amongthemstarter/Dockerfile.amongthemstarter": "Dockerfile",
             "amongthemstarter/.dockerignore": ".dockerignore",
-            "amongthemstarter/coplayer_manifest.json": "coplayer_manifest.json",
             "amongthemstarter/README.md": "README.md",
         },
     ),

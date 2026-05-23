@@ -582,7 +582,7 @@ def test_play_coworld_starts_certification_player_containers(tmp_path: Path, mon
     assert "--add-host" not in player_command
     assert "host.docker.internal:host-gateway" not in player_command
     assert "PLAYER_MODE=test" in player_command
-    assert "COGAMES_ENGINE_WS_URL=ws://coworld-game-session-1:8080/player?slot=0&token=token-0" in player_command
+    assert "COWORLD_PLAYER_WS_URL=ws://coworld-game-session-1:8080/player?slot=0&token=token-0" in player_command
     assert _image_command_slice(player_command) == [
         "--entrypoint",
         "python",
@@ -1058,7 +1058,7 @@ def test_replay_coworld_verify_replay_does_not_call_on_ready_until_probe_succeed
 
 def test_runnable_run_overrides_docker_entrypoint(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     package = _write_package(tmp_path)
-    game_command = _image_command(package.cogame)
+    game_command = _image_command(package.game)
     player = build_player_launch_specs(build_episode_request(package, EpisodeArtifacts.create(tmp_path / "cert")))[0]
     player_command = _image_command(player)
 
@@ -1069,8 +1069,8 @@ def test_runnable_run_overrides_docker_entrypoint(tmp_path: Path, monkeypatch: p
 def test_example_coworld_manifest_validates(tmp_path: Path) -> None:
     package = load_coworld_package(_materialized_template(tmp_path, _example_root() / "coworld_manifest_template.json"))
     config = build_game_config(package, ["token-0", "token-1"])
-    assert package.cogame.image == "coworld-paintarena:latest"
-    assert package.cogame.run == ("python", "-m", "coworld.examples.paintarena.game.server")
+    assert package.game.image == "coworld-paintarena:latest"
+    assert package.game.run == ("python", "-m", "coworld.examples.paintarena.game.server")
     assert (
         package.manifest.game.protocols.player.value
         == "https://github.com/Metta-AI/coworld/blob/main/src/coworld/examples/paintarena/game/docs/player_protocol_spec.md"
@@ -1204,17 +1204,17 @@ def test_cogs_vs_clips_coworld_manifest_validates(tmp_path: Path) -> None:
     config = build_game_config(package, tokens)
 
     assert package.manifest.game.name == "cogs_vs_clips"
-    assert package.cogame.image == "coworld-cogs-vs-clips-game:latest"
-    assert package.cogame.run == ("python", "/app/server.py")
+    assert package.game.image == "coworld-cogs-vs-clips-game:latest"
+    assert package.game.run == ("python", "/app/server.py")
     assert package.manifest.game.protocols.player.value == "https://softmax.com/cogs_vs_clips_player_protocol.md"
     assert package.manifest.game.protocols.global_.value == "https://softmax.com/cogs_vs_clips_global_protocol.md"
     assert package.manifest.game.docs is not None
     assert package.manifest.game.docs.pages[0].id == "rules.md"
     assert package.manifest.game.docs.pages[1].id == "play_cogsvsclips.md"
     assert package.manifest.game.docs.pages[1].content.value == "https://softmax.com/play_cogsvsclips.md"
-    assert package.manifest.player[0].id == "starter-policy-player"
-    assert package.manifest.player[0].image == "coworld-mettagrid-policy-player:latest"
-    assert package.manifest.player[0].run == ["python", "/app/coworld_policy_player.py"]
+    assert package.manifest.player[0].id == "reference-player"
+    assert package.manifest.player[0].image == "coworld-cogs-vs-clips-reference-player:latest"
+    assert package.manifest.player[0].run == ["python", "/app/coworld_reference_player.py"]
     assert package.manifest.player[0].env == {}
     daily_variant = next(variant for variant in package.manifest.variants if variant.id == "machina-1-daily")
     assert daily_variant.game_config["max_steps"] == 10000
@@ -1384,7 +1384,7 @@ def _materialized_template(tmp_path: Path, template_path: Path) -> Path:
     image_placeholders = {
         "cogs_vs_clips": {
             "{{GAME_IMAGE}}": "coworld-cogs-vs-clips-game:latest",
-            "{{PLAYER_IMAGE}}": "coworld-mettagrid-policy-player:latest",
+            "{{PLAYER_IMAGE}}": "coworld-cogs-vs-clips-reference-player:latest",
         },
         "paintarena": {"{{PAINTARENA_IMAGE}}": "coworld-paintarena:latest"},
     }
@@ -1446,8 +1446,8 @@ def _game_manifest(*, config_schema_required: list[str] | None = None) -> dict[s
     return {
         "name": "unit-test-game",
         "version": "0.1.0",
-        "description": "Unit test Cogame manifest.",
-        "owner": "cogames@softmax.com",
+        "description": "Unit test Coworld manifest.",
+        "owner": "coworld@softmax.com",
         "runnable": {
             "type": "game",
             "image": "unit-test-runtime:latest",

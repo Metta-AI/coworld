@@ -114,12 +114,12 @@ The coordinator creates one pod per player:
 - command/args: `players[].run`
 - env: `players[].env`
 - resource requests: 2 CPU and 2Gi memory by default
-- `COGAMES_ENGINE_WS_URL`: points at the parent game's Kubernetes Service.
+- `COWORLD_PLAYER_WS_URL`: points at the parent game's Kubernetes Service.
 
 The player query string includes only the generated slot token and slot index.
 
 The `address` query parameter is only for browser client pages served through an HTTP proxy, such as hosted play. The
-Kubernetes runner does not use `address` for policy containers: `COGAMES_ENGINE_WS_URL` is the direct game websocket URL
+Kubernetes runner does not use `address` for policy containers: `COWORLD_PLAYER_WS_URL` is the direct game websocket URL
 and already includes the required `slot` and `token` query params.
 
 ## Game Container URIs

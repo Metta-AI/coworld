@@ -13,7 +13,7 @@ logger = get_logger("paintarena.player")
 
 
 async def main() -> None:
-    url = os.environ["COGAMES_ENGINE_WS_URL"]
+    url = os.environ["COWORLD_PLAYER_WS_URL"]
     logger.info("connecting to %s", url)
     async with websockets.connect(url) as websocket:
         async for raw_message in websocket:

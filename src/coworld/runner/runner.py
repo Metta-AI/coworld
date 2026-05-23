@@ -32,7 +32,6 @@ GAME_HOST_ENV_VAR = "COGAME_HOST"
 GAME_PORT_ENV_VAR = "COGAME_PORT"
 GAME_HOST = "0.0.0.0"
 GAME_PORT = 8080
-POLICY_NAMES_ENV_VAR = "COGAMES_POLICY_NAMES"
 LOCAL_DOCKER_NETWORK = "coworld-local"
 LOCAL_GAME_NETWORK_ALIAS_PREFIX = "coworld-game-"
 LOCAL_EPISODE_CONTAINER_PREFIX = "coworld-cert"
@@ -81,7 +80,7 @@ class EpisodeArtifacts:
 
 @dataclass(frozen=True)
 class EpisodeRunSpec:
-    cogame: RunnableLaunchSpec
+    game: RunnableLaunchSpec
     players: list[PlayerLaunchSpec]
     tokens: list[str]
     policy_names: list[str] | None
@@ -155,7 +154,7 @@ def _assert_linux_amd64_image(image: str, *, label: str, inspect_stdout: str) ->
 
 
 def assert_episode_images_reachable(job: CoworldEpisodeJobSpec) -> None:
-    assert_docker_image_reachable(job.game_runnable.image, label="Cogame runnable.image")
+    assert_docker_image_reachable(job.game_runnable.image, label="game.runnable.image")
     for slot, player in enumerate(job.players):
         assert_docker_image_reachable(player.image, label=f"players[{slot}].image")
 
@@ -174,7 +173,7 @@ def run_coworld_episode(
     write_coworld_game_config(job, artifacts, tokens)
 
     run_spec = EpisodeRunSpec(
-        cogame=RunnableLaunchSpec.from_model(job.game_runnable),
+        game=RunnableLaunchSpec.from_model(job.game_runnable),
         players=[PlayerLaunchSpec.from_model(player) for player in job.players],
         tokens=tokens,
         policy_names=job.policy_names,
@@ -183,7 +182,7 @@ def run_coworld_episode(
         container_prefix=container_prefix,
         secret_env=secret_env or {},
     )
-    run_cogame_episode(run_spec, verify_replay=verify_replay)
+    run_episode_containers(run_spec, verify_replay=verify_replay)
 
     results = json.loads(artifacts.results_path.read_text(encoding="utf-8"))
     validate_json_schema(results, job.results_schema)
@@ -255,7 +254,7 @@ def ensure_local_docker_network() -> None:
         raise RuntimeError(f"Failed to create Docker network {LOCAL_DOCKER_NETWORK}.\n{create_result.stderr[-2000:]}")
 
 
-def run_cogame_episode(spec: EpisodeRunSpec, *, verify_replay: bool = True) -> None:
+def run_episode_containers(spec: EpisodeRunSpec, *, verify_replay: bool = True) -> None:
     port = _free_local_port()
     run_id = secrets.token_hex(8)
     game_network_alias = f"{LOCAL_GAME_NETWORK_ALIAS_PREFIX}{run_id}"
@@ -282,7 +281,7 @@ def run_cogame_episode(spec: EpisodeRunSpec, *, verify_replay: bool = True) -> N
                     game_network_alias,
                     "-p",
                     f"127.0.0.1:{port}:{GAME_PORT}",
-                    *_env_args(spec.cogame.env),
+                    *_env_args(spec.game.env),
                     "-e",
                     f"{GAME_HOST_ENV_VAR}={GAME_HOST}",
                     "-e",
@@ -293,10 +292,10 @@ def run_cogame_episode(spec: EpisodeRunSpec, *, verify_replay: bool = True) -> N
                     f"{RESULTS_ENV_VAR}=file://{CONTAINER_WORKDIR}/results.json",
                     "-e",
                     f"{REPLAY_SAVE_ENV_VAR}=file://{CONTAINER_WORKDIR}/replay.json",
-                    *_env_args({POLICY_NAMES_ENV_VAR: json.dumps(spec.policy_names)} if spec.policy_names else {}),
+                    *_env_args({"COWORLD_POLICY_NAMES": json.dumps(spec.policy_names)} if spec.policy_names else {}),
                     "-v",
                     f"{spec.artifacts.workspace.resolve()}:{CONTAINER_WORKDIR}:rw",
-                    *_image_command(spec.cogame),
+                    *_image_command(spec.game),
                 ],
                 stdout=game_stdout,
                 stderr=game_stderr,
@@ -332,7 +331,7 @@ def run_cogame_episode(spec: EpisodeRunSpec, *, verify_replay: bool = True) -> N
                                 *_env_args(player.env),
                                 *secret_env_key_args,
                                 "-e",
-                                f"COGAMES_ENGINE_WS_URL={engine_ws_url}",
+                                f"COWORLD_PLAYER_WS_URL={engine_ws_url}",
                                 *_image_command(player),
                             ],
                             stdout=player_log,
@@ -364,7 +363,7 @@ def run_cogame_episode(spec: EpisodeRunSpec, *, verify_replay: bool = True) -> N
                     replay_container,
                     "-p",
                     f"127.0.0.1:{replay_port}:{GAME_PORT}",
-                    *_env_args(spec.cogame.env),
+                    *_env_args(spec.game.env),
                     "-e",
                     f"{GAME_HOST_ENV_VAR}={GAME_HOST}",
                     "-e",
@@ -373,7 +372,7 @@ def run_cogame_episode(spec: EpisodeRunSpec, *, verify_replay: bool = True) -> N
                     f"{REPLAY_SERVER_ENV_VAR}=1",
                     "-v",
                     f"{spec.artifacts.workspace.resolve()}:{CONTAINER_WORKDIR}:rw",
-                    *_image_command(spec.cogame),
+                    *_image_command(spec.game),
                 ],
                 stdout=game_stdout,
                 stderr=game_stderr,

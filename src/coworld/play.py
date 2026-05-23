@@ -175,7 +175,7 @@ def play_coworld(
                     game_network_alias,
                     "-p",
                     f"127.0.0.1:{game_port}:{GAME_PORT}",
-                    *_env_args(package.cogame.env),
+                    *_env_args(package.game.env),
                     "-e",
                     f"{GAME_HOST_ENV_VAR}={GAME_HOST}",
                     "-e",
@@ -188,7 +188,7 @@ def play_coworld(
                     f"{REPLAY_SAVE_ENV_VAR}=file://{CONTAINER_WORKDIR}/replay.json",
                     "-v",
                     f"{artifacts.workspace.resolve()}:{CONTAINER_WORKDIR}:rw",
-                    *_image_command(package.cogame),
+                    *_image_command(package.game),
                 ],
                 stdout=game_stdout,
                 stderr=game_stderr,
@@ -217,7 +217,7 @@ def play_coworld(
                                 *_env_args(player.env),
                                 *secret_env_args,
                                 "-e",
-                                f"COGAMES_ENGINE_WS_URL={engine_ws_url}",
+                                f"COWORLD_PLAYER_WS_URL={engine_ws_url}",
                                 *_image_command(player),
                             ],
                             stdout=player_log,
@@ -288,7 +288,7 @@ def replay_coworld(
     on_ready: Callable[[ReplaySession], None],
 ) -> ReplaySession:
     package = load_coworld_package(manifest_path)
-    assert_docker_image_reachable(package.cogame.image, label="Cogame runnable.image")
+    assert_docker_image_reachable(package.game.image, label="game.runnable.image")
     replay_path = replay_path.resolve()
     if not replay_path.is_file():
         raise FileNotFoundError(f"Replay file does not exist or is not a file: {replay_path}")
@@ -315,7 +315,7 @@ def replay_coworld(
                     replay_container,
                     "-p",
                     f"127.0.0.1:{replay_port}:{GAME_PORT}",
-                    *_env_args(package.cogame.env),
+                    *_env_args(package.game.env),
                     "-e",
                     f"{GAME_HOST_ENV_VAR}={GAME_HOST}",
                     "-e",
@@ -324,7 +324,7 @@ def replay_coworld(
                     f"{REPLAY_SERVER_ENV_VAR}=1",
                     "-v",
                     f"{replay_path.parent}:/coworld-replay:ro",
-                    *_image_command(package.cogame),
+                    *_image_command(package.game),
                 ],
                 stdout=game_stdout,
                 stderr=game_stderr,

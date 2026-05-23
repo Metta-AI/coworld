@@ -27,7 +27,7 @@ class HttpLogHandler(logging.Handler):
             request.add_header("Content-Type", "text/plain")
             # Cloudflare's WAF blocks the default "Python-urllib/X.Y" UA with
             # error 1010 ("Bad bot"); any non-default UA suffices.
-            request.add_header("User-Agent", "cogame-paintarena/0.1")
+            request.add_header("User-Agent", "coworld-paintarena/0.1")
             with urlopen(request, timeout=10):
                 pass
         except Exception:

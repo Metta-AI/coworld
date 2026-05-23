@@ -26,8 +26,8 @@ from coworld.runner.runner import (
     EpisodeRunSpec,
     PlayerLaunchSpec,
     assert_docker_image_reachable,
-    run_cogame_episode,
     run_coworld_episode,
+    run_episode_containers,
 )
 from coworld.types import CoworldEpisodeJobSpec, CoworldPlayerSpec, CoworldRunnableSpec
 
@@ -55,7 +55,7 @@ __all__ = [
     "load_coworld_package",
     "play_coworld",
     "replay_coworld",
-    "run_cogame_episode",
+    "run_episode_containers",
     "run_coworld_episode",
     "validate_image_references",
 ]

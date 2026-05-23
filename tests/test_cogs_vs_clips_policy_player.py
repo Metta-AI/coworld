@@ -9,11 +9,6 @@ from typing import Any
 
 import pytest
 
-from mettagrid.config.id_map import ObservationFeatureSpec
-from mettagrid.policy.policy import AgentPolicy, MultiAgentPolicy
-from mettagrid.policy.policy_env_interface import PolicyEnvInterface
-from mettagrid.simulator import Action, AgentObservation
-
 POLICY_PLAYER_PATH = Path(__file__).resolve().parents[3] / "worlds" / "cogs_vs_clips" / "player" / "policy_player.py"
 
 policy_player_spec = importlib.util.spec_from_file_location("cogs_vs_clips_policy_player", POLICY_PLAYER_PATH)
@@ -22,28 +17,8 @@ policy_player = importlib.util.module_from_spec(policy_player_spec)
 assert policy_player_spec.loader is not None
 sys.modules[policy_player_spec.name] = policy_player
 policy_player_spec.loader.exec_module(policy_player)
-decode_triplet_observation = policy_player.decode_triplet_observation
-run_policy_player = policy_player.run_policy_player
-
-
-class FakeAgentPolicy(AgentPolicy):
-    def __init__(self):
-        super().__init__(_policy_env())
-        self._infos = {"intent": "north"}
-        self.observation: AgentObservation | None = None
-
-    def step(self, obs: AgentObservation) -> Action:
-        self.observation = obs
-        return Action("move_north")
-
-
-class FakePolicy(MultiAgentPolicy):
-    def __init__(self, agent_policy: FakeAgentPolicy):
-        super().__init__(_policy_env())
-        self._agent_policy = agent_policy
-
-    def agent_policy(self, _agent_id: int) -> FakeAgentPolicy:
-        return self._agent_policy
+ReferencePlayer = policy_player.ReferencePlayer
+run_reference_player = policy_player.run_reference_player
 
 
 class FakeWebSocket:
@@ -69,26 +44,29 @@ class FakeWebSocket:
         self.sent.append(json.loads(raw_message))
 
 
-def test_decode_triplet_observation_builds_agent_observation() -> None:
-    observation = decode_triplet_observation(
-        [(254, 1, 7), (255, 255, 255), (42, 1, 9)],
-        _policy_env(),
-        agent_id=3,
-    )
+def test_reference_player_prefers_noop() -> None:
+    player = ReferencePlayer()
+    player.configure(_player_config(action_names=["move_north", "noop"]))
 
-    assert observation.agent_id == 3
-    assert len(observation.tokens) == 1
-    token = observation.tokens[0]
-    assert token.feature.name == "energy"
-    assert token.value == 7
-    assert token.raw_token == (254, 1, 7)
+    assert player.action_for_observation(_observation()) == {
+        "type": "action",
+        "action_name": "noop",
+        "policy_infos": {"policy_name": "coworld-reference-player"},
+        "request_id": "step-4",
+    }
 
 
-def test_policy_player_uses_configured_policy_and_forwards_infos(monkeypatch: pytest.MonkeyPatch) -> None:
-    agent_policy = FakeAgentPolicy()
+def test_reference_player_rotates_when_noop_is_unavailable() -> None:
+    player = ReferencePlayer()
+    player.configure(_player_config(slot=1, action_names=["left", "right", "up"]))
+
+    assert player.action_for_observation(_observation(step=4))["action_name"] == "up"
+
+
+def test_reference_player_sends_actions(monkeypatch: pytest.MonkeyPatch) -> None:
     fake_websocket = FakeWebSocket(
         [
-            _player_config(),
+            _player_config(action_names=["noop", "move_north"]),
             _observation(),
             {"type": "final", "protocol": "coworld.player.v1"},
         ]
@@ -96,84 +74,48 @@ def test_policy_player_uses_configured_policy_and_forwards_infos(monkeypatch: py
 
     monkeypatch.setattr(policy_player.websockets, "connect", lambda _url: fake_websocket)
 
-    asyncio.run(
-        run_policy_player(
-            engine_ws_url="ws://engine/player?slot=0&token=token",
-            policy_uri="metta://policy/fake",
-            policy_factory=lambda _uri, _env, _device: FakePolicy(agent_policy),
-        )
-    )
+    asyncio.run(run_reference_player(player_ws_url="ws://engine/player?slot=0&token=token"))
 
     assert fake_websocket.sent == [
         {
             "type": "action",
-            "action_name": "move_north",
-            "policy_infos": {"intent": "north"},
+            "action_name": "noop",
+            "policy_infos": {"policy_name": "coworld-reference-player"},
             "request_id": "step-4",
         }
     ]
-    assert agent_policy.observation is not None
-    assert agent_policy.observation.agent_id == 0
 
 
-def test_policy_player_main_defaults_to_starter_policy(monkeypatch: pytest.MonkeyPatch) -> None:
-    captured: dict[str, Any] = {}
+def test_reference_player_main_uses_coworld_player_ws_url(monkeypatch: pytest.MonkeyPatch) -> None:
+    captured: list[str] = []
 
-    async def fake_run_policy_player(**kwargs: Any) -> None:
-        captured.update(kwargs)
+    async def fake_run_reference_player(*, player_ws_url: str) -> None:
+        captured.append(player_ws_url)
 
-    monkeypatch.setattr(policy_player, "run_policy_player", fake_run_policy_player)
-    monkeypatch.setenv("COGAMES_ENGINE_WS_URL", "ws://engine/player?slot=0&token=token")
-    monkeypatch.delenv("COGAMES_POLICY_URI", raising=False)
+    monkeypatch.setattr(policy_player, "run_reference_player", fake_run_reference_player)
+    monkeypatch.setenv("COWORLD_PLAYER_WS_URL", "ws://engine/player?slot=0&token=token")
 
     policy_player.main()
 
-    assert captured["policy_uri"] == "metta://policy/cogames.policy.starter_agent.StarterPolicy"
-    assert captured["engine_ws_url"] == "ws://engine/player?slot=0&token=token"
+    assert captured == ["ws://engine/player?slot=0&token=token"]
 
 
-def test_policy_player_main_respects_policy_uri_override(monkeypatch: pytest.MonkeyPatch) -> None:
-    captured: dict[str, Any] = {}
-
-    async def fake_run_policy_player(**kwargs: Any) -> None:
-        captured.update(kwargs)
-
-    monkeypatch.setattr(policy_player, "run_policy_player", fake_run_policy_player)
-    monkeypatch.setenv("COGAMES_ENGINE_WS_URL", "ws://engine/player?slot=0&token=token")
-    monkeypatch.setenv("COGAMES_POLICY_URI", "metta://policy/custom")
-
-    policy_player.main()
-
-    assert captured["policy_uri"] == "metta://policy/custom"
-
-
-def _player_config() -> dict[str, Any]:
+def _player_config(slot: int = 0, action_names: list[str] | None = None) -> dict[str, Any]:
     return {
         "type": "player_config",
         "protocol": "coworld.player.v1",
-        "slot": 0,
-        "connection_id": "player-0",
-        "action_names": ["noop", "move_north"],
-        "policy_env": _policy_env().model_dump(mode="json"),
+        "slot": slot,
+        "connection_id": f"player-{slot}",
+        "action_names": action_names or ["noop", "move_north"],
+        "policy_env": {},
     }
 
 
-def _observation() -> dict[str, Any]:
+def _observation(step: int = 4) -> dict[str, Any]:
     return {
         "type": "observation",
         "protocol": "coworld.player.v1",
         "slot": 0,
-        "step": 4,
+        "step": step,
         "observation": [(254, 1, 7), (255, 255, 255)],
     }
-
-
-def _policy_env() -> PolicyEnvInterface:
-    return PolicyEnvInterface(
-        obs_features=[ObservationFeatureSpec(id=1, name="energy", normalization=10.0)],
-        tags=[],
-        action_names=["noop", "move_north"],
-        num_agents=1,
-        observation_shape=(2, 3),
-        egocentric_shape=(1, 1),
-    )
