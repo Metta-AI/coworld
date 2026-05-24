@@ -1,42 +1,37 @@
 from __future__ import annotations
 
-from typing import Annotated, Any, Literal
+from typing import Annotated, Any, Literal, cast, get_args
 
 from packaging.version import Version
-from pydantic import BaseModel, ConfigDict, Field, model_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 SCHEMA_VERSION = "https://json-schema.org/draft/2020-12/schema"
 HTTP_URL_PATTERN = r"^https?://"
 JsonSchema = dict[str, Any]
-CoworldRunnableRole = Literal["player", "reporter", "commissioner", "grader", "diagnoser", "optimizer"]
+CoworldRunnableRole = Literal["game", "player", "reporter", "commissioner", "grader", "diagnoser", "optimizer"]
+CoworldManifestRole = Literal["player", "reporter", "commissioner", "grader", "diagnoser", "optimizer"]
+MANIFEST_ROLE_SECTIONS = cast(tuple[CoworldManifestRole, ...], get_args(CoworldManifestRole))
+
+
+def _runnable_type_schema(runnable_type: str) -> JsonSchema:
+    return {"properties": {"type": {"const": runnable_type}}}
 
 
 class CoworldRunnableSpec(BaseModel):
-    model_config = ConfigDict(extra="ignore")
+    model_config = ConfigDict(extra="forbid")
 
+    type: CoworldRunnableRole
     image: str
     run: list[str] = Field(default_factory=list)
     env: dict[str, str] = Field(default_factory=dict)
+    source_url: str | None = None
 
 
-class CoworldPlayerSpec(CoworldRunnableSpec):
-    pass
-
-
-class CoworldDeclaredRunnableSpec(CoworldRunnableSpec):
+class CoworldManifestRoleSpec(CoworldRunnableSpec):
+    type: CoworldManifestRole
     id: str = Field(min_length=1)
     name: str = Field(min_length=1)
     description: str = Field(min_length=1)
-    source_url: str | None = None
-
-
-class CoworldGameRunnableSpec(CoworldRunnableSpec):
-    type: Literal["game"] = "game"
-    source_url: str | None = None
-
-
-class CoworldDeclaredRoleSpec(CoworldDeclaredRunnableSpec):
-    type: CoworldRunnableRole
 
 
 class CoworldTextDoc(BaseModel):
@@ -87,13 +82,15 @@ class CoworldGameManifest(BaseModel):
     owner: str = Field(min_length=1)
     config_schema: JsonSchema
     results_schema: JsonSchema
-    runnable: CoworldGameRunnableSpec
+    runnable: Annotated[CoworldRunnableSpec, Field(json_schema_extra=_runnable_type_schema("game"))]
     protocols: CoworldProtocolDocs
     docs: CoworldDocs | None = None
 
     @model_validator(mode="after")
     def validate_version(self) -> "CoworldGameManifest":
         Version(self.version)
+        if self.runnable.type != "game":
+            raise ValueError("game.runnable.type must be 'game'")
         return self
 
 
@@ -131,32 +128,40 @@ class CoworldManifest(BaseModel):
 
     schema_: str | None = Field(default=None, alias="$schema")
     game: CoworldGameManifest = Field(description="Game runnable and protocol metadata. Role docs: docs/roles/game.md.")
-    player: list[CoworldDeclaredRoleSpec] = Field(
+    player: list[CoworldManifestRoleSpec] = Field(
         min_length=1,
         description="Bundled player runnables. Role docs: docs/roles/player.md.",
     )
-    reporter: list[CoworldDeclaredRoleSpec] = Field(
+    reporter: list[CoworldManifestRoleSpec] = Field(
         default_factory=list,
         description="Optional reporter runnables. Role docs: docs/roles/reporter.md.",
     )
-    commissioner: list[CoworldDeclaredRoleSpec] = Field(
+    commissioner: list[CoworldManifestRoleSpec] = Field(
         default_factory=list,
         description="Optional commissioner runnables. Role docs: docs/roles/commissioner.md.",
     )
-    grader: list[CoworldDeclaredRoleSpec] = Field(
+    grader: list[CoworldManifestRoleSpec] = Field(
         default_factory=list,
         description="Optional grader runnables. Role docs: docs/roles/grader.md.",
     )
-    diagnoser: list[CoworldDeclaredRoleSpec] = Field(
+    diagnoser: list[CoworldManifestRoleSpec] = Field(
         default_factory=list,
         description="Optional diagnoser runnables. Role docs: docs/roles/diagnoser.md.",
     )
-    optimizer: list[CoworldDeclaredRoleSpec] = Field(
+    optimizer: list[CoworldManifestRoleSpec] = Field(
         default_factory=list,
         description="Optional optimizer runnables. Role docs: docs/roles/optimizer.md.",
     )
     variants: list[CoworldVariant] = Field(min_length=1)
     certification: CoworldCertificationFixture
+
+    @model_validator(mode="after")
+    def validate_role_types(self) -> "CoworldManifest":
+        for section in MANIFEST_ROLE_SECTIONS:
+            for index, runnable in enumerate(getattr(self, section)):
+                if runnable.type != section:
+                    raise ValueError(f"{section}.{index}.type must be {section!r}")
+        return self
 
 
 class CoworldEpisodeJobSpec(BaseModel):
@@ -172,7 +177,7 @@ class CoworldEpisodeJobSpec(BaseModel):
     schema_: str | None = Field(default=None, alias="$schema")
     manifest: CoworldManifest
     game_config: dict[str, Any]
-    players: list[CoworldPlayerSpec]
+    players: list[Annotated[CoworldRunnableSpec, Field(json_schema_extra=_runnable_type_schema("player"))]]
     episode_tags: dict[str, str] = Field(default_factory=dict)
     policy_names: list[str] | None = Field(
         default=None,
@@ -182,10 +187,19 @@ class CoworldEpisodeJobSpec(BaseModel):
         ),
     )
 
+    @field_validator("players", mode="after")
+    @classmethod
+    def normalize_players(cls, players: list[CoworldRunnableSpec]) -> list[CoworldRunnableSpec]:
+        fields = set(CoworldRunnableSpec.model_fields)
+        return [CoworldRunnableSpec.model_validate(player.model_dump(include=fields)) for player in players]
+
     @model_validator(mode="after")
     def validate_player_lengths(self) -> "CoworldEpisodeJobSpec":
         if self.policy_names is not None and len(self.policy_names) != len(self.players):
             raise ValueError("policy_names must have one entry per player")
+        for index, player in enumerate(self.players):
+            if player.type != "player":
+                raise ValueError(f"players.{index}.type must be 'player'")
         return self
 
     @property

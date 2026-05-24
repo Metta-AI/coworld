@@ -29,13 +29,13 @@ from coworld.runner.runner import (
     run_coworld_episode,
     run_episode_containers,
 )
-from coworld.types import CoworldEpisodeJobSpec, CoworldPlayerSpec, CoworldRunnableSpec
+from coworld.types import CoworldEpisodeJobSpec, CoworldManifestRoleSpec, CoworldRunnableSpec
 
 __all__ = [
     "CertificationResult",
     "CoworldPackage",
     "CoworldEpisodeJobSpec",
-    "CoworldPlayerSpec",
+    "CoworldManifestRoleSpec",
     "CoworldRunnableSpec",
     "EpisodeArtifacts",
     "EpisodeRunSpec",

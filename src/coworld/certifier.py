@@ -23,7 +23,7 @@ from coworld.types import (
     CoworldDoc,
     CoworldEpisodeJobSpec,
     CoworldManifest,
-    CoworldPlayerSpec,
+    CoworldRunnableSpec,
     coworld_episode_request_schema,
     coworld_manifest_schema,
 )
@@ -213,16 +213,18 @@ def _image_references(package: CoworldPackage) -> list[tuple[str, str]]:
     return list(dict.fromkeys(references))
 
 
-def _certification_player_specs(package: CoworldPackage) -> list[CoworldPlayerSpec]:
+def _certification_player_specs(package: CoworldPackage) -> list[CoworldRunnableSpec]:
     declared_players = _manifest_items_by_id(package, "player")
     players = package.manifest.certification.players
-    specs: list[CoworldPlayerSpec] = []
+    specs: list[CoworldRunnableSpec] = []
     for slot, certification_player in enumerate(players):
         player_id = certification_player.player_id
         if player_id not in declared_players:
             raise ValueError(f"unknown certification player_id for slot {slot}: {player_id!r}")
         declared_player = declared_players[player_id]
-        episode_player = CoworldPlayerSpec.model_validate(declared_player.model_dump())
+        episode_player = CoworldRunnableSpec.model_validate(
+            declared_player.model_dump(include=set(CoworldRunnableSpec.model_fields))
+        )
         specs.append(episode_player)
     return specs
 

@@ -21,7 +21,7 @@ from pydantic import BaseModel, ConfigDict, Field, TypeAdapter
 from websockets.exceptions import ConnectionClosed, InvalidHandshake, InvalidMessage, InvalidStatus
 
 from coworld.schema_validation import validate_json_schema
-from coworld.types import CoworldEpisodeJobSpec, CoworldPlayerSpec, CoworldRunnableSpec
+from coworld.types import CoworldEpisodeJobSpec, CoworldRunnableSpec
 
 CONTAINER_WORKDIR = "/coworld"
 CONFIG_ENV_VAR = "COGAME_CONFIG_URI"
@@ -114,7 +114,7 @@ class RunnableLaunchSpec:
 @dataclass(frozen=True)
 class PlayerLaunchSpec(RunnableLaunchSpec):
     @classmethod
-    def from_model(cls, player: CoworldPlayerSpec) -> PlayerLaunchSpec:
+    def from_model(cls, player: CoworldRunnableSpec) -> PlayerLaunchSpec:
         runnable = RunnableLaunchSpec.from_model(player)
         return cls(
             image=runnable.image,

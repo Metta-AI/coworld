@@ -288,6 +288,7 @@ def test_build_episode_request_matches_runner_spec_shape(tmp_path: Path) -> None
     assert episode_request["game_config"] == {"difficulty": "easy"}
     assert episode_request["players"] == [
         {
+            "type": "player",
             "image": "unit-test-runtime:latest",
             "run": ["python", "-m", "unit_test.player"],
             "env": {"PLAYER_MODE": "test"},
@@ -360,6 +361,7 @@ def test_load_manifest_episode_job_spec_uses_request_file(tmp_path: Path) -> Non
                 "game_config": {"difficulty": "request"},
                 "players": [
                     {
+                        "type": "player",
                         "image": "request-player:latest",
                         "run": ["python", "/request-player.py"],
                         "env": {"PLAYER_MODE": "request"},

@@ -532,11 +532,13 @@ def _write_episode_request(tmp_path: Path, manifest_path: Path) -> Path:
                 },
                 "players": [
                     {
+                        "type": "player",
                         "image": "slot-zero:latest",
                         "run": ["python", "/slot-zero.py"],
                         "env": {"PLAYER_SLOT": "0"},
                     },
                     {
+                        "type": "player",
                         "image": "slot-one:latest",
                         "run": ["python", "/slot-one.py"],
                         "env": {"PLAYER_SLOT": "1"},

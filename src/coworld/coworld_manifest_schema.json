@@ -34,63 +34,6 @@
       "title": "CoworldCertificationPlayer",
       "type": "object"
     },
-    "CoworldDeclaredRoleSpec": {
-      "properties": {
-        "image": {
-          "title": "Image",
-          "type": "string"
-        },
-        "run": {
-          "items": {
-            "type": "string"
-          },
-          "title": "Run",
-          "type": "array"
-        },
-        "env": {
-          "additionalProperties": {
-            "type": "string"
-          },
-          "title": "Env",
-          "type": "object"
-        },
-        "id": {
-          "minLength": 1,
-          "title": "Id",
-          "type": "string"
-        },
-        "name": {
-          "minLength": 1,
-          "title": "Name",
-          "type": "string"
-        },
-        "description": {
-          "minLength": 1,
-          "title": "Description",
-          "type": "string"
-        },
-        "source_url": {
-          "anyOf": [
-            {
-              "type": "string"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "default": null,
-          "title": "Source Url"
-        },
-        "type": {
-          "enum": ["player", "reporter", "commissioner", "grader", "diagnoser", "optimizer"],
-          "title": "Type",
-          "type": "string"
-        }
-      },
-      "required": ["image", "id", "name", "description", "type"],
-      "title": "CoworldDeclaredRoleSpec",
-      "type": "object"
-    },
     "CoworldDocPage": {
       "additionalProperties": false,
       "properties": {
@@ -201,7 +144,12 @@
           "type": "object"
         },
         "runnable": {
-          "$ref": "#/$defs/CoworldGameRunnableSpec"
+          "$ref": "#/$defs/CoworldRunnableSpec",
+          "properties": {
+            "type": {
+              "const": "game"
+            }
+          }
         },
         "protocols": {
           "$ref": "#/$defs/CoworldProtocolDocs"
@@ -231,8 +179,14 @@
       "title": "CoworldGameManifest",
       "type": "object"
     },
-    "CoworldGameRunnableSpec": {
+    "CoworldManifestRoleSpec": {
+      "additionalProperties": false,
       "properties": {
+        "type": {
+          "enum": ["player", "reporter", "commissioner", "grader", "diagnoser", "optimizer"],
+          "title": "Type",
+          "type": "string"
+        },
         "image": {
           "title": "Image",
           "type": "string"
@@ -251,15 +205,36 @@
           "title": "Env",
           "type": "object"
         },
-        "type": {
-          "const": "game",
-          "default": "game",
-          "title": "Type",
+        "source_url": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Source Url"
+        },
+        "id": {
+          "minLength": 1,
+          "title": "Id",
+          "type": "string"
+        },
+        "name": {
+          "minLength": 1,
+          "title": "Name",
+          "type": "string"
+        },
+        "description": {
+          "minLength": 1,
+          "title": "Description",
           "type": "string"
         }
       },
-      "required": ["image"],
-      "title": "CoworldGameRunnableSpec",
+      "required": ["type", "image", "id", "name", "description"],
+      "title": "CoworldManifestRoleSpec",
       "type": "object"
     },
     "CoworldProtocolDocs": {
@@ -304,6 +279,49 @@
       },
       "required": ["player", "global"],
       "title": "CoworldProtocolDocs",
+      "type": "object"
+    },
+    "CoworldRunnableSpec": {
+      "additionalProperties": false,
+      "properties": {
+        "type": {
+          "enum": ["game", "player", "reporter", "commissioner", "grader", "diagnoser", "optimizer"],
+          "title": "Type",
+          "type": "string"
+        },
+        "image": {
+          "title": "Image",
+          "type": "string"
+        },
+        "run": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Run",
+          "type": "array"
+        },
+        "env": {
+          "additionalProperties": {
+            "type": "string"
+          },
+          "title": "Env",
+          "type": "object"
+        },
+        "source_url": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Source Url"
+        }
+      },
+      "required": ["type", "image"],
+      "title": "CoworldRunnableSpec",
       "type": "object"
     },
     "CoworldTextDoc": {
@@ -361,19 +379,6 @@
           "title": "Game Config",
           "type": "object"
         },
-        "parent_id": {
-          "anyOf": [
-            {
-              "minLength": 1,
-              "type": "string"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "default": null,
-          "title": "Parent Id"
-        },
         "description": {
           "minLength": 1,
           "title": "Description",
@@ -408,7 +413,7 @@
     "player": {
       "description": "Bundled player runnables. Role docs: docs/roles/player.md.",
       "items": {
-        "$ref": "#/$defs/CoworldDeclaredRoleSpec"
+        "$ref": "#/$defs/CoworldManifestRoleSpec"
       },
       "minItems": 1,
       "title": "Player",
@@ -417,7 +422,7 @@
     "reporter": {
       "description": "Optional reporter runnables. Role docs: docs/roles/reporter.md.",
       "items": {
-        "$ref": "#/$defs/CoworldDeclaredRoleSpec"
+        "$ref": "#/$defs/CoworldManifestRoleSpec"
       },
       "title": "Reporter",
       "type": "array"
@@ -425,7 +430,7 @@
     "commissioner": {
       "description": "Optional commissioner runnables. Role docs: docs/roles/commissioner.md.",
       "items": {
-        "$ref": "#/$defs/CoworldDeclaredRoleSpec"
+        "$ref": "#/$defs/CoworldManifestRoleSpec"
       },
       "title": "Commissioner",
       "type": "array"
@@ -433,7 +438,7 @@
     "grader": {
       "description": "Optional grader runnables. Role docs: docs/roles/grader.md.",
       "items": {
-        "$ref": "#/$defs/CoworldDeclaredRoleSpec"
+        "$ref": "#/$defs/CoworldManifestRoleSpec"
       },
       "title": "Grader",
       "type": "array"
@@ -441,7 +446,7 @@
     "diagnoser": {
       "description": "Optional diagnoser runnables. Role docs: docs/roles/diagnoser.md.",
       "items": {
-        "$ref": "#/$defs/CoworldDeclaredRoleSpec"
+        "$ref": "#/$defs/CoworldManifestRoleSpec"
       },
       "title": "Diagnoser",
       "type": "array"
@@ -449,7 +454,7 @@
     "optimizer": {
       "description": "Optional optimizer runnables. Role docs: docs/roles/optimizer.md.",
       "items": {
-        "$ref": "#/$defs/CoworldDeclaredRoleSpec"
+        "$ref": "#/$defs/CoworldManifestRoleSpec"
       },
       "title": "Optimizer",
       "type": "array"
