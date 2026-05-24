@@ -32,6 +32,7 @@ class CoworldDeclaredRunnableSpec(CoworldRunnableSpec):
 
 class CoworldGameRunnableSpec(CoworldRunnableSpec):
     type: Literal["game"] = "game"
+    source_url: str | None = None
 
 
 class CoworldDeclaredRoleSpec(CoworldDeclaredRunnableSpec):
