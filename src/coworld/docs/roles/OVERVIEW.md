@@ -34,7 +34,7 @@ three status labels.
    │   /round WS      │ ◀── episode_result ──│   /healthz       │   observations   │                  │
    │                  │                      │   /player        │                  │                  │
    │ [contract        │                      │   /global        │                  │     [live]       │
-   │  defined,        │                      │   /clients/*     │                  │                  │
+   │  defined,        │                      │   /client/*      │                  │                  │
    │  runtime         │                      │                  │                  │                  │
    │  pending]        │                      │     [live]       │                  └──────────────────┘
    └──────────────────┘                      └────────┬─────────┘
@@ -92,7 +92,7 @@ sends `schedule_episodes` listing the episodes it wants run.
 For each scheduled episode, the platform's runner starts:
 
 - One **game** container (see [`game.md`](game.md)), listening on `0.0.0.0:8080` with `/healthz`, `/player`,
-  `/global`, and `/clients/*` routes.
+  `/global`, and `/client/*` routes.
 - One **player** container per slot (see [`player.md`](player.md)), each receiving its own
   `COGAMES_ENGINE_WS_URL` pointing at the game's `/player` route with the slot's `slot` and `token` query
   params.
@@ -105,7 +105,7 @@ as an `episode_result` message; the commissioner uses these to make scheduling d
 the round?) and ultimately emits `round_complete` with per-division rankings and graduation changes.
 
 For the in-flight contract details, see [`GAME_RUNTIME_README.md`](../../GAME_RUNTIME_README.md) (the canonical
-game-side runtime contract, including the browser-client behavior shared by all `/clients/*` pages) and
+game-side runtime contract, including the browser-client behavior shared by all `/client/*` pages) and
 [`commissioner.md`](commissioner.md) (the full commissioner WebSocket protocol, message payloads, and round
 lifecycle).
 
