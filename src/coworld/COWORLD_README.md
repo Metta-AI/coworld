@@ -205,6 +205,24 @@ placement.
 Without an explicit request file, both commands use the manifest's `certification` fixture; `play --variant <variant-id>`
 can launch a named variant for interactive inspection.
 
+## Hosted Play Sessions
+
+Hosted play is the shared browser-play path for uploaded Coworlds:
+
+```bash
+uv run coworld hosted-game create <coworld-id>
+uv run coworld hosted-game create <coworld-id> --variant <variant-id>
+uv run coworld hosted-game join <play-session-id>
+```
+
+`hosted-game create` starts the Coworld game container in Kubernetes and prints a player command, a player URL, and a
+spectator URL when spectators are enabled. `hosted-game join` claims one browser player slot for the authenticated user;
+joining the same session again returns the same slot.
+
+Hosted play sessions are live lobbies, not league matches. They do not launch submitted policy containers and do not
+record Observatory episode artifacts. Use local `play`/`run-episode` for policy-container debugging and leagues for
+hosted policy evaluation, standings, episode logs, and replays.
+
 ## Game Author Loop
 
 Use this flow when you want to package a new Coworld:
