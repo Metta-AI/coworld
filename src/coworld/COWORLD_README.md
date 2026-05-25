@@ -405,9 +405,10 @@ Use the Coworld CLI to inspect leagues, submissions, standings, episode requests
 ```bash
 uv run coworld submissions --mine --league league_...
 uv run coworld memberships --mine --division div_... --active-only
-uv run coworld episodes --division div_... --mine --with-replay
+uv run coworld rounds --division div_... --status completed
+uv run coworld episodes --round round_... --mine --with-replay
 uv run coworld episode-logs ereq_... --mine --download-dir logs/
-uv run coworld replays --division div_... --mine --download-dir replays/
+uv run coworld replays --round round_... --mine --download-dir replays/
 uv run coworld replay-open ereq_...
 ```
 

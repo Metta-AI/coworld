@@ -489,16 +489,7 @@ def download_coworld_cmd(
 
     image_tags = _local_image_tags(coworld)
     for public_image_uri, local_tag in image_tags.items():
-        if public_image_uri.startswith("public.ecr.aws/"):
-            with tempfile.TemporaryDirectory(prefix="coworld-docker-config-") as docker_config:
-                subprocess.run(
-                    ["docker", "pull", public_image_uri],
-                    check=True,
-                    env={**os.environ, "DOCKER_CONFIG": docker_config},
-                )
-        else:
-            subprocess.run(["docker", "pull", public_image_uri], check=True)
-        subprocess.run(["docker", "tag", public_image_uri, local_tag], check=True)
+        pull_and_tag_image(public_image_uri, local_tag)
 
     (output_dir / coworld.id).mkdir(parents=True, exist_ok=True)
     manifest = _manifest_with_local_images(coworld.manifest, image_tags)
@@ -535,6 +526,19 @@ def _print_download_paths(coworld_id: str, manifest_path: Path, image_map_path: 
     typer.echo(f"Images: {image_map_path}")
     typer.echo(f"Agent guide: {agents_path}")
     typer.echo(f"Play: {shlex.join(['uv', 'run', 'coworld', 'play', coworld_id])}")
+
+
+def pull_and_tag_image(public_image_uri: str, local_tag: str) -> None:
+    if public_image_uri.startswith("public.ecr.aws/"):
+        with tempfile.TemporaryDirectory(prefix="coworld-docker-config-") as docker_config:
+            subprocess.run(
+                ["docker", "pull", public_image_uri],
+                check=True,
+                env={**os.environ, "DOCKER_CONFIG": docker_config},
+            )
+    else:
+        subprocess.run(["docker", "pull", public_image_uri], check=True)
+    subprocess.run(["docker", "tag", public_image_uri, local_tag], check=True)
 
 
 def _manifest_with_softmax_image_ids(client: CoworldUploadClient, manifest: dict[str, object]) -> dict[str, object]:

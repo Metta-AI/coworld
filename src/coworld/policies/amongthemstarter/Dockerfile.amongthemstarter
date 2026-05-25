@@ -5,7 +5,7 @@
 FROM alpine AS build
 
 ARG BITWORLD_REPO=https://github.com/Metta-AI/bitworld.git
-ARG BITWORLD_REF=b87c58ce1ba95d7dac12820bc21c3b7d58722869
+ARG BITWORLD_REF=master
 
 RUN apk add --no-cache build-base curl gcompat git
 

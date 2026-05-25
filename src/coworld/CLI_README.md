@@ -85,7 +85,8 @@ Check the submission and its first episodes:
 ```bash
 uv run coworld submissions --mine --league league_...
 uv run coworld memberships --mine --division div_... --active-only
-uv run coworld episodes --division div_... --mine --with-replay
+uv run coworld rounds --division div_... --status completed
+uv run coworld episodes --round round_... --mine --with-replay
 ```
 
 `make-policy` writes a game-specific starter policy when the package ships one:
@@ -131,15 +132,14 @@ image has been uploaded.
 ### How do I tell whether my submitted policy is doing anything?
 
 After `submit`, check `coworld submissions --mine --league league_...` for placement status. Then check
-`coworld memberships --mine --division div_... --active-only` and
-`coworld episodes --division div_... --mine --with-replay` to see the division membership and completed or running
-episodes involving your policy.
+`coworld memberships --mine --division div_... --active-only`, then inspect a recent completed round with
+`coworld episodes --round round_... --mine --with-replay` to see episodes involving your policy.
 
 ### Where do I find logs and replays?
 
 Use `coworld episode-logs ereq_... --list` to list available logs, then download game or per-player logs with
 `--game`, `--agent <slot>`, `--mine`, or `--download-dir`. Use `coworld replay-open ereq_...` to open one replay, or
-`coworld replays --division div_... --mine --download-dir replays/` to download many.
+`coworld replays --round round_... --mine --download-dir replays/` to download many from a round.
 
 ### How do I play a Coworld locally?
 
@@ -354,12 +354,13 @@ Use `memberships --mine` to see your active placement and `events` to see compet
 Filter episode requests by your policies or by a specific policy version:
 
 ```bash
-uv run coworld episodes --division div_... --mine
-uv run coworld episodes --division div_... --policy my-player:v1
+uv run coworld episodes --round round_... --mine
+uv run coworld episodes --round round_... --policy my-player:v1
 uv run coworld episodes ereq_...
 ```
 
-The detail view prints status, pool, Coworld ID, seed, job ID, episode ID, replay URL, participants, and scores.
+Use `rounds --division div_... --status completed` to find recent round IDs. The detail view prints status, pool,
+Coworld ID, seed, job ID, episode ID, replay URL, participants, and scores.
 
 ### How do I retrieve a replay from an episode?
 
@@ -368,7 +369,7 @@ Open one replay, or download many:
 ```bash
 uv run coworld replay-open ereq_...
 uv run coworld replay-open ereq_... --hosted
-uv run coworld replays --division div_... --mine --download-dir replays/
+uv run coworld replays --round round_... --mine --download-dir replays/
 ```
 
 `replay-open` runs the game-owned replay viewer. `--hosted` creates an Observatory-hosted replay session and prints the
@@ -380,11 +381,12 @@ List logs for an episode, then fetch your agent logs:
 
 ```bash
 uv run coworld episode-logs ereq_... --list --mine
-uv run coworld episode-logs ereq_... --agent 0 --mine
+uv run coworld episode-logs ereq_... --agent <slot> --mine
 uv run coworld episode-logs ereq_... --mine --download-dir logs/
 ```
 
-`--mine` restricts the listed and downloaded files to agents controlled by your league memberships.
+`--mine` restricts the listed and downloaded files to agents controlled by your league memberships. Use the agent slot
+number printed by `--list --mine`.
 
 ### Can I get other policies' agent logs from an episode?
 
@@ -393,7 +395,7 @@ you own or are allowed to inspect. Game/server logs are episode-level artifacts 
 
 ### How do I get the server logs from an episode?
 
-Use the game log artifact:
+Use the game log artifact when the episode has one:
 
 ```bash
 uv run coworld episode-logs ereq_... --game
@@ -531,7 +533,7 @@ Most commands support `--json` for machine-readable output.
 List episode requests by pool, round, or division:
 
 ```bash
-uv run coworld episodes --division div_...
+uv run coworld episodes --round round_...
 uv run coworld episodes --round round_... --with-replay
 uv run coworld episodes --pool pool_... --policy my-policy:v3
 uv run coworld episodes ereq_...
@@ -540,7 +542,7 @@ uv run coworld episodes ereq_...
 Use `--mine` to keep only episodes involving policy versions in your current league memberships:
 
 ```bash
-uv run coworld episodes --division div_... --mine --with-replay --json
+uv run coworld episodes --round round_... --mine --with-replay --json
 ```
 
 Fetch artifacts for one episode request:
@@ -551,18 +553,18 @@ uv run coworld episode-stats ereq_... --json
 uv run coworld episode-results ereq_... --output results.json
 uv run coworld episode-logs ereq_... --list
 uv run coworld episode-logs ereq_... --game
-uv run coworld episode-logs ereq_... --agent 0
+uv run coworld episode-logs ereq_... --agent <slot>
 uv run coworld episode-logs ereq_... --mine --download-dir logs/
 ```
 
 Hosted Coworld episode jobs collect combined stdout and stderr from the game pod and from each started player pod. The
-`episode-logs` command can fetch the game log with `--game`, list per-player files, and download the per-player files
-(`policy_agent_{slot}.log`).
+`episode-logs` command can fetch the game log with `--game` when that artifact exists, list per-player files, and
+download the per-player files (`policy_agent_{slot}.log`).
 
 Download replay files:
 
 ```bash
-uv run coworld replays --division div_... --mine --download-dir replays/
+uv run coworld replays --round round_... --mine --download-dir replays/
 uv run coworld replays --round round_... --policy my-policy:v3 --json
 ```
 

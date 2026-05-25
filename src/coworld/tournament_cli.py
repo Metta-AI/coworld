@@ -1,8 +1,11 @@
 from __future__ import annotations
 
+import copy
 import json
 import re
 import shutil
+import tempfile
+from contextlib import ExitStack
 from datetime import datetime
 from pathlib import Path
 from typing import Annotated, Any
@@ -27,9 +30,10 @@ from coworld.api_client import (
 )
 from coworld.cli_support import console, emit_json
 from coworld.config import DEFAULT_SUBMIT_SERVER
-from coworld.manifest_uri import materialized_manifest_path, materialized_replay_path
+from coworld.manifest_uri import materialized_replay_path
 from coworld.play import ReplaySession, replay_coworld
 from coworld.submit import parse_policy_identifier
+from coworld.upload import download_coworld, downloaded_coworld_manifest_path, pull_and_tag_image
 
 _UUID_RE = re.compile(r"^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$")
 _POLICY_LOG_RE = re.compile(r"^policy_agent_(\d+)\.log$")
@@ -494,14 +498,27 @@ def register_tournament_commands(app: typer.Typer) -> None:
                 )
                 console.print(session.viewer_url)
                 return
-        with materialized_manifest_path(episode.coworld_id, server=server) as manifest_path:
-            with materialized_replay_path(episode.replay_url) as replay_path:
-                session = replay_coworld(
-                    manifest_path,
-                    replay_path,
-                    timeout_seconds=timeout_seconds,
-                    on_ready=_print_replay_session,
-                )
+        manifest_path = downloaded_coworld_manifest_path(Path("./coworld"), episode.coworld_id)
+        with ExitStack() as stack:
+            if manifest_path.is_file():
+                replay_manifest_path = manifest_path.resolve()
+            else:
+                coworld = download_coworld(episode.coworld_id, server=server)
+                manifest = copy.deepcopy(coworld.manifest)
+                game_image = manifest["game"]["runnable"]["image"]
+                local_game_image = f"coworld/{coworld.id}/replay-game:downloaded"
+                pull_and_tag_image(game_image, local_game_image)
+                manifest["game"]["runnable"]["image"] = local_game_image
+                manifest_temp_dir = stack.enter_context(tempfile.TemporaryDirectory(prefix="coworld-replay-manifest-"))
+                replay_manifest_path = Path(manifest_temp_dir) / "coworld_manifest.json"
+                replay_manifest_path.write_text(json.dumps(manifest, indent=2) + "\n", encoding="utf-8")
+            replay_path = stack.enter_context(materialized_replay_path(episode.replay_url))
+            session = replay_coworld(
+                replay_manifest_path,
+                replay_path,
+                timeout_seconds=timeout_seconds,
+                on_ready=_print_replay_session,
+            )
         typer.echo(f"Logs: {session.artifacts.logs_dir}")
 
 

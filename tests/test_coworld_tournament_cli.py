@@ -1,5 +1,7 @@
 import json
 from pathlib import Path
+from types import SimpleNamespace
+from typing import Any, Callable
 
 import pytest
 from pytest_httpserver import HTTPServer
@@ -204,6 +206,89 @@ def test_episode_logs_downloads_game_log(
 
     assert result.exit_code == 0, result.output
     assert (tmp_path / f"{EPISODE_REQUEST_ID}-game.log").read_text() == "game log\n"
+
+
+def test_replay_open_downloads_only_game_image_for_local_replay(
+    httpserver: HTTPServer,
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr("coworld.api_client._load_current_cogames_token", lambda: "token")
+    replay_path = tmp_path / "replay.json"
+    replay_path.write_text('{"frames":[]}\n')
+    httpserver.expect_request(
+        f"/observatory/v2/episode-requests/{EPISODE_REQUEST_ID}",
+        method="GET",
+        headers={"X-Auth-Token": "token"},
+    ).respond_with_json(_episode_request(episode_request_id=EPISODE_REQUEST_ID, replay_url=replay_path.as_uri()))
+
+    calls: dict[str, Any] = {}
+    game_image = "public.ecr.aws/example/unit-test-game:latest"
+    player_image = "private.example.com/unit-test-player:latest"
+
+    def fake_download_coworld(coworld_ref: str, *, server: str) -> Any:
+        calls["download"] = {"coworld_ref": coworld_ref, "server": server}
+        return SimpleNamespace(
+            id=COWORLD_ID,
+            name="unit-test-game",
+            version="0.1.0",
+            manifest={
+                "game": {"runnable": {"image": game_image}},
+                "player": [{"image": player_image}],
+            },
+        )
+
+    def fake_docker_run(command: list[str], **kwargs: Any) -> Any:
+        calls.setdefault("docker", []).append((command, kwargs))
+        return SimpleNamespace()
+
+    def fake_replay_coworld(
+        manifest_path: Path,
+        replay_path: Path,
+        *,
+        timeout_seconds: float,
+        on_ready: Callable[[Any], None],
+    ) -> Any:
+        calls["replay"] = {
+            "manifest": json.loads(manifest_path.read_text(encoding="utf-8")),
+            "manifest_path": manifest_path,
+            "replay_path": replay_path,
+            "timeout_seconds": timeout_seconds,
+        }
+        artifacts = SimpleNamespace(workspace=tmp_path / "artifacts", logs_dir=tmp_path / "logs")
+        session = SimpleNamespace(artifacts=artifacts, replay_path=replay_path, link="http://replay.local")
+        on_ready(session)
+        return session
+
+    monkeypatch.setattr("coworld.tournament_cli.download_coworld", fake_download_coworld)
+    monkeypatch.setattr("coworld.upload.subprocess.run", fake_docker_run)
+    monkeypatch.setattr("coworld.tournament_cli.replay_coworld", fake_replay_coworld)
+
+    result = CliRunner().invoke(
+        app,
+        [
+            "replay-open",
+            EPISODE_REQUEST_ID,
+            "--server",
+            httpserver.url_for(""),
+        ],
+    )
+
+    assert result.exit_code == 0, result.output
+    assert calls["download"] == {
+        "coworld_ref": COWORLD_ID,
+        "server": httpserver.url_for(""),
+    }
+    assert [call[0] for call in calls["docker"]] == [
+        ["docker", "pull", game_image],
+        ["docker", "tag", game_image, f"coworld/{COWORLD_ID}/replay-game:downloaded"],
+    ]
+    replay_call = calls["replay"]
+    assert replay_call["manifest"]["game"]["runnable"]["image"] == f"coworld/{COWORLD_ID}/replay-game:downloaded"
+    assert replay_call["manifest"]["player"][0]["image"] == player_image
+    assert replay_call["replay_path"] == replay_path
+    assert "Replay client: http://replay.local" in result.output
 
 
 def _expect_round_scope(httpserver: HTTPServer) -> None:

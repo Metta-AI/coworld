@@ -24,7 +24,8 @@ def test_make_policy_writes_among_them_starter_project(tmp_path: Path) -> None:
     assert (output / ".dockerignore").is_file()
 
     dockerfile = (output / "Dockerfile").read_text(encoding="utf-8")
-    assert "BITWORLD_REF=b87c58ce1ba95d7dac12820bc21c3b7d58722869" in dockerfile
+    assert "BITWORLD_REF=master" in dockerfile
+    assert "COPY --from=build /workspace/bitworld/client/data ./client/data" in dockerfile
     assert 'CMD ["/bin/amongthemstarter", "--address:host.docker.internal", "--port:8080"]' in dockerfile
 
     source = (output / "amongthemstarter.nim").read_text(encoding="utf-8")
