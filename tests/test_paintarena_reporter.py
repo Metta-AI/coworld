@@ -1,23 +1,15 @@
-"""Test suite for paint_arena_summarizer.
+"""Test suite for paint_arena_summarizer (canonical contract).
 
 Covers pure-function zip construction (build_zip_bytes, build_stats) plus
-end-to-end run() invocations against file:// URIs, exercising the failure-mode
-table in the v1 reporter contract
-(``Metta-AI/reporters/docs/REPORTER_DESIGN.md`` —
-https://github.com/Metta-AI/reporters/blob/main/docs/REPORTER_DESIGN.md). The
-reporter raises on every documented failure mode rather than returning an exit
-code; the entry-point lets the exception propagate so the process crashes
-with a non-zero status.
+end-to-end run() invocations against file:// bundle URIs.
 
-Note: the current Coworld reporter contract in ``docs/roles/reporter.md``
-(this package) supersedes the v1 contract these tests target; reconciliation
-is tracked separately.
-
-Output contract (REPORTER_DESIGN.md zip + render.txt):
-- A single zip is written to COGAME_REPORT_OUTPUT_URI.
-- Top-level entries: summary.md, stats.json, render.txt.
-- render.txt lists summary.md (the only renderable file); stats.json is
-  download-only and not listed.
+Output contract (canonical Coworld reporter contract,
+``docs/roles/reporter.md``):
+- A single zip is written to COGAME_REPORT_URI.
+- Top-level entries: manifest.json, summary.md, stats.json.
+- The in-zip manifest.json flags ``render: "summary.md"`` and carries
+  ``reporter_id: "paint-arena-summarizer"``. No event_log (markdown-only
+  reference reporter).
 - Every zip entry has a pinned mtime of (1980, 1, 1, 0, 0, 0) so identical
   inputs produce byte-identical zips.
 """
@@ -44,9 +36,10 @@ def make_replay(width: int = 12, height: int = 8) -> dict[str, Any]:
 
     Shape mirrors what the PaintArena game server writes
     (packages/coworld/.../paintarena/game/server.py::_replay_payload):
-    `{config, player_names, frames, results}`. The reporter only reads
-    `config.width` and `config.height`; other fields are present so the
-    fixture realistically exercises pydantic's extras-ignored behavior.
+    ``{config, player_names, frames, results}``. The reporter only reads
+    ``config.width`` and ``config.height``; other fields are present so
+    the fixture realistically exercises pydantic's extras-ignored
+    behavior.
     """
     return deepcopy(
         {
@@ -117,11 +110,54 @@ def make_results_missing_field() -> dict[str, Any]:
     }
 
 
+def make_bundle_bytes(
+    *,
+    results: dict[str, Any] | None = None,
+    metadata: dict[str, Any] | None = None,
+    replay: dict[str, Any] | None = None,
+    include_metadata: bool = True,
+    ereq_id: str = "ereq_test_001",
+    status: str = "success",
+) -> bytes:
+    """Pack the loose JSON fixtures into a canonical episode bundle zip.
+
+    Layout follows ``EPISODE_BUNDLE_README.md``: a root ``manifest.json``
+    mapping tokens to entries inside the zip, plus the JSON files those
+    tokens point at.
+    """
+    results_payload = results if results is not None else make_results_happy()
+    metadata_payload = metadata if metadata is not None else make_metadata()
+    replay_payload = replay if replay is not None else make_replay()
+
+    include = ["results", "replay"]
+    files: dict[str, str] = {"results": "results.json", "replay": "replay.json"}
+    if include_metadata:
+        include.append("metadata")
+        files["metadata"] = "metadata.json"
+
+    manifest = {
+        "ereq_id": ereq_id,
+        "status": status,
+        "include": include,
+        "files": files,
+    }
+
+    buf = io.BytesIO()
+    with zipfile.ZipFile(buf, mode="w", compression=zipfile.ZIP_DEFLATED) as zf:
+        zf.writestr("manifest.json", json.dumps(manifest))
+        zf.writestr("results.json", json.dumps(results_payload))
+        zf.writestr("replay.json", json.dumps(replay_payload))
+        if include_metadata:
+            zf.writestr("metadata.json", json.dumps(metadata_payload))
+    return buf.getvalue()
+
+
 # ---------- helpers ----------
 
 
-_RENDERABLE_EXTS = {".md", ".txt", ".html", ".htm"}
+_RENDERABLE_EXTS = {".md", ".html"}
 _PINNED_MTIME = (1980, 1, 1, 0, 0, 0)
+_EXPECTED_ENTRIES = {"manifest.json", "summary.md", "stats.json"}
 
 
 def _models(
@@ -152,10 +188,8 @@ def _extract(payload: bytes) -> dict[str, bytes]:
         return {info.filename: zf.read(info.filename) for info in zf.infolist()}
 
 
-def _render_lines(payload: bytes) -> list[str]:
-    files = _extract(payload)
-    text = files["render.txt"].decode("utf-8")
-    return [line.strip() for line in text.splitlines() if line.strip()]
+def _manifest_dict(payload: bytes) -> dict[str, Any]:
+    return json.loads(_extract(payload)["manifest.json"])
 
 
 # ---------- pure build_zip_bytes / build_stats ----------
@@ -164,29 +198,25 @@ def _render_lines(payload: bytes) -> list[str]:
 def test_happy_path_zip_entries() -> None:
     payload = _build_zip()
     files = _extract(payload)
-    assert set(files.keys()) == {"summary.md", "stats.json", "render.txt"}
+    assert set(files.keys()) == _EXPECTED_ENTRIES
 
 
-def test_render_txt_contents_lists_summary_only() -> None:
-    """render.txt is a single line `summary.md\n`; stats.json is download-only."""
+def test_manifest_flags_summary_md_as_render() -> None:
+    """The in-zip manifest.json flags ``summary.md`` as the render target
+    and carries the reporter's id."""
+    payload = _build_zip()
+    manifest = _manifest_dict(payload)
+    assert manifest["render"] == "summary.md"
+    assert manifest["reporter_id"] == "paint-arena-summarizer"
+    assert manifest["event_log"] is None
+
+
+def test_manifest_render_target_exists_in_zip_with_renderable_extension() -> None:
     payload = _build_zip()
     files = _extract(payload)
-    assert files["render.txt"] == b"summary.md\n"
-    assert _render_lines(payload) == ["summary.md"]
-
-
-def test_render_txt_consistency() -> None:
-    """Every render.txt entry must exist in the zip, have a renderable extension,
-    not list itself, and have no duplicates (REPORTER_DESIGN.md invalid_output
-    triggers)."""
-    payload = _build_zip()
-    files = _extract(payload)
-    lines = _render_lines(payload)
-    assert "render.txt" not in lines  # MUST NOT list itself
-    assert len(lines) == len(set(lines))  # no duplicates
-    for line in lines:
-        assert line in files, f"render.txt entry {line!r} missing from zip"
-        assert Path(line).suffix.lower() in _RENDERABLE_EXTS
+    manifest = _manifest_dict(payload)
+    assert manifest["render"] in files
+    assert Path(manifest["render"]).suffix.lower() in _RENDERABLE_EXTS
 
 
 def test_zip_entries_have_pinned_mtime() -> None:
@@ -291,31 +321,35 @@ def test_replay_config_missing_dimensions_raises() -> None:
         par.PaintArenaReplay.model_validate(bad_replay)
 
 
-# ---------- end-to-end via file:// URIs ----------
+# ---------- end-to-end via file:// bundle URIs ----------
 
 
-def _write_json(path: Path, obj: Any) -> str:
-    path.write_text(json.dumps(obj))
-    return path.as_uri()
-
-
-def _setup_inputs(
+def _setup_bundle(
     tmp_path: Path,
     *,
     results: dict[str, Any] | None = None,
     metadata: dict[str, Any] | None = None,
     replay: dict[str, Any] | None = None,
+    include_metadata: bool = True,
+    ereq_id: str = "ereq_test_001",
+    status: str = "success",
 ) -> tuple[dict[str, str], Path]:
-    results_uri = _write_json(tmp_path / "results.json", results or make_results_happy())
-    metadata_uri = _write_json(tmp_path / "metadata.json", metadata or make_metadata())
-    replay_uri = _write_json(tmp_path / "replay.json", replay or make_replay())
+    """Write a synthetic bundle zip to ``tmp_path`` and return the env
+    var pair plus the output path the reporter should write to."""
+    bundle_bytes = make_bundle_bytes(
+        results=results,
+        metadata=metadata,
+        replay=replay,
+        include_metadata=include_metadata,
+        ereq_id=ereq_id,
+        status=status,
+    )
+    bundle_path = tmp_path / "bundle.zip"
+    bundle_path.write_bytes(bundle_bytes)
     out_path = tmp_path / "report.zip"
     env = {
-        "COGAME_RESULTS_URI": results_uri,
-        "COGAME_REPLAY_URI": replay_uri,
-        "COGAME_EPISODE_METADATA_URI": metadata_uri,
-        "COGAME_REPORT_OUTPUT_URI": out_path.as_uri(),
-        "COGAME_REPORTER_ID": "paint-arena-summarizer",
+        "COGAME_EPISODE_BUNDLE_URI": bundle_path.as_uri(),
+        "COGAME_REPORT_URI": out_path.as_uri(),
     }
     return env, out_path
 
@@ -327,18 +361,18 @@ def _invoke_run(monkeypatch: pytest.MonkeyPatch, env: dict[str, str]) -> None:
 
 
 def test_run_happy_path_writes_valid_zip(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    env, out_path = _setup_inputs(tmp_path)
+    env, out_path = _setup_bundle(tmp_path)
     _invoke_run(monkeypatch, env)
     payload = out_path.read_bytes()
     files = _extract(payload)
-    assert set(files.keys()) == {"summary.md", "stats.json", "render.txt"}
+    assert set(files.keys()) == _EXPECTED_ENTRIES
     stats = json.loads(files["stats.json"])
     assert stats["winner_slot"] == 0
 
 
 def test_run_is_byte_identical_on_rerun(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     """Determinism: two runs over identical inputs must produce identical bytes."""
-    env, out_path = _setup_inputs(tmp_path)
+    env, out_path = _setup_bundle(tmp_path)
     _invoke_run(monkeypatch, env)
     first = out_path.read_bytes()
     out_path.unlink()
@@ -347,28 +381,41 @@ def test_run_is_byte_identical_on_rerun(tmp_path: Path, monkeypatch: pytest.Monk
     assert first == second
 
 
+def test_run_falls_back_to_ereq_id_when_metadata_absent(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """When the bundle has no ``metadata`` token, the reporter uses the
+    bundle's ``ereq_id`` as the episode id so the rendered summary still
+    names the episode."""
+    env, out_path = _setup_bundle(tmp_path, include_metadata=False, ereq_id="ereq_no_meta")
+    _invoke_run(monkeypatch, env)
+    payload = out_path.read_bytes()
+    files = _extract(payload)
+    stats = json.loads(files["stats.json"])
+    assert stats["episode_id"] == "ereq_no_meta"
+    assert stats["variant_id"] == "unknown"
+
+
+def test_run_failed_bundle_status_raises(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """A bundle marked ``status: "failed"`` is not a recoverable input;
+    the reporter raises rather than produce a misleading summary."""
+    env, out_path = _setup_bundle(tmp_path, status="failed")
+    with pytest.raises(RuntimeError, match="failed"):
+        _invoke_run(monkeypatch, env)
+    assert not out_path.exists()
+
+
 def test_run_malformed_replay_raises(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     """Replay without a usable `config` surfaces as a ValidationError, no zip written."""
     bad_replay = make_replay()
     del bad_replay["config"]
-    env, out_path = _setup_inputs(tmp_path, replay=bad_replay)
+    env, out_path = _setup_bundle(tmp_path, replay=bad_replay)
     with pytest.raises(ValidationError):
         _invoke_run(monkeypatch, env)
     assert not out_path.exists()
 
 
 def test_run_malformed_results_raises(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    env, out_path = _setup_inputs(tmp_path, results=make_results_missing_field())
+    env, out_path = _setup_bundle(tmp_path, results=make_results_missing_field())
     with pytest.raises(ValidationError):
-        _invoke_run(monkeypatch, env)
-    assert not out_path.exists()
-
-
-def test_run_unparseable_results_raises(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    env, out_path = _setup_inputs(tmp_path)
-    # Corrupt the results file after _setup_inputs wrote it.
-    (tmp_path / "results.json").write_text("{not valid json")
-    with pytest.raises(json.JSONDecodeError):
         _invoke_run(monkeypatch, env)
     assert not out_path.exists()
 
@@ -376,13 +423,7 @@ def test_run_unparseable_results_raises(tmp_path: Path, monkeypatch: pytest.Monk
 def test_load_reporter_inputs_missing_env_var_raises(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    for k in (
-        "COGAME_RESULTS_URI",
-        "COGAME_REPLAY_URI",
-        "COGAME_EPISODE_METADATA_URI",
-        "COGAME_REPORT_OUTPUT_URI",
-        "COGAME_REPORTER_ID",
-    ):
+    for k in ("COGAME_EPISODE_BUNDLE_URI", "COGAME_REPORT_URI"):
         monkeypatch.delenv(k, raising=False)
     with pytest.raises(KeyError):
         par.load_reporter_inputs()

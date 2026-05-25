@@ -1,20 +1,45 @@
+"""PaintArena parquet stats reporter (reference / canonical contract).
+
+Reads an episode bundle pointed at by ``COGAME_EPISODE_BUNDLE_URI``,
+projects PaintArena replay frames plus final results into the canonical
+``(ts, player, key, value)`` event-log Parquet schema (see
+``docs/roles/reporter.md``), and writes a single ``.zip`` to
+``COGAME_REPORT_URI`` containing the Parquet plus a top-level
+``manifest.json`` flagging the Parquet via the ``event_log`` field.
+
+This is the "rich data" sibling of ``paint_arena_summarizer``: where the
+summarizer produces a human-readable Markdown render, this reporter
+produces a structured event log that downstream consumers (Observatory
+event explorers, diagnosers, optimizers) can ingest columnarly.
+
+Shared primitives (``BundleReader``, ``ReporterInputs``,
+``write_events_parquet``, the output ``manifest.json`` writer) live in
+the vendored ``reporter_sdk`` at ``coworld.examples.paintarena.reporter._sdk_vendored``.
+"""
+
 from __future__ import annotations
 
-import gzip
 import json
-import os
-import zlib
+import sys
 from dataclasses import dataclass
-from importlib import import_module
-from pathlib import Path
 from typing import Any, Self
-from urllib.parse import unquote, urlparse
-from urllib.request import Request, urlopen
 
 from pydantic import BaseModel, model_validator
 
-HTTP_USER_AGENT = "coworld-paintarena-stats-reporter/0.1"
-PARQUET_CONTENT_TYPE = "application/vnd.apache.parquet"
+from coworld.examples.paintarena.reporter._sdk_vendored import (
+    BundleReader,
+    OutputManifest,
+    ReporterInputs,
+    build_report_zip,
+    load_reporter_inputs,
+    write_events_parquet,
+    write_uri,
+)
+
+# The reporter's self-identifying id, stamped into the output zip's
+# ``manifest.json`` ``reporter_id`` field. Matches the runnable's ``id``
+# in ``manifest.reporter[]``.
+REPORTER_ID = "paint-arena-parquet-stats-reporter"
 
 
 class PaintArenaFrame(BaseModel):
@@ -58,50 +83,6 @@ class ParquetRow:
     value: str
 
 
-def read_data(uri: str) -> bytes:
-    parsed = urlparse(uri)
-    if parsed.scheme in ("http", "https"):
-        request = Request(uri, headers={"User-Agent": HTTP_USER_AGENT})
-        with urlopen(request, timeout=30) as response:
-            return response.read()
-    if parsed.scheme == "file":
-        return Path(unquote(parsed.path)).read_bytes()
-    if parsed.scheme == "":
-        return Path(uri).read_bytes()
-    raise ValueError(f"Unsupported URI for read_data: {uri}")
-
-
-def post_data(uri: str, data: bytes) -> None:
-    parsed = urlparse(uri)
-    if parsed.scheme in ("http", "https"):
-        request = Request(uri, data=data, method="POST")
-        request.add_header("Content-Type", PARQUET_CONTENT_TYPE)
-        request.add_header("User-Agent", HTTP_USER_AGENT)
-        with urlopen(request, timeout=60):
-            return
-    if parsed.scheme == "file":
-        path = Path(unquote(parsed.path))
-        path.parent.mkdir(parents=True, exist_ok=True)
-        path.write_bytes(data)
-        return
-    if parsed.scheme == "":
-        path = Path(uri)
-        path.parent.mkdir(parents=True, exist_ok=True)
-        path.write_bytes(data)
-        return
-    raise ValueError(f"Unsupported URI for post_data: {uri}")
-
-
-def load_json_artifact(uri: str) -> Any:
-    data = read_data(uri)
-    artifact_path = urlparse(uri).path
-    if artifact_path.endswith(".json.z"):
-        data = zlib.decompress(data)
-    elif artifact_path.endswith(".json.gz"):
-        data = gzip.decompress(data)
-    return json.loads(data)
-
-
 def rows_from_episode(replay: PaintArenaReplay, results: PaintArenaResults) -> list[ParquetRow]:
     rows: list[ParquetRow] = []
 
@@ -125,36 +106,37 @@ def _row(ts: int, player: int, key: str, value: Any) -> ParquetRow:
     return ParquetRow(ts=ts, player=player, key=key, value=json.dumps(value, separators=(",", ":"), sort_keys=True))
 
 
-def write_parquet(uri: str, rows: list[ParquetRow]) -> None:
-    pa: Any = import_module("pyarrow")
-    pq: Any = import_module("pyarrow.parquet")
-
-    table = pa.table(
-        {
-            "ts": [row.ts for row in rows],
-            "player": [row.player for row in rows],
-            "key": [row.key for row in rows],
-            "value": [row.value for row in rows],
-        },
-        schema=pa.schema(
-            [
-                ("ts", pa.int64()),
-                ("player", pa.int64()),
-                ("key", pa.string()),
-                ("value", pa.string()),
-            ]
-        ),
+def build_zip_bytes(replay: PaintArenaReplay, results: PaintArenaResults) -> bytes:
+    """Build the canonical output zip: top-level ``manifest.json`` flagging
+    ``stats.parquet`` as the event log, plus the Parquet payload itself."""
+    rows = rows_from_episode(replay, results)
+    parquet_bytes = write_events_parquet(
+        [{"ts": r.ts, "player": r.player, "key": r.key, "value": r.value} for r in rows]
     )
-    sink = pa.BufferOutputStream()
-    pq.write_table(table, sink)
-    post_data(uri, sink.getvalue().to_pybytes())
+    return build_report_zip(
+        OutputManifest(
+            reporter_id=REPORTER_ID,
+            event_log="stats.parquet",
+        ),
+        [("stats.parquet", parquet_bytes)],
+    )
 
 
-def main() -> None:
-    replay = PaintArenaReplay.model_validate(load_json_artifact(os.environ["COGAME_REPLAY_URI"]))
-    results = PaintArenaResults.model_validate(load_json_artifact(os.environ["COGAME_RESULTS_URI"]))
-    write_parquet(os.environ["COGAME_REPLAY_STATS_PARQUET_URI"], rows_from_episode(replay, results))
+def run(inputs: ReporterInputs) -> None:
+    with BundleReader(inputs.episode_bundle_uri) as bundle:
+        inner = bundle.inner_manifest()
+        if inner.status != "success":
+            raise RuntimeError(f"bundle status={inner.status!r}; reporter cannot operate on a failed episode")
+        replay = PaintArenaReplay.model_validate(bundle.read_json("replay"))
+        results = PaintArenaResults.model_validate(bundle.read_json("results"))
+    payload = build_zip_bytes(replay, results)
+    write_uri(inputs.report_uri, payload, content_type="application/zip")
+    print(
+        f"[{REPORTER_ID}] wrote zip to {inputs.report_uri}",
+        file=sys.stderr,
+        flush=True,
+    )
 
 
 if __name__ == "__main__":
-    main()
+    run(load_reporter_inputs())

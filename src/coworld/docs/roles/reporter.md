@@ -101,9 +101,10 @@ that feed humans, Observatory surfaces, and downstream supporting runnables. The
 is the structured data path that diagnosers and optimizers read to tie agent and game events to ticks. See
 [`OVERVIEW.md`](OVERVIEW.md) for the full artifact flow.
 
-The paintarena example reporters (`paint_arena_summarizer.py`, `stats_reporter.py`) were written against an earlier
-contract (per-artifact env vars) and will be migrated to the `COGAME_EPISODE_BUNDLE_URI` / `COGAME_REPORT_URI`
-shape; migration is tracked separately.
+The paintarena example reporters (`paint_arena_summarizer.py`, `stats_reporter.py`) run on the canonical
+`COGAME_EPISODE_BUNDLE_URI` / `COGAME_REPORT_URI` contract and write an in-zip `manifest.json` flagging their
+`render` / `event_log` outputs. They are the in-tree reference implementations of the contract; the richer
+production reporters live in [`Metta-AI/reporters`](https://github.com/Metta-AI/reporters).
 
 ## Future directions
 

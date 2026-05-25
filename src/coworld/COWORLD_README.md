@@ -292,11 +292,14 @@ coworld manifest, many experience reports, grades, and optional diagnoser output
 ```
 
 Reporters compress sparse episode experience into dense highlight signals: narrative color, news-caster summaries,
-interesting moments, structured stats, or machine-usable parquet dumps. A stats parquet reporter should write
-`COGAME_REPLAY_STATS_PARQUET_URI` with `ts`, `player`, `key`, and `value` columns, where `player` is the player slot or
-`-1` for global facts. Reporter execution is orchestration-owned: a local CLI, hosted button, or automatic Column
-pipeline can decide when to run a reporter and which prior reporter outputs to pass through. The exact archive shape is
-runner-defined so reporters can include whatever assets their output needs.
+interesting moments, structured stats, or machine-usable parquet dumps. They read a single
+`COGAME_EPISODE_BUNDLE_URI` (a `.zip` containing the episode's artifacts), write a single `.zip` to
+`COGAME_REPORT_URI`, and flag their renderable and event-log outputs via a top-level `manifest.json` inside the
+output zip. A stats-parquet reporter declares its parquet via the `event_log` field and uses the shared `(ts: int64,
+player: int64, key: string, value: string)` schema, where `player` is the player slot or `-1` for global facts. See
+[`docs/roles/reporter.md`](docs/roles/reporter.md) for the full contract. Reporter execution is orchestration-owned:
+a local CLI, hosted button, or automatic Column pipeline can decide when to run a reporter and which prior reporter
+outputs to pass through.
 
 Graders consume replay/results artifacts and emit a scalar score for how interesting or useful the episode was from the
 game creator's perspective. A grader is intentionally smaller than a reporter: it produces a ranking signal, not a full

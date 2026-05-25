@@ -1,132 +1,79 @@
-"""PaintArena summarizer reporter.
+"""PaintArena summarizer reporter (reference / canonical contract).
 
-Pure function of (results JSON, episode metadata JSON, replay JSON) that
-produces a zip containing a Markdown summary and a JSON stats blob. This
-implementation targets the v1 reporter contract in
-``Metta-AI/reporters/docs/REPORTER_DESIGN.md``
-(https://github.com/Metta-AI/reporters/blob/main/docs/REPORTER_DESIGN.md) —
-per-episode auto-run, deterministic output zip plus ``render.txt``. The
-current Coworld reporter contract in ``docs/roles/reporter.md`` (this package)
-uses a different shape (on-demand execution, ``manifest.json``-based output
-zip); reconciliation between the two contracts is tracked separately. Grid
-dimensions come from the game-owned replay's ``config``; PaintArena's replay
-format is defined by its game server in coworld.
+Pure function of the episode bundle pointed at by ``COGAME_EPISODE_BUNDLE_URI``.
+Produces a single ``.zip`` written to ``COGAME_REPORT_URI`` containing a
+Markdown summary and a JSON stats blob, plus a top-level ``manifest.json``
+flagging ``summary.md`` as the renderable per the canonical Coworld
+reporter contract (``docs/roles/reporter.md`` in this package).
 
-The inline primitives in this file (ReporterInputs, read_uri/write_uri) are
-SDK extraction candidates -- once a second reporter exists, they'll be lifted
-into reporter_sdk and this file will import them instead.
+This reporter is the minimal *reference* implementation of the contract
+for a PaintArena bundle. Grid dimensions come from the game-owned
+replay's ``config``. PaintArena's replay format is defined by its game
+server in coworld (``examples/paintarena/game/server.py::_replay_payload``).
+
+The richer production summarizer (HTML, SVG heatmap, parquet event log,
+back-and-forth highlights) lives in the ``Metta-AI/reporters`` repo at
+``reporters/paint_arena/paint_arena_summarizer``. This in-repo reference
+intentionally stays markdown-only so the example tree exercises the
+contract surface without taking on the production reporter's dependency
+surface (pyarrow on the markdown path is optional).
+
+Shared primitives (``BundleReader``, ``ReporterInputs``, ``read_uri`` /
+``write_uri``, ``write_deterministic_zip``, the output ``manifest.json``
+writer) live in the vendored ``reporter_sdk`` at
+``coworld.examples.paintarena.reporter._sdk_vendored`` and are re-exported below so test
+code referencing this module's attributes continues to work without
+reaching into the vendored package.
 """
 
 from __future__ import annotations
 
-import io
+# ``time`` and ``requests`` are intentionally imported (and used by the
+# SDK at module-singleton level) so test code can ``monkeypatch.setattr(
+# par.time, "sleep", ...)`` and ``monkeypatch.setattr(par.requests,
+# "request", ...)`` without reaching into the vendored SDK module.
 import json
-import os
 import sys
-import time
-import urllib.parse
-import zipfile
-from pathlib import Path
+import time  # noqa: F401  (re-exported for monkeypatching)
 from typing import Any
 
-import requests
+import requests  # noqa: F401  (re-exported for monkeypatching)
 from pydantic import BaseModel, NonNegativeInt
 
-# ---------- inline primitives (SDK extraction candidates) ----------
+from coworld.examples.paintarena.reporter._sdk_vendored import (
+    BundleInnerManifest,
+    BundleReader,
+    OutputManifest,
+    ReporterInputs,
+    build_report_zip,
+    load_reporter_inputs,
+    read_json,
+    read_uri,
+    write_deterministic_zip,
+    write_uri,
+)
 
+# Re-exported for the test suite, which references ``par._HTTP_MAX_ATTEMPTS``.
+from coworld.examples.paintarena.reporter._sdk_vendored.io import _HTTP_MAX_ATTEMPTS  # noqa: F401
 
-class ReporterInputs(BaseModel):
-    results_uri: str
-    replay_uri: str
-    episode_metadata_uri: str
-    report_output_uri: str
-    reporter_id: str
+# Public re-exports — tests import these as attributes of this module.
+__all__ = [
+    "BundleInnerManifest",
+    "BundleReader",
+    "OutputManifest",
+    "ReporterInputs",
+    "build_report_zip",
+    "load_reporter_inputs",
+    "read_json",
+    "read_uri",
+    "write_deterministic_zip",
+    "write_uri",
+]
 
-
-def load_reporter_inputs() -> ReporterInputs:
-    return ReporterInputs(
-        results_uri=os.environ["COGAME_RESULTS_URI"],
-        replay_uri=os.environ["COGAME_REPLAY_URI"],
-        episode_metadata_uri=os.environ["COGAME_EPISODE_METADATA_URI"],
-        report_output_uri=os.environ["COGAME_REPORT_OUTPUT_URI"],
-        reporter_id=os.environ["COGAME_REPORTER_ID"],
-    )
-
-
-_HTTP_RETRY_STATUSES = {429, 500, 502, 503, 504}
-_HTTP_MAX_ATTEMPTS = 5
-
-
-def _file_path_from_uri(uri: str) -> Path:
-    parsed = urllib.parse.urlparse(uri)
-    return Path(urllib.parse.unquote(parsed.path))
-
-
-def read_uri(uri: str) -> bytes:
-    scheme = urllib.parse.urlparse(uri).scheme.lower()
-    if scheme == "file":
-        return _file_path_from_uri(uri).read_bytes()
-    if scheme in ("http", "https"):
-        return _http_request_with_retry("GET", uri).content
-    raise ValueError(f"unsupported URI scheme {scheme!r} for read: {uri}")
-
-
-def write_uri(uri: str, payload: bytes, content_type: str) -> None:
-    scheme = urllib.parse.urlparse(uri).scheme.lower()
-    if scheme == "file":
-        path = _file_path_from_uri(uri)
-        path.parent.mkdir(parents=True, exist_ok=True)
-        path.write_bytes(payload)
-        return
-    if scheme in ("http", "https"):
-        _http_request_with_retry("PUT", uri, data=payload, headers={"Content-Type": content_type})
-        return
-    raise ValueError(f"unsupported URI scheme {scheme!r} for write: {uri}")
-
-
-def _http_request_with_retry(
-    method: str,
-    uri: str,
-    *,
-    data: bytes | None = None,
-    headers: dict[str, str] | None = None,
-) -> requests.Response:
-    delay = 0.5
-    for attempt in range(1, _HTTP_MAX_ATTEMPTS + 1):
-        resp = requests.request(method, uri, data=data, headers=headers, timeout=30)
-        if resp.status_code < 400:
-            return resp
-        if resp.status_code not in _HTTP_RETRY_STATUSES or attempt == _HTTP_MAX_ATTEMPTS:
-            resp.raise_for_status()
-        time.sleep(delay)
-        delay = min(delay * 2, 8.0)
-    raise RuntimeError("unreachable")  # loop above either returns or raises
-
-
-def read_json(uri: str) -> Any:
-    return json.loads(read_uri(uri).decode("utf-8"))
-
-
-# Pinned zip-entry mtime for byte-identical determinism. Anything other than a
-# fixed value would make reruns over identical inputs differ in the zip's
-# local-file headers.
-_DETERMINISTIC_ZIP_MTIME = (1980, 1, 1, 0, 0, 0)
-
-
-def write_deterministic_zip(entries: list[tuple[str, bytes]]) -> bytes:
-    """Build a zip with pinned mtimes for byte-identical reruns.
-
-    Entry order is preserved as given. Each entry's date_time is pinned to
-    _DETERMINISTIC_ZIP_MTIME so two invocations over identical inputs produce
-    byte-identical output.
-    """
-    buf = io.BytesIO()
-    with zipfile.ZipFile(buf, mode="w", compression=zipfile.ZIP_DEFLATED) as zf:
-        for name, payload in entries:
-            info = zipfile.ZipInfo(filename=name, date_time=_DETERMINISTIC_ZIP_MTIME)
-            info.compress_type = zipfile.ZIP_DEFLATED
-            zf.writestr(info, payload)
-    return buf.getvalue()
+# The reporter's self-identifying id, stamped into the output zip's
+# ``manifest.json`` ``reporter_id`` field. Matches the runnable's ``id``
+# in ``manifest.reporter[]``.
+REPORTER_ID = "paint-arena-summarizer"
 
 
 # ---------- PaintArena-specific input/output types ----------
@@ -144,8 +91,18 @@ class PlayerMetadata(BaseModel):
 
 
 class EpisodeMetadata(BaseModel):
+    """Episode-level metadata used to populate ``stats.json`` and the
+    Markdown header.
+
+    The canonical reporter contract does not formally carry these fields
+    in the bundle's inner ``manifest.json``; in practice they reach the
+    reporter via the bundle's optional ``metadata`` token. When that
+    token is absent, every field falls back to a default and ``episode_id``
+    is populated from the bundle's ``ereq_id`` so the rendered summary
+    still names the episode."""
+
     episode_id: str | None = None
-    variant_id: str
+    variant_id: str = "unknown"
     duration_seconds: float | None = None
     players: list[PlayerMetadata] = []
 
@@ -258,11 +215,11 @@ def render_summary_markdown(stats: PaintArenaStats) -> str:
         duration = f"{stats.ticks} ticks"
 
     lines = [
-        f"# PaintArena \u2014 Episode {stats.episode_id or 'unknown'}",
+        f"# PaintArena — Episode {stats.episode_id or 'unknown'}",
         "",
         (
-            f"**Variant:** {stats.variant_id} \u00b7 "
-            f"**Grid:** {grid.width} \u00d7 {grid.height} ({grid.total_tiles} tiles) \u00b7 "
+            f"**Variant:** {stats.variant_id} · "
+            f"**Grid:** {grid.width} × {grid.height} ({grid.total_tiles} tiles) · "
             f"**Duration:** {duration}"
         ),
         "",
@@ -271,9 +228,7 @@ def render_summary_markdown(stats: PaintArenaStats) -> str:
     ]
     for s in stats.slots:
         lines.append(f"| {s.slot} | {s.policy_name} | {s.painted_tiles} / {grid.total_tiles} | {s.share_pct:.1f}% |")
-    lines.append(
-        f"| \u2014 | unpainted | {stats.unpainted_tiles} / {grid.total_tiles} | {stats.unpainted_share_pct:.1f}% |"
-    )
+    lines.append(f"| — | unpainted | {stats.unpainted_tiles} / {grid.total_tiles} | {stats.unpainted_share_pct:.1f}% |")
     lines.append("")
 
     if stats.winner_slot is None and stats.unpainted_tiles == grid.total_tiles:
@@ -293,18 +248,21 @@ def build_zip_bytes(
     metadata: EpisodeMetadata,
     replay: PaintArenaReplay,
 ) -> bytes:
-    """Build the output zip: summary.md (rendered), stats.json (download),
-    render.txt (single line: `summary.md`)."""
+    """Build the canonical output zip: top-level ``manifest.json`` flagging
+    ``summary.md`` as the render target, plus ``summary.md`` (rendered)
+    and ``stats.json`` (auxiliary)."""
     stats = build_stats(results, metadata, replay.config)
     summary_md = render_summary_markdown(stats).encode("utf-8")
     stats_json = (json.dumps(stats.model_dump(), indent=2) + "\n").encode("utf-8")
-    render_txt = b"summary.md\n"
-    return write_deterministic_zip(
+    return build_report_zip(
+        OutputManifest(
+            reporter_id=REPORTER_ID,
+            render="summary.md",
+        ),
         [
             ("summary.md", summary_md),
             ("stats.json", stats_json),
-            ("render.txt", render_txt),
-        ]
+        ],
     )
 
 
@@ -312,12 +270,28 @@ def build_zip_bytes(
 
 
 def run(inputs: ReporterInputs) -> None:
-    results = PaintArenaResults.model_validate(read_json(inputs.results_uri))
-    metadata = EpisodeMetadata.model_validate(read_json(inputs.episode_metadata_uri))
-    replay = PaintArenaReplay.model_validate(read_json(inputs.replay_uri))
+    with BundleReader(inputs.episode_bundle_uri) as bundle:
+        inner = bundle.inner_manifest()
+        if inner.status != "success":
+            raise RuntimeError(f"bundle status={inner.status!r}; reporter cannot operate on a failed episode")
+        results = PaintArenaResults.model_validate(bundle.read_json("results"))
+        replay = PaintArenaReplay.model_validate(bundle.read_json("replay"))
+        metadata_payload = bundle.read_json_optional("metadata")
+        # Only None (token absent) coalesces to {}. A present-but-not-dict payload (`[]`, `""`,
+        # `0`, etc.) is upstream bundle corruption — fail fast rather than getting an
+        # AttributeError on the next line's .setdefault() or a confusing EpisodeMetadata error.
+        if metadata_payload is not None and not isinstance(metadata_payload, dict):
+            raise ValueError(f"metadata token must be a JSON object, got {type(metadata_payload).__name__}")
+        metadata_raw: dict[str, Any] = {} if metadata_payload is None else metadata_payload
+    metadata_raw.setdefault("episode_id", inner.ereq_id)
+    metadata = EpisodeMetadata.model_validate(metadata_raw)
     payload = build_zip_bytes(results=results, metadata=metadata, replay=replay)
-    write_uri(inputs.report_output_uri, payload, content_type="application/zip")
-    print(f"[{inputs.reporter_id}] wrote zip to {inputs.report_output_uri}", file=sys.stderr, flush=True)
+    write_uri(inputs.report_uri, payload, content_type="application/zip")
+    print(
+        f"[{REPORTER_ID}] wrote zip to {inputs.report_uri}",
+        file=sys.stderr,
+        flush=True,
+    )
 
 
 if __name__ == "__main__":

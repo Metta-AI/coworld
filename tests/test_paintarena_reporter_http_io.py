@@ -1,15 +1,12 @@
 """Tests for the HTTP path of read_uri / write_uri and _http_request_with_retry.
 
-The reporter's HTTP I/O is one of the SDK-extraction candidates listed in
-``Metta-AI/reporters/docs/REPORTER_DESIGN.md``
-(https://github.com/Metta-AI/reporters/blob/main/docs/REPORTER_DESIGN.md).
-These tests pin the retry policy contract (retry on 429/5xx with
-exponential backoff, no retry on other 4xx, capped attempts) so the
-extraction can move the code without changing the behavior.
-
-Note: the current Coworld reporter contract in ``docs/roles/reporter.md``
-(this package) supersedes the v1 contract these tests target; reconciliation
-is tracked separately.
+The reporter's HTTP I/O lives in the vendored ``reporter_sdk`` and is
+re-exported through ``paint_arena_summarizer`` so monkeypatching via
+``par.requests`` and ``par.time`` continues to reach the same module
+singletons the SDK uses. These tests pin the retry policy contract
+(retry on 429/5xx with exponential backoff, no retry on other 4xx,
+capped attempts) so the SDK can evolve without changing observable
+behavior.
 """
 
 from __future__ import annotations
