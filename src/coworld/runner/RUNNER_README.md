@@ -23,8 +23,7 @@ contains:
 
 - `config.json` — concrete game config used for the episode (with runner-injected tokens)
 - `results.json` — game-written results, validated against `game.results_schema`
-- `replay.json` — game-written replay artifact
-- `replay.json.z` — zlib-compressed copy of `replay.json` (used by hosted upload paths; locally just sits beside it)
+- `replay` — game-written replay artifact (exact bytes written by the game container)
 - `logs/game.stdout.log`, `logs/game.stderr.log` — game container stdout/stderr
 - `logs/policy_agent_{slot}.log` — combined stdout+stderr for each player container
 

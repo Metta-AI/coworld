@@ -41,7 +41,9 @@ three status labels.
                                                       │
                                                       │ writes per-URI artifacts:
                                                       │     results.json
-                                                      │     replay.json[.z]
+                                                      │     replay (game-written bytes;
+                                                      │              hosted upload zlib-compresses
+                                                      │              at the boundary)
                                                       │     config.json
                                                       │     logs/{game,player}*.log
                                                       │     error_info.json (on failure)
@@ -97,8 +99,8 @@ For each scheduled episode, the platform's runner starts:
 
 Players connect to the game's `/player` WebSocket and speak the game-defined player protocol — observations
 flow from the game, actions flow from the player, until the episode ends. The game writes per-URI artifacts
-(`results.json`, `replay.json[.z]`, `config.json`, game and per-player logs, and `error_info.json` on failure)
-to URIs the runner provided in env vars. Each completed episode's `scores` are routed back to the commissioner
+(`results.json`, the game-written replay file, `config.json`, game and per-player logs, and `error_info.json`
+on failure) to URIs the runner provided in env vars. Each completed episode's `scores` are routed back to the commissioner
 as an `episode_result` message; the commissioner uses these to make scheduling decisions (more episodes? close
 the round?) and ultimately emits `round_complete` with per-division rankings and graduation changes.
 

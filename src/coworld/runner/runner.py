@@ -8,7 +8,6 @@ import socket
 import subprocess
 import tempfile
 import time
-import zlib
 from contextlib import ExitStack
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -64,7 +63,7 @@ class EpisodeArtifacts:
             workspace=workspace,
             config_path=workspace / "config.json",
             results_path=workspace / "results.json",
-            replay_path=workspace / "replay.json",
+            replay_path=workspace / "replay",
             logs_dir=logs_dir,
             game_stdout_path=logs_dir / "game.stdout.log",
             game_stderr_path=logs_dir / "game.stderr.log",
@@ -72,10 +71,6 @@ class EpisodeArtifacts:
 
     def policy_log_path(self, slot: int) -> Path:
         return self.logs_dir / f"policy_agent_{slot}.log"
-
-    @property
-    def compressed_replay_path(self) -> Path:
-        return self.workspace / "replay.json.z"
 
 
 @dataclass(frozen=True)
@@ -176,7 +171,6 @@ def run_coworld_episode(
 
     results = json.loads(artifacts.results_path.read_text(encoding="utf-8"))
     validate_json_schema(results, job.results_schema)
-    finalize_replay_artifacts(artifacts)
 
 
 def generate_tokens(player_count: int) -> list[str]:
@@ -193,18 +187,6 @@ def coworld_game_config(job: CoworldEpisodeJobSpec, tokens: list[str]) -> dict[s
 def write_coworld_game_config(job: CoworldEpisodeJobSpec, artifacts: EpisodeArtifacts, tokens: list[str]) -> None:
     game_config = coworld_game_config(job, tokens)
     artifacts.config_path.write_text(json.dumps(game_config, indent=2), encoding="utf-8")
-
-
-def compress_replay(artifacts: EpisodeArtifacts) -> Path:
-    compressed_path = artifacts.compressed_replay_path
-    compressed_path.write_bytes(zlib.compress(artifacts.replay_path.read_bytes()))
-    return compressed_path
-
-
-def finalize_replay_artifacts(artifacts: EpisodeArtifacts) -> Path | None:
-    if not artifacts.replay_path.exists():
-        return None
-    return compress_replay(artifacts)
 
 
 def replay_session_path(replay_uri: str) -> str:
@@ -281,7 +263,7 @@ def run_episode_containers(spec: EpisodeRunSpec, *, verify_replay: bool = True) 
                     "-e",
                     f"{RESULTS_ENV_VAR}=file://{CONTAINER_WORKDIR}/results.json",
                     "-e",
-                    f"{REPLAY_SAVE_ENV_VAR}=file://{CONTAINER_WORKDIR}/replay.json",
+                    f"{REPLAY_SAVE_ENV_VAR}=file://{CONTAINER_WORKDIR}/replay",
                     *_env_args({"COWORLD_POLICY_NAMES": json.dumps(spec.policy_names)} if spec.policy_names else {}),
                     "-v",
                     f"{spec.artifacts.workspace.resolve()}:{CONTAINER_WORKDIR}:rw",
@@ -345,7 +327,7 @@ def run_episode_containers(spec: EpisodeRunSpec, *, verify_replay: bool = True) 
                 return
 
             replay_port = _free_local_port()
-            replay_uri = f"file://{CONTAINER_WORKDIR}/replay.json"
+            replay_uri = f"file://{CONTAINER_WORKDIR}/replay"
             replay_process = subprocess.Popen(
                 [
                     "docker",

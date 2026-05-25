@@ -43,7 +43,6 @@ from coworld.runner.runner import (
     assert_docker_image_reachable,
     assert_episode_images_reachable,
     ensure_local_docker_network,
-    finalize_replay_artifacts,
     generate_tokens,
     replay_client_url,
     replay_session_path,
@@ -185,7 +184,7 @@ def play_coworld(
                     "-e",
                     f"{RESULTS_ENV_VAR}=file://{CONTAINER_WORKDIR}/results.json",
                     "-e",
-                    f"{REPLAY_SAVE_ENV_VAR}=file://{CONTAINER_WORKDIR}/replay.json",
+                    f"{REPLAY_SAVE_ENV_VAR}=file://{CONTAINER_WORKDIR}/replay",
                     "-v",
                     f"{artifacts.workspace.resolve()}:{CONTAINER_WORKDIR}:rw",
                     *_image_command(package.game),
@@ -236,7 +235,6 @@ def play_coworld(
 
             for player_process, player_log_path in player_processes:
                 _wait_for_player_exit(player_process, player_log_path)
-            finalize_replay_artifacts(artifacts)
     finally:
         for container_name in player_containers:
             subprocess.run(["docker", "rm", "-f", container_name], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)

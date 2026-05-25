@@ -65,7 +65,7 @@ artifacts.
 After `play` or `certify` writes a replay artifact, start a replay viewer from the repository root:
 
 ```bash
-uv run coworld replay tmp/paintarena/coworld_manifest.json path/to/replay.json
+uv run coworld replay tmp/paintarena/coworld_manifest.json path/to/replay
 ```
 
 The command prints a replay client link and waits for the replay container to exit.

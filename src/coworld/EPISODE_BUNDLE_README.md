@@ -17,14 +17,16 @@ A bundle is a zip containing some subset of the following entries plus a `manife
 | Token         | File(s) in zip                                                                  | Source artifact                          |
 | ------------- | ------------------------------------------------------------------------------- | ---------------------------------------- |
 | `results`     | `results.json`                                                                  | `RESULTS_URI` / local `results.json`     |
-| `replay`      | `replay.json` (uncompressed)                                                    | `REPLAY_URI` / local `replay.json[.z]`   |
+| `replay`      | `replay.json` (uncompressed)                                                    | `REPLAY_URI` / local `replay`            |
 | `config`      | `config.json`                                                                   | runner-written concrete game config      |
 | `error_info`  | `error_info.json` (only present if the episode failed)                          | `ERROR_INFO_URI`                         |
 | `game_logs`   | `logs/game.stdout.log`, `logs/game.stderr.log`                                  | inside `DEBUG_URI`'s zip / local `logs/` |
 | `player_logs` | `logs/policy_agent_{slot}.log` (subject to access control — see below)          | `POLICY_LOG_URLS` / local `logs/`        |
 
-The bundle stores `replay.json` uncompressed since the outer zip already compresses; the runner's separate
-`replay.json.z` artifact exists for hosted upload and replay-viewing paths that consume the compressed form directly.
+The bundle stores `replay.json` uncompressed since the outer zip already compresses. The runner's local workspace
+contains a single `replay` file with the exact bytes the game container wrote; the hosted upload path zlib-compresses
+those bytes in memory at the upload boundary for hosted upload and replay-viewing paths that consume the compressed
+form directly.
 
 ### `manifest.json`
 

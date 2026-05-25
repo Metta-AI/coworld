@@ -198,9 +198,10 @@ uv run coworld play ./coworld/<coworld-id>/coworld_manifest.json episode_request
 game config, per-slot player images, commands, environment variables, episode tags, and optional policy names. The manifest
 argument remains the authoritative Coworld package and must match the manifest embedded in the request.
 
-`run-episode` waits for the local episode and writes results, replay, compressed replay, and logs. `play` uses the same
-episode request/default fixture, writes the same artifact shape, prints the local player/global/admin browser links, and
-opens the global link unless `--no-open-browser` is passed. Both commands accept `--output-dir` for artifact placement.
+`run-episode` waits for the local episode and writes results, the game-written replay artifact, and logs. `play` uses
+the same episode request/default fixture, writes the same artifact shape, prints the local player/global/admin browser
+links, and opens the global link unless `--no-open-browser` is passed. Both commands accept `--output-dir` for artifact
+placement.
 Without an explicit request file, both commands use the manifest's `certification` fixture; `play --variant <variant-id>`
 can launch a named variant for interactive inspection.
 

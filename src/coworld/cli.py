@@ -548,8 +548,6 @@ def hosted_game_join(
 
 def _echo_replay_paths(artifacts: EpisodeArtifacts) -> None:
     typer.echo(f"Replay: {artifacts.replay_path}")
-    if artifacts.compressed_replay_path.exists():
-        typer.echo(f"Replay (compressed): {artifacts.compressed_replay_path}")
 
 
 def _print_play_session(session: PlaySession) -> None:

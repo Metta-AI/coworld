@@ -13,7 +13,7 @@ from kubernetes.client.rest import ApiException
 
 from coworld.runner import kubernetes_runner
 from coworld.runner import runner as runner_module
-from coworld.runner.kubernetes_runner import _collect_logs, _wait_for_episode_artifacts
+from coworld.runner.kubernetes_runner import _collect_logs, _upload_outputs, _wait_for_episode_artifacts
 from coworld.runner.runner import EpisodeArtifacts, EpisodeRunSpec, PlayerLaunchSpec, RunnableLaunchSpec
 
 
@@ -109,32 +109,30 @@ class _FailingCoreV1:
         raise RuntimeError("pod status read failed")
 
 
-def test_runner_compress_replay_writes_zlib_json_z(tmp_path):
+def test_upload_outputs_zlib_compresses_replay_at_boundary(tmp_path, monkeypatch):
     artifacts = EpisodeArtifacts.create(tmp_path)
+    artifacts.results_path.write_text("{}", encoding="utf-8")
     artifacts.replay_path.write_bytes(b'{"events":[]}')
+    uploads: list[tuple[str, bytes, str]] = []
 
-    compressed_path = runner_module.compress_replay(artifacts)
+    monkeypatch.setattr(
+        kubernetes_runner,
+        "upload_data",
+        lambda uri, data, *, content_type: uploads.append((uri, data, content_type)),
+    )
+    monkeypatch.setenv("RESULTS_URI", "file:///tmp/results-out.json")
+    monkeypatch.setenv("REPLAY_URI", "file:///tmp/replay-out.bin")
+    monkeypatch.delenv("DEBUG_URI", raising=False)
+    monkeypatch.delenv("POLICY_LOG_URLS", raising=False)
 
-    assert compressed_path == artifacts.compressed_replay_path
-    assert compressed_path.name == "replay.json.z"
-    assert zlib.decompress(compressed_path.read_bytes()) == b'{"events":[]}'
+    _upload_outputs(artifacts)
 
-
-def test_finalize_replay_artifacts_skips_when_replay_missing(tmp_path):
-    artifacts = EpisodeArtifacts.create(tmp_path)
-
-    assert runner_module.finalize_replay_artifacts(artifacts) is None
-    assert not artifacts.compressed_replay_path.exists()
-
-
-def test_finalize_replay_artifacts_compresses_when_replay_present(tmp_path):
-    artifacts = EpisodeArtifacts.create(tmp_path)
-    artifacts.replay_path.write_bytes(b'{"events":[]}')
-
-    compressed_path = runner_module.finalize_replay_artifacts(artifacts)
-
-    assert compressed_path == artifacts.compressed_replay_path
-    assert zlib.decompress(compressed_path.read_bytes()) == b'{"events":[]}'
+    replay_uploads = [upload for upload in uploads if upload[0] == "file:///tmp/replay-out.bin"]
+    assert len(replay_uploads) == 1
+    _, replay_bytes, content_type = replay_uploads[0]
+    assert content_type == "application/x-compress"
+    assert zlib.decompress(replay_bytes) == b'{"events":[]}'
+    assert not (artifacts.workspace / "replay.json.z").exists()
 
 
 def test_require_http_ok_accepts_replay_client_redirect(monkeypatch):
@@ -318,7 +316,7 @@ def test_wait_for_episode_artifacts_fails_when_game_exits_without_replay(tmp_pat
         game_exit_codes=[0],
     )
 
-    with pytest.raises(TimeoutError, match="replay.json"):
+    with pytest.raises(TimeoutError, match="replay"):
         _wait_for_episode_artifacts(
             artifacts,
             core_v1,
