@@ -1431,6 +1431,15 @@ def _coworld_manifest(
                 "description": "Unit test player.",
             }
         ],
+        "reporter": [
+            {
+                "id": "unit-test-reporter",
+                "name": "Unit Test Reporter",
+                "type": "reporter",
+                "image": "ghcr.io/metta-ai/reporters-default:latest",
+                "description": "Default reporter stub for unit tests; satisfies CoworldManifest.reporter min_length=1.",
+            }
+        ],
         "variants": [
             {
                 "id": "default",

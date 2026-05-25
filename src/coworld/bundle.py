@@ -24,6 +24,13 @@ def build_coworld_manifest(
         raise RuntimeError(f"Compose file not found for Coworld build: {compose_file}")
 
     manifest = _load_template_manifest(template_path, version, _compose_image_placeholders(compose_file))
+    # Pull image-only services (GHCR role images) before building; --ignore-pull-failures skips
+    # services whose image tag is a build-output not in any registry.
+    subprocess.run(
+        ["docker", "compose", "-f", str(compose_file), "pull", "--ignore-pull-failures"],
+        cwd=compose_file.parent,
+        check=True,
+    )
     subprocess.run(["docker", "compose", "-f", str(compose_file), "build"], cwd=compose_file.parent, check=True)
     manifest = _with_image_tags(manifest, _built_image_tags(manifest))
 

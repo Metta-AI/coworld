@@ -10,7 +10,7 @@ A Coworld is the unit Softmax can run locally, in hosted play, and in leagues. A
 - one or more **player** containers that connect to the game and choose actions;
 - a `coworld_manifest.json` file that names the containers, configs, schemas, protocols, and docs.
 
-Every Coworld also declares five **supporting runnables** in its manifest:
+Every Coworld also declares five **supporting role sections** in its manifest:
 
 - **commissioner**: drives league rounds — schedules episodes, assigns players to slots, collates results, and decides
   promotions/relegations across divisions.
@@ -20,12 +20,11 @@ Every Coworld also declares five **supporting runnables** in its manifest:
 - **optimizer**: ingests episode artifacts, grades, and diagnoser output to drive local policy iteration.
 
 **All seven role sections are required in every `coworld_manifest.json`:** the single `game` object plus the six
-runnable arrays `player`, `commissioner`, `reporter`, `grader`, `diagnoser`, `optimizer`. Each runnable array must
-contain at least one entry. Coworld authors who don't want to write a custom commissioner/reporter/grader/diagnoser/
-optimizer may reference Softmax's published default image for that role (e.g. `softmax/default-commissioner:latest`,
-`softmax/default-grader:latest`); the defaults are intentionally limited but functional baselines, not no-ops, and
-they do not constitute a formal role contract. See [Role Status](#role-status) below for which roles have a live
-platform contract today.
+runnable arrays `player`, `commissioner`, `reporter`, `grader`, `diagnoser`, `optimizer`. `player[]` and `reporter[]`
+must contain at least one entry. Coworld authors who do not have a custom reporter may reference
+`ghcr.io/metta-ai/reporters-default:latest`; the remaining supporting role arrays may stay empty until their platform
+contracts require runnable entries. See [Role Status](#role-status) below for which roles have a live platform contract
+today.
 
 During a league episode, the platform starts the game container plus one submitted policy container per player slot.
 Public users normally build policy containers and submit them to existing Coworld leagues. Game authors build game
@@ -36,37 +35,34 @@ Use [GAME_RUNTIME_README.md](GAME_RUNTIME_README.md) for the game-container runt
 
 ## Role Status
 
-> **Roles vs runnables.** A *role* is a function a Coworld needs to fulfill — game, player, commissioner,
-> reporter, grader, diagnoser, or optimizer. A *runnable* is the concrete container (image plus command and env)
-> that fulfills a role. The manifest declares one game runnable (at `manifest.game.runnable`) and one or more
-> runnables per supporting role (in `manifest.player[]`, `manifest.commissioner[]`, and so on). When this guide
-> says "the reporter role" it means the function; "a reporter runnable" means a specific container in
-> `manifest.reporter[]`.
+> **Roles vs runnables.** A _role_ is a function a Coworld needs to fulfill — game, player, commissioner, reporter,
+> grader, diagnoser, or optimizer. A _runnable_ is the concrete container (image plus command and env) that fulfills a
+> role. The manifest declares one game runnable (at `manifest.game.runnable`) and role-specific runnable arrays (in
+> `manifest.player[]`, `manifest.commissioner[]`, and so on). When this guide says "the reporter role" it means the
+> function; "a reporter runnable" means a specific container in `manifest.reporter[]`.
 
 Every Coworld role is documented with one of three status labels describing how complete its platform integration is
 today. New documents and code in this package must use these labels consistently.
 
-- **live**: the role has a full runtime contract that the platform exercises end to end. The contract is stable
-  enough to build against.
+- **live**: the role has a full runtime contract that the platform exercises end to end. The contract is stable enough
+  to build against.
 - **contract defined, runtime pending**: the role has a written contract (in `docs/roles/<role>.md` and/or a
   `docs/specs/` document) and may have partial or in-process implementations, but the platform does not yet invoke a
-  containerized runnable for this role automatically. Manifests must still declare an entry; expect the runtime
+  containerized runnable for this role automatically. Manifests must still declare the section; expect the runtime
   integration to land soon.
-- **reserved**: the role is declared in the manifest schema and has a purpose statement in `docs/roles/<role>.md`,
-  but no input/output contract or platform integration exists yet. A manifest entry is still required — reference the
-  Softmax-published default image (e.g. `softmax/default-grader:latest`) if a custom implementation does not exist
-  yet. A default image is not itself a contract; it may act as a temporary implicit contract for callers, but it
-  does not bump the role's documented status until a contract is written.
+- **reserved**: the role is declared in the manifest schema and has a purpose statement in `docs/roles/<role>.md`, but
+  no input/output contract or platform integration exists yet. The manifest section is still required, but it can stay
+  empty until the role has a concrete runnable contract.
 
-| Role         | Status                              |
-| ------------ | ----------------------------------- |
-| game         | live                                |
-| player       | live                                |
-| commissioner | contract defined, runtime pending   |
-| reporter     | contract defined, runtime pending   |
-| grader       | reserved                            |
-| diagnoser    | reserved                            |
-| optimizer    | reserved                            |
+| Role         | Status                            |
+| ------------ | --------------------------------- |
+| game         | live                              |
+| player       | live                              |
+| commissioner | contract defined, runtime pending |
+| reporter     | contract defined, runtime pending |
+| grader       | reserved                          |
+| diagnoser    | reserved                          |
+| optimizer    | reserved                          |
 
 ## Install
 
@@ -195,15 +191,14 @@ uv run coworld play ./coworld/<coworld-id>/coworld_manifest.json episode_request
 ```
 
 `episode_request.json` follows [runner/episode_request_schema.json](runner/episode_request_schema.json). It supplies the
-game config, per-slot player images, commands, environment variables, episode tags, and optional policy names. The manifest
-argument remains the authoritative Coworld package and must match the manifest embedded in the request.
+game config, per-slot player images, commands, environment variables, episode tags, and optional policy names. The
+manifest argument remains the authoritative Coworld package and must match the manifest embedded in the request.
 
 `run-episode` waits for the local episode and writes results, the game-written replay artifact, and logs. `play` uses
 the same episode request/default fixture, writes the same artifact shape, prints the local player/global/admin browser
 links, and opens the global link unless `--no-open-browser` is passed. Both commands accept `--output-dir` for artifact
-placement.
-Without an explicit request file, both commands use the manifest's `certification` fixture; `play --variant <variant-id>`
-can launch a named variant for interactive inspection.
+placement. Without an explicit request file, both commands use the manifest's `certification` fixture;
+`play --variant <variant-id>` can launch a named variant for interactive inspection.
 
 ## Hosted Play Sessions
 
@@ -242,10 +237,10 @@ checked in without a version; use the hydrated `coworld_manifest.json` for certi
 Certification validates the manifest, checks the referenced Docker images, runs one short episode, checks player and
 global client routes, checks replay viewing, and validates the results file.
 
-Publishing a Coworld is separate from submitting a policy. `upload-coworld` uploads the game package and every
-bundled role implementation it references — the `game.runnable` container plus each entry in `player[]`,
-`commissioner[]`, `reporter[]`, `grader[]`, `diagnoser[]`, and `optimizer[]`. `upload-policy` uploads a player's
-policy container and creates a policy version for league submission.
+Publishing a Coworld is separate from submitting a policy. `upload-coworld` uploads the game package and every bundled
+role implementation it references — the `game.runnable` container plus each entry in `player[]`, `commissioner[]`,
+`reporter[]`, `grader[]`, `diagnoser[]`, and `optimizer[]`. `upload-policy` uploads a player's policy container and
+creates a policy version for league submission.
 
 ## Manifest
 
@@ -253,31 +248,32 @@ Every Coworld package has a `coworld_manifest.json` file. The main sections are:
 
 - `game`: game container and its protocols, config schema, results schema, and game-authored docs.
 - `player`: bundled player images that can play the game. Must contain at least one entry.
-- `commissioner`, `reporter`, `grader`, `diagnoser`, `optimizer`: arrays of bundled supporting runnables. Each must
-  contain at least one entry; Coworlds without a custom implementation may reference the Softmax-published default
-  image for that role (see [Role Status](#role-status) for current contract status).
+- `reporter`: bundled reporter runnables. Must contain at least one entry; Coworlds without a custom reporter may
+  reference `ghcr.io/metta-ai/reporters-default:latest`.
+- `commissioner`, `grader`, `diagnoser`, `optimizer`: arrays of bundled supporting runnables. The sections are required
+  and may be empty until their contracts require runnable entries.
 - `variants`: named game configs, such as maps, difficulty levels, or league settings.
 - `certification`: the short smoke-test episode used by `coworld certify` and `coworld run-episode`.
 
 For the field-by-field reference — runnable shape, the `type` field, the `game` sub-object, variant fields,
 certification fields, document objects, and `game.docs.pages` requirements — see
-[MANIFEST_README.md](MANIFEST_README.md). Role-specific contracts live under `docs/roles/`:
-[game](docs/roles/game.md), [player](docs/roles/player.md), [commissioner](docs/roles/commissioner.md),
-[reporter](docs/roles/reporter.md), [grader](docs/roles/grader.md), [diagnoser](docs/roles/diagnoser.md), and
-[optimizer](docs/roles/optimizer.md); [docs/roles/OVERVIEW.md](docs/roles/OVERVIEW.md) covers how the roles compose.
+[MANIFEST_README.md](MANIFEST_README.md). Role-specific contracts live under `docs/roles/`: [game](docs/roles/game.md),
+[player](docs/roles/player.md), [commissioner](docs/roles/commissioner.md), [reporter](docs/roles/reporter.md),
+[grader](docs/roles/grader.md), [diagnoser](docs/roles/diagnoser.md), and [optimizer](docs/roles/optimizer.md);
+[docs/roles/OVERVIEW.md](docs/roles/OVERVIEW.md) covers how the roles compose.
 
 The manifest schema is generated at [coworld_manifest_schema.json](coworld_manifest_schema.json). Upload stores the
 manifest as JSON; it does not bundle local Markdown files, schemas, or other assets, so referenced URIs should be
 public.
 
-Manifests live at the Coworld level only. Individual runnables do not carry their own Coworld manifest — each is just
-an `image` reference with optional `run` and `env`. A few unrelated documents elsewhere in the system are also named
+Manifests live at the Coworld level only. Individual runnables do not carry their own Coworld manifest — each is just an
+`image` reference with optional `run` and `env`. A few unrelated documents elsewhere in the system are also named
 `manifest.json` but are not Coworld manifests: a reporter's output `.zip` contains an internal `manifest.json` that
 flags its render target and event log (see [`docs/roles/reporter.md`](docs/roles/reporter.md)); an episode bundle
 contains an internal `manifest.json` describing the files inside it (see
 [`EPISODE_BUNDLE_README.md`](EPISODE_BUNDLE_README.md)); and per-role-repo implementations carry a `CATALOG.yaml` for
-discoverability (see [`docs/specs/0045-coworld-role-repos.md`](../../../../docs/specs/0045-coworld-role-repos.md)).
-None of those are Coworld manifests.
+discoverability (see [`docs/specs/0045-coworld-role-repos.md`](../../../../docs/specs/0045-coworld-role-repos.md)). None
+of those are Coworld manifests.
 
 ## Role Artifact Flow
 
@@ -292,14 +288,13 @@ coworld manifest, many experience reports, grades, and optional diagnoser output
 ```
 
 Reporters compress sparse episode experience into dense highlight signals: narrative color, news-caster summaries,
-interesting moments, structured stats, or machine-usable parquet dumps. They read a single
-`COGAME_EPISODE_BUNDLE_URI` (a `.zip` containing the episode's artifacts), write a single `.zip` to
-`COGAME_REPORT_URI`, and flag their renderable and event-log outputs via a top-level `manifest.json` inside the
-output zip. A stats-parquet reporter declares its parquet via the `event_log` field and uses the shared `(ts: int64,
-player: int64, key: string, value: string)` schema, where `player` is the player slot or `-1` for global facts. See
-[`docs/roles/reporter.md`](docs/roles/reporter.md) for the full contract. Reporter execution is orchestration-owned:
-a local CLI, hosted button, or automatic Column pipeline can decide when to run a reporter and which prior reporter
-outputs to pass through.
+interesting moments, structured stats, or machine-usable parquet dumps. They read a single `COGAME_EPISODE_BUNDLE_URI`
+(a `.zip` containing the episode's artifacts), write a single `.zip` to `COGAME_REPORT_URI`, and flag their renderable
+and event-log outputs via a top-level `manifest.json` inside the output zip. A stats-parquet reporter declares its
+parquet via the `event_log` field and uses the shared `(ts: int64, player: int64, key: string, value: string)` schema,
+where `player` is the player slot or `-1` for global facts. See [`docs/roles/reporter.md`](docs/roles/reporter.md) for
+the full contract. Reporter execution is orchestration-owned: a local CLI, hosted button, or automatic Column pipeline
+can decide when to run a reporter and which prior reporter outputs to pass through.
 
 Graders consume replay/results artifacts and emit a scalar score for how interesting or useful the episode was from the
 game creator's perspective. A grader is intentionally smaller than a reporter: it produces a ranking signal, not a full
@@ -324,26 +319,26 @@ The game image owns the episode. It must:
 - serve a live viewer at `GET /client/global` and `WEBSOCKET /global`;
 - write final results to `COGAME_RESULTS_URI`;
 - write a replay artifact to `COGAME_SAVE_REPLAY_URI`;
-- serve replay clients at `GET /client/replay?uri=<uri>` and replay websockets at
-  `WEBSOCKET /replay?uri=<uri>` when started with `COGAME_REPLAY_SERVER=1`.
+- serve replay clients at `GET /client/replay?uri=<uri>` and replay websockets at `WEBSOCKET /replay?uri=<uri>` when
+  started with `COGAME_REPLAY_SERVER=1`.
 
 Browser client pages forward their page query string into the websocket they open. When the game is served through a
 hosted proxy that strips websocket query strings, the platform passes an `address` query parameter on the page URL
 containing the full websocket URL to use instead. See
-[GAME_RUNTIME_README.md § Browser Clients](GAME_RUNTIME_README.md#browser-clients) for the full contract, including
-the replay URI flow.
+[GAME_RUNTIME_README.md § Browser Clients](GAME_RUNTIME_README.md#browser-clients) for the full contract, including the
+replay URI flow.
 
-Coworld replays have one hosted entrypoint across games: the platform iframes the game-owned
-`/client/replay?uri=<uri>` page, and the page opens game-owned replay HTTP or WebSocket routes on the same runtime.
-Those replay routes must keep the replay artifact URI in the query string so proxies can preserve it end to end.
+Coworld replays have one hosted entrypoint across games: the platform iframes the game-owned `/client/replay?uri=<uri>`
+page, and the page opens game-owned replay HTTP or WebSocket routes on the same runtime. Those replay routes must keep
+the replay artifact URI in the query string so proxies can preserve it end to end.
 
 The game config schema must define `tokens` as a required string array with equal `minItems` and `maxItems`. That fixed
 length is the number of player slots. Coworld-authored configs omit `tokens`; the runner creates fresh tokens for each
 episode and injects them into the concrete runtime config.
 
-The runner uploads each episode artifact to a separate URI; it does not produce a single bundled output. When a
-consumer (reporter, grader, diagnoser, optimizer, or any CLI command that needs a full-episode view) wants those
-artifacts as a unit, it requests an **episode bundle** — a zip assembled on demand from the per-URI artifacts. See
+The runner uploads each episode artifact to a separate URI; it does not produce a single bundled output. When a consumer
+(reporter, grader, diagnoser, optimizer, or any CLI command that needs a full-episode view) wants those artifacts as a
+unit, it requests an **episode bundle** — a zip assembled on demand from the per-URI artifacts. See
 [EPISODE_BUNDLE_README.md](EPISODE_BUNDLE_README.md) for the bundle contract, the `COGAME_EPISODE_BUNDLE_URI` env var
 that supporting runnables read, and the CLI/library/API surfaces for requesting a bundle.
 
@@ -383,8 +378,8 @@ player pod for that policy version receives those secret variables.
 ### Bedrock and LLM credentials
 
 Coworld tournaments run on AWS. When a policy opts into `--use-bedrock`, the hosted runner gives the player pod an IAM
-role with Bedrock permissions — no API key needed. Softmax covers the Bedrock token usage, so players using Bedrock
-do not need to bring their own LLM credentials or pay for inference.
+role with Bedrock permissions — no API key needed. Softmax covers the Bedrock token usage, so players using Bedrock do
+not need to bring their own LLM credentials or pay for inference.
 
 For other LLM providers (Anthropic API, OpenAI, etc.), use `--secret-env` to attach your own API keys. Those keys are
 stored in AWS Secrets Manager and injected at runtime, but you manage and fund them yourself.

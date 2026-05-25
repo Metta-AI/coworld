@@ -92,6 +92,16 @@ def _manifest(game_type: str = "game", player_type: str = "player") -> CoworldMa
                     "source_url": "https://example.com/player",
                 }
             ],
+            "reporter": [
+                {
+                    "id": "reporter",
+                    "name": "Reporter",
+                    "description": "Reporter.",
+                    "type": "reporter",
+                    "image": "reporter",
+                    "source_url": "https://example.com/reporter",
+                }
+            ],
             "variants": [{"id": "default", "name": "Default", "description": "Default.", "game_config": {}}],
             "certification": {"game_config": {}, "players": [{"player_id": "player"}]},
         }

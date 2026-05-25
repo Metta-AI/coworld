@@ -1060,6 +1060,15 @@ def _manifest() -> dict[str, object]:
                 "run": ["python", "-m", "unit_test.player"],
             }
         ],
+        "reporter": [
+            {
+                "id": "unit-test-reporter",
+                "name": "Unit Test Reporter",
+                "description": "Reporter stub; reuses unit-test-runtime so upload dedupe doesn't request a 2nd image.",
+                "type": "reporter",
+                "image": "unit-test-runtime:latest",
+            }
+        ],
         "variants": [
             {
                 "id": "default",
@@ -1084,4 +1093,9 @@ def _manifest_with_image(image: str) -> dict[str, object]:
     player = players[0]
     assert isinstance(player, dict)
     player["image"] = image
+    reporters = manifest["reporter"]
+    assert isinstance(reporters, list)
+    reporter = reporters[0]
+    assert isinstance(reporter, dict)
+    reporter["image"] = image
     return manifest

@@ -54,16 +54,17 @@ def test_canonical_among_them_build_declares_role_starter_contexts() -> None:
     assert "GAME_CONTEXT" in compose_text
     assert "PLAYER_CONTEXT" in compose_text
     assert "COMMISSIONER_CONTEXT" in compose_text
-    assert "REPORTER_CONTEXT" in compose_text
     assert "GRADER_CONTEXT" in compose_text
     assert "DIAGNOSER_CONTEXT" in compose_text
     assert "OPTIMIZER_CONTEXT" in compose_text
     assert "players/players/among_them/starter" in compose_text
     assert "commissioners/commissioners/among_them/among_them_commissioner" in compose_text
-    assert "reporters/reporters/among_them/among_them_summarizer" in compose_text
     assert "graders/graders/among_them/among_them_grader" in compose_text
     assert "diagnosers/diagnosers/among_them/among_them_diagnoser" in compose_text
     assert "optimizers" in compose_text
+    # Reporter pulled from GHCR rather than rebuilt; other roles will follow once their repos publish.
+    assert "REPORTER_CONTEXT" not in compose_text
+    assert "ghcr.io/metta-ai/reporters-among-them-summarizer" in compose_text
     assert "ghcr.io/treeform" not in compose_text
     assert "policies/symbolic/bitworld/among-them/ivotewell" not in compose_text
     assert "WORLD_CONTEXT" not in compose_text
@@ -201,8 +202,15 @@ def test_cogs_vs_clips_and_paintarena_templates_declare_all_viability_role_secti
     assert cogs_vs_clips_pages["rules.md"] == "https://softmax.com/play_cogsvsclips.md#game-rules"
     assert cogs_vs_clips_pages["play_cogsvsclips.md"] == "https://softmax.com/play_cogsvsclips.md"
     assert "env" not in cogs_vs_clips["player"][0]
-    for section in ("optimizer", "commissioner", "reporter", "grader", "diagnoser"):
+    # Reporter populated with the default reporter; the other four stay empty until their roles tighten.
+    for section in ("optimizer", "commissioner", "grader", "diagnoser"):
         assert cogs_vs_clips[section] == []
+    assert [role["id"] for role in cogs_vs_clips["reporter"]] == ["softmax-default-reporter"]
+    assert cogs_vs_clips["reporter"][0]["image"] == "{{REPORTER_IMAGE}}"
+    assert (
+        cogs_vs_clips["reporter"][0]["source_url"]
+        == "https://github.com/Metta-AI/reporters/tree/main/reporters/default"
+    )
 
     paintarena = json.loads((WORLDS / "paintarena" / "coworld_manifest_template.json").read_text(encoding="utf-8"))
     for section in ("commissioner", "grader", "diagnoser"):
@@ -254,7 +262,7 @@ def _materialized_template(base_dir: Path, template_path: Path) -> Path:
             "{{GAME_IMAGE}}": "coworld-among-them-game:latest",
             "{{PLAYER_IMAGE}}": "coworld-among-them-ivotewell:latest",
             "{{COMMISSIONER_IMAGE}}": "coworld-among-them-commissioner:latest",
-            "{{REPORTER_IMAGE}}": "coworld-among-them-summarizer:latest",
+            "{{REPORTER_IMAGE}}": "ghcr.io/metta-ai/reporters-among-them-summarizer:latest",
             "{{GRADER_IMAGE}}": "coworld-among-them-grader:latest",
             "{{DIAGNOSER_IMAGE}}": "coworld-among-them-diagnoser:latest",
             "{{OPTIMIZER_IMAGE}}": "coworld-optimizer:latest",
@@ -262,6 +270,7 @@ def _materialized_template(base_dir: Path, template_path: Path) -> Path:
         "cogs_vs_clips": {
             "{{GAME_IMAGE}}": "coworld-cogs-vs-clips-game:latest",
             "{{PLAYER_IMAGE}}": "coworld-cogs-vs-clips-reference-player:latest",
+            "{{REPORTER_IMAGE}}": "ghcr.io/metta-ai/reporters-default:latest",
         },
         "paintarena": {"{{PAINTARENA_IMAGE}}": "coworld-paintarena:latest"},
     }

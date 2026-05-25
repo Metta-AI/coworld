@@ -152,6 +152,7 @@
       "type": "reporter",
       "name": "Paint Arena Summarizer",
       "description": "Per-episode summarizer: zip with Markdown summary and JSON stats from PaintArena results, metadata, and replay config.",
+      "source_url": "https://github.com/Metta-AI/coworld/tree/main/src/coworld/examples/paintarena/reporter",
       "image": "{{PAINTARENA_IMAGE}}",
       "run": ["python", "-m", "coworld.examples.paintarena.reporter.paint_arena_summarizer"]
     },
@@ -160,6 +161,7 @@
       "type": "reporter",
       "name": "Paint Arena Parquet Stats Reporter",
       "description": "Rich data reporter: converts PaintArena replay frames and results into replay stats parquet.",
+      "source_url": "https://github.com/Metta-AI/coworld/tree/main/src/coworld/examples/paintarena/reporter",
       "image": "{{PAINTARENA_IMAGE}}",
       "run": ["python", "-m", "coworld.examples.paintarena.reporter.stats_reporter"]
     }

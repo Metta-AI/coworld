@@ -136,8 +136,9 @@ class CoworldManifest(BaseModel):
         description="Bundled player runnables. Role docs: docs/roles/player.md.",
     )
     reporter: list[CoworldManifestRoleSpec] = Field(
-        default_factory=list,
-        description="Optional reporter runnables. Role docs: docs/roles/reporter.md.",
+        min_length=1,
+        description="Reporter runnables. Must declare at least one entry; Coworlds without a custom reporter "
+        "may reference `ghcr.io/metta-ai/reporters-default:latest`. Role docs: docs/roles/reporter.md.",
     )
     commissioner: list[CoworldManifestRoleSpec] = Field(
         default_factory=list,

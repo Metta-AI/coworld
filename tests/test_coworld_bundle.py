@@ -27,10 +27,17 @@ def test_build_coworld_manifest_runs_compose_and_writes_hydrated_manifest(
     monkeypatch.setattr(
         "coworld.bundle.subprocess.run",
         _fake_docker_run(
-            {"game": "game-runtime:latest", "player": "player-runtime:latest"},
+            {
+                "game": "game-runtime:latest",
+                "player": "player-runtime:latest",
+                "reporter": "ghcr.io/metta-ai/reporters-default:latest",
+            },
             {
                 "game-runtime:latest": "sha256:1111111111112222222222222222222222222222222222222222222222222222",
                 "player-runtime:latest": "sha256:aaaaaaaaaaaabbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+                "ghcr.io/metta-ai/reporters-default:latest": (
+                    "sha256:ccccccccccccddddddddddddddddddddddddddddddddddddddddddddddddddddd"
+                ),
             },
             calls,
         ),
@@ -57,6 +64,10 @@ def test_build_coworld_manifest_runs_compose_and_writes_hydrated_manifest(
             {"cwd": tmp_path, "check": True, "capture_output": True, "text": True},
         ),
         (
+            ["docker", "compose", "-f", str(tmp_path / "compose.yaml"), "pull", "--ignore-pull-failures"],
+            {"cwd": tmp_path, "check": True},
+        ),
+        (
             ["docker", "compose", "-f", str(tmp_path / "compose.yaml"), "build"],
             {"cwd": tmp_path, "check": True},
         ),
@@ -74,6 +85,26 @@ def test_build_coworld_manifest_runs_compose_and_writes_hydrated_manifest(
         ),
         (
             ["docker", "tag", "player-runtime:latest", "player-runtime:coworld-aaaaaaaaaaaa"],
+            {"check": True},
+        ),
+        (
+            [
+                "docker",
+                "image",
+                "inspect",
+                "--format",
+                "{{.Id}}",
+                "ghcr.io/metta-ai/reporters-default:latest",
+            ],
+            {"check": True, "capture_output": True, "text": True},
+        ),
+        (
+            [
+                "docker",
+                "tag",
+                "ghcr.io/metta-ai/reporters-default:latest",
+                "ghcr.io/metta-ai/reporters-default:coworld-cccccccccccc",
+            ],
             {"check": True},
         ),
     ]
@@ -131,6 +162,9 @@ def test_build_coworld_manifest_tags_primary_role_images(tmp_path: Path, monkeyp
                 "reporter-runtime:latest": "sha256:444444444444",
                 "grader-runtime:latest": "sha256:555555555555",
                 "optimizer-runtime:latest": "sha256:666666666666",
+                # Defensive: stub reporter is overridden by role_images here, but keep mock entry
+                # in case a future refactor regresses the override.
+                "ghcr.io/metta-ai/reporters-default:latest": "sha256:777777777777",
             },
         ),
     )
@@ -160,10 +194,15 @@ def test_build_coworld_manifest_tags_digest_stripped_image_refs(
     monkeypatch.setattr(
         "coworld.bundle.subprocess.run",
         _fake_docker_run(
-            {"game": "game-runtime:latest", "player": "player-runtime:latest"},
+            {
+                "game": "game-runtime:latest",
+                "player": "player-runtime:latest",
+                "reporter": "ghcr.io/metta-ai/reporters-default:latest",
+            },
             {
                 "game-runtime:latest": "sha256:111111111111",
                 "player-runtime:latest": "sha256:222222222222",
+                "ghcr.io/metta-ai/reporters-default:latest": "sha256:cccccccccccc",
             },
             calls,
         ),
@@ -192,10 +231,15 @@ def test_build_command_writes_hydrated_manifest(tmp_path: Path, monkeypatch: pyt
     monkeypatch.setattr(
         "coworld.bundle.subprocess.run",
         _fake_docker_run(
-            {"game": "game-runtime:latest", "player": "player-runtime:latest"},
+            {
+                "game": "game-runtime:latest",
+                "player": "player-runtime:latest",
+                "reporter": "ghcr.io/metta-ai/reporters-default:latest",
+            },
             {
                 "game-runtime:latest": "sha256:111111111111",
                 "player-runtime:latest": "sha256:222222222222",
+                "ghcr.io/metta-ai/reporters-default:latest": "sha256:cccccccccccc",
             },
         ),
     )
@@ -278,6 +322,16 @@ def _write_manifest(
                         "type": "player",
                         "image": player_image,
                         "description": "Unit test player.",
+                    }
+                ],
+                # Always-present stub to satisfy reporter min_length=1; tests override via role_images.
+                "reporter": [
+                    {
+                        "id": "unit-test-default-reporter",
+                        "name": "Unit Test Default Reporter",
+                        "type": "reporter",
+                        "image": "ghcr.io/metta-ai/reporters-default:latest",
+                        "description": "Default reporter stub.",
                     }
                 ],
                 **declared_roles,
