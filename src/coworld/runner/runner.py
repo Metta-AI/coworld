@@ -12,7 +12,7 @@ import zlib
 from contextlib import ExitStack
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Mapping, cast
+from typing import Mapping
 from urllib.parse import urlencode
 
 import httpx
@@ -95,16 +95,6 @@ class RunnableLaunchSpec:
     image: str
     run: tuple[str, ...] = ()
     env: Mapping[str, str] = field(default_factory=dict)
-
-    @classmethod
-    def from_runnable(cls, runnable: Mapping[str, object]) -> RunnableLaunchSpec:
-        run: tuple[str, ...] = ()
-        env: Mapping[str, str] = {}
-        if "run" in runnable:
-            run = tuple(cast(list[str], runnable["run"]))
-        if "env" in runnable:
-            env = cast(Mapping[str, str], runnable["env"])
-        return cls(image=cast(str, runnable["image"]), run=run, env=env)
 
     @classmethod
     def from_model(cls, runnable: CoworldRunnableSpec) -> RunnableLaunchSpec:

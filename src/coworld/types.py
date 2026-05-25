@@ -26,6 +26,9 @@ class CoworldRunnableSpec(BaseModel):
     env: dict[str, str] = Field(default_factory=dict)
     source_url: str | None = None
 
+    def as_runnable_spec(self) -> CoworldRunnableSpec:
+        return CoworldRunnableSpec.model_validate(self.model_dump(include=set(CoworldRunnableSpec.model_fields)))
+
 
 class CoworldManifestRoleSpec(CoworldRunnableSpec):
     type: CoworldManifestRole
@@ -190,8 +193,7 @@ class CoworldEpisodeJobSpec(BaseModel):
     @field_validator("players", mode="after")
     @classmethod
     def normalize_players(cls, players: list[CoworldRunnableSpec]) -> list[CoworldRunnableSpec]:
-        fields = set(CoworldRunnableSpec.model_fields)
-        return [CoworldRunnableSpec.model_validate(player.model_dump(include=fields)) for player in players]
+        return [player.as_runnable_spec() for player in players]
 
     @model_validator(mode="after")
     def validate_player_lengths(self) -> "CoworldEpisodeJobSpec":
