@@ -137,8 +137,9 @@ After `submit`, check `coworld submissions --mine --league league_...` for place
 
 ### Where do I find logs and replays?
 
-Use `coworld episode-logs ereq_... --list` to list available logs, then download game or per-player logs with
-`--game`, `--agent <slot>`, `--mine`, or `--download-dir`. Use `coworld replay-open ereq_...` to open one replay, or
+Use `coworld episode-logs ereq_... --list` to list available per-player logs. Download policy logs with
+`--agent <slot>`, `--mine`, or `--download-dir`; fetch the game log with `--game` when the episode has that artifact.
+Use `coworld replay-open ereq_...` to open one replay, or
 `coworld replays --round round_... --mine --download-dir replays/` to download many from a round.
 
 ### How do I play a Coworld locally?
@@ -157,7 +158,7 @@ episode to finish and writes artifacts without opening browser clients.
 ### How do I run multiple different policies locally?
 
 Pass one image per player slot. Passing one image reuses it for every slot; passing the exact slot count assigns by
-position:
+position. For a two-slot Coworld:
 
 ```bash
 uv run coworld play ./coworld/<coworld-id>/coworld_manifest.json player-a:latest player-b:latest

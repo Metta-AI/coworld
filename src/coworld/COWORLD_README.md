@@ -410,4 +410,7 @@ uv run coworld replays --round round_... --mine --download-dir replays/
 uv run coworld replay-open ereq_...
 ```
 
+`episode-logs --mine` downloads accessible per-player logs. Use `episode-logs --game` for episodes with a game log
+artifact.
+
 See [CLI_README.md](CLI_README.md) for the full command reference.
