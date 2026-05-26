@@ -120,7 +120,7 @@ py_library(
         "@pypi//httpx",
         "@pypi//jsonschema",
         "@pypi//kubernetes",
-        "@pyenv//:mettagrid",
+        "@mettagrid//python/src/mettagrid:mettagrid",
         "@pypi//numpy",
         "@pypi//pyarrow",
         "@pypi//pydantic",
