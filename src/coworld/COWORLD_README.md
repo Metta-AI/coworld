@@ -31,7 +31,8 @@ Public users normally build policy containers and submit them to existing Coworl
 containers and publish complete Coworld packages including all seven role sections.
 
 Use [GAME_RUNTIME_README.md](GAME_RUNTIME_README.md) for the game-container runtime contract and
-[CLI_README.md](CLI_README.md) for the command reference.
+[CLI_README.md](CLI_README.md) for the command reference. Use [API_GUIDE.md](API_GUIDE.md) when a coding agent needs
+to call the public Softmax/Coworld API directly.
 
 ## Role Status
 
