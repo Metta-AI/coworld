@@ -31,9 +31,9 @@ _SHARED_SRCS = glob(
         ],
         deps = [
             "//packages/coworld:coworld",
-            "@pyenv//:pytest",
-            "@pyenv//:pytest_httpserver",
-            "@pyenv//:torch",
+            "@pypi//pytest",
+            "@pypi//pytest_httpserver",
+            "@pypi//torch",
         ],
     )
     for test_file in _TEST_FILES
