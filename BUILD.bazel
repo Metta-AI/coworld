@@ -115,7 +115,13 @@ py_library(
     deps = [
         ":coworld_core",
         "//packages/softmax-cli:softmax",
-        "@pyenv//:cogsguard",
+        # cogsguard's wheel METADATA used to declare `Requires-Dist: cogames`
+        # but our patch strips that to dodge the @pypi//cogames ghost
+        # reference. cogsguard.missions.machina_1 imports cogames at module
+        # load, so we add cogames explicitly for any consumer of
+        # //packages/coworld:coworld that transits cogsguard.
+        "//packages/cogames:cogames",
+        "@pypi//cogsguard",
         "@pypi//fastapi",
         "@pypi//httpx",
         "@pypi//jsonschema",
