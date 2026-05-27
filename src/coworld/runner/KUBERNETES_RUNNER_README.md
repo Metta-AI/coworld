@@ -127,12 +127,15 @@ and already includes the required `slot` and `token` query params.
 The app backend starts the game container with:
 
 ```bash
+COGAME_HOST=0.0.0.0
+COGAME_PORT=8080
 COGAME_CONFIG_URI=file:///coworld/config.json
 COGAME_RESULTS_URI=file:///coworld/results.json
 COGAME_SAVE_REPLAY_URI=file:///coworld/replay
 ```
 
-`coworld-init-config` writes `COGAME_CONFIG_URI` before the game starts. The game writes results and the replay to the
+The game binds its HTTP and websocket server to `COGAME_HOST:COGAME_PORT`. `coworld-init-config` writes
+`COGAME_CONFIG_URI` before the game starts. The game writes results and the replay to the
 supplied URIs; the pod's `/coworld/replay` file holds the exact bytes the game wrote, with no runner-added extension.
 The worker validates `COGAME_RESULTS_URI`, reads `/coworld/replay`, zlib-compresses those bytes in memory, and uploads
 the hosted output artifacts listed below. The hosted upload artifact contract (key, content type) is unchanged; only the

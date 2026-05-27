@@ -63,6 +63,10 @@ COGAME_PORT=8080
 COGAME_LOG_URI=...           # optional
 ```
 
+`COGAME_HOST` and `COGAME_PORT` define the game container bind address for
+HTTP routes and websockets. If either variable is omitted, games should default
+to `0.0.0.0` and `8080`.
+
 The game must support `file://` URIs and HTTP(S) read/write URIs. HTTP(S) output URIs are usually presigned upload URLs,
 with `PUT` as the default method.
 
@@ -71,7 +75,7 @@ lines per request). If it is unset, the game must skip log posting. In either ca
 stdout/stderr as normal. Hosted Coworld episode jobs collect both stdout and stderr from the game pod and each started
 player pod; these container streams are independent from `COGAME_LOG_URI`.
 
-In rollout mode, the game listens on `0.0.0.0:8080` and exposes:
+In rollout mode, the game listens on `COGAME_HOST:COGAME_PORT` and exposes:
 
 - `GET /healthz`
 - `GET /client/player?slot=0&token=...&...`
@@ -113,7 +117,7 @@ For replay viewing, the runner starts the same game image with:
 COGAME_REPLAY_SERVER=1
 ```
 
-In replay mode, the game listens on `0.0.0.0:8080` and exposes:
+In replay mode, the game listens on `COGAME_HOST:COGAME_PORT` and exposes:
 
 - `GET /healthz`
 - `GET /client/replay?uri=<uri>`
@@ -219,8 +223,8 @@ in `examples/paintarena/game/client/` (in this package) and `worlds/cogs_vs_clip
 1. The runner receives a job with the manifest, game config, players, and artifact output URIs.
 2. The runner generates one token per player slot.
 3. The runner writes the concrete game config, including `tokens`.
-4. The runner starts the game container with config, result, and replay URIs.
-5. The game reads its config and starts listening on port 8080.
+4. The runner starts the game container with bind address, config, result, and replay environment variables.
+5. The game reads its config and starts listening on `COGAME_HOST:COGAME_PORT`.
 6. The runner waits for `GET /healthz` to return 200.
 7. The runner starts one player container per slot.
 8. Each player gets `COWORLD_PLAYER_WS_URL=ws://<engine-host>/player?slot=<slot>&token=<token>` and,

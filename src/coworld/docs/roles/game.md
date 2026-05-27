@@ -21,7 +21,8 @@ the exact rule.
 
 ## Contract
 
-The game runnable is a long-running container that listens on `0.0.0.0:8080` and follows the runtime contract
+The game runnable is a long-running container that listens on `COGAME_HOST:COGAME_PORT`, defaulting to
+`0.0.0.0:8080`, and follows the runtime contract
 documented in [`GAME_RUNTIME_README.md`](../../GAME_RUNTIME_README.md):
 
 - Reads its concrete game config from `COGAME_CONFIG_URI` at startup.

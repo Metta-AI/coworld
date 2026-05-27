@@ -91,8 +91,8 @@ sends `schedule_episodes` listing the episodes it wants run.
 
 For each scheduled episode, the platform's runner starts:
 
-- One **game** container (see [`game.md`](game.md)), listening on `0.0.0.0:8080` with `/healthz`, `/player`,
-  `/global`, and `/client/*` routes.
+- One **game** container (see [`game.md`](game.md)), listening on `COGAME_HOST:COGAME_PORT` with `/healthz`,
+  `/player`, `/global`, and `/client/*` routes.
 - One **player** container per slot (see [`player.md`](player.md)), each receiving its own
   `COGAMES_ENGINE_WS_URL` pointing at the game's `/player` route with the slot's `slot` and `token` query
   params.

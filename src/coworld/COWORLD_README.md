@@ -314,7 +314,7 @@ experience reports, diagnoser output, and game/protocol docs, and drive local po
 The game image owns the episode. It must:
 
 - read the config from `COGAME_CONFIG_URI`;
-- bind to `COGAME_HOST` and `COGAME_PORT` when those env vars are set;
+- bind to `COGAME_HOST` and `COGAME_PORT`, defaulting to `0.0.0.0:8080` when omitted;
 - serve `GET /healthz`;
 - serve player clients at `GET /client/player?...` and player websockets at `WEBSOCKET /player?...`;
 - serve a live viewer at `GET /client/global` and `WEBSOCKET /global`;
