@@ -283,10 +283,10 @@ The manifest upload body is:
 {
   "manifest": {
     "game": {},
-    "player": [],
-    "reporter": [],
+    "player": [{}],
+    "reporter": [{}],
     "commissioner": [],
-    "grader": [],
+    "grader": [{}],
     "diagnoser": [],
     "optimizer": [],
     "variants": [],

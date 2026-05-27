@@ -53,6 +53,38 @@ def test_manifest_rejects_wrong_role_section_type() -> None:
         _manifest(player_type="reporter")
 
 
+def test_manifest_requires_grader_entry() -> None:
+    manifest = _manifest_data()
+    del manifest["grader"]
+
+    with pytest.raises(ValidationError, match="grader"):
+        CoworldManifest.model_validate(manifest)
+
+
+def test_manifest_rejects_empty_grader_entries() -> None:
+    manifest = _manifest_data()
+    manifest["grader"] = []
+
+    with pytest.raises(ValidationError, match="grader"):
+        CoworldManifest.model_validate(manifest)
+
+
+def test_manifest_schema_requires_grader_entry() -> None:
+    manifest = _manifest_data()
+    del manifest["grader"]
+
+    with pytest.raises(JsonSchemaValidationError):
+        validate_json_schema(manifest, coworld_manifest_schema())
+
+
+def test_manifest_schema_rejects_empty_grader_entries() -> None:
+    manifest = _manifest_data()
+    manifest["grader"] = []
+
+    with pytest.raises(JsonSchemaValidationError):
+        validate_json_schema(manifest, coworld_manifest_schema())
+
+
 def test_episode_job_players_are_flat_runnable_payloads() -> None:
     manifest = _manifest()
     job = CoworldEpisodeJobSpec(manifest=manifest, game_config={}, players=[manifest.player[0]])
@@ -296,6 +328,16 @@ def _manifest_data(game_type: str = "game", player_type: str = "player") -> dict
                 "type": "reporter",
                 "image": "reporter",
                 "source_url": "https://example.com/reporter",
+            }
+        ],
+        "grader": [
+            {
+                "id": "default-grader",
+                "name": "Default Grader",
+                "description": "Default grader stub for unit tests.",
+                "type": "grader",
+                "image": "ghcr.io/metta-ai/graders-default:latest",
+                "source_url": "https://github.com/Metta-AI/graders/tree/main/graders/default/default_grader",
             }
         ],
         "variants": [{"id": "default", "name": "Default", "description": "Default.", "game_config": {}}],

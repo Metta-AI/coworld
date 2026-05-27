@@ -15,7 +15,7 @@ shows how they fit together; the [per-role docs](.) describe each role's contrac
 | **player**       | per-episode, websocket     | live                                | [`player.md`](player.md)     |
 | **commissioner** | per-round, websocket       | contract defined, runtime pending   | [`commissioner.md`](commissioner.md) |
 | **reporter**     | post-episode, on-demand    | contract defined, runtime pending   | [`reporter.md`](reporter.md) |
-| **grader**       | post-episode, on-demand    | reserved (tentative contract)        | [`grader.md`](grader.md)     |
+| **grader**       | post-episode, on-demand    | contract defined, runtime pending   | [`grader.md`](grader.md)     |
 | **diagnoser**    | post-episode, on-demand    | reserved (tentative contract)        | [`diagnoser.md`](diagnoser.md) |
 | **optimizer**    | workbench, long-running    | reserved (tentative contract)        | [`optimizer.md`](optimizer.md) |
 
@@ -67,10 +67,10 @@ three status labels.
    ┌──────────────┐         ┌──────────────┐               ┌──────────────────┐      ┌──────────────┐
    │   REPORTER   │         │    GRADER    │               │    DIAGNOSER     │      │   OPTIMIZER  │
    │              │         │              │               │   + target       │      │  (workbench, │
-   │  [contract   │         │  [reserved]  │               │     policy URI   │      │   long-      │
-   │   defined,   │         │              │               │                  │      │   running)   │
-   │   runtime    │         │              │               │   [reserved]     │      │              │
-   │   pending]   │         │              │               │                  │      │  [reserved]  │
+   │  [contract   │         │ [contract    │               │     policy URI   │      │   long-      │
+   │   defined,   │         │  defined,    │               │                  │      │   running)   │
+   │   runtime    │         │  runtime     │               │   [reserved]     │      │              │
+   │   pending]   │         │  pending]    │               │                  │      │  [reserved]  │
    └──────┬───────┘         └──────┬───────┘               └────────┬─────────┘      └──────┬───────┘
           │                        │                                │                       │
           ▼                        ▼                                ▼                       ▼

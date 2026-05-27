@@ -166,7 +166,16 @@
       "run": ["python", "-m", "coworld.examples.paintarena.reporter.stats_reporter"]
     }
   ],
-  "grader": [],
+  "grader": [
+    {
+      "id": "paint-arena-grader",
+      "type": "grader",
+      "name": "Paint Arena Grader",
+      "description": "Reference PaintArena grader: consumes replay/results artifacts and emits a scalar creator-interest score for ranking useful episodes.",
+      "source_url": "https://github.com/Metta-AI/graders/tree/main/graders/paint_arena/paint_arena_grader",
+      "image": "ghcr.io/metta-ai/graders-paint-arena:latest"
+    }
+  ],
   "diagnoser": [],
   "optimizer": [
     {

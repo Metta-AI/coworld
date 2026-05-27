@@ -214,8 +214,9 @@ class CoworldManifest(BaseModel):
         description="Optional commissioner runnables. Role docs: docs/roles/commissioner.md.",
     )
     grader: list[CoworldManifestRoleSpec] = Field(
-        default_factory=list,
-        description="Optional grader runnables. Role docs: docs/roles/grader.md.",
+        min_length=1,
+        description="Grader runnables. Must declare at least one entry; Coworlds without a custom grader "
+        "may reference `ghcr.io/metta-ai/graders-default:latest`. Role docs: docs/roles/grader.md.",
     )
     diagnoser: list[CoworldManifestRoleSpec] = Field(
         default_factory=list,

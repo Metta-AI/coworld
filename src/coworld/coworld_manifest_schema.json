@@ -465,10 +465,11 @@
       "type": "array"
     },
     "grader": {
-      "description": "Optional grader runnables. Role docs: docs/roles/grader.md.",
+      "description": "Grader runnables. Must declare at least one entry; Coworlds without a custom grader may reference `ghcr.io/metta-ai/graders-default:latest`. Role docs: docs/roles/grader.md.",
       "items": {
         "$ref": "#/$defs/CoworldManifestRoleSpec"
       },
+      "minItems": 1,
       "title": "Grader",
       "type": "array"
     },
@@ -500,7 +501,7 @@
       "$ref": "#/$defs/CoworldCertificationFixture"
     }
   },
-  "required": ["game", "player", "reporter", "variants", "certification"],
+  "required": ["game", "player", "reporter", "grader", "variants", "certification"],
   "title": "Coworld Manifest",
   "type": "object"
 }

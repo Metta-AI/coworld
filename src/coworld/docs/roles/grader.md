@@ -1,10 +1,9 @@
 # Grader Role
 
-**Status:** reserved
+**Status:** contract defined, runtime pending
 
-> **The grader contract is tentative.** This document describes the current best-guess shape for grader inputs, outputs,
-> and execution. The design has not been validated against real consumers; expect breaking changes as concrete use cases
-> land. Several pieces (notably score range and normalization) remain explicit open questions.
+> The manifest contract is active: every Coworld must declare at least one grader runnable. Grader execution remains
+> on-demand; the episode runner does not automatically run graders when an episode finishes.
 
 ## What it does
 
@@ -15,10 +14,11 @@ they are triggered by a CLI command or platform action, not by the episode runne
 
 ## Where it lives in the manifest
 
-`manifest.grader[]`, with `type: "grader"` on every entry. The section is required, but the array may be empty while the
-role is reserved. See [`MANIFEST_README.md`](../../MANIFEST_README.md) for the full runnable shape.
+`manifest.grader[]`, with `type: "grader"` on every entry. The section is required and must contain at least one
+runnable. Coworlds without a game-specific grader may reference `ghcr.io/metta-ai/graders-default:latest`. See
+[`MANIFEST_README.md`](../../MANIFEST_README.md) for the full runnable shape.
 
-## Contract (tentative)
+## Contract
 
 A grader runnable is a short-lived, process-style container started by a CLI or platform action that wants a score for a
 particular episode. It does not expose HTTP routes or websockets; it reads its input from an env-var URI, writes its
@@ -61,8 +61,8 @@ Additional grader-specific fields may be included in the JSON; consumers should 
 Graders are on-demand. They are **not** run automatically by the episode runner; an episode finishes and produces
 artifacts whether or not any grader ever runs against them.
 
-A grader run is triggered by a CLI command (planned: `coworld run-grader` — exact shape TBD), a hosted button, or an
-automatic Column pipeline that ranks episodes for downstream attention. The invoker is responsible for:
+A grader run is triggered by a CLI command, a hosted button, or an automatic Column pipeline that ranks episodes for
+downstream attention. The invoker is responsible for:
 
 1. Choosing which grader to run (one of the runnables in `manifest.grader[]`).
 2. Assembling the input bundle via the bundling layer.
@@ -77,16 +77,16 @@ non-deterministic graders are also valid.
 
 ## Open questions
 
-The grader role has real design questions that are still unresolved. They are listed here so future work knows where the
-load-bearing decisions still live.
+The grader role has normalization questions that are still unresolved. They are listed here so future work knows where
+the load-bearing decisions still live.
 
 - **Score range and normalization.** Currently the contract leaves `score` as an unconstrained float and tells graders
   to document their own scale in `description`. The open question is whether to instead require a canonical range (e.g.
   0–1, -1 to 1) so scores can be compared across graders. Both directions have real costs: unconstrained scores aren't
   comparable across graders; canonical scores push interpretation burden onto the grader. This is the most load-bearing
   open question; the answer will likely come from the first concrete ranking use case.
-- **Comparability across graders.** Tied to the range question. Today's tentative contract says grader scores are not
-  directly comparable. A normalization decision may change this.
+- **Comparability across graders.** Tied to the range question. Today's contract says grader scores are not directly
+  comparable. A normalization decision may change this.
 - **Multi-grader aggregation.** When multiple graders score the same episode, is there a meaningful way to combine their
   scores into a single ranking signal? Not addressed in v1.
 

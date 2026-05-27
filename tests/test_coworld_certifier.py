@@ -1438,6 +1438,16 @@ def _coworld_manifest(
                 "description": "Default reporter stub for unit tests; satisfies CoworldManifest.reporter min_length=1.",
             }
         ],
+        "grader": [
+            {
+                "id": "unit-test-grader",
+                "name": "Unit Test Grader",
+                "type": "grader",
+                "image": "ghcr.io/metta-ai/graders-default:latest",
+                "source_url": "https://github.com/Metta-AI/graders/tree/main/graders/default/default_grader",
+                "description": "Default grader stub for unit tests; satisfies CoworldManifest.grader min_length=1.",
+            }
+        ],
         "variants": [
             {
                 "id": "default",

@@ -31,12 +31,16 @@ def test_build_coworld_manifest_runs_compose_and_writes_hydrated_manifest(
                 "game": "game-runtime:latest",
                 "player": "player-runtime:latest",
                 "reporter": "ghcr.io/metta-ai/reporters-default:latest",
+                "grader": "ghcr.io/metta-ai/graders-default:latest",
             },
             {
                 "game-runtime:latest": "sha256:1111111111112222222222222222222222222222222222222222222222222222",
                 "player-runtime:latest": "sha256:aaaaaaaaaaaabbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
                 "ghcr.io/metta-ai/reporters-default:latest": (
                     "sha256:ccccccccccccddddddddddddddddddddddddddddddddddddddddddddddddddddd"
+                ),
+                "ghcr.io/metta-ai/graders-default:latest": (
+                    "sha256:eeeeeeeeeeeefffffffffffffffffffffffffffffffffffffffffffffffffffff"
                 ),
             },
             calls,
@@ -104,6 +108,26 @@ def test_build_coworld_manifest_runs_compose_and_writes_hydrated_manifest(
                 "tag",
                 "ghcr.io/metta-ai/reporters-default:latest",
                 "ghcr.io/metta-ai/reporters-default:coworld-cccccccccccc",
+            ],
+            {"check": True},
+        ),
+        (
+            [
+                "docker",
+                "image",
+                "inspect",
+                "--format",
+                "{{.Id}}",
+                "ghcr.io/metta-ai/graders-default:latest",
+            ],
+            {"check": True, "capture_output": True, "text": True},
+        ),
+        (
+            [
+                "docker",
+                "tag",
+                "ghcr.io/metta-ai/graders-default:latest",
+                "ghcr.io/metta-ai/graders-default:coworld-eeeeeeeeeeee",
             ],
             {"check": True},
         ),
@@ -198,11 +222,13 @@ def test_build_coworld_manifest_tags_digest_stripped_image_refs(
                 "game": "game-runtime:latest",
                 "player": "player-runtime:latest",
                 "reporter": "ghcr.io/metta-ai/reporters-default:latest",
+                "grader": "ghcr.io/metta-ai/graders-default:latest",
             },
             {
                 "game-runtime:latest": "sha256:111111111111",
                 "player-runtime:latest": "sha256:222222222222",
                 "ghcr.io/metta-ai/reporters-default:latest": "sha256:cccccccccccc",
+                "ghcr.io/metta-ai/graders-default:latest": "sha256:dddddddddddd",
             },
             calls,
         ),
@@ -235,11 +261,13 @@ def test_build_command_writes_hydrated_manifest(tmp_path: Path, monkeypatch: pyt
                 "game": "game-runtime:latest",
                 "player": "player-runtime:latest",
                 "reporter": "ghcr.io/metta-ai/reporters-default:latest",
+                "grader": "ghcr.io/metta-ai/graders-default:latest",
             },
             {
                 "game-runtime:latest": "sha256:111111111111",
                 "player-runtime:latest": "sha256:222222222222",
                 "ghcr.io/metta-ai/reporters-default:latest": "sha256:cccccccccccc",
+                "ghcr.io/metta-ai/graders-default:latest": "sha256:dddddddddddd",
             },
         ),
     )
@@ -346,6 +374,17 @@ def _write_manifest(
                         "type": "reporter",
                         "image": "ghcr.io/metta-ai/reporters-default:latest",
                         "description": "Default reporter stub.",
+                    }
+                ],
+                # Always-present stub to satisfy grader min_length=1; tests override via role_images.
+                "grader": [
+                    {
+                        "id": "unit-test-default-grader",
+                        "name": "Unit Test Default Grader",
+                        "type": "grader",
+                        "image": "ghcr.io/metta-ai/graders-default:latest",
+                        "source_url": "https://github.com/Metta-AI/graders/tree/main/graders/default/default_grader",
+                        "description": "Default grader stub.",
                     }
                 ],
                 **declared_roles,

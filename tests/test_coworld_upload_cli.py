@@ -31,6 +31,7 @@ def test_upload_coworld_posts_standalone_manifest(
     manifest_path = _write_manifest(tmp_path)
     certification_calls: list[tuple[Path, float]] = []
     image_id = "img_00000000-0000-0000-0000-000000000010"
+    grader_image_id = "img_00000000-0000-0000-0000-000000000011"
     softmax_image_uri = "123456789012.dkr.ecr.us-east-1.amazonaws.com/coworld/user/unit-test-runtime@sha256:digest"
     pushed_images: list[tuple[str, str]] = []
     hashed_images: list[str] = []
@@ -40,6 +41,7 @@ def test_upload_coworld_posts_standalone_manifest(
         manifest = json.loads(path.read_text(encoding="utf-8"))
         assert manifest["game"]["runnable"]["image"] == "unit-test-runtime:latest"
         assert manifest["player"][0]["image"] == "unit-test-runtime:latest"
+        assert manifest["grader"][0]["image"] == "ghcr.io/metta-ai/graders-default:latest"
 
     def fake_hash(image: str) -> str:
         hashed_images.append(image)
@@ -51,6 +53,25 @@ def test_upload_coworld_posts_standalone_manifest(
     monkeypatch.setattr(
         "coworld.upload._push_container_image",
         lambda source_image, push_info: pushed_images.append((source_image, push_info.image_uri)),
+    )
+    httpserver.expect_request(
+        "/observatory/v2/container_images/upload",
+        method="POST",
+        headers={"X-Auth-Token": "token"},
+        json={"name": "graders-default", "client_hash": "sha256:client-hash"},
+    ).respond_with_json(
+        {
+            "image": {
+                "id": grader_image_id,
+                "name": "graders-default",
+                "version": 1,
+                "client_hash": "sha256:client-hash",
+                "status": "ready",
+                "image_uri": "123456789012.dkr.ecr.us-east-1.amazonaws.com/coworld/user/graders-default@sha256:digest",
+                "image_digest": "sha256:digest",
+            },
+            "pre_signed_info": None,
+        }
     )
     httpserver.expect_request(
         "/observatory/v2/container_images/upload",
@@ -126,7 +147,7 @@ def test_upload_coworld_posts_standalone_manifest(
     assert result.canonical is True
     assert certification_calls[0][0] == manifest_path.resolve()
     assert certification_calls[0][1] == 60.0
-    assert hashed_images == ["unit-test-runtime:latest"]
+    assert hashed_images == ["ghcr.io/metta-ai/graders-default:latest", "unit-test-runtime:latest"]
     assert pushed_images == [
         (
             "unit-test-runtime:latest",
@@ -137,6 +158,7 @@ def test_upload_coworld_posts_standalone_manifest(
     uploaded_manifest = upload_req.get_json()["manifest"]
     assert uploaded_manifest["game"]["runnable"]["image"] == image_id
     assert uploaded_manifest["player"][0]["image"] == image_id
+    assert uploaded_manifest["grader"][0]["image"] == grader_image_id
     assert uploaded_manifest["game"]["protocols"]["player"] == {
         "type": "uri",
         "value": "https://example.com/player_protocol_spec.md",
@@ -155,6 +177,7 @@ def test_upload_coworld_command_certifies_before_uploading(
     manifest_path = _write_manifest(tmp_path)
     certification_calls: list[tuple[Path, float]] = []
     image_id = "img_00000000-0000-0000-0000-000000000020"
+    grader_image_id = "img_00000000-0000-0000-0000-000000000021"
     softmax_image_uri = "123456789012.dkr.ecr.us-east-1.amazonaws.com/coworld/user/unit-test-runtime@sha256:digest"
 
     monkeypatch.setattr("coworld.upload._load_current_cogames_token", lambda: "token")
@@ -164,6 +187,24 @@ def test_upload_coworld_command_certifies_before_uploading(
     )
     monkeypatch.setattr("coworld.upload._local_image_client_hash", lambda image: "sha256:client-hash")
     monkeypatch.setattr("coworld.upload._push_container_image", lambda source_image, push_info: None)
+    httpserver.expect_request(
+        "/observatory/v2/container_images/upload",
+        method="POST",
+        json={"name": "graders-default", "client_hash": "sha256:client-hash"},
+    ).respond_with_json(
+        {
+            "image": {
+                "id": grader_image_id,
+                "name": "graders-default",
+                "version": 1,
+                "client_hash": "sha256:client-hash",
+                "status": "ready",
+                "image_uri": "123456789012.dkr.ecr.us-east-1.amazonaws.com/coworld/user/graders-default@sha256:digest",
+                "image_digest": "sha256:digest",
+            },
+            "pre_signed_info": None,
+        }
+    )
     httpserver.expect_request("/observatory/v2/container_images/upload", method="POST").respond_with_json(
         {
             "image": {
@@ -927,7 +968,7 @@ def test_push_archive_to_registry_uploads_layers_config_and_manifest(httpserver:
     assert manifest_body["layers"][0]["digest"] == layer_digest
 
 
-def test_manifest_image_helpers_substitute_player_and_reporter_images() -> None:
+def test_manifest_image_helpers_substitute_role_images() -> None:
     manifest: dict[str, object] = {
         "game": {
             "name": "unit-test-game",
@@ -949,15 +990,23 @@ def test_manifest_image_helpers_substitute_player_and_reporter_images() -> None:
                 "run": ["python", "/app/reporter.py"],
             }
         ],
+        "grader": [
+            {
+                "id": "unit-test-grader",
+                "type": "grader",
+                "image": "grader-img:latest",
+            }
+        ],
     }
 
     discovered = {field["image"] for field in _manifest_image_fields(manifest)}
-    assert discovered == {"unit-test-runtime:latest", "player-img:latest", "reporter-img:latest"}
+    assert discovered == {"unit-test-runtime:latest", "player-img:latest", "reporter-img:latest", "grader-img:latest"}
 
     image_tags = {
         "unit-test-runtime:latest": "img_game",
         "player-img:latest": "img_player",
         "reporter-img:latest": "img_reporter",
+        "grader-img:latest": "img_grader",
     }
     substituted = _manifest_with_local_images(manifest, image_tags)
 
@@ -974,6 +1023,10 @@ def test_manifest_image_helpers_substitute_player_and_reporter_images() -> None:
     reporters = substituted["reporter"]
     assert isinstance(reporters, list)
     assert reporters[0]["image"] == "img_reporter"
+
+    graders = substituted["grader"]
+    assert isinstance(graders, list)
+    assert graders[0]["image"] == "img_grader"
 
 
 def _docker_archive(*, config: bytes, layers: list[bytes]) -> bytes:
@@ -1083,6 +1136,16 @@ def _manifest() -> dict[str, object]:
                 "image": "unit-test-runtime:latest",
             }
         ],
+        "grader": [
+            {
+                "id": "unit-test-grader",
+                "name": "Unit Test Grader",
+                "description": "Default grader stub.",
+                "type": "grader",
+                "image": "ghcr.io/metta-ai/graders-default:latest",
+                "source_url": "https://github.com/Metta-AI/graders/tree/main/graders/default/default_grader",
+            }
+        ],
         "variants": [
             {
                 "id": "default",
@@ -1112,4 +1175,9 @@ def _manifest_with_image(image: str) -> dict[str, object]:
     reporter = reporters[0]
     assert isinstance(reporter, dict)
     reporter["image"] = image
+    graders = manifest["grader"]
+    assert isinstance(graders, list)
+    grader = graders[0]
+    assert isinstance(grader, dict)
+    grader["image"] = image
     return manifest

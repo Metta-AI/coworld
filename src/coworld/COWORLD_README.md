@@ -21,10 +21,10 @@ Every Coworld also declares five **supporting role sections** in its manifest:
 
 **All seven role sections are required in every `coworld_manifest.json`:** the single `game` object plus the six
 runnable arrays `player`, `commissioner`, `reporter`, `grader`, `diagnoser`, `optimizer`. `player[]` and `reporter[]`
-must contain at least one entry. Coworld authors who do not have a custom reporter may reference
-`ghcr.io/metta-ai/reporters-default:latest`; the remaining supporting role arrays may stay empty until their platform
-contracts require runnable entries. See [Role Status](#role-status) below for which roles have a live platform contract
-today.
+and `grader[]` must contain at least one entry. Coworld authors who do not have a custom reporter or grader may
+reference `ghcr.io/metta-ai/reporters-default:latest` and `ghcr.io/metta-ai/graders-default:latest`; the remaining
+supporting role arrays may stay empty until their platform contracts require runnable entries. See
+[Role Status](#role-status) below for which roles have a live platform contract today.
 
 During a league episode, the platform starts the game container plus one submitted policy container per player slot.
 Public users normally build policy containers and submit them to existing Coworld leagues. Game authors build game
@@ -61,7 +61,7 @@ today. New documents and code in this package must use these labels consistently
 | player       | live                              |
 | commissioner | contract defined, runtime pending |
 | reporter     | contract defined, runtime pending |
-| grader       | reserved                          |
+| grader       | contract defined, runtime pending |
 | diagnoser    | reserved                          |
 | optimizer    | reserved                          |
 
@@ -251,8 +251,10 @@ Every Coworld package has a `coworld_manifest.json` file. The main sections are:
 - `player`: bundled player images that can play the game. Must contain at least one entry.
 - `reporter`: bundled reporter runnables. Must contain at least one entry; Coworlds without a custom reporter may
   reference `ghcr.io/metta-ai/reporters-default:latest`.
-- `commissioner`, `grader`, `diagnoser`, `optimizer`: arrays of bundled supporting runnables. The sections are required
-  and may be empty until their contracts require runnable entries.
+- `grader`: bundled grader runnables. Must contain at least one entry; Coworlds without a custom grader may reference
+  `ghcr.io/metta-ai/graders-default:latest`.
+- `commissioner`, `diagnoser`, `optimizer`: arrays of bundled supporting runnables. The sections are required and may be
+  empty until their contracts require runnable entries.
 - `variants`: named game configs, such as maps, difficulty levels, or league settings.
 - `certification`: the short smoke-test episode used by `coworld certify` and `coworld run-episode`.
 
