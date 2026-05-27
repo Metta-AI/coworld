@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 from typing import Annotated, Any, Literal, cast, get_args
 
 from packaging.version import Version
@@ -61,19 +62,87 @@ class CoworldProtocolDocs(BaseModel):
     global_: CoworldDoc = Field(alias="global")
 
 
+COWORLD_RULES_DOC_PAGE_ID = "rules.md"
+COWORLD_PLAY_DOC_PAGE_ID_PATTERN = r"^play_[a-z0-9][a-z0-9_-]*\.md$"
+_PLAY_PAGE_ID_PATTERN = re.compile(COWORLD_PLAY_DOC_PAGE_ID_PATTERN)
+
+
 class CoworldDocPage(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    id: str = Field(min_length=1)
+    id: str = Field(
+        min_length=1,
+        json_schema_extra={
+            "if": {"pattern": r"^play_"},
+            "then": {"pattern": COWORLD_PLAY_DOC_PAGE_ID_PATTERN},
+        },
+    )
     title: str = Field(min_length=1)
     content: CoworldDoc
+
+    @field_validator("id", mode="before")
+    @classmethod
+    def strip_id_trailing_newlines(cls, value: object) -> object:
+        if isinstance(value, str):
+            return value.rstrip("\r\n")
+        return value
+
+    @field_validator("id", mode="after")
+    @classmethod
+    def reject_noncanonical_play_id(cls, value: str) -> str:
+        if value.startswith("play_") and _PLAY_PAGE_ID_PATTERN.fullmatch(value) is None:
+            raise ValueError(
+                f"doc page id {value!r} has a `play_` prefix but does not match "
+                f"canonical regex {COWORLD_PLAY_DOC_PAGE_ID_PATTERN}"
+            )
+        return value
+
+
+_REQUIRED_DOC_PAGES_JSON_SCHEMA = {
+    "allOf": [
+        {
+            "contains": {
+                "type": "object",
+                "required": ["id"],
+                "properties": {"id": {"const": COWORLD_RULES_DOC_PAGE_ID}},
+            },
+            "minContains": 1,
+            "maxContains": 1,
+        },
+        {
+            "contains": {
+                "type": "object",
+                "required": ["id"],
+                "properties": {"id": {"pattern": COWORLD_PLAY_DOC_PAGE_ID_PATTERN}},
+            },
+            "minContains": 1,
+            "maxContains": 1,
+        },
+    ],
+}
 
 
 class CoworldDocs(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     readme: CoworldDoc | None = None
-    pages: list[CoworldDocPage] = Field(default_factory=list)
+    pages: list[CoworldDocPage] = Field(json_schema_extra=_REQUIRED_DOC_PAGES_JSON_SCHEMA)
+
+    @model_validator(mode="after")
+    def validate_required_pages(self) -> "CoworldDocs":
+        rules_page_count = sum(page.id == COWORLD_RULES_DOC_PAGE_ID for page in self.pages)
+        play_page_count = sum(_PLAY_PAGE_ID_PATTERN.fullmatch(page.id) is not None for page in self.pages)
+        errors = []
+        if rules_page_count != 1:
+            errors.append(f"expected exactly one `{COWORLD_RULES_DOC_PAGE_ID}` page; found {rules_page_count}")
+        if play_page_count != 1:
+            errors.append(
+                "expected exactly one page matching "
+                f"`play_*.md` (`{COWORLD_PLAY_DOC_PAGE_ID_PATTERN}`); found {play_page_count}"
+            )
+        if errors:
+            raise ValueError("; ".join(errors))
+        return self
 
 
 class CoworldGameManifest(BaseModel):
@@ -87,7 +156,7 @@ class CoworldGameManifest(BaseModel):
     results_schema: JsonSchema
     runnable: Annotated[CoworldRunnableSpec, Field(json_schema_extra=_runnable_type_schema("game"))]
     protocols: CoworldProtocolDocs
-    docs: CoworldDocs | None = None
+    docs: CoworldDocs
 
     @model_validator(mode="after")
     def validate_version(self) -> "CoworldGameManifest":

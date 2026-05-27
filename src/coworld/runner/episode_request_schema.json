@@ -38,7 +38,13 @@
       "additionalProperties": false,
       "properties": {
         "id": {
+          "if": {
+            "pattern": "^play_"
+          },
           "minLength": 1,
+          "then": {
+            "pattern": "^play_[a-z0-9][a-z0-9_-]*\\.md$"
+          },
           "title": "Id",
           "type": "string"
         },
@@ -100,6 +106,34 @@
           "title": "Readme"
         },
         "pages": {
+          "allOf": [
+            {
+              "contains": {
+                "properties": {
+                  "id": {
+                    "const": "rules.md"
+                  }
+                },
+                "required": ["id"],
+                "type": "object"
+              },
+              "maxContains": 1,
+              "minContains": 1
+            },
+            {
+              "contains": {
+                "properties": {
+                  "id": {
+                    "pattern": "^play_[a-z0-9][a-z0-9_-]*\\.md$"
+                  }
+                },
+                "required": ["id"],
+                "type": "object"
+              },
+              "maxContains": 1,
+              "minContains": 1
+            }
+          ],
           "items": {
             "$ref": "#/$defs/CoworldDocPage"
           },
@@ -107,6 +141,7 @@
           "type": "array"
         }
       },
+      "required": ["pages"],
       "title": "CoworldDocs",
       "type": "object"
     },
@@ -155,15 +190,7 @@
           "$ref": "#/$defs/CoworldProtocolDocs"
         },
         "docs": {
-          "anyOf": [
-            {
-              "$ref": "#/$defs/CoworldDocs"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "default": null
+          "$ref": "#/$defs/CoworldDocs"
         }
       },
       "required": [
@@ -174,7 +201,8 @@
         "config_schema",
         "results_schema",
         "runnable",
-        "protocols"
+        "protocols",
+        "docs"
       ],
       "title": "CoworldGameManifest",
       "type": "object"

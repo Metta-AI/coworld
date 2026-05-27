@@ -123,7 +123,6 @@ def test_load_coworld_package_allows_named_game_docs(tmp_path: Path) -> None:
 
     package = load_coworld_package(coworld_manifest_path)
 
-    assert package.manifest.game.docs is not None
     assert package.manifest.game.docs.readme is not None
     assert package.manifest.game.docs.readme.value == "https://example.com/README.md"
     assert package.manifest.game.docs.pages[0].title == "rules.md"
@@ -1210,7 +1209,6 @@ def test_cogs_vs_clips_coworld_manifest_validates(tmp_path: Path) -> None:
     assert package.game.run == ("python", "/app/server.py")
     assert package.manifest.game.protocols.player.value == "https://softmax.com/cogs_vs_clips_player_protocol.md"
     assert package.manifest.game.protocols.global_.value == "https://softmax.com/cogs_vs_clips_global_protocol.md"
-    assert package.manifest.game.docs is not None
     assert package.manifest.game.docs.pages[0].id == "rules.md"
     assert package.manifest.game.docs.pages[1].id == "play_cogsvsclips.md"
     assert package.manifest.game.docs.pages[1].content.value == "https://softmax.com/play_cogsvsclips.md"

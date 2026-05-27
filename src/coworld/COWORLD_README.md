@@ -117,8 +117,8 @@ uv run coworld rounds --league league_...
 uv run coworld replays --league league_... --mine --download-dir replays/
 ```
 
-Coworld manifests must include game-authored docs in `game.docs.pages`: `rules.md` for game-specific rules and a
-game-specific `play_*.md` guide for player setup. Examples include:
+Coworld manifests must include game-authored docs in `game.docs.pages`: exactly one `rules.md` page for game-specific
+rules and exactly one game-specific `play_*.md` guide for player setup. Examples include:
 
 | Coworld       | Download name   | Guide                                     |
 | ------------- | --------------- | ----------------------------------------- |
@@ -142,8 +142,8 @@ uv run coworld submit my-player --league league_...
 Before writing code, read the downloaded manifest:
 
 - `game.protocols.player` links to the websocket protocol your player must implement.
-- `game.docs.pages` may include `rules.md` plus a game-specific `play_*.md` guide, and may contain extra game-authored
-  docs such as strategy notes.
+- `game.docs.pages` must include exactly one `rules.md` page plus exactly one game-specific `play_*.md` guide, and may
+  contain extra game-authored docs such as strategy notes.
 - `certification.game_config` is the small local episode used by `coworld run-episode`.
 - `variants` are named game configs used by leagues or local testing.
 

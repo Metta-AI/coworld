@@ -146,7 +146,7 @@ The `game` object describes the game container and its surrounding metadata.
 | `results_schema` | JSON Schema object | yes       | Schema validating the `results.json` artifact the game writes at episode end.                 |
 | `runnable`       | runnable object    | yes       | The game container — see [Runnable Shape](#runnable-shape). `type` must be `"game"`.          |
 | `protocols`      | object             | yes       | Document references for the game's player and global websocket protocols (see below).         |
-| `docs`           | object             | no        | Game-authored docs surfaced through the platform (see below).                                 |
+| `docs`           | object             | yes       | Game-authored docs surfaced through the platform (see below).                            |
 
 ### `game.config_schema` requirements
 
@@ -176,7 +176,7 @@ global-viewer-websocket protocol documentation.
 }
 ```
 
-`readme` is an optional top-level doc. `pages` is a list of [Document Page](#document-pages) entries; see
+`readme` is an optional top-level doc. `pages` is a required list of [Document Page](#document-pages) entries; see
 [`game.docs.pages` Requirements](#gamedocspages-requirements) below.
 
 ## `variants` Section
@@ -239,17 +239,18 @@ referenced URIs should be publicly fetchable.
 
 ### `game.docs.pages` Requirements
 
-Every Coworld manifest must include at least two pages in `game.docs.pages`:
+Every Coworld manifest must include exactly one rules page and exactly one play page in `game.docs.pages`:
 
-- An entry with `id == "rules.md"` — game-specific rules.
-- An entry whose `id` matches the regex `^play_[A-Za-z0-9_-]+\.md$` (e.g. `play_paintarena.md`, `play_cogsvsclips.md`,
-  `play_amongthem.md`) — the player-onboarding guide that league pages surface directly.
+- Exactly one entry with `id == "rules.md"` — game-specific rules.
+- Exactly one entry whose `id` matches the regex `^play_[a-z0-9][a-z0-9_-]*\.md$` (e.g. `play_paintarena.md`,
+  `play_cogsvsclips.md`, `play_amongthem.md`) — the player-onboarding guide that league pages surface directly.
 
 Additional pages (strategy notes, reference implementations, role-source pointers, etc.) may be included as needed.
 
-The Pydantic manifest schema enforces both requirements at parse time — a manifest missing either entry fails to load,
-before `coworld certify` or `coworld upload-coworld` ever runs. The validation error names the missing entry so authors
-can fix it immediately.
+The generated JSON Schema and Pydantic manifest model enforce both requirements. The Pydantic model strips trailing
+newlines from page IDs before checking the regex and stores the normalized ID on upload. A manifest missing or
+duplicating either required page fails to load before `coworld certify` or `coworld upload-coworld` runs, and the
+validation error reports both required-page counts together.
 
 ## See Also
 
