@@ -146,12 +146,12 @@ def test_canonical_among_them_template_points_to_source_repos(tmp_path: Path) ->
     assert [role.id for role in package.manifest.grader] == ["among-them-grader"]
     assert [role.id for role in package.manifest.diagnoser] == ["among-them-diagnoser"]
     assert [role.id for role in package.manifest.optimizer] == ["coworld-optimizer"]
-    assert pages["rules.md"] == "https://github.com/Metta-AI/bitworld/blob/master/among_them/README.md"
+    assert pages["rules.md"] == "https://github.com/Metta-AI/cogame-among-them/blob/master/README.md"
     assert pages["play_amongthem.md"] == "https://softmax.com/play_amongthem.md"
-    assert pages["game-source"] == "https://github.com/Metta-AI/bitworld/tree/master/among_them"
-    assert pages["player"] == "https://github.com/Metta-AI/players/tree/main/players/among_them/starter"
+    assert pages["game-source"] == "https://github.com/Metta-AI/cogame-among-them/tree/master"
+    assert pages["player"] == "https://github.com/Metta-AI/cogame-among-them/tree/master/players/ivotewell"
     assert pages["submit"] == (
-        "https://github.com/Metta-AI/bitworld/blob/master/among_them/players/how_to_submit_coworld_policy.md"
+        "https://github.com/Metta-AI/cogame-among-them/blob/master/players/how_to_submit_coworld_policy.md"
     )
     assert pages["optimizer"] == "https://github.com/Metta-AI/optimizers"
     assert pages["commissioner"] == (
@@ -165,7 +165,7 @@ def test_canonical_among_them_template_points_to_source_repos(tmp_path: Path) ->
         "https://github.com/Metta-AI/diagnosers/tree/main/diagnosers/among_them/among_them_diagnoser"
     )
     assert role_source_urls == {
-        "player": "https://github.com/Metta-AI/bitworld/tree/master/among_them/players/ivotewell",
+        "player": "https://github.com/Metta-AI/cogame-among-them/tree/master/players/ivotewell",
         "optimizer": "https://github.com/Metta-AI/optimizers/tree/main",
         "commissioner": (
             "https://github.com/Metta-AI/commissioners/tree/main/commissioners/among_them/among_them_commissioner"
