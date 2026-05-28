@@ -53,36 +53,40 @@ def test_manifest_rejects_wrong_role_section_type() -> None:
         _manifest(player_type="reporter")
 
 
-def test_manifest_requires_grader_entry() -> None:
+def test_manifest_rejects_wrong_grader_section_type() -> None:
     manifest = _manifest_data()
-    del manifest["grader"]
+    manifest["grader"][0]["type"] = "reporter"
 
-    with pytest.raises(ValidationError, match="grader"):
+    with pytest.raises(ValidationError, match="grader.0.type"):
         CoworldManifest.model_validate(manifest)
 
 
-def test_manifest_rejects_empty_grader_entries() -> None:
-    manifest = _manifest_data()
-    manifest["grader"] = []
-
-    with pytest.raises(ValidationError, match="grader"):
-        CoworldManifest.model_validate(manifest)
-
-
-def test_manifest_schema_requires_grader_entry() -> None:
+def test_manifest_allows_missing_grader_entries() -> None:
     manifest = _manifest_data()
     del manifest["grader"]
 
-    with pytest.raises(JsonSchemaValidationError):
-        validate_json_schema(manifest, coworld_manifest_schema())
+    assert CoworldManifest.model_validate(manifest).grader == []
 
 
-def test_manifest_schema_rejects_empty_grader_entries() -> None:
+def test_manifest_allows_empty_grader_entries() -> None:
     manifest = _manifest_data()
     manifest["grader"] = []
 
-    with pytest.raises(JsonSchemaValidationError):
-        validate_json_schema(manifest, coworld_manifest_schema())
+    assert CoworldManifest.model_validate(manifest).grader == []
+
+
+def test_manifest_schema_allows_missing_grader_entries() -> None:
+    manifest = _manifest_data()
+    del manifest["grader"]
+
+    validate_json_schema(manifest, coworld_manifest_schema())
+
+
+def test_manifest_schema_allows_empty_grader_entries() -> None:
+    manifest = _manifest_data()
+    manifest["grader"] = []
+
+    validate_json_schema(manifest, coworld_manifest_schema())
 
 
 def test_episode_job_players_are_flat_runnable_payloads() -> None:

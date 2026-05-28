@@ -20,7 +20,7 @@ A Coworld manifest is a JSON object with these top-level fields:
 | `player`        | array of runnables | yes       | Bundled player images that can play the game. Must contain at least one entry.           |
 | `commissioner`  | array of runnables | yes       | Commissioner runnables. May be empty until the role contract requires entries.           |
 | `reporter`      | array of runnables | yes       | Reporter runnables. Must contain at least one entry; default available.                  |
-| `grader`        | array of runnables | yes       | Grader runnables. Must contain at least one entry; default available.                    |
+| `grader`        | array of runnables | no        | Grader runnables. May be empty until the role contract requires entries.                 |
 | `diagnoser`     | array of runnables | yes       | Diagnoser runnables. May be empty until the role contract requires entries.              |
 | `optimizer`     | array of runnables | yes       | Optimizer runnables. May be empty until the role contract requires entries.              |
 | `variants`      | array of variants  | yes       | Named game configs (maps, difficulty levels, league settings, etc.). At least one entry. |
@@ -29,7 +29,7 @@ A Coworld manifest is a JSON object with these top-level fields:
 The manifest schema rejects unknown top-level fields. See
 [`COWORLD_README.md` § Role Status](COWORLD_README.md#role-status) for which runnable arrays have a live platform
 contract today and which may be empty until their contracts require runnable entries. Coworlds without a custom reporter
-or grader may reference `ghcr.io/metta-ai/reporters-default:latest` or `ghcr.io/metta-ai/graders-default:latest`.
+may reference `ghcr.io/metta-ai/reporters-default:latest`.
 
 ## Runnable Shape
 

@@ -376,7 +376,7 @@ def _write_manifest(
                         "description": "Default reporter stub.",
                     }
                 ],
-                # Always-present stub to satisfy grader min_length=1; tests override via role_images.
+                # Default stub; tests override via role_images.
                 "grader": [
                     {
                         "id": "unit-test-default-grader",

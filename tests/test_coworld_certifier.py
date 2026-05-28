@@ -1445,7 +1445,7 @@ def _coworld_manifest(
                 "type": "grader",
                 "image": "ghcr.io/metta-ai/graders-default:latest",
                 "source_url": "https://github.com/Metta-AI/graders/tree/main/graders/default/default_grader",
-                "description": "Default grader stub for unit tests; satisfies CoworldManifest.grader min_length=1.",
+                "description": "Default grader stub for unit tests.",
             }
         ],
         "variants": [

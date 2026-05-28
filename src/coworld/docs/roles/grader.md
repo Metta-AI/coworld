@@ -14,8 +14,8 @@ they are triggered by a CLI command or platform action, not by the episode runne
 
 ## Where it lives in the manifest
 
-`manifest.grader[]`, with `type: "grader"` on every entry. The section is required and must contain at least one
-runnable. Coworlds without a game-specific grader may reference `ghcr.io/metta-ai/graders-default:latest`. See
+`manifest.grader[]`, with `type: "grader"` on every entry. The section is optional and may be empty until the platform
+runs graders. See
 [`MANIFEST_README.md`](../../MANIFEST_README.md) for the full runnable shape.
 
 ## Contract
