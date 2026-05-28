@@ -37,13 +37,13 @@ STARTER_POLICIES = {
     "cogs_vs_clips": StarterPolicy(
         display_name="Cogs vs Clips",
         package="coworld.policies",
-        image_tag="cvcstarter:latest",
+        image_tag="cogs_vs_clips:latest",
         source_file="player.py",
         project_resources={
-            "cvcstarter/player.py": "player.py",
-            "cvcstarter/Dockerfile.cvcstarter": "Dockerfile",
-            "cvcstarter/.dockerignore": ".dockerignore",
-            "cvcstarter/README.md": "README.md",
+            "cogs_vs_clips/player.py": "player.py",
+            "cogs_vs_clips/Dockerfile.cogs_vs_clips": "Dockerfile",
+            "cogs_vs_clips/.dockerignore": ".dockerignore",
+            "cogs_vs_clips/README.md": "README.md",
         },
     ),
 }

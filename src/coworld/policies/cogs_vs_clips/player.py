@@ -43,7 +43,7 @@ async def main() -> None:
                         {
                             "type": "action",
                             "action_name": action_name,
-                            "policy_infos": {"policy_name": "cvcstarter"},
+                            "policy_infos": {"policy_name": "cogs_vs_clips"},
                             "request_id": f"step-{observation.step}",
                         }
                     )

@@ -219,7 +219,7 @@ def test_cogs_vs_clips_and_paintarena_templates_declare_all_viability_role_secti
     assert cogs_vs_clips_pages["rules.md"] == "https://softmax.com/play_cogsvsclips.md#game-rules"
     assert cogs_vs_clips_pages["play_cogsvsclips.md"] == "https://softmax.com/play_cogsvsclips.md"
     assert cogs_vs_clips_pages["player"] == (
-        "https://github.com/Metta-AI/coworld/tree/main/src/coworld/policies/cvcstarter"
+        "https://github.com/Metta-AI/coworld/tree/main/src/coworld/policies/cogs_vs_clips"
     )
     assert "env" not in cogs_vs_clips["player"][0]
     # Reporter and grader are required; the other supporting roles stay empty until their contracts require entries.

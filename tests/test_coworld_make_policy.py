@@ -35,16 +35,16 @@ def test_make_policy_writes_among_them_starter_project(tmp_path: Path) -> None:
 
 
 def test_make_policy_writes_cogs_vs_clips_starter_project(tmp_path: Path) -> None:
-    output = tmp_path / "cvcstarter"
+    output = tmp_path / "cogs_vs_clips"
 
     result = CliRunner().invoke(app, ["make-policy", "cogs_vs_clips", "-o", str(output)])
 
     assert result.exit_code == 0, result.output
     assert "Cogs vs Clips starter policy copied" in result.output
     assert "Policy source:" in result.output
-    assert "docker build --platform=linux/amd64 -t cvcstarter:latest" in result.output
+    assert "docker build --platform=linux/amd64 -t cogs_vs_clips:latest" in result.output
 
-    expected_source = importlib.resources.files("coworld.policies").joinpath("cvcstarter/player.py").read_bytes()
+    expected_source = importlib.resources.files("coworld.policies").joinpath("cogs_vs_clips/player.py").read_bytes()
     assert (output / "player.py").read_bytes() == expected_source
     assert (output / "README.md").is_file()
     assert (output / ".dockerignore").is_file()
@@ -63,10 +63,10 @@ def test_make_policy_writes_cogs_vs_clips_starter_project(tmp_path: Path) -> Non
 def test_make_policy_rejects_noncanonical_policy_names(tmp_path: Path) -> None:
     output = tmp_path / "starter"
 
-    result = CliRunner().invoke(app, ["make-policy", "cvc", "-o", str(output)])
+    result = CliRunner().invoke(app, ["make-policy", "not_canonical", "-o", str(output)])
 
     assert result.exit_code == 1
-    assert "Unknown starter policy 'cvc'" in result.output
+    assert "Unknown starter policy 'not_canonical'" in result.output
     assert "Choices: among_them, cogs_vs_clips" in result.output
 
 
