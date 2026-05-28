@@ -10,6 +10,7 @@ from types import SimpleNamespace
 from typing import Any, cast
 from urllib.parse import parse_qs, urlparse
 
+import httpx
 import pytest
 from fastapi.testclient import TestClient
 from jsonschema.exceptions import ValidationError as JsonSchemaValidationError
@@ -25,6 +26,7 @@ from coworld.certifier import (
     load_coworld_package,
     load_manifest_episode_job_spec,
     load_results,
+    validate_source_references,
 )
 from coworld.play import BedrockAwsEnv, ReplaySession, build_play_links, play_coworld, replay_coworld
 from coworld.runner.runner import (
@@ -220,6 +222,123 @@ def test_assert_docker_image_reachable_rejects_wrong_local_platform(monkeypatch:
 
     with pytest.raises(RuntimeError, match="linux/arm64"):
         assert_docker_image_reachable("local-image:latest", label="Local image")
+
+
+def test_validate_source_references_rejects_empty_github_source_url(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    package = _package_with_player_source_url(tmp_path, "https://github.com/Metta-AI/example/tree/main/empty")
+
+    monkeypatch.setattr(
+        "coworld.certifier.httpx.get",
+        lambda *args, **kwargs: httpx.Response(200, json=[]),
+    )
+
+    with pytest.raises(ValueError) as excinfo:
+        validate_source_references(package)
+
+    message = str(excinfo.value)
+    assert "Coworld player[0].source_url: Empty source directory" in message
+    assert "Coworld player[0].source_url: No Dockerfile found" in message
+
+
+def test_validate_source_references_accepts_github_repo_root(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    package = _package_with_player_source_url(tmp_path, "https://github.com/Metta-AI/optimizers")
+    calls = []
+
+    def fake_get(url, **kwargs):
+        calls.append((url, kwargs["params"]))
+        return httpx.Response(
+            200,
+            json=[
+                {"type": "file", "name": "Dockerfile"},
+                {"type": "file", "name": "README.md"},
+            ],
+        )
+
+    monkeypatch.setattr("coworld.certifier.httpx.get", fake_get)
+
+    validate_source_references(package)
+
+    assert calls == [("https://api.github.com/repos/Metta-AI/optimizers/contents", {})]
+
+
+def test_validate_source_references_accepts_ancestor_dockerfile(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    package = _package_with_player_source_url(
+        tmp_path,
+        "https://github.com/Metta-AI/coworld/tree/main/src/coworld/examples/paintarena/reporter",
+    )
+    calls = []
+
+    def fake_get(url, **kwargs):
+        calls.append((url, kwargs["params"]))
+        if url.endswith("/contents/src/coworld/examples/paintarena/reporter"):
+            return httpx.Response(200, json=[{"type": "file", "name": "paint_arena_summarizer.py"}])
+        if url.endswith("/contents/src/coworld/examples/paintarena"):
+            return httpx.Response(200, json=[{"type": "file", "name": "Dockerfile"}])
+        raise AssertionError(url)
+
+    monkeypatch.setattr("coworld.certifier.httpx.get", fake_get)
+
+    validate_source_references(package)
+
+    assert calls == [
+        (
+            "https://api.github.com/repos/Metta-AI/coworld/contents/src/coworld/examples/paintarena/reporter",
+            {"ref": "main"},
+        ),
+        ("https://api.github.com/repos/Metta-AI/coworld/contents/src/coworld/examples/paintarena", {"ref": "main"}),
+    ]
+
+
+def test_validate_source_references_accepts_github_branch_names_with_slashes(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    package = _package_with_player_source_url(
+        tmp_path, "https://github.com/Metta-AI/optimizers/tree/feature/foo/workbench"
+    )
+    calls = []
+
+    def fake_get(url, **kwargs):
+        calls.append((url, kwargs["params"]))
+        if kwargs["params"] == {"ref": "feature"}:
+            return httpx.Response(404)
+        if kwargs["params"] == {"ref": "feature/foo"}:
+            return httpx.Response(200, json=[{"type": "file", "name": "Dockerfile"}])
+        raise AssertionError(kwargs["params"])
+
+    monkeypatch.setattr("coworld.certifier.httpx.get", fake_get)
+
+    validate_source_references(package)
+
+    assert calls == [
+        ("https://api.github.com/repos/Metta-AI/optimizers/contents/foo/workbench", {"ref": "feature"}),
+        ("https://api.github.com/repos/Metta-AI/optimizers/contents/workbench", {"ref": "feature/foo"}),
+    ]
+
+
+def test_certify_coworld_checks_source_references_before_images(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    coworld_manifest_path = _write_package_files(tmp_path)
+    calls = []
+
+    def fake_validate_source_references(package):
+        calls.append("source")
+        raise ValueError("bad source")
+
+    def fake_validate_image_references(package):
+        calls.append("image")
+
+    monkeypatch.setattr("coworld.certifier.validate_source_references", fake_validate_source_references)
+    monkeypatch.setattr("coworld.certifier.validate_image_references", fake_validate_image_references)
+
+    with pytest.raises(ValueError, match="bad source"):
+        certify_coworld(coworld_manifest_path)
+
+    assert calls == ["source"]
 
 
 def test_build_game_config_validates_after_tokens_are_injected_via_json_schema(tmp_path: Path) -> None:
@@ -1334,6 +1453,15 @@ def _write_package_files(
         )
     )
     return coworld_manifest_path
+
+
+def _package_with_player_source_url(tmp_path: Path, source_url: str):
+    coworld_manifest_path = _write_package_files(tmp_path)
+    manifest = json.loads(coworld_manifest_path.read_text(encoding="utf-8"))
+    manifest["player"][0]["source_url"] = source_url
+    manifest["grader"][0].pop("source_url")
+    coworld_manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
+    return load_coworld_package(coworld_manifest_path)
 
 
 def _materialized_template(tmp_path: Path, template_path: Path) -> Path:

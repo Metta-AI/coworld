@@ -1,9 +1,15 @@
 from __future__ import annotations
 
 import copy
+import os
+import shutil
+import subprocess
 from dataclasses import dataclass
 from pathlib import Path
 from typing import cast
+from urllib.parse import quote, unquote, urlparse
+
+import httpx
 
 from coworld.manifest_validation import game_config_with_tokens, validate_coworld_manifest_game_configs
 from coworld.runner.runner import (
@@ -33,6 +39,14 @@ from coworld.types import (
 class CoworldProtocolDocs:
     player: CoworldDoc
     global_: CoworldDoc
+
+
+@dataclass(frozen=True)
+class GitHubSource:
+    owner: str
+    repo: str
+    ref: str | None
+    path: str
 
 
 @dataclass(frozen=True)
@@ -82,6 +96,22 @@ def validate_certification_references(package: CoworldPackage) -> None:
 def validate_image_references(package: CoworldPackage) -> None:
     for label, image in _image_references(package):
         assert_docker_image_reachable(image, label=label)
+
+
+def validate_source_references(package: CoworldPackage) -> None:
+    issues = []
+    for label, source_url in _source_references(package):
+        source = _github_source(source_url)
+        if source is None:
+            continue
+        resolved_source, contents = _github_contents(source)
+        if not contents:
+            issues.append(f"{label}: Empty source directory ({source_url})")
+        if not _source_or_ancestor_has_dockerfile(resolved_source, contents):
+            issues.append(f"{label}: No Dockerfile found ({source_url})")
+
+    if issues:
+        raise ValueError("Coworld source references are not certifiable:\n- " + "\n- ".join(issues))
 
 
 def build_game_config(package: CoworldPackage, tokens: list[str]) -> JsonObject:
@@ -177,6 +207,7 @@ def certify_coworld(
     timeout_seconds: float = 60.0,
 ) -> CertificationResult:
     package = load_coworld_package(manifest_path)
+    validate_source_references(package)
     validate_image_references(package)
     artifacts = EpisodeArtifacts.create(workspace)
     episode_request = build_episode_request(package, artifacts)
@@ -211,6 +242,145 @@ def _image_references(package: CoworldPackage) -> list[tuple[str, str]]:
             for index, runnable in enumerate(getattr(package.manifest, section))
         )
     return list(dict.fromkeys(references))
+
+
+def _source_references(package: CoworldPackage) -> list[tuple[str, str]]:
+    references = []
+    game_source_url = package.manifest.game.runnable.source_url
+    if game_source_url is not None:
+        references.append(("game.runnable.source_url", game_source_url))
+    for section in ("player", "reporter", "commissioner", "grader", "diagnoser", "optimizer"):
+        references.extend(
+            (f"Coworld {section}[{index}].source_url", source_url)
+            for index, runnable in enumerate(getattr(package.manifest, section))
+            if (source_url := runnable.source_url) is not None
+        )
+    return list(dict.fromkeys(references))
+
+
+def _github_source(source_url: str) -> GitHubSource | None:
+    parsed = urlparse(source_url)
+    if parsed.scheme not in {"http", "https"} or parsed.netloc not in {"github.com", "www.github.com"}:
+        return None
+
+    parts = [unquote(part) for part in parsed.path.strip("/").split("/") if part]
+    if len(parts) < 2:
+        return None
+
+    owner = parts[0]
+    repo = parts[1].removesuffix(".git")
+    if len(parts) == 2:
+        return GitHubSource(owner=owner, repo=repo, ref=None, path="")
+    if len(parts) >= 4 and parts[2] in {"tree", "blob"}:
+        return GitHubSource(owner=owner, repo=repo, ref=parts[3], path="/".join(parts[4:]))
+    return None
+
+
+def _github_contents(source: GitHubSource) -> tuple[GitHubSource, list[dict[str, object]]]:
+    api_url = _github_contents_url(source)
+    for candidate in _github_source_candidates(source):
+        api_url = _github_contents_url(candidate)
+        response = _github_contents_response(candidate, api_url)
+        if response.status_code == 404:
+            continue
+        if response.status_code != 200:
+            raise RuntimeError(f"GitHub source URL is not readable: {api_url} returned HTTP {response.status_code}")
+
+        contents = response.json()
+        if isinstance(contents, list):
+            return candidate, cast(list[dict[str, object]], contents)
+        if isinstance(contents, dict):
+            return candidate, [cast(dict[str, object], contents)]
+        raise TypeError(f"Expected GitHub contents object or list from {api_url}")
+
+    raise RuntimeError(f"GitHub source URL is not readable: {api_url} returned HTTP 404")
+
+
+def _source_or_ancestor_has_dockerfile(source: GitHubSource, contents: list[dict[str, object]]) -> bool:
+    if any(_is_dockerfile(item) for item in contents):
+        return True
+
+    for ancestor in _github_ancestor_sources(source):
+        _, ancestor_contents = _github_contents(ancestor)
+        if any(_is_dockerfile(item) for item in ancestor_contents):
+            return True
+    return False
+
+
+def _github_contents_url(source: GitHubSource) -> str:
+    api_path = f"/{quote(source.path, safe='/')}" if source.path else ""
+    return f"https://api.github.com/repos/{source.owner}/{source.repo}/contents{api_path}"
+
+
+def _github_contents_response(source: GitHubSource, api_url: str) -> httpx.Response:
+    headers = {
+        "Accept": "application/vnd.github+json",
+        "X-GitHub-Api-Version": "2022-11-28",
+    }
+    if token := _github_token():
+        headers["Authorization"] = f"Bearer {token}"
+
+    return httpx.get(
+        api_url,
+        headers=headers,
+        params={"ref": source.ref} if source.ref is not None else {},
+        timeout=30.0,
+    )
+
+
+def _github_source_candidates(source: GitHubSource) -> list[GitHubSource]:
+    candidates = [source]
+    if source.ref is None or not source.path:
+        return candidates
+
+    path_parts = source.path.split("/")
+    candidates.extend(
+        GitHubSource(
+            owner=source.owner,
+            repo=source.repo,
+            ref=f"{source.ref}/{'/'.join(path_parts[:index])}",
+            path="/".join(path_parts[index:]),
+        )
+        for index in range(1, len(path_parts) + 1)
+    )
+    return candidates
+
+
+def _github_ancestor_sources(source: GitHubSource) -> list[GitHubSource]:
+    if not source.path:
+        return []
+
+    path_parts = source.path.split("/")
+    return [
+        GitHubSource(
+            owner=source.owner,
+            repo=source.repo,
+            ref=source.ref,
+            path="/".join(path_parts[:index]),
+        )
+        for index in range(len(path_parts) - 1, -1, -1)
+    ]
+
+
+def _is_dockerfile(item: dict[str, object]) -> bool:
+    name = item["name"]
+    if item["type"] != "file" or not isinstance(name, str):
+        return False
+    return name == "Dockerfile" or (name.startswith("Dockerfile.") and name != "Dockerfile.dockerignore")
+
+
+def _github_token() -> str | None:
+    for variable in ("GITHUB_TOKEN", "GH_TOKEN"):
+        if token := os.environ.get(variable):
+            return token
+    if shutil.which("gh") is None:
+        return None
+
+    completed = subprocess.run(["gh", "auth", "token"], check=False, capture_output=True, text=True)
+    token = completed.stdout.strip()
+    if completed.returncode == 0 and token:
+        return token
+    return None
 
 
 def _certification_player_specs(package: CoworldPackage) -> list[CoworldRunnableSpec]:

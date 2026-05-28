@@ -11,6 +11,7 @@ from coworld.certifier import (
     load_coworld_package,
     load_results,
     validate_image_references,
+    validate_source_references,
 )
 from coworld.play import (
     PlayLinks,
@@ -58,4 +59,5 @@ __all__ = [
     "run_episode_containers",
     "run_coworld_episode",
     "validate_image_references",
+    "validate_source_references",
 ]

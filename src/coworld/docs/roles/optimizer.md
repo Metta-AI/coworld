@@ -25,6 +25,10 @@ uploaded via `coworld upload-policy`.
 `manifest.optimizer[]`, with `type: "optimizer"` on every entry. The section is required, but the array may be empty
 while the role is reserved. See [`MANIFEST_README.md`](../../MANIFEST_README.md) for the full runnable shape.
 
+When an optimizer entry declares a GitHub `source_url`, point it at the implementation source, not only a docs folder.
+`coworld certify` checks that the source has non-empty contents and that a Dockerfile exists at that path or an ancestor
+build root.
+
 ## Contract (tentative)
 
 An optimizer runnable is a long-running workbench image. The invoker opens it for a Coworld; the workbench hosts the

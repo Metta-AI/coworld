@@ -41,7 +41,7 @@ Every runnable in the manifest — `game.runnable` plus every entry in the six a
 | `image`      | string               | yes       | Docker image reference. May be a build-time tag pre-publish, or a content-pinned reference post-publish.                                                             |
 | `run`        | list of strings      | no        | Process command overriding the image's `ENTRYPOINT`/`CMD`. Omit to use the image default.                                                                            |
 | `env`        | map of string→string | no        | Public environment variables to set on the container. Secrets do not belong in the manifest; see the policy-upload flow in [`COWORLD_README.md`](COWORLD_README.md). |
-| `source_url` | string               | no        | URL of the repository, directory, or file that builds this runnable. Informational; surfaced to humans inspecting the manifest.                                      |
+| `source_url` | string               | no        | URL of the repository, directory, or file that implements this runnable. GitHub URLs are checked by `coworld certify` for non-empty contents and a Dockerfile at that path or an ancestor build root.       |
 
 Declared role runnables — every entry in the six array sections (`player`, `commissioner`, `reporter`, `grader`,
 `diagnoser`, `optimizer`) — add four more required fields:

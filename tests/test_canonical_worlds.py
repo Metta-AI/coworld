@@ -161,6 +161,15 @@ def test_canonical_among_them_template_points_to_source_repos(tmp_path: Path) ->
         "https://github.com/Metta-AI/cogame-among-them/blob/master/players/how_to_submit_coworld_policy.md"
     )
     assert pages["optimizer"] == "https://github.com/Metta-AI/optimizers"
+    assert (
+        pages["optimizer-game-spec"]
+        == "https://github.com/Metta-AI/cogame-among-them/blob/master/coworld_manifest.json"
+    )
+    assert pages["optimizer-game-tutorial"] == "https://softmax.com/play_amongthem.md"
+    assert pages["optimizer-skills"] == "https://github.com/Metta-AI/optimizers/blob/main/lib/skills/data.ts"
+    assert pages["optimizer-policy-registry"] == (
+        "https://github.com/Metta-AI/optimizers/blob/main/lib/policy-templates.json"
+    )
     assert pages["commissioner"] == (
         "https://github.com/Metta-AI/commissioners/tree/main/commissioners/among_them/among_them_commissioner"
     )
@@ -173,7 +182,7 @@ def test_canonical_among_them_template_points_to_source_repos(tmp_path: Path) ->
     )
     assert role_source_urls == {
         "player": "https://github.com/Metta-AI/cogame-among-them/tree/master/players/ivotewell",
-        "optimizer": "https://github.com/Metta-AI/optimizers/tree/main",
+        "optimizer": "https://github.com/Metta-AI/optimizers",
         "commissioner": (
             "https://github.com/Metta-AI/commissioners/tree/main/commissioners/among_them/among_them_commissioner"
         ),
