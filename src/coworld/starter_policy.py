@@ -9,6 +9,8 @@ from pathlib import Path
 class StarterPolicy:
     display_name: str
     package: str
+    image_tag: str
+    source_file: str
     project_resources: dict[str, str] = field(default_factory=dict)
 
 
@@ -23,6 +25,8 @@ STARTER_POLICIES = {
     "among_them": StarterPolicy(
         display_name="Among Them",
         package="coworld.policies",
+        image_tag="amongthemstarter:latest",
+        source_file="amongthemstarter.nim",
         project_resources={
             "amongthemstarter/amongthemstarter.nim": "amongthemstarter.nim",
             "amongthemstarter/Dockerfile.amongthemstarter": "Dockerfile",
@@ -30,26 +34,31 @@ STARTER_POLICIES = {
             "amongthemstarter/README.md": "README.md",
         },
     ),
-}
-
-STARTER_POLICY_ALIASES = {
-    "among_them": "among_them",
-    "among-them": "among_them",
-    "amongthem": "among_them",
+    "cogs_vs_clips": StarterPolicy(
+        display_name="Cogs vs Clips",
+        package="coworld.policies",
+        image_tag="cvcstarter:latest",
+        source_file="player.py",
+        project_resources={
+            "cvcstarter/player.py": "player.py",
+            "cvcstarter/Dockerfile.cvcstarter": "Dockerfile",
+            "cvcstarter/.dockerignore": ".dockerignore",
+            "cvcstarter/README.md": "README.md",
+        },
+    ),
 }
 
 
 def write_starter_policy(policy: str, output: Path) -> StarterPolicyWriteResult:
-    key = STARTER_POLICY_ALIASES[policy]
     output_path = Path.cwd() / output
-    starter = STARTER_POLICIES[key]
+    starter = STARTER_POLICIES[policy]
     output_path.mkdir(parents=True, exist_ok=True)
     for resource, target in starter.project_resources.items():
         _write_resource(starter.package, resource, output_path / target)
     return StarterPolicyWriteResult(
         display_name=starter.display_name,
         output_path=output_path,
-        source_path=output_path / "amongthemstarter.nim",
+        source_path=output_path / starter.source_file,
     )
 
 

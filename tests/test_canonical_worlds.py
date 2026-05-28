@@ -148,8 +148,8 @@ def test_canonical_among_them_template_points_to_source_repos(tmp_path: Path) ->
     assert [role.id for role in package.manifest.optimizer] == ["coworld-optimizer"]
     assert pages["rules.md"] == "https://github.com/Metta-AI/cogame-among-them/blob/master/README.md"
     assert pages["play_amongthem.md"] == "https://softmax.com/play_amongthem.md"
+    assert pages["player"] == "https://github.com/Metta-AI/coworld/tree/main/src/coworld/policies/amongthemstarter"
     assert pages["game-source"] == "https://github.com/Metta-AI/cogame-among-them/tree/master"
-    assert pages["player"] == "https://github.com/Metta-AI/cogame-among-them/tree/master/players/ivotewell"
     assert pages["submit"] == (
         "https://github.com/Metta-AI/cogame-among-them/blob/master/players/how_to_submit_coworld_policy.md"
     )
@@ -174,7 +174,6 @@ def test_canonical_among_them_template_points_to_source_repos(tmp_path: Path) ->
         "grader": "https://github.com/Metta-AI/graders/tree/main/graders/among_them/among_them_grader",
         "diagnoser": "https://github.com/Metta-AI/diagnosers/tree/main/diagnosers/among_them/among_them_diagnoser",
     }
-    assert all("github.com/Metta-AI/coworld" not in source for source in pages.values())
     assert all("docs/bitworld/among-them" not in source for source in pages.values())
 
 
@@ -203,22 +202,19 @@ def test_cogs_vs_clips_and_paintarena_templates_declare_all_viability_role_secti
     cogs_vs_clips_pages = {page["id"]: page["content"]["value"] for page in cogs_vs_clips["game"]["docs"]["pages"]}
     assert cogs_vs_clips_pages["rules.md"] == "https://softmax.com/play_cogsvsclips.md#game-rules"
     assert cogs_vs_clips_pages["play_cogsvsclips.md"] == "https://softmax.com/play_cogsvsclips.md"
+    assert cogs_vs_clips_pages["player"] == (
+        "https://github.com/Metta-AI/coworld/tree/main/src/coworld/policies/cvcstarter"
+    )
     assert "env" not in cogs_vs_clips["player"][0]
     # Reporter and grader are required; the other supporting roles stay empty until their contracts require entries.
     for section in ("optimizer", "commissioner", "diagnoser"):
         assert cogs_vs_clips[section] == []
     assert [role["id"] for role in cogs_vs_clips["reporter"]] == ["softmax-default-reporter"]
     assert cogs_vs_clips["reporter"][0]["image"] == "{{REPORTER_IMAGE}}"
-    assert (
-        cogs_vs_clips["reporter"][0]["source_url"]
-        == "https://github.com/Metta-AI/reporters/tree/main/reporters/default"
-    )
+    assert "source_url" not in cogs_vs_clips["reporter"][0]
     assert [role["id"] for role in cogs_vs_clips["grader"]] == ["cogs-v-clips-grader"]
     assert cogs_vs_clips["grader"][0]["image"] == "ghcr.io/metta-ai/graders-cogs-v-clips:latest"
-    assert (
-        cogs_vs_clips["grader"][0]["source_url"]
-        == "https://github.com/Metta-AI/graders/tree/main/graders/cogs_v_clips/cogs_v_clips_grader"
-    )
+    assert "source_url" not in cogs_vs_clips["grader"][0]
 
     paintarena = json.loads((WORLDS / "paintarena" / "coworld_manifest_template.json").read_text(encoding="utf-8"))
     for section in ("commissioner", "diagnoser"):

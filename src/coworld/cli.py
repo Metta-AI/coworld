@@ -25,7 +25,6 @@ from coworld.play import PlaySession, ReplaySession, _resolve_bedrock_aws_env, p
 from coworld.runner.runner import EpisodeArtifacts, run_coworld_episode
 from coworld.starter_policy import (
     STARTER_POLICIES,
-    STARTER_POLICY_ALIASES,
     write_starter_policy,
 )
 from coworld.submit import submit_policy_to_league_cmd
@@ -278,28 +277,25 @@ def make_policy(
     output: Annotated[
         Path,
         typer.Option("--output", "-o", help="Output starter policy project directory."),
-    ] = Path("amongthemstarter"),
+    ] = Path("starter-policy"),
 ) -> None:
-    if policy not in STARTER_POLICY_ALIASES:
+    if policy not in STARTER_POLICIES:
         choices = ", ".join(sorted(STARTER_POLICIES))
         console.print(f"[red]Unknown starter policy '{policy}'. Choices: {choices}[/red]")
         raise typer.Exit(1)
     if output.suffix:
-        console.print(
-            "[red]Among Them starter policy output must be a project directory, e.g. -o amongthemstarter[/red]"
-        )
+        console.print("[red]Starter policy output must be a project directory, e.g. -o my-player[/red]")
         raise typer.Exit(1)
 
     result = write_starter_policy(policy, output)
+    starter = STARTER_POLICIES[policy]
 
     console.print(f"[green]{result.display_name} starter policy copied to: {result.output_path}[/green]")
     console.print(f"[dim]Policy source: {result.source_path}[/dim]")
     console.print(
-        "[dim]Build: "
-        f"docker build --platform=linux/amd64 -t amongthemstarter:latest {shlex.quote(str(result.output_path))}"
-        "[/dim]"
+        f"[dim]Build: docker build --platform=linux/amd64 -t {starter.image_tag} "
+        f"{shlex.quote(str(result.output_path))}[/dim]"
     )
-    console.print("[dim]Guide: https://softmax.com/play_amongthem.md[/dim]")
 
 
 @app.command("upload-policy")

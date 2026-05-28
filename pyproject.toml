@@ -61,6 +61,8 @@ coworld = [
   "examples/**/*",
   "policies/amongthemstarter/**/*",
   "policies/amongthemstarter/.dockerignore",
+  "policies/cvcstarter/**/*",
+  "policies/cvcstarter/.dockerignore",
 ]
 
 [tool.setuptools.exclude-package-data]

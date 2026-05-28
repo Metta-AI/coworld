@@ -107,6 +107,8 @@ py_library(
             "src/coworld/examples/**/*.html",
             "src/coworld/policies/amongthemstarter/**/*",
             "src/coworld/policies/amongthemstarter/.dockerignore",
+            "src/coworld/policies/cvcstarter/**/*",
+            "src/coworld/policies/cvcstarter/.dockerignore",
         ],
         allow_empty = True,
     ),
