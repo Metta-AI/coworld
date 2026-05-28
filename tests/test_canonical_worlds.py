@@ -79,14 +79,14 @@ def test_canonical_among_them_build_declares_role_starter_contexts() -> None:
 
 def test_canonical_cogs_vs_clips_build_declares_game_context() -> None:
     compose_text = (WORLDS / "cogs_vs_clips" / "compose.yaml").read_text(encoding="utf-8")
-    dockerfile_text = (WORLDS / "cogs_vs_clips" / "Dockerfile.game").read_text(encoding="utf-8")
 
     assert "GAME_CONTEXT" in compose_text
-    assert "games/games/cogsguard" in compose_text
-    assert "additional_contexts:" in compose_text
-    assert "cogsguard:" in compose_text
-    assert "COPY --from=cogsguard . /tmp/cogsguard" in dockerfile_text
-    assert "cogame-cogsguard.git" not in dockerfile_text
+    assert "PLAYER_CONTEXT" in compose_text
+    assert "coworld-cogs-vs-clips" in compose_text
+    assert "Dockerfile.game" in compose_text
+    assert "Dockerfile.player" in compose_text
+    assert "games/games/cogsguard" not in compose_text
+    assert "additional_contexts:" not in compose_text
 
 
 def test_canonical_world_compose_files_build_manifest_images() -> None:
@@ -193,6 +193,33 @@ def test_canonical_among_them_template_points_to_source_repos(tmp_path: Path) ->
     assert all("docs/bitworld/among-them" not in source for source in pages.values())
 
 
+def test_canonical_cogs_vs_clips_template_points_to_source_repo(tmp_path: Path) -> None:
+    package = load_coworld_package(
+        _materialized_template(tmp_path, WORLDS / "cogs_vs_clips" / "coworld_manifest_template.json")
+    )
+    pages = {page.id: page.content.value for page in package.manifest.game.docs.pages}
+
+    assert package.manifest.game.runnable.source_url == "https://github.com/Metta-AI/coworld-cogs-vs-clips/tree/main"
+    assert package.manifest.game.docs.readme is not None
+    assert (
+        package.manifest.game.docs.readme.value
+        == "https://github.com/Metta-AI/coworld-cogs-vs-clips/blob/main/README.md"
+    )
+    assert package.manifest.game.protocols.player.value == (
+        "https://github.com/Metta-AI/coworld-cogs-vs-clips/blob/main/coworld/game/docs/player_protocol_spec.md"
+    )
+    assert package.manifest.game.protocols.global_.value == (
+        "https://github.com/Metta-AI/coworld-cogs-vs-clips/blob/main/coworld/game/docs/global_protocol_spec.md"
+    )
+    assert pages["rules.md"] == "https://softmax.com/play_cogsvsclips.md#game-rules"
+    assert pages["play_cogsvsclips.md"] == "https://softmax.com/play_cogsvsclips.md"
+    assert pages["game-source"] == "https://github.com/Metta-AI/coworld-cogs-vs-clips/tree/main"
+    assert pages["player"] == "https://github.com/Metta-AI/coworld-cogs-vs-clips/tree/main/coworld/player"
+    assert package.manifest.player[0].source_url == (
+        "https://github.com/Metta-AI/coworld-cogs-vs-clips/tree/main/coworld/player"
+    )
+
+
 def test_canonical_among_them_template_declares_all_viability_role_sections() -> None:
     template = json.loads((WORLDS / "among_them" / "coworld_manifest_template.json").read_text(encoding="utf-8"))
 
@@ -218,9 +245,8 @@ def test_cogs_vs_clips_and_paintarena_templates_declare_all_viability_role_secti
     cogs_vs_clips_pages = {page["id"]: page["content"]["value"] for page in cogs_vs_clips["game"]["docs"]["pages"]}
     assert cogs_vs_clips_pages["rules.md"] == "https://softmax.com/play_cogsvsclips.md#game-rules"
     assert cogs_vs_clips_pages["play_cogsvsclips.md"] == "https://softmax.com/play_cogsvsclips.md"
-    assert cogs_vs_clips_pages["player"] == (
-        "https://github.com/Metta-AI/coworld/tree/main/src/coworld/policies/cogs_vs_clips"
-    )
+    assert cogs_vs_clips_pages["game-source"] == "https://github.com/Metta-AI/coworld-cogs-vs-clips/tree/main"
+    assert cogs_vs_clips_pages["player"] == "https://github.com/Metta-AI/coworld-cogs-vs-clips/tree/main/coworld/player"
     assert "env" not in cogs_vs_clips["player"][0]
     # Reporter and grader are required; the other supporting roles stay empty until their contracts require entries.
     for section in ("optimizer", "commissioner", "diagnoser"):

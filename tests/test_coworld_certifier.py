@@ -14,7 +14,6 @@ import httpx
 import pytest
 from fastapi.testclient import TestClient
 from jsonschema.exceptions import ValidationError as JsonSchemaValidationError
-from starlette.websockets import WebSocketDisconnect
 from websockets.exceptions import ConnectionClosedOK
 
 from coworld.certifier import (
@@ -1284,14 +1283,27 @@ def test_cogs_vs_clips_coworld_manifest_validates(tmp_path: Path) -> None:
     assert package.manifest.game.name == "cogs_vs_clips"
     assert package.game.image == "coworld-cogs-vs-clips-game:latest"
     assert package.game.run == ("python", "/app/server.py")
-    assert package.manifest.game.protocols.player.value == "https://softmax.com/cogs_vs_clips_player_protocol.md"
-    assert package.manifest.game.protocols.global_.value == "https://softmax.com/cogs_vs_clips_global_protocol.md"
+    assert package.manifest.game.runnable.source_url == "https://github.com/Metta-AI/coworld-cogs-vs-clips/tree/main"
+    assert package.manifest.game.protocols.player.value == (
+        "https://github.com/Metta-AI/coworld-cogs-vs-clips/blob/main/coworld/game/docs/player_protocol_spec.md"
+    )
+    assert package.manifest.game.protocols.global_.value == (
+        "https://github.com/Metta-AI/coworld-cogs-vs-clips/blob/main/coworld/game/docs/global_protocol_spec.md"
+    )
+    assert package.manifest.game.docs.readme is not None
+    assert (
+        package.manifest.game.docs.readme.value
+        == "https://github.com/Metta-AI/coworld-cogs-vs-clips/blob/main/README.md"
+    )
     assert package.manifest.game.docs.pages[0].id == "rules.md"
     assert package.manifest.game.docs.pages[1].id == "play_cogsvsclips.md"
     assert package.manifest.game.docs.pages[1].content.value == "https://softmax.com/play_cogsvsclips.md"
     assert package.manifest.player[0].id == "reference-player"
     assert package.manifest.player[0].image == "coworld-cogs-vs-clips-reference-player:latest"
     assert package.manifest.player[0].run == ["python", "/app/coworld_reference_player.py"]
+    assert package.manifest.player[0].source_url == (
+        "https://github.com/Metta-AI/coworld-cogs-vs-clips/tree/main/coworld/player"
+    )
     assert package.manifest.player[0].env == {}
     daily_variant = next(variant for variant in package.manifest.variants if variant.id == "machina-1-daily")
     assert daily_variant.game_config["max_steps"] == 10000
@@ -1302,85 +1314,6 @@ def test_cogs_vs_clips_coworld_manifest_validates(tmp_path: Path) -> None:
         "step_seconds": 0.02,
         "tokens": tokens,
     }
-
-
-def test_cogs_vs_clips_player_websocket_rejects_missing_query_params(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    server_module = _load_cogs_vs_clips_server_module()
-
-    class FakeGame:
-        def __init__(self, *args: object, **kwargs: object) -> None:
-            self.tokens = ["token-0"]
-
-    monkeypatch.setattr(server_module, "CogsVsClipsGame", FakeGame)
-    app = server_module.create_app(
-        {
-            "mission": "cogsguard",
-            "tokens": ["token-0"],
-            "max_steps": 3,
-            "seed": 0,
-            "step_seconds": 0.02,
-        },
-        results_path=tmp_path / "results.json",
-        replay_path=None,
-    )
-
-    client = TestClient(app)
-    with pytest.raises(WebSocketDisconnect) as exc_info:
-        with client.websocket_connect("/player"):
-            pass
-
-    assert exc_info.value.code == 1008
-
-
-def test_cogs_vs_clips_global_baseline_includes_walls_and_agents(tmp_path: Path) -> None:
-    server_module = _load_cogs_vs_clips_server_module()
-    game = server_module.CogsVsClipsGame(
-        {
-            "mission": "machina_1",
-            "tokens": ["token-0", "token-1"],
-            "max_steps": 3,
-            "seed": 0,
-            "step_seconds": 0.02,
-        },
-        results_path=tmp_path / "results.json",
-        replay_path=None,
-        request_shutdown=lambda: None,
-    )
-
-    message = game.global_baseline_message()
-
-    assert message["type"] == "step"
-    type_names = {obj["type_name"] for obj in message["objects"]}
-    assert "wall" in type_names
-    agent_ids = {obj["agent_id"] for obj in message["objects"] if obj.get("is_agent")}
-    assert agent_ids == {0, 1}
-    assert not hasattr(game, "walls_message")
-
-
-def test_cogs_vs_clips_global_delta_omits_walls(tmp_path: Path) -> None:
-    server_module = _load_cogs_vs_clips_server_module()
-    game = server_module.CogsVsClipsGame(
-        {
-            "mission": "machina_1",
-            "tokens": ["token-0", "token-1"],
-            "max_steps": 3,
-            "seed": 0,
-            "step_seconds": 0.02,
-        },
-        results_path=tmp_path / "results.json",
-        replay_path=None,
-        request_shutdown=lambda: None,
-    )
-
-    message = game.global_delta_message()
-
-    assert message["type"] == "step"
-    type_names = {obj["type_name"] for obj in message["objects"]}
-    assert "wall" not in type_names
-    agent_ids = {obj["agent_id"] for obj in message["objects"] if obj.get("is_agent")}
-    assert agent_ids == {0, 1}
 
 
 def _docker_available() -> bool:
@@ -1471,6 +1404,7 @@ def _materialized_template(tmp_path: Path, template_path: Path) -> Path:
         "cogs_vs_clips": {
             "{{GAME_IMAGE}}": "coworld-cogs-vs-clips-game:latest",
             "{{PLAYER_IMAGE}}": "coworld-cogs-vs-clips-reference-player:latest",
+            "{{REPORTER_IMAGE}}": "ghcr.io/metta-ai/reporters-default:latest",
         },
         "paintarena": {"{{PAINTARENA_IMAGE}}": "coworld-paintarena:latest"},
     }
@@ -1621,19 +1555,3 @@ def _reload_paintarena_server() -> Any:
 def _image_command_slice(command: list[str]) -> list[str]:
     entrypoint_index = command.index("--entrypoint")
     return command[entrypoint_index:]
-
-
-def _cogs_vs_clips_root() -> Path:
-    return Path(__file__).resolve().parents[3] / "worlds" / "cogs_vs_clips"
-
-
-def _load_cogs_vs_clips_server_module():
-    spec = importlib.util.spec_from_file_location(
-        "cogs_vs_clips_server_test",
-        _cogs_vs_clips_root() / "game" / "server.py",
-    )
-    assert spec is not None
-    assert spec.loader is not None
-    server_module = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(server_module)
-    return server_module
