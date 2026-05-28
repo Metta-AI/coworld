@@ -58,7 +58,7 @@ def test_canonical_among_them_build_declares_role_starter_contexts() -> None:
     assert "GRADER_CONTEXT" in compose_text
     assert "DIAGNOSER_CONTEXT" in compose_text
     assert "OPTIMIZER_CONTEXT" in compose_text
-    assert "cogame-among-them" in compose_text
+    assert "coworld-among-them" in compose_text
     assert "players/ivotewell/Dockerfile" in compose_text
     assert "commissioners/commissioners/among_them/among_them_commissioner" in compose_text
     assert "reporters/reporters" in compose_text
@@ -153,17 +153,17 @@ def test_canonical_among_them_template_points_to_source_repos(tmp_path: Path) ->
     assert [role.id for role in package.manifest.grader] == ["among-them-grader"]
     assert [role.id for role in package.manifest.diagnoser] == ["among-them-diagnoser"]
     assert [role.id for role in package.manifest.optimizer] == ["coworld-optimizer"]
-    assert pages["rules.md"] == "https://github.com/Metta-AI/cogame-among-them/blob/master/README.md"
+    assert pages["rules.md"] == "https://github.com/Metta-AI/coworld-among-them/blob/master/README.md"
     assert pages["play_amongthem.md"] == "https://softmax.com/play_amongthem.md"
-    assert pages["player"] == "https://github.com/Metta-AI/coworld/tree/main/src/coworld/policies/amongthemstarter"
-    assert pages["game-source"] == "https://github.com/Metta-AI/cogame-among-them/tree/master"
+    assert pages["player"] == "https://github.com/Metta-AI/coworld-among-them/tree/master/players/ivotewell"
+    assert pages["game-source"] == "https://github.com/Metta-AI/coworld-among-them/tree/master"
     assert pages["submit"] == (
-        "https://github.com/Metta-AI/cogame-among-them/blob/master/players/how_to_submit_coworld_policy.md"
+        "https://github.com/Metta-AI/coworld-among-them/blob/master/players/how_to_submit_coworld_policy.md"
     )
     assert pages["optimizer"] == "https://github.com/Metta-AI/optimizers"
     assert (
         pages["optimizer-game-spec"]
-        == "https://github.com/Metta-AI/cogame-among-them/blob/master/coworld_manifest.json"
+        == "https://github.com/Metta-AI/coworld-among-them/blob/master/coworld_manifest.json"
     )
     assert pages["optimizer-game-tutorial"] == "https://softmax.com/play_amongthem.md"
     assert pages["optimizer-skills"] == "https://github.com/Metta-AI/optimizers/blob/main/lib/skills/data.ts"
@@ -181,7 +181,7 @@ def test_canonical_among_them_template_points_to_source_repos(tmp_path: Path) ->
         "https://github.com/Metta-AI/diagnosers/tree/main/diagnosers/among_them/among_them_diagnoser"
     )
     assert role_source_urls == {
-        "player": "https://github.com/Metta-AI/cogame-among-them/tree/master/players/ivotewell",
+        "player": "https://github.com/Metta-AI/coworld-among-them/tree/master/players/ivotewell",
         "optimizer": "https://github.com/Metta-AI/optimizers",
         "commissioner": (
             "https://github.com/Metta-AI/commissioners/tree/main/commissioners/among_them/among_them_commissioner"
