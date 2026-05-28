@@ -27,9 +27,7 @@ dependencies = [
 auth = ["softmax-cli==0.26.13"]
 examples = ["fastapi>=0.115.0", "pyarrow>=16.1.0", "uvicorn>=0.34.0"]
 test = [
-  "cogsguard",
   "fastapi>=0.115.0",
-  "mettagrid",
   "numpy>=2.3.0",
   "pyarrow>=16.1.0",
   "pytest",
@@ -94,9 +92,7 @@ testpaths = ["tests"]
 markers = ["slow: marks tests as slow"]
 
 [tool.uv.sources]
-mettagrid = { workspace = true }
 softmax-cli = { workspace = true }
-cogsguard = { git = "https://github.com/Metta-AI/cogame-cogsguard.git" }
 
 [tool.ruff]
 extend = "../../.ruff.toml"
