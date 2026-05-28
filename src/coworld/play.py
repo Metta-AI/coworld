@@ -27,8 +27,8 @@ from coworld.runner.runner import (
     GAME_PORT_ENV_VAR,
     LOCAL_DOCKER_NETWORK,
     LOCAL_GAME_NETWORK_ALIAS_PREFIX,
+    REPLAY_LOAD_ENV_VAR,
     REPLAY_SAVE_ENV_VAR,
-    REPLAY_SERVER_ENV_VAR,
     RESULTS_ENV_VAR,
     EpisodeArtifacts,
     PlayerLaunchSpec,
@@ -300,7 +300,7 @@ def replay_coworld(
         package=package,
         artifacts=artifacts,
         replay_path=replay_path,
-        link=replay_client_url(replay_port, container_replay_uri),
+        link=replay_client_url(replay_port),
     )
 
     replay_container = f"coworld-replay-game-{secrets.token_hex(8)}"
@@ -321,7 +321,7 @@ def replay_coworld(
                     "-e",
                     f"{GAME_PORT_ENV_VAR}={GAME_PORT}",
                     "-e",
-                    f"{REPLAY_SERVER_ENV_VAR}=1",
+                    f"{REPLAY_LOAD_ENV_VAR}={container_replay_uri}",
                     "-v",
                     f"{replay_path.parent}:/coworld-replay:ro",
                     *_image_command(package.game),
@@ -333,14 +333,15 @@ def replay_coworld(
 
             _wait_for_health(replay_port, replay_process, artifacts.game_stderr_path, timeout_seconds=timeout_seconds)
             if verify_replay:
-                probe_url = f"ws://127.0.0.1:{replay_port}{replay_session_path(container_replay_uri)}"
+                probe_url = f"ws://127.0.0.1:{replay_port}{replay_session_path()}"
                 try:
                     asyncio.run(_require_replay_message(probe_url, timeout_seconds=timeout_seconds))
                 except Exception as probe_error:
                     raise RuntimeError(
-                        f"Replay container did not enter replay-server mode "
-                        f"(no frame from {probe_url} within {timeout_seconds:.1f}s for uri={container_replay_uri}). "
-                        f"The game image may not implement COGAME_REPLAY_SERVER=1, "
+                        f"Replay container did not enter replay mode "
+                        f"(no frame from {probe_url} within {timeout_seconds:.1f}s "
+                        f"for {REPLAY_LOAD_ENV_VAR}={container_replay_uri}). "
+                        f"The game image may not implement {REPLAY_LOAD_ENV_VAR}, "
                         f"or the replay file may not be reachable inside the container. "
                         f"See packages/coworld/src/coworld/GAME_RUNTIME_README.md for the contract."
                     ) from probe_error

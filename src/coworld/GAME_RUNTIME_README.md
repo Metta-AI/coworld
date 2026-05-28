@@ -12,10 +12,10 @@ manifest describes how those containers fit together into a Coworld episode.
 
 ## Hosted Runtime Resources
 
-Hosted Kubernetes runners schedule each episode component (game, runner worker, each player, replay) with a baseline
-of 2 CPU and 2Gi memory. These are scheduling requests, not limits — containers may use more if the node has spare
-capacity, but game and player authors should treat the requested capacity as the portable baseline available in
-hosted runs. See
+Hosted Kubernetes runners schedule each episode component (game, runner worker, each player, replay) with a baseline of
+2 CPU and 2Gi memory. These are scheduling requests, not limits — containers may use more if the node has spare
+capacity, but game and player authors should treat the requested capacity as the portable baseline available in hosted
+runs. See
 [`runner/KUBERNETES_RUNNER_README.md` § Hosted resource baseline](runner/KUBERNETES_RUNNER_README.md#hosted-resource-baseline)
 for the per-component breakdown and the configurable per-player overrides.
 
@@ -63,15 +63,14 @@ COGAME_PORT=8080
 COGAME_LOG_URI=...           # optional
 ```
 
-`COGAME_HOST` and `COGAME_PORT` define the game container bind address for
-HTTP routes and websockets. If either variable is omitted, games should default
-to `0.0.0.0` and `8080`.
+`COGAME_HOST` and `COGAME_PORT` define the game container bind address for HTTP routes and websockets. If either
+variable is omitted, games should default to `0.0.0.0` and `8080`.
 
 The game must support `file://` URIs and HTTP(S) read/write URIs. HTTP(S) output URIs are usually presigned upload URLs,
 with `PUT` as the default method.
 
-If `COGAME_LOG_URI` is set, the game should POST log lines to that URL (plain text, one or more newline-separated
-lines per request). If it is unset, the game must skip log posting. In either case, the container is free to log to
+If `COGAME_LOG_URI` is set, the game should POST log lines to that URL (plain text, one or more newline-separated lines
+per request). If it is unset, the game must skip log posting. In either case, the container is free to log to
 stdout/stderr as normal. Hosted Coworld episode jobs collect both stdout and stderr from the game pod and each started
 player pod; these container streams are independent from `COGAME_LOG_URI`.
 
@@ -85,8 +84,8 @@ In rollout mode, the game listens on `COGAME_HOST:COGAME_PORT` and exposes:
 
 `GET /healthz` returns 200 when the game is ready.
 
-`GET /client/player` serves a browser client for one slot. `GET /client/global` serves a live viewer. Both client
-pages and their websockets follow the contract in [Browser Clients](#browser-clients).
+`GET /client/player` serves a browser client for one slot. `GET /client/global` serves a live viewer. Both client pages
+and their websockets follow the contract in [Browser Clients](#browser-clients).
 
 The `/global` websocket must support late viewers. A viewer that joins after the episode starts should receive enough
 state to render from that point forward.
@@ -99,8 +98,8 @@ behavior.
 
 Game container stdout and stderr are surfaced to any user with episode access through the per-episode bundling layer
 (see [EPISODE_BUNDLE_README.md](EPISODE_BUNDLE_README.md)). Treat those streams as **public**: do not write secrets,
-private credentials, or other confidential information to stdout, stderr, or `COGAME_LOG_URI`. The same rule applies
-to the global viewer's `/global` websocket and any browser-served client pages.
+private credentials, or other confidential information to stdout, stderr, or `COGAME_LOG_URI`. The same rule applies to
+the global viewer's `/global` websocket and any browser-served client pages.
 
 Games may expose local-only admin controls by convention:
 
@@ -114,22 +113,21 @@ The admin route is game-owned. The platform must not expose `/admin` in producti
 For replay viewing, the runner starts the same game image with:
 
 ```bash
-COGAME_REPLAY_SERVER=1
+COGAME_LOAD_REPLAY_URI=file:///coworld/replay
 ```
 
 In replay mode, the game listens on `COGAME_HOST:COGAME_PORT` and exposes:
 
 - `GET /healthz`
-- `GET /client/replay?uri=<uri>`
-- `WEBSOCKET /replay?uri=<uri>`
+- `GET /client/replay`
+- `WEBSOCKET /replay`
 
-`GET /client/replay?uri=<uri>` serves a browser replay viewer. The page and its websocket follow the contract in
-[Browser Clients](#browser-clients); the `uri` query param carries the replay artifact location end-to-end from the
-page URL into the websocket URL. The game loads the replay artifact and handles game-owned replay controls such as
-start, stop, seek, or speed changes.
+`GET /client/replay` serves a browser replay viewer. The runner supplies the replay artifact location through
+`COGAME_LOAD_REPLAY_URI` when it starts the replay container. The game loads that replay artifact and handles game-owned
+replay controls such as start, stop, seek, or speed changes.
 
-Hosted Observatory replay sessions use the same `/client/replay?uri=<uri>` entrypoint for every Coworld game, so
-adding a new Coworld does not require frontend changes to expose its replays.
+Hosted Observatory replay sessions use the same `/client/replay` entrypoint for every Coworld game, so adding a new
+Coworld does not require frontend changes to expose its replays.
 
 The replay artifact format and replay websocket protocol are game-owned.
 
@@ -141,11 +139,11 @@ shims must implement.
 
 The URL families:
 
-| Page (HTML)                            | WebSocket                       | Purpose                       |
-| -------------------------------------- | ------------------------------- | ----------------------------- |
+| Page (HTML)                           | WebSocket                            | Purpose                       |
+| ------------------------------------- | ------------------------------------ | ----------------------------- |
 | `GET /client/player?slot=…&token=…&…` | `WEBSOCKET /player?slot=…&token=…&…` | Rollout mode: one player slot |
-| `GET /client/global`                  | `WEBSOCKET /global`             | Rollout mode: live viewer     |
-| `GET /client/replay?uri=…`            | `WEBSOCKET /replay?uri=…`       | Replay mode: replay viewer    |
+| `GET /client/global`                  | `WEBSOCKET /global`                  | Rollout mode: live viewer     |
+| `GET /client/replay`                  | `WEBSOCKET /replay`                  | Replay mode: replay viewer    |
 
 ### Default URL derivation
 
@@ -155,8 +153,8 @@ When the browser loads a client HTML page, that page's JavaScript derives the we
 1. Convert protocol: `http://` → `ws://`, `https://` → `wss://`.
 2. Replace path: `/client/player` → `/player`, `/client/global` → `/global`, `/client/replay` → `/replay`.
 
-The entire page query string carries over to the websocket URL unchanged. That is how `slot`, `token`, game-owned
-params (e.g. `role=scout`), and the replay `uri` all flow from the page URL into the websocket URL.
+The entire page query string carries over to the websocket URL unchanged. That is how `slot`, `token`, and game-owned
+params (e.g. `role=scout`) flow from the page URL into the websocket URL.
 
 Example:
 
@@ -167,9 +165,9 @@ websocket URL:  ws://game-host:8080/player?slot=0&token=abc&role=scout
 
 ### The `address` override
 
-When the game is served through a hosted proxy that cannot preserve websocket query strings (notably the Kubernetes
-API server's websocket proxy, which strips them), the platform pre-computes the exact websocket URL it wants the
-browser to open and passes that URL as an `address` query parameter on the HTML page.
+When the game is served through a hosted proxy that cannot preserve websocket query strings (notably the Kubernetes API
+server's websocket proxy, which strips them), the platform pre-computes the exact websocket URL it wants the browser to
+open and passes that URL as an `address` query parameter on the HTML page.
 
 When `address` is present:
 
@@ -189,34 +187,30 @@ websocket URL:  wss://stats.example.com/v2/.../proxy/player?slot=0&token=abc
 
 ### Replay URI flow
 
-The replay path is a specific instance of the default mechanic. The replay artifact URI travels end-to-end through
-the page query string:
+The replay artifact URI is a container startup input, not a browser URL parameter:
 
-1. **Source.** A local CLI prints a URL like
-   `http://127.0.0.1:<port>/client/replay?uri=file:///path/to/replay.json`. Hosted Observatory composes
-   `https://.../proxy/client/replay?uri=https://.../replay.json.z`.
+1. **Source.** A local CLI or hosted Observatory starts the game image with `COGAME_LOAD_REPLAY_URI=<file-or-http-uri>`
+   and prints or iframes a URL like `http://127.0.0.1:<port>/client/replay`.
 2. **Browser** opens the page (in a tab locally, or in an iframe in hosted Observatory).
 3. The game serves the replay viewer HTML.
 4. The JS applies the default derivation: protocol → `ws[s]`, path `/client/replay` → `/replay`, query preserved.
-5. The websocket opens at `/replay?uri=<replay-uri>`.
-6. The game's `/replay` websocket handler reads `uri` from the websocket's query params and streams replay data
-   loaded from that URI.
+5. The websocket opens at `/replay`.
+6. The game's `/replay` websocket handler streams replay data loaded from `COGAME_LOAD_REPLAY_URI`.
 
-Every component on the path — game, proxies, browser — must preserve the `uri` query param. Platform proxies forward
-the request path and query without inspecting or branching on them.
+Every component on the path — game, proxies, browser — must preserve ordinary page query params. Platform proxies
+forward the request path and query without inspecting or branching on them.
 
 ### Contract summary for game authors
 
 A game container must:
 
 - Serve a small HTML viewer at each `/client/<view>` route.
-- Have that viewer's JavaScript implement the default URL derivation above, including the `address` override
-  behavior.
+- Have that viewer's JavaScript implement the default URL derivation above, including the `address` override behavior.
 - Have the corresponding `/<view>` websocket route read `slot`, `token`, `uri`, and any game-owned params from the
   websocket's query string.
 
-The HTML and JavaScript may be game-styled; only the URL derivation contract is fixed. Reference implementations live
-in `examples/paintarena/game/client/` (in this package) and `worlds/cogs_vs_clips/game/client/` (in the repo root).
+The HTML and JavaScript may be game-styled; only the URL derivation contract is fixed. Reference implementations live in
+`examples/paintarena/game/client/` (in this package) and `worlds/cogs_vs_clips/game/client/` (in the repo root).
 
 ## Episode Lifecycle
 
@@ -227,8 +221,8 @@ in `examples/paintarena/game/client/` (in this package) and `worlds/cogs_vs_clip
 5. The game reads its config and starts listening on `COGAME_HOST:COGAME_PORT`.
 6. The runner waits for `GET /healthz` to return 200.
 7. The runner starts one player container per slot.
-8. Each player gets `COWORLD_PLAYER_WS_URL=ws://<engine-host>/player?slot=<slot>&token=<token>` and,
-   optionally, `COGAME_LOG_URI=...` with the same posting contract as the game.
+8. Each player gets `COWORLD_PLAYER_WS_URL=ws://<engine-host>/player?slot=<slot>&token=<token>` and, optionally,
+   `COGAME_LOG_URI=...` with the same posting contract as the game.
 9. Players connect to `/player` and send game-specific actions.
 10. Viewers may connect to `/global`.
 11. The game runs until the episode ends.

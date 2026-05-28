@@ -4,49 +4,47 @@
 
 ## What it does
 
-The game role owns the episode. The game runnable receives an episode config, accepts one or more player
-connections, advances the world, and emits the replay and results artifacts that supporting runnables consume after
-the episode. Every Coworld manifest has exactly one game runnable.
+The game role owns the episode. The game runnable receives an episode config, accepts one or more player connections,
+advances the world, and emits the replay and results artifacts that supporting runnables consume after the episode.
+Every Coworld manifest has exactly one game runnable.
 
 ## Where it lives in the manifest
 
-`manifest.game.runnable`, with `type: "game"`. The game is the only role whose runnable is a single object rather
-than an array; identifying metadata (`game.name`, `game.version`, `game.description`, `game.owner`) lives one level
-up on `manifest.game` itself. See [`MANIFEST_README.md` § `game` Section](../../MANIFEST_README.md#game-section).
+`manifest.game.runnable`, with `type: "game"`. The game is the only role whose runnable is a single object rather than
+an array; identifying metadata (`game.name`, `game.version`, `game.description`, `game.owner`) lives one level up on
+`manifest.game` itself. See [`MANIFEST_README.md` § `game` Section](../../MANIFEST_README.md#game-section).
 
 The `game` object also requires `game.docs.pages` to include exactly one `rules.md` entry and exactly one `play_*.md`
 entry (the player-onboarding guide). See
-[`MANIFEST_README.md` § `game.docs.pages` Requirements](../../MANIFEST_README.md#gamedocspages-requirements) for
-the exact rule.
+[`MANIFEST_README.md` § `game.docs.pages` Requirements](../../MANIFEST_README.md#gamedocspages-requirements) for the
+exact rule.
 
 ## Contract
 
-The game runnable is a long-running container that listens on `COGAME_HOST:COGAME_PORT`, defaulting to
-`0.0.0.0:8080`, and follows the runtime contract
-documented in [`GAME_RUNTIME_README.md`](../../GAME_RUNTIME_README.md):
+The game runnable is a long-running container that listens on `COGAME_HOST:COGAME_PORT`, defaulting to `0.0.0.0:8080`,
+and follows the runtime contract documented in [`GAME_RUNTIME_README.md`](../../GAME_RUNTIME_README.md):
 
 - Reads its concrete game config from `COGAME_CONFIG_URI` at startup.
 - Serves `GET /healthz` (200 when ready).
-- Serves player HTML clients at `GET /client/player?slot=…&token=…` and player websockets at
-  `/player?slot=…&token=…`.
+- Serves player HTML clients at `GET /client/player?slot=…&token=…` and player websockets at `/player?slot=…&token=…`.
 - Serves a live global viewer at `GET /client/global` and `/global`.
-- In replay mode (`COGAME_REPLAY_SERVER=1`), serves `GET /client/replay?uri=…` and `/replay?uri=…`.
+- In replay mode (`COGAME_LOAD_REPLAY_URI=…`), serves `GET /client/replay` and `/replay`.
 - Writes a validated results file to `COGAME_RESULTS_URI` when the episode completes.
 - Writes a replay artifact to `COGAME_SAVE_REPLAY_URI`.
 
 The game is the only role with a runtime websocket-server contract. All supporting runnables run as process-style
 containers that consume artifacts after the fact.
 
-Game container stdout and stderr are surfaced to anyone with episode access via the bundling layer's `game_logs`
-include token; treat those streams as public. See
+Game container stdout and stderr are surfaced to anyone with episode access via the bundling layer's `game_logs` include
+token; treat those streams as public. See
 [`GAME_RUNTIME_README.md` § Log visibility](../../GAME_RUNTIME_README.md#log-visibility).
 
 ## How it fits with other roles
 
-The game runnable produces the per-URI episode artifacts (results, replay, game logs) that the bundling layer
-assembles into episode bundles on demand. Supporting runnables — reporter, grader, diagnoser, optimizer — consume
-those bundles after the episode. Player runnables connect to the game's websockets during the episode and are the
-only role that interacts with the game in-flight. See [`OVERVIEW.md`](OVERVIEW.md) for the full artifact flow.
+The game runnable produces the per-URI episode artifacts (results, replay, game logs) that the bundling layer assembles
+into episode bundles on demand. Supporting runnables — reporter, grader, diagnoser, optimizer — consume those bundles
+after the episode. Player runnables connect to the game's websockets during the episode and are the only role that
+interacts with the game in-flight. See [`OVERVIEW.md`](OVERVIEW.md) for the full artifact flow.
 
 ## See Also
 

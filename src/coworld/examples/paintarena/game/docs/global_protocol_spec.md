@@ -25,9 +25,8 @@ The server sends a JSON state snapshot immediately on connect and then sends upd
 }
 ```
 
-When the server is started with `COGAME_REPLAY_SERVER=1`, browsers request `GET /client/replay?uri=<uri>` to load the
-replay client. The replay client opens the `/replay?uri=<uri>` websocket to receive replay data and send control
-commands.
+When the server is started with `COGAME_LOAD_REPLAY_URI=<uri>`, browsers request `GET /client/replay` to load the replay
+client. The replay client opens the `/replay` websocket to receive replay data and send control commands.
 
 For local development, browsers may request `GET /client/admin` and open `/admin` as a websocket. The admin websocket
 accepts:

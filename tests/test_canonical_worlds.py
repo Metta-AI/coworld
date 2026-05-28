@@ -54,17 +54,24 @@ def test_canonical_among_them_build_declares_role_starter_contexts() -> None:
     assert "GAME_CONTEXT" in compose_text
     assert "PLAYER_CONTEXT" in compose_text
     assert "COMMISSIONER_CONTEXT" in compose_text
+    assert "REPORTER_CONTEXT" in compose_text
+    assert "GRADER_CONTEXT" in compose_text
     assert "DIAGNOSER_CONTEXT" in compose_text
     assert "OPTIMIZER_CONTEXT" in compose_text
-    assert "players/players/among_them/starter" in compose_text
+    assert "cogame-among-them" in compose_text
+    assert "players/ivotewell/Dockerfile" in compose_text
     assert "commissioners/commissioners/among_them/among_them_commissioner" in compose_text
+    assert "reporters/reporters" in compose_text
+    assert "among_them/among_them_summarizer/Dockerfile" in compose_text
+    assert "graders/graders/among_them/among_them_grader" in compose_text
     assert "diagnosers/diagnosers/among_them/among_them_diagnoser" in compose_text
     assert "optimizers" in compose_text
-    # Reporter and grader are pulled from GHCR rather than rebuilt from sibling-repo paths.
-    assert "REPORTER_CONTEXT" not in compose_text
-    assert "ghcr.io/metta-ai/reporters-among-them-summarizer" in compose_text
-    assert "GRADER_CONTEXT" not in compose_text
-    assert "ghcr.io/metta-ai/graders-among-them:latest" in compose_text
+    assert "coworld-among-them-summarizer:latest" in compose_text
+    assert "coworld-among-them-grader:latest" in compose_text
+    assert "ghcr.io/metta-ai/reporters-among-them-summarizer" not in compose_text
+    assert "ghcr.io/metta-ai/graders-among-them" not in compose_text
+    assert "Dockerfile.game" not in compose_text
+    assert "Dockerfile.player" not in compose_text
     assert "ghcr.io/treeform" not in compose_text
     assert "policies/symbolic/bitworld/among-them/ivotewell" not in compose_text
     assert "WORLD_CONTEXT" not in compose_text
@@ -272,7 +279,8 @@ def _materialized_template(base_dir: Path, template_path: Path) -> Path:
             "{{GAME_IMAGE}}": "coworld-among-them-game:latest",
             "{{PLAYER_IMAGE}}": "coworld-among-them-ivotewell:latest",
             "{{COMMISSIONER_IMAGE}}": "coworld-among-them-commissioner:latest",
-            "{{REPORTER_IMAGE}}": "ghcr.io/metta-ai/reporters-among-them-summarizer:latest",
+            "{{REPORTER_IMAGE}}": "coworld-among-them-summarizer:latest",
+            "{{GRADER_IMAGE}}": "coworld-among-them-grader:latest",
             "{{DIAGNOSER_IMAGE}}": "coworld-among-them-diagnoser:latest",
             "{{OPTIMIZER_IMAGE}}": "coworld-optimizer:latest",
         },

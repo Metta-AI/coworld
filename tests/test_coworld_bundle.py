@@ -68,7 +68,15 @@ def test_build_coworld_manifest_runs_compose_and_writes_hydrated_manifest(
             {"cwd": tmp_path, "check": True, "capture_output": True, "text": True},
         ),
         (
-            ["docker", "compose", "-f", str(tmp_path / "compose.yaml"), "pull", "--ignore-pull-failures"],
+            [
+                "docker",
+                "compose",
+                "-f",
+                str(tmp_path / "compose.yaml"),
+                "pull",
+                "--ignore-buildable",
+                "--ignore-pull-failures",
+            ],
             {"cwd": tmp_path, "check": True},
         ),
         (

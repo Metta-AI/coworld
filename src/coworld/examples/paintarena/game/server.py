@@ -87,12 +87,14 @@ def load_replay_data(replay_uri: str) -> dict[str, Any]:
     return json.loads(replay_data)
 
 
-REPLAY_SERVER = os.environ.get("COGAME_REPLAY_SERVER") == "1"
-if REPLAY_SERVER:
+REPLAY_MODE = "COGAME_LOAD_REPLAY_URI" in os.environ
+if REPLAY_MODE:
+    REPLAY_LOAD_URI = os.environ["COGAME_LOAD_REPLAY_URI"]
     CONFIG = {"tokens": [], "players": [], "width": 1, "height": 1, "max_ticks": 0, "tick_rate": 1.0}
     RESULTS_URI = ""
     REPLAY_URI = ""
 else:
+    REPLAY_LOAD_URI = ""
     CONFIG = json.loads(read_data(os.environ["COGAME_CONFIG_URI"]))
     RESULTS_URI = os.environ["COGAME_RESULTS_URI"]
     REPLAY_URI = os.environ["COGAME_SAVE_REPLAY_URI"]
@@ -208,11 +210,8 @@ async def admin(websocket: WebSocket) -> None:
 
 @app.websocket("/replay")
 async def replay_viewer(websocket: WebSocket) -> None:
-    if "uri" not in websocket.query_params:
-        await websocket.close(code=1008)
-        return
     await websocket.accept()
-    await websocket.send_json({"type": "replay", **load_replay_data(websocket.query_params["uri"])})
+    await websocket.send_json({"type": "replay", **load_replay_data(REPLAY_LOAD_URI)})
     async for command in websocket.iter_json():
         await websocket.send_json({"type": "control", "command": command})
 

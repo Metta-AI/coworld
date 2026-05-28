@@ -19,11 +19,10 @@ Every Coworld also declares five **supporting role sections** in its manifest:
 - **diagnoser**: evaluates a target policy against a Coworld's episode artifacts and emits policy-facing advice.
 - **optimizer**: ingests episode artifacts, grades, and diagnoser output to drive local policy iteration.
 
-**Every `coworld_manifest.json` declares the single `game` object plus role runnable arrays:**
-`player`, `commissioner`, `reporter`, `grader`, `diagnoser`, and `optimizer`. `player[]` and `reporter[]` must contain
-at least one entry. Coworld authors who do not have a custom reporter may reference
-`ghcr.io/metta-ai/reporters-default:latest`; the remaining supporting role arrays may stay empty until their platform
-contracts require runnable entries. See
+**Every `coworld_manifest.json` declares the single `game` object plus role runnable arrays:** `player`, `commissioner`,
+`reporter`, `grader`, `diagnoser`, and `optimizer`. `player[]` and `reporter[]` must contain at least one entry. Coworld
+authors who do not have a custom reporter may reference `ghcr.io/metta-ai/reporters-default:latest`; the remaining
+supporting role arrays may stay empty until their platform contracts require runnable entries. See
 [Role Status](#role-status) below for which roles have a live platform contract today.
 
 During a league episode, the platform starts the game container plus one submitted policy container per player slot.
@@ -31,8 +30,8 @@ Public users normally build policy containers and submit them to existing Coworl
 containers and publish complete Coworld packages including all seven role sections.
 
 Use [GAME_RUNTIME_README.md](GAME_RUNTIME_README.md) for the game-container runtime contract and
-[CLI_README.md](CLI_README.md) for the command reference. Use [API_GUIDE.md](API_GUIDE.md) when a coding agent needs
-to call the public Softmax/Coworld API directly.
+[CLI_README.md](CLI_README.md) for the command reference. Use [API_GUIDE.md](API_GUIDE.md) when a coding agent needs to
+call the public Softmax/Coworld API directly.
 
 ## Role Status
 
@@ -321,8 +320,8 @@ The game image owns the episode. It must:
 - serve a live viewer at `GET /client/global` and `WEBSOCKET /global`;
 - write final results to `COGAME_RESULTS_URI`;
 - write a replay artifact to `COGAME_SAVE_REPLAY_URI`;
-- serve replay clients at `GET /client/replay?uri=<uri>` and replay websockets at `WEBSOCKET /replay?uri=<uri>` when
-  started with `COGAME_REPLAY_SERVER=1`.
+- serve replay clients at `GET /client/replay` and replay websockets at `WEBSOCKET /replay` when started with
+  `COGAME_LOAD_REPLAY_URI=<uri>`.
 
 Browser client pages forward their page query string into the websocket they open. When the game is served through a
 hosted proxy that strips websocket query strings, the platform passes an `address` query parameter on the page URL
@@ -330,9 +329,9 @@ containing the full websocket URL to use instead. See
 [GAME_RUNTIME_README.md § Browser Clients](GAME_RUNTIME_README.md#browser-clients) for the full contract, including the
 replay URI flow.
 
-Coworld replays have one hosted entrypoint across games: the platform iframes the game-owned `/client/replay?uri=<uri>`
-page, and the page opens game-owned replay HTTP or WebSocket routes on the same runtime. Those replay routes must keep
-the replay artifact URI in the query string so proxies can preserve it end to end.
+Coworld replays have one hosted entrypoint across games: the platform starts the game image with
+`COGAME_LOAD_REPLAY_URI=<uri>` and iframes the game-owned `/client/replay` page. The page opens game-owned replay HTTP
+or WebSocket routes on the same runtime.
 
 The game config schema must define `tokens` as a required string array with equal `minItems` and `maxItems`. That fixed
 length is the number of player slots. Coworld-authored configs omit `tokens`; the runner creates fresh tokens for each

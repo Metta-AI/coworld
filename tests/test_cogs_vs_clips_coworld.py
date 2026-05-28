@@ -3,7 +3,7 @@ from __future__ import annotations
 import importlib.util
 import json
 from pathlib import Path
-from urllib.parse import parse_qs, urlencode, urlparse
+from urllib.parse import parse_qs, urlparse
 
 import pytest
 from fastapi.testclient import TestClient
@@ -117,7 +117,7 @@ def test_cogs_vs_clips_rollout_routes_preserve_coworld_runtime_contract(tmp_path
     assert client.get("/healthz").json() == {"ok": True}
     assert client.get("/client/player", params={"slot": 0, "token": "token-0"}).status_code == 200
     assert client.get("/client/global").status_code == 200
-    assert client.get("/client/replay", params={"uri": (tmp_path / "replay.json").as_uri()}).status_code == 200
+    assert client.get("/client/replay").status_code == 200
 
     with pytest.raises(WebSocketDisconnect) as exc_info:
         with client.websocket_connect("/player?slot=0&token=bad"):
@@ -314,12 +314,11 @@ def test_cogs_vs_clips_replay_client_redirects_to_mettascope(tmp_path: Path) -> 
     server_module = _load_cogs_vs_clips_server_module()
     replay_path = tmp_path / "replay.json"
     replay_path.write_text(json.dumps({"results": {"steps": 2}, "frames": [{"tick": 0}]}), encoding="utf-8")
-    client = TestClient(server_module.create_replay_app())
+    client = TestClient(server_module.create_replay_app(replay_path.as_uri()))
 
     assert client.get("/healthz").json() == {"ok": True}
     response = client.get(
         "/client/replay",
-        params={"uri": replay_path.as_uri()},
         follow_redirects=False,
     )
     location = response.headers["location"]
@@ -327,12 +326,12 @@ def test_cogs_vs_clips_replay_client_redirects_to_mettascope(tmp_path: Path) -> 
 
     assert response.status_code == 307
     assert location.startswith(server_module.METTASCOPE_REPLAY_URL_PREFIX)
-    assert replay_url.startswith("http://testserver/replay-data?")
-    replay_response = client.get("/replay-data", params={"uri": replay_path.as_uri()})
+    assert replay_url == "http://testserver/replay-data"
+    replay_response = client.get("/replay-data")
     assert json.loads(replay_response.content) == {"results": {"steps": 2}, "frames": [{"tick": 0}]}
     assert replay_response.headers["access-control-allow-origin"] == "*"
 
-    with client.websocket_connect(f"/replay?{urlencode({'uri': replay_path.as_uri()})}") as websocket:
+    with client.websocket_connect("/replay") as websocket:
         replay_message = websocket.receive_json()
         websocket.send_json({"command": "pause"})
         control_message = websocket.receive_json()

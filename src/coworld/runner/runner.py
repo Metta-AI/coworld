@@ -17,7 +17,7 @@ from urllib.parse import urlencode
 import httpx
 import websockets
 from pydantic import BaseModel, ConfigDict, Field, TypeAdapter
-from websockets.exceptions import ConnectionClosed, InvalidHandshake, InvalidMessage, InvalidStatus
+from websockets.exceptions import ConnectionClosed, InvalidHandshake, InvalidStatus
 
 from coworld.schema_validation import validate_json_schema
 from coworld.types import CoworldEpisodeJobSpec, CoworldRunnableSpec
@@ -26,7 +26,7 @@ CONTAINER_WORKDIR = "/coworld"
 CONFIG_ENV_VAR = "COGAME_CONFIG_URI"
 RESULTS_ENV_VAR = "COGAME_RESULTS_URI"
 REPLAY_SAVE_ENV_VAR = "COGAME_SAVE_REPLAY_URI"
-REPLAY_SERVER_ENV_VAR = "COGAME_REPLAY_SERVER"
+REPLAY_LOAD_ENV_VAR = "COGAME_LOAD_REPLAY_URI"
 GAME_HOST_ENV_VAR = "COGAME_HOST"
 GAME_PORT_ENV_VAR = "COGAME_PORT"
 GAME_HOST = "0.0.0.0"
@@ -189,12 +189,12 @@ def write_coworld_game_config(job: CoworldEpisodeJobSpec, artifacts: EpisodeArti
     artifacts.config_path.write_text(json.dumps(game_config, indent=2), encoding="utf-8")
 
 
-def replay_session_path(replay_uri: str) -> str:
-    return f"/replay?{urlencode({'uri': replay_uri})}"
+def replay_session_path() -> str:
+    return "/replay"
 
 
-def replay_client_url(port: int, replay_uri: str) -> str:
-    return f"http://127.0.0.1:{port}/client/replay?{urlencode({'uri': replay_uri})}"
+def replay_client_url(port: int) -> str:
+    return f"http://127.0.0.1:{port}/client/replay"
 
 
 def ensure_local_docker_network() -> None:
@@ -343,7 +343,7 @@ def run_episode_containers(spec: EpisodeRunSpec, *, verify_replay: bool = True) 
                     "-e",
                     f"{GAME_PORT_ENV_VAR}={GAME_PORT}",
                     "-e",
-                    f"{REPLAY_SERVER_ENV_VAR}=1",
+                    f"{REPLAY_LOAD_ENV_VAR}={replay_uri}",
                     "-v",
                     f"{spec.artifacts.workspace.resolve()}:{CONTAINER_WORKDIR}:rw",
                     *_image_command(spec.game),
@@ -358,17 +358,11 @@ def run_episode_containers(spec: EpisodeRunSpec, *, verify_replay: bool = True) 
                 spec.artifacts.game_stderr_path,
                 timeout_seconds=spec.timeout_seconds,
             )
-            _require_http_ok(replay_client_url(replay_port, replay_uri), allow_redirect=True)
+            _require_http_ok(replay_client_url(replay_port), allow_redirect=True)
             asyncio.run(
                 _require_replay_message(
-                    f"ws://127.0.0.1:{replay_port}{replay_session_path(replay_uri)}",
+                    f"ws://127.0.0.1:{replay_port}{replay_session_path()}",
                     timeout_seconds=spec.timeout_seconds,
-                )
-            )
-            bad_replay_uri = f"file://{CONTAINER_WORKDIR}/missing-replay.json"
-            asyncio.run(
-                _require_bad_replay_uri_rejected(
-                    f"ws://127.0.0.1:{replay_port}{replay_session_path(bad_replay_uri)}",
                 )
             )
     finally:
@@ -442,26 +436,6 @@ async def _require_replay_message(url: str, *, timeout_seconds: float) -> None:
         message = await asyncio.wait_for(websocket.recv(), timeout=min(timeout_seconds, 10.0))
         if not message:
             raise AssertionError(f"Replay viewer received an empty message from {url}")
-
-
-async def _require_bad_replay_uri_rejected(url: str) -> None:
-    try:
-        async with websockets.connect(url, open_timeout=5, max_size=None) as websocket:
-            try:
-                message = await asyncio.wait_for(websocket.recv(), timeout=2.0)
-                if message:
-                    raise AssertionError(f"Bad replay URI returned replay data: {url}")
-            except ConnectionClosed:
-                return
-            except asyncio.TimeoutError:
-                pass
-    except InvalidStatus as exc:
-        if exc.response.status_code in {400, 404}:
-            return
-        raise
-    except (ConnectionClosed, InvalidHandshake, InvalidMessage):
-        return
-    raise AssertionError(f"Bad replay URI was accepted: {url}")
 
 
 def _wait_for_health(

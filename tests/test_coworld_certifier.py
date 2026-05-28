@@ -31,13 +31,12 @@ from coworld.runner.runner import (
     CONFIG_ENV_VAR,
     LOCAL_DOCKER_NETWORK,
     LOCAL_GAME_NETWORK_ALIAS_PREFIX,
+    REPLAY_LOAD_ENV_VAR,
     REPLAY_SAVE_ENV_VAR,
-    REPLAY_SERVER_ENV_VAR,
     RESULTS_ENV_VAR,
     EpisodeArtifacts,
     _image_command,
     _require_bad_player_rejected,
-    _require_bad_replay_uri_rejected,
     assert_docker_image_reachable,
     replay_client_url,
     replay_session_path,
@@ -471,45 +470,6 @@ def test_bad_player_probe_rejects_live_websocket(monkeypatch: pytest.MonkeyPatch
         asyncio.run(_require_bad_player_rejected("ws://example.test/player?slot=0&token=bad"))
 
 
-def test_bad_replay_uri_probe_accepts_immediate_websocket_close(monkeypatch: pytest.MonkeyPatch) -> None:
-    class ClosingWebSocket:
-        async def __aenter__(self):
-            return self
-
-        async def __aexit__(self, *_args: object) -> None:
-            return None
-
-        async def recv(self) -> bytes:
-            raise ConnectionClosedOK(None, None)
-
-    monkeypatch.setattr(
-        "coworld.runner.runner.websockets.connect",
-        lambda _url, **_kwargs: ClosingWebSocket(),
-    )
-
-    asyncio.run(_require_bad_replay_uri_rejected("ws://example.test/replay?uri=file:///missing-replay.json"))
-
-
-def test_bad_replay_uri_probe_rejects_live_websocket(monkeypatch: pytest.MonkeyPatch) -> None:
-    class LiveWebSocket:
-        async def __aenter__(self):
-            return self
-
-        async def __aexit__(self, *_args: object) -> None:
-            return None
-
-        async def recv(self) -> bytes:
-            return b"frame"
-
-    monkeypatch.setattr(
-        "coworld.runner.runner.websockets.connect",
-        lambda _url, **_kwargs: LiveWebSocket(),
-    )
-
-    with pytest.raises(AssertionError, match="Bad replay URI returned replay data"):
-        asyncio.run(_require_bad_replay_uri_rejected("ws://example.test/replay?uri=file:///missing-replay.json"))
-
-
 def test_play_coworld_starts_certification_player_containers(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     coworld_manifest_path = _write_package_files(
         tmp_path,
@@ -750,18 +710,17 @@ def test_play_coworld_does_not_resolve_bedrock_env_when_docker_network_fails(
 
 
 def test_replay_urls_match_canonical_runtime_contract() -> None:
-    replay_uri = "https://storage.example.com/replays/game.json.z?download=1"
-    replay_link = urlparse(replay_client_url(1234, replay_uri))
-    websocket_path = urlparse(replay_session_path(replay_uri))
+    replay_link = urlparse(replay_client_url(1234))
+    websocket_path = urlparse(replay_session_path())
 
     assert REPLAY_SAVE_ENV_VAR == "COGAME_SAVE_REPLAY_URI"
-    assert REPLAY_SERVER_ENV_VAR == "COGAME_REPLAY_SERVER"
+    assert REPLAY_LOAD_ENV_VAR == "COGAME_LOAD_REPLAY_URI"
     assert replay_link.scheme == "http"
     assert replay_link.netloc == "127.0.0.1:1234"
     assert replay_link.path == "/client/replay"
-    assert parse_qs(replay_link.query) == {"uri": [replay_uri]}
+    assert replay_link.query == ""
     assert websocket_path.path == "/replay"
-    assert parse_qs(websocket_path.query) == {"uri": [replay_uri]}
+    assert websocket_path.query == ""
 
 
 def test_replay_coworld_starts_replay_container_and_reports_link(
@@ -810,10 +769,10 @@ def test_replay_coworld_starts_replay_container_and_reports_link(
         on_ready=ready_sessions.append,
     )
 
-    assert session.link == "http://127.0.0.1:1234/client/replay?uri=file%3A%2F%2F%2Fcoworld-replay%2Freplay.json"
+    assert session.link == "http://127.0.0.1:1234/client/replay"
     assert ready_sessions == [session]
     command = popen_commands[0]
-    assert f"{REPLAY_SERVER_ENV_VAR}=1" in command
+    assert f"{REPLAY_LOAD_ENV_VAR}=file:///coworld-replay/replay.json" in command
     assert f"{tmp_path}:/coworld-replay:ro" in command
     assert _image_command_slice(command) == [
         "--entrypoint",
@@ -895,8 +854,7 @@ def _replay_coworld_with_probe(
 def test_replay_coworld_verify_replay_probes_replay_websocket_after_health_check(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """Probe is invoked with /replay?uri=<container_replay_uri> using timeout_seconds, succeeds,
-    replay_coworld returns ReplaySession."""
+    """Probe is invoked with /replay using timeout_seconds, succeeds, replay_coworld returns ReplaySession."""
 
     async def succeed(url, *, timeout_seconds):
         return None
@@ -912,7 +870,7 @@ def test_replay_coworld_verify_replay_probes_replay_websocket_after_health_check
     assert parsed.scheme == "ws"
     assert parsed.netloc == "127.0.0.1:1234"
     assert parsed.path == "/replay"
-    assert parse_qs(parsed.query) == {"uri": ["file:///coworld-replay/replay.json"]}
+    assert parsed.query == ""
     assert probe_timeout == 42.0
     assert ready_sessions == [result]
 
@@ -920,7 +878,7 @@ def test_replay_coworld_verify_replay_probes_replay_websocket_after_health_check
 def test_replay_coworld_verify_replay_raises_when_replay_probe_times_out(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """Probe asyncio.TimeoutError surfaces as a RuntimeError naming COGAME_REPLAY_SERVER + the URI."""
+    """Probe asyncio.TimeoutError surfaces as a RuntimeError naming COGAME_LOAD_REPLAY_URI."""
 
     async def time_out(url, *, timeout_seconds):
         raise asyncio.TimeoutError("no frame received")
@@ -929,8 +887,8 @@ def test_replay_coworld_verify_replay_raises_when_replay_probe_times_out(
 
     assert isinstance(result, RuntimeError), f"expected RuntimeError, got {result!r}"
     message = str(result)
-    assert "COGAME_REPLAY_SERVER" in message, message
-    assert "replay-server mode" in message.lower() or "replay mode" in message.lower(), message
+    assert "COGAME_LOAD_REPLAY_URI" in message, message
+    assert "replay mode" in message.lower(), message
     assert "file:///coworld-replay/replay.json" in message, message
     # The original error should be chained for debuggability.
     assert isinstance(result.__cause__, asyncio.TimeoutError)
@@ -958,7 +916,7 @@ def test_replay_coworld_verify_replay_wraps_any_probe_failure(
     result, _, _, _, _ = _replay_coworld_with_probe(tmp_path, monkeypatch, probe_behavior=raise_specific)
 
     assert isinstance(result, RuntimeError)
-    assert "COGAME_REPLAY_SERVER" in str(result)
+    assert "COGAME_LOAD_REPLAY_URI" in str(result)
 
 
 def test_replay_coworld_verify_replay_tears_down_container_on_probe_failure(
@@ -1102,7 +1060,7 @@ def test_paintarena_snapshots_are_independent(tmp_path: Path, monkeypatch: pytes
     monkeypatch.setenv(CONFIG_ENV_VAR, config_path.as_uri())
     monkeypatch.setenv(RESULTS_ENV_VAR, (tmp_path / "results.json").as_uri())
     monkeypatch.setenv(REPLAY_SAVE_ENV_VAR, (tmp_path / "replay.json").as_uri())
-    monkeypatch.delenv(REPLAY_SERVER_ENV_VAR, raising=False)
+    monkeypatch.delenv(REPLAY_LOAD_ENV_VAR, raising=False)
 
     server_module = _reload_paintarena_server()
 
@@ -1145,7 +1103,7 @@ def test_paintarena_starts_after_player_connect_timeout(tmp_path: Path, monkeypa
     monkeypatch.setenv(CONFIG_ENV_VAR, config_path.as_uri())
     monkeypatch.setenv(RESULTS_ENV_VAR, results_path.as_uri())
     monkeypatch.setenv(REPLAY_SAVE_ENV_VAR, replay_path.as_uri())
-    monkeypatch.delenv(REPLAY_SERVER_ENV_VAR, raising=False)
+    monkeypatch.delenv(REPLAY_LOAD_ENV_VAR, raising=False)
 
     server_module = _reload_paintarena_server()
     server_module_typed = cast(Any, server_module)
@@ -1180,7 +1138,7 @@ def test_paintarena_disconnected_player_noops_after_timeout(tmp_path: Path, monk
     monkeypatch.setenv(CONFIG_ENV_VAR, config_path.as_uri())
     monkeypatch.setenv(RESULTS_ENV_VAR, results_path.as_uri())
     monkeypatch.setenv(REPLAY_SAVE_ENV_VAR, replay_path.as_uri())
-    monkeypatch.delenv(REPLAY_SERVER_ENV_VAR, raising=False)
+    monkeypatch.delenv(REPLAY_LOAD_ENV_VAR, raising=False)
 
     server_module = _reload_paintarena_server()
     server_module_typed = cast(Any, server_module)

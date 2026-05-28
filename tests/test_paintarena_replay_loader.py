@@ -9,10 +9,10 @@ from pytest import MonkeyPatch
 
 
 def test_paintarena_loads_backend_zlib_replay(tmp_path: Path, monkeypatch: MonkeyPatch) -> None:
-    monkeypatch.setenv("COGAME_REPLAY_SERVER", "1")
-    server_module = _load_paintarena_server_module()
     replay_path = tmp_path / "replay.json.z"
     replay_path.write_bytes(zlib.compress(json.dumps({"frames": []}).encode()))
+    monkeypatch.setenv("COGAME_LOAD_REPLAY_URI", replay_path.as_uri())
+    server_module = _load_paintarena_server_module()
 
     assert server_module.load_replay_data(replay_path.as_uri()) == {"frames": []}
 
