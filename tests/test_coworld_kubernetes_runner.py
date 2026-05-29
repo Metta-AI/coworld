@@ -208,6 +208,61 @@ def test_run_episode_containers_uses_docker_dns_and_omits_empty_policy_names_env
     assert "COWORLD_PLAYER_WS_URL=ws://coworld-game-session-1:8080/player?slot=0&token=token-0" in player_command
 
 
+def test_run_episode_containers_verifies_hosted_zlib_replay_uri(tmp_path, monkeypatch):
+    commands: list[list[str]] = []
+    mounted_replay_bytes: list[bytes] = []
+    artifacts = EpisodeArtifacts.create(tmp_path)
+    artifacts.replay_path.write_bytes(b'{"events":[]}')
+
+    class FakeProcess:
+        def poll(self):
+            return None
+
+    async def noop_async(*_args, **_kwargs):
+        return None
+
+    monkeypatch.setattr(runner_module, "_free_local_port", lambda: 12345)
+    monkeypatch.setattr(runner_module.secrets, "token_hex", lambda _bytes: "session-1")
+    monkeypatch.setattr(runner_module, "_wait_for_health", lambda *_args, **_kwargs: None)
+    monkeypatch.setattr(runner_module, "_require_http_ok", lambda *_args, **_kwargs: None)
+    monkeypatch.setattr(runner_module, "_require_bad_player_rejected", noop_async)
+    monkeypatch.setattr(runner_module, "_require_global_message", noop_async)
+    monkeypatch.setattr(runner_module, "_require_replay_message", noop_async)
+    monkeypatch.setattr(runner_module, "_wait_for_game_exit", lambda *_args, **_kwargs: None)
+
+    def fake_popen(command, **_kwargs):
+        commands.append(command)
+        if "coworld-run-replay-session-1" in command:
+            replay_mount = next(arg for index, arg in enumerate(command) if index > 0 and command[index - 1] == "-v")
+            mounted_replay_dir = Path(replay_mount.removesuffix(":/coworld-replay:ro"))
+            mounted_replay_bytes.append((mounted_replay_dir / "replay.json.z").read_bytes())
+        return FakeProcess()
+
+    monkeypatch.setattr(runner_module.subprocess, "Popen", fake_popen)
+    monkeypatch.setattr(
+        runner_module.subprocess,
+        "run",
+        lambda command, **_kwargs: subprocess.CompletedProcess(command, 0),
+    )
+
+    runner_module.run_episode_containers(
+        EpisodeRunSpec(
+            game=RunnableLaunchSpec(image="game:latest"),
+            players=[],
+            tokens=[],
+            policy_names=[],
+            artifacts=artifacts,
+            timeout_seconds=1,
+            container_prefix="coworld-run",
+        ),
+        verify_replay=True,
+    )
+
+    _game_command, replay_command = commands
+    assert f"{runner_module.REPLAY_LOAD_ENV_VAR}=file:///coworld-replay/replay.json.z" in replay_command
+    assert zlib.decompress(mounted_replay_bytes[0]) == b'{"events":[]}'
+
+
 def test_ensure_local_docker_network_reuses_existing_network(monkeypatch):
     calls: list[list[str]] = []
 

@@ -8,6 +8,7 @@ import socket
 import subprocess
 import tempfile
 import time
+import zlib
 from contextlib import ExitStack
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -327,7 +328,10 @@ def run_episode_containers(spec: EpisodeRunSpec, *, verify_replay: bool = True) 
                 return
 
             replay_port = _free_local_port()
-            replay_uri = f"file://{CONTAINER_WORKDIR}/replay"
+            replay_load_dir = Path(stack.enter_context(tempfile.TemporaryDirectory(prefix="coworld-replay-load-")))
+            replay_load_path = replay_load_dir / "replay.json.z"
+            replay_load_path.write_bytes(zlib.compress(spec.artifacts.replay_path.read_bytes()))
+            replay_uri = "file:///coworld-replay/replay.json.z"
             replay_process = subprocess.Popen(
                 [
                     "docker",
@@ -345,7 +349,7 @@ def run_episode_containers(spec: EpisodeRunSpec, *, verify_replay: bool = True) 
                     "-e",
                     f"{REPLAY_LOAD_ENV_VAR}={replay_uri}",
                     "-v",
-                    f"{spec.artifacts.workspace.resolve()}:{CONTAINER_WORKDIR}:rw",
+                    f"{replay_load_dir}:/coworld-replay:ro",
                     *_image_command(spec.game),
                 ],
                 stdout=game_stdout,

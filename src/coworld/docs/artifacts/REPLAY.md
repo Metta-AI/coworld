@@ -10,20 +10,21 @@ The [game role](../roles/GAME.md) writes replay bytes during rollout mode:
 - hosted runner: bytes uploaded to `REPLAY_URI`;
 - game container input: `COGAME_SAVE_REPLAY_URI`.
 
-The local workspace stores the exact bytes the game wrote. The hosted runner zlib-compresses those bytes in memory at the
-upload boundary and stores the hosted object as `replay.json.z`.
+The local workspace stores the exact bytes the game wrote. The hosted runner zlib-compresses those bytes in memory at
+the upload boundary and stores the hosted object as `replay.json.z`.
 
 ## Format
 
-Replay format is game-owned. The Coworld platform treats the replay as bytes and routes it back to the same game image in
-replay mode. A game must be able to serve replay viewing when started with:
+Replay format is game-owned. The Coworld platform treats the replay as bytes and routes it back to the same game image
+in replay mode. A game must be able to serve replay viewing when started with:
 
 ```bash
 COGAME_LOAD_REPLAY_URI=file:///coworld/replay
 ```
 
 The replay viewer enters through `/client/replay`, and the replay WebSocket uses `/replay`. The runner supplies the
-replay artifact location through `COGAME_LOAD_REPLAY_URI` when it starts the replay container.
+replay artifact location through `COGAME_LOAD_REPLAY_URI` when it starts the replay container. Hosted Observatory replay
+sessions pass the hosted `replay.json.z` artifact URI directly through `COGAME_LOAD_REPLAY_URI`.
 
 ## Consumers
 
