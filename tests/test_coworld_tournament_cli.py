@@ -251,6 +251,7 @@ def test_replay_open_downloads_only_game_image_for_local_replay(
     monkeypatch.setattr("coworld.api_client._load_current_cogames_token", lambda: "token")
     replay_path = tmp_path / "replay.json"
     replay_path.write_text('{"frames":[]}\n')
+    opened_urls: list[str] = []
     httpserver.expect_request(
         f"/observatory/v2/episode-requests/{EPISODE_REQUEST_ID}",
         method="GET",
@@ -298,6 +299,7 @@ def test_replay_open_downloads_only_game_image_for_local_replay(
     monkeypatch.setattr("coworld.tournament_cli.download_coworld", fake_download_coworld)
     monkeypatch.setattr("coworld.upload.subprocess.run", fake_docker_run)
     monkeypatch.setattr("coworld.tournament_cli.replay_coworld", fake_replay_coworld)
+    monkeypatch.setattr("coworld.tournament_cli.webbrowser.open", opened_urls.append)
 
     result = CliRunner().invoke(
         app,
@@ -323,6 +325,40 @@ def test_replay_open_downloads_only_game_image_for_local_replay(
     assert replay_call["manifest"]["player"][0]["image"] == player_image
     assert replay_call["replay_path"] == replay_path
     assert "Replay client: http://replay.local" in result.output
+    assert opened_urls == ["http://replay.local"]
+
+
+def test_replay_open_hosted_opens_viewer_url(httpserver: HTTPServer, monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr("coworld.api_client._load_current_cogames_token", lambda: "token")
+    opened_urls: list[str] = []
+    replay_url = "https://storage.example/replay.json.z"
+    viewer_url = "https://softmax.example/observatory/coworld-replays/session"
+    httpserver.expect_request(
+        f"/observatory/v2/episode-requests/{EPISODE_REQUEST_ID}",
+        method="GET",
+        headers={"X-Auth-Token": "token"},
+    ).respond_with_json(_episode_request(episode_request_id=EPISODE_REQUEST_ID, replay_url=replay_url))
+    httpserver.expect_request(
+        "/observatory/v2/coworlds/replays/session",
+        method="POST",
+        headers={"X-Auth-Token": "token"},
+    ).respond_with_json({"viewer_url": viewer_url})
+    monkeypatch.setattr("coworld.tournament_cli.webbrowser.open", opened_urls.append)
+
+    result = CliRunner().invoke(
+        app,
+        [
+            "replay-open",
+            EPISODE_REQUEST_ID,
+            "--hosted",
+            "--server",
+            httpserver.url_for(""),
+        ],
+    )
+
+    assert result.exit_code == 0, result.output
+    assert viewer_url in result.output
+    assert opened_urls == [viewer_url]
 
 
 def _expect_round_scope(httpserver: HTTPServer) -> None:

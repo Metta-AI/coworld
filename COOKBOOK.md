@@ -664,12 +664,12 @@ uv run coworld replay-open ereq_... --hosted
 ```
 
 Use `coworld replay` when you already have a replay file and a manifest. It starts the game image locally with
-`COGAME_LOAD_REPLAY_URI`, prints a `http://127.0.0.1:<port>/client/replay` URL, and waits for the replay container to
-exit.
+`COGAME_LOAD_REPLAY_URI`, opens and prints a `http://127.0.0.1:<port>/client/replay` URL, and waits for the replay
+container to exit. Pass `--no-open-browser` to leave browser opening to your terminal or script.
 
 Use `coworld replay-open` when you have an Observatory episode request ID. Without `--hosted`, it downloads or reuses the
 Coworld package, pulls only the game image needed for replay mode, downloads the hosted replay artifact, and serves it
-locally through Docker. With `--hosted`, it asks Observatory to create a hosted replay viewer session and prints the
+locally through Docker. With `--hosted`, it asks Observatory to create a hosted replay viewer session and opens the
 returned viewer URL.
 
 Hosted replay artifacts are stored as zlib-compressed `replay.json.z`. `coworld replay` and `replay-open` materialize
@@ -842,7 +842,7 @@ is returned by the API or CLI, use the returned URL rather than reconstructing a
 - Local replay opens but shows no frames: verify the game image implements `COGAME_LOAD_REPLAY_URI`, serves
   `/client/replay`, and emits replay frames on `/replay`.
 - `run-episode --verify-replay` passes but you do not see a browser URL: that flag only probes replay mode. Use
-  `coworld replay MANIFEST REPLAY_FILE` to keep a local replay viewer running.
+  `coworld replay MANIFEST REPLAY_FILE` to open and keep a local replay viewer running.
 - Policy upload failures before the API call: confirm the AWS CLI is installed and can run `aws ecr get-login-password`.
 - Missing command examples: trust `uv run coworld --help` and `uv run coworld <command> --help`; old docs may mention
   commands that no longer exist.

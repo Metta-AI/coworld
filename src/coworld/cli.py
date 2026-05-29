@@ -488,14 +488,23 @@ def replay(
     replay_uri: Annotated[str, typer.Argument(help="Path or URI to a replay artifact JSON file.")],
     server: Annotated[str, typer.Option("--server", help="Observatory API server URL.")] = DEFAULT_SUBMIT_SERVER,
     timeout_seconds: Annotated[float, typer.Option("--timeout-seconds", min=1.0, help="Health check timeout.")] = 60.0,
+    open_browser: Annotated[
+        bool,
+        typer.Option("--open-browser/--no-open-browser", help="Open the replay viewer in a browser when ready."),
+    ] = True,
 ) -> None:
+    def on_ready(session: ReplaySession) -> None:
+        _print_replay_session(session)
+        if open_browser:
+            webbrowser.open(session.link)
+
     with materialized_manifest_path(manifest_uri, server=server) as manifest_path:
         with materialized_replay_path(replay_uri) as replay_path:
             session = replay_coworld(
                 manifest_path,
                 replay_path,
                 timeout_seconds=timeout_seconds,
-                on_ready=_print_replay_session,
+                on_ready=on_ready,
             )
     typer.echo(f"Logs: {session.artifacts.logs_dir}")
 

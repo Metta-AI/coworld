@@ -68,6 +68,66 @@ def test_coworld_replay_resolves_coworld_id_against_site_api_server(
     assert captured["replay_path"] == replay_path.resolve()
 
 
+def test_coworld_replay_opens_replay_client_by_default(monkeypatch: MonkeyPatch, tmp_path: Path) -> None:
+    opened_urls: list[str] = []
+    replay_link = "http://127.0.0.1:4321/client/replay"
+    manifest_path = tmp_path / "coworld_manifest.json"
+    replay_path = tmp_path / "replay.json"
+    manifest_path.write_text('{"game": {"name": "unit"}}\n', encoding="utf-8")
+    replay_path.write_text('{"events":[]}\n', encoding="utf-8")
+
+    def fake_replay_coworld(
+        _manifest_path: Path,
+        _replay_path: Path,
+        **kwargs: object,
+    ) -> SimpleNamespace:
+        session = SimpleNamespace(
+            artifacts=SimpleNamespace(workspace=Path("/tmp/workspace"), logs_dir=Path("/tmp/logs")),
+            replay_path=replay_path,
+            link=replay_link,
+        )
+        cast(Callable[[object], None], kwargs["on_ready"])(session)
+        return session
+
+    monkeypatch.setattr("coworld.cli.replay_coworld", fake_replay_coworld)
+    monkeypatch.setattr("coworld.cli.webbrowser.open", opened_urls.append)
+
+    result = CliRunner().invoke(app, ["replay", str(manifest_path), str(replay_path)])
+
+    assert result.exit_code == 0, result.output
+    assert opened_urls == [replay_link]
+    assert f"Replay client: {replay_link}" in result.output
+
+
+def test_coworld_replay_respects_no_open_browser(monkeypatch: MonkeyPatch, tmp_path: Path) -> None:
+    opened_urls: list[str] = []
+    manifest_path = tmp_path / "coworld_manifest.json"
+    replay_path = tmp_path / "replay.json"
+    manifest_path.write_text('{"game": {"name": "unit"}}\n', encoding="utf-8")
+    replay_path.write_text('{"events":[]}\n', encoding="utf-8")
+
+    def fake_replay_coworld(
+        _manifest_path: Path,
+        _replay_path: Path,
+        **kwargs: object,
+    ) -> SimpleNamespace:
+        session = SimpleNamespace(
+            artifacts=SimpleNamespace(workspace=Path("/tmp/workspace"), logs_dir=Path("/tmp/logs")),
+            replay_path=replay_path,
+            link="http://127.0.0.1:4321/client/replay",
+        )
+        cast(Callable[[object], None], kwargs["on_ready"])(session)
+        return session
+
+    monkeypatch.setattr("coworld.cli.replay_coworld", fake_replay_coworld)
+    monkeypatch.setattr("coworld.cli.webbrowser.open", opened_urls.append)
+
+    result = CliRunner().invoke(app, ["replay", str(manifest_path), str(replay_path), "--no-open-browser"])
+
+    assert result.exit_code == 0, result.output
+    assert opened_urls == []
+
+
 def test_coworld_play_prefers_cached_coworld_id_manifest(tmp_path: Path, monkeypatch: MonkeyPatch) -> None:
     manifest = {"game": {"name": "cached"}}
     manifest_path = tmp_path / "coworld" / COWORLD_ID / "coworld_manifest.json"

@@ -5,6 +5,7 @@ import json
 import re
 import shutil
 import tempfile
+import webbrowser
 from contextlib import ExitStack
 from datetime import datetime
 from pathlib import Path
@@ -478,7 +479,16 @@ def register_tournament_commands(app: typer.Typer) -> None:
         timeout_seconds: Annotated[
             float, typer.Option("--timeout-seconds", min=1.0, help="Local health timeout.")
         ] = 60.0,
+        open_browser: Annotated[
+            bool,
+            typer.Option("--open-browser/--no-open-browser", help="Open the replay viewer in a browser when ready."),
+        ] = True,
     ) -> None:
+        def on_ready(session: ReplaySession) -> None:
+            _print_replay_session(session)
+            if open_browser:
+                webbrowser.open(session.link)
+
         with CoworldApiClient.from_login(server_url=server) as client:
             episode = client.get_episode_request(episode_request_id)
             if episode.replay_url is None:
@@ -497,6 +507,8 @@ def register_tournament_commands(app: typer.Typer) -> None:
                     replay_uri=episode.replay_url,
                 )
                 console.print(session.viewer_url)
+                if open_browser:
+                    webbrowser.open(session.viewer_url)
                 return
         manifest_path = downloaded_coworld_manifest_path(Path("./coworld"), episode.coworld_id)
         with ExitStack() as stack:
@@ -517,7 +529,7 @@ def register_tournament_commands(app: typer.Typer) -> None:
                 replay_manifest_path,
                 replay_path,
                 timeout_seconds=timeout_seconds,
-                on_ready=_print_replay_session,
+                on_ready=on_ready,
             )
         typer.echo(f"Logs: {session.artifacts.logs_dir}")
 

@@ -127,7 +127,8 @@ Local replay viewing starts the same game image in replay mode with `COGAME_LOAD
 replay viewer enters through `/client/replay`, and the game's replay WebSocket streams replay data loaded from that
 startup URI.
 
-Replay mode runs the game container only. It does not start player containers, commissioner, or supporting roles.
+Replay mode runs the game container only. It opens the local replay viewer by default and does not start player
+containers, commissioner, or supporting roles.
 
 ## Hosted Tournament Lifecycle
 
