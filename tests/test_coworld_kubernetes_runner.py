@@ -69,12 +69,22 @@ class _FakeCoreV1:
         )
 
 
-def _container_status(name: str, *, running: bool = False, terminated: bool = False, waiting: bool = False):
+def _container_status(
+    name: str,
+    *,
+    running: bool = False,
+    waiting: bool = False,
+    exit_code: int | None = None,
+    reason: str | None = None,
+    message: str | None = None,
+):
     return SimpleNamespace(
         name=name,
         state=SimpleNamespace(
             running=object() if running else None,
-            terminated=object() if terminated else None,
+            terminated=SimpleNamespace(exit_code=exit_code, reason=reason, message=message)
+            if exit_code is not None
+            else None,
             waiting=object() if waiting else None,
         ),
     )
@@ -411,6 +421,34 @@ def test_wait_for_episode_artifacts_fails_when_player_pod_exits(tmp_path):
             timeout_seconds=1.0,
             require_replay=True,
             player_pods=[("player-0", "guided-bot:latest")],
+        )
+
+
+@pytest.mark.parametrize(
+    ("player_statuses", "missing_pods", "match"),
+    [
+        ({"player-0": [_container_status("player", exit_code=0, reason="Completed")]}, set(), "exited with code 0"),
+        ({}, {"player-0"}, "disappeared before episode artifacts"),
+    ],
+)
+def test_wait_for_episode_artifacts_attributes_player_failure_before_results(
+    tmp_path, player_statuses, missing_pods, match
+):
+    artifacts = EpisodeArtifacts.create(tmp_path)
+    core_v1 = _FakeLogCoreV1(
+        {"game-pod": [_container_status("game", exit_code=0)], **player_statuses},
+        missing_pods=missing_pods,
+    )
+
+    with pytest.raises(kubernetes_runner.PlayerPodFailedError, match=match):
+        _wait_for_episode_artifacts(
+            artifacts,
+            core_v1,
+            "default",
+            "game-pod",
+            timeout_seconds=1.0,
+            require_replay=True,
+            player_pods=[("player-0", "quiet-bot:latest")],
         )
 
 

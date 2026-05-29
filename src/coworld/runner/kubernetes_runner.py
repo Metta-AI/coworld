@@ -47,12 +47,16 @@ class PlayerPodFailedError(RuntimeError):
         slot: int,
         pod_name: str,
         image: str,
-        exit_code: int,
+        exit_code: int | None = None,
         reason: str | None,
         message: str | None,
     ):
         self.slot = slot
-        details = f"Player pod {pod_name} for slot {slot} using image {image} exited with code {exit_code}"
+        details = f"Player pod {pod_name} for slot {slot} using image {image}"
+        if exit_code is None:
+            details += " disappeared before episode artifacts were written"
+        else:
+            details += f" exited with code {exit_code}"
         if reason:
             details += f" ({reason})"
         if message:
@@ -358,27 +362,35 @@ def _wait_for_episode_artifacts(
     while time.monotonic() < deadline:
         missing = [path for path in expected if not path.exists()]
 
-        if not missing and not require_replay:
+        if not missing:
             return
 
         exit_code = _game_container_exit_code(core_v1, namespace, pod_name)
 
-        if exit_code is not None:
-            if exit_code != 0:
-                raise RuntimeError(f"Game container exited with code {exit_code}")
-            missing = [path for path in expected if not path.exists()]
-            if not missing:
-                return
-            missing_list = ", ".join(str(path) for path in missing)
-            raise TimeoutError(f"Game container exited before writing episode artifact(s): {missing_list}")
+        if exit_code is not None and exit_code != 0:
+            raise RuntimeError(f"Game container exited with code {exit_code}")
 
+        results_missing = not artifacts.results_path.exists()
         for slot, (player_pod_name, image) in enumerate(player_pods):
-            player_pod = core_v1.read_namespaced_pod(name=player_pod_name, namespace=namespace)
+            try:
+                player_pod = core_v1.read_namespaced_pod(name=player_pod_name, namespace=namespace)
+            except ApiException as exc:
+                if exc.status != 404:
+                    raise
+                if not results_missing:
+                    continue
+                raise PlayerPodFailedError(
+                    slot=slot,
+                    pod_name=player_pod_name,
+                    image=image,
+                    reason="NotFound",
+                    message=str(exc),
+                ) from exc
             for status in player_pod.status.container_statuses or []:
                 if status.name != "player" or status.state.terminated is None:
                     continue
                 terminated = status.state.terminated
-                if terminated.exit_code == 0:
+                if terminated.exit_code == 0 and not results_missing:
                     continue
                 raise PlayerPodFailedError(
                     slot=slot,
@@ -388,6 +400,12 @@ def _wait_for_episode_artifacts(
                     reason=getattr(terminated, "reason", None),
                     message=getattr(terminated, "message", None),
                 )
+        if exit_code == 0:
+            missing = [path for path in expected if not path.exists()]
+            if not missing:
+                return
+            missing_list = ", ".join(str(path) for path in missing)
+            raise TimeoutError(f"Game container exited before writing episode artifact(s): {missing_list}")
         time.sleep(0.5)
     expected_list = ", ".join(str(path) for path in expected)
     raise TimeoutError(f"Timed out waiting for game container to finish writing episode artifact(s): {expected_list}")
