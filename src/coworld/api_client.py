@@ -5,7 +5,7 @@ from typing import Any, Self
 from uuid import UUID
 
 import httpx
-from pydantic import BaseModel, ConfigDict, TypeAdapter, computed_field
+from pydantic import BaseModel, ConfigDict, Field, TypeAdapter, computed_field
 
 
 class CoworldAPIModel(BaseModel):
@@ -228,7 +228,7 @@ class V2EpisodeRequestRow(CoworldAPIModel):
     env_config_name: str | None = None
     coworld_id: str | None = None
     seed: int | None = None
-    assignments: list[int]
+    assignments: list[int] = Field(default_factory=list)
     max_steps: int | None = None
     status: str
     policy_version_ids: list[UUID]
