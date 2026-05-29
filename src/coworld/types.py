@@ -297,11 +297,17 @@ class CoworldManifest(BaseModel):
     grader: list[CoworldManifestRoleSpec] = Field(
         default_factory=list,
         description=(
-            "Grader runnables. Optional today, but expected to become required once the grader runtime "
-            "contract is enforced. Coworlds without a custom grader may reference "
+            "Grader runnables. Required for new Coworld uploads; optional in the base manifest schema so "
+            "historical Coworlds can still be loaded without backfill. Coworlds without a custom grader may reference "
             "`ghcr.io/metta-ai/graders-default:latest`. Role docs: docs/roles/GRADER.md."
         ),
-        json_schema_extra=_future_required_role_schema("grader"),
+        json_schema_extra={
+            **_future_required_role_schema("grader"),
+            "$comment": (
+                "Optional in the base manifest schema for historical compatibility; "
+                "required by Coworld upload validation."
+            ),
+        },
     )
     diagnoser: list[CoworldManifestRoleSpec] = Field(
         default_factory=list,

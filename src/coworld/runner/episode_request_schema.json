@@ -283,8 +283,8 @@
           "x-coworld-role-doc": "docs/roles/COMMISSIONER.md"
         },
         "grader": {
-          "$comment": "Optional in the current schema; intended to become required as this role stabilizes.",
-          "description": "Grader runnables. Optional today, but expected to become required once the grader runtime contract is enforced. Coworlds without a custom grader may reference `ghcr.io/metta-ai/graders-default:latest`. Role docs: docs/roles/GRADER.md.",
+          "$comment": "Optional in the base manifest schema for historical compatibility; required by Coworld upload validation.",
+          "description": "Grader runnables. Required for new Coworld uploads; optional in the base manifest schema so historical Coworlds can still be loaded without backfill. Coworlds without a custom grader may reference `ghcr.io/metta-ai/graders-default:latest`. Role docs: docs/roles/GRADER.md.",
           "items": {
             "$ref": "#/$defs/CoworldManifestRoleSpec"
           },

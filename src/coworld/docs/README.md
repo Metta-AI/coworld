@@ -58,9 +58,10 @@ Every Coworld package has a `coworld_manifest.json`. The manifest names the game
 docs, protocol docs, schemas, and the certification fixture used by `coworld certify` and default local episode runs.
 
 The manifest conceptually covers all seven roles. The current schema requires the stable role sections and marks several
-future-required role sections as optional until their contracts stabilize. See the [manifest guide](COWORLD_MANIFEST.md)
-for the authoring semantics and [`coworld_manifest_schema.json`](../coworld_manifest_schema.json) for the exact generated
-JSON Schema.
+future-required role sections as optional until their contracts stabilize. New Coworld uploads must include at least one
+`grader[]` runnable even though the base schema stays tolerant for historical manifests. See the
+[manifest guide](COWORLD_MANIFEST.md) for the authoring semantics and
+[`coworld_manifest_schema.json`](../coworld_manifest_schema.json) for the exact generated JSON Schema.
 
 ## Episode Lifecycle
 

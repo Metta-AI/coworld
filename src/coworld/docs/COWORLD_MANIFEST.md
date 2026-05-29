@@ -39,6 +39,10 @@ The schema currently enforces only the roles with stable required runtime contra
 - `commissioner`, `grader`, `diagnoser`, and `optimizer` are optional today but intended to become required as their
   contracts stabilize.
 
+`coworld upload-coworld` and the backend Coworld upload endpoint are stricter than the base schema: new uploads must
+include at least one `grader[]` runnable. The base schema still accepts missing or empty `grader` arrays so historical
+Coworld rows, downloads, and read-only tooling do not need a backfill before they can be loaded.
+
 The schema marks those future-required role arrays with descriptions plus `$comment` and
 `x-coworld-future-required: true`. Use that metadata when building authoring tools or schema renderers; it is the
 machine-readable version of "not required yet, but expected to be part of a complete Coworld."
@@ -64,11 +68,12 @@ For a new Coworld, start from the Paint Arena manifest template and keep the gen
 1. Fill in `game` metadata, docs, protocols, config schema, results schema, and game runnable.
 2. Add bundled players used for examples, certification, and local play.
 3. Add reporter runnables, using the default reporter image when the Coworld does not yet have a custom one.
-4. Add grader, commissioner, diagnoser, and optimizer runnables when the Coworld has custom implementations, or when a
-   default image is appropriate for the role.
-5. Define at least one variant.
-6. Define the certification fixture that `coworld certify` and default local episode runs execute.
-7. Validate locally before upload.
+4. Add a grader runnable. Use the default grader image when the Coworld does not yet have a custom grader.
+5. Add commissioner, diagnoser, and optimizer runnables when the Coworld has custom implementations, or when a default
+   image is appropriate for the role.
+6. Define at least one variant.
+7. Define the certification fixture that `coworld certify` and default local episode runs execute.
+8. Validate locally before upload.
 
 The exact field names, required fields, and nested object shapes belong to the schema. The manifest guide should stay at
 this workflow level.

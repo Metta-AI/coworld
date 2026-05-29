@@ -296,10 +296,13 @@ def test_manifest_schema_documents_public_fields() -> None:
         section_schema = schema["properties"][section]
         assert section_schema["x-coworld-role-doc"] == role_doc
         assert f"]({role_doc})" in section_schema["markdownDescription"]
-    for section in ("commissioner", "grader", "diagnoser", "optimizer"):
+    for section in ("commissioner", "diagnoser", "optimizer"):
         section_schema = schema["properties"][section]
         assert section_schema["x-coworld-future-required"] is True
         assert "intended to become required" in section_schema["$comment"]
+    grader_schema = schema["properties"]["grader"]
+    assert grader_schema["x-coworld-future-required"] is True
+    assert "required by Coworld upload validation" in grader_schema["$comment"]
 
 
 def test_generated_schema_files_match_types() -> None:

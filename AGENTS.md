@@ -80,8 +80,9 @@ source of truth. They are generated docs and `$schema` targets; `test_types.py` 
 
 ## Manifest And Role Contracts
 
-- The schema currently requires `game`, `player`, and `reporter`. `commissioner`, `grader`, `diagnoser`, and
-  `optimizer` are optional today and marked future-required in generated schema metadata.
+- The base schema currently requires `game`, `player`, and `reporter`. `commissioner`, `grader`, `diagnoser`, and
+  `optimizer` are optional in the base schema and marked future-required in generated schema metadata. Upload paths add
+  an extra requirement that new Coworld manifests include at least one `grader[]` runnable.
 - Role semantics belong in `src/coworld/docs/roles/`. Field-level manifest shape belongs in `src/coworld/types.py` and
   the generated schema JSON, not in duplicated Markdown tables.
 - Manifest role changes usually need matching updates to role docs, Paint Arena templates, generated schemas,

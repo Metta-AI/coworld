@@ -2,8 +2,9 @@
 
 **Status:** contract defined, runtime pending
 
-> The manifest section is optional today but intended to become required. Grader execution remains on-demand; the
-> episode runner does not automatically run graders when an episode finishes.
+> New Coworld uploads must include a grader runnable, but the base manifest schema remains tolerant for historical
+> Coworlds that predate that upload rule. Grader execution remains on-demand; the episode runner does not automatically
+> run graders when an episode finishes.
 
 ## What it does
 
@@ -14,9 +15,9 @@ they are triggered by a CLI command or platform action, not by the episode runne
 
 ## Where it lives in the manifest
 
-`manifest.grader[]`, with `type: "grader"` on every entry. The section may be omitted or empty until the platform
-enforces grader runnables. Coworlds without a game-specific grader may reference
-`ghcr.io/metta-ai/graders-default:latest`. See
+`manifest.grader[]`, with `type: "grader"` on every entry. New Coworld uploads must include at least one grader runnable;
+the base manifest schema still accepts omitted or empty grader sections so historical Coworlds can be loaded without a
+backfill. Coworlds without a game-specific grader may reference `ghcr.io/metta-ai/graders-default:latest`. See
 [`COWORLD_MANIFEST.md`](../COWORLD_MANIFEST.md) for the full runnable shape.
 
 ## Contract
