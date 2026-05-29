@@ -28,7 +28,9 @@ export PATH="/run/current-system/sw/bin:/usr/local/bin:/usr/bin:/bin$${PATH:+:$$
 ctx=$$(dirname $(location src/coworld/examples/paintarena/Dockerfile))
 iidfile=$$(mktemp)
 trap 'rm -f "$$iidfile"' EXIT
-docker build --iidfile "$$iidfile" --tag coworld-paintarena:latest "$$ctx" >&2
+# Cloudflare Containers run amd64; build for that arch so the image is
+# pullable there even when built on an arm64 (Apple Silicon) dev machine.
+docker build --platform linux/amd64 --iidfile "$$iidfile" --tag coworld-paintarena:latest "$$ctx" >&2
 iid=$$(cat "$$iidfile")
 echo "coworld-paintarena@$$iid" > $@
 """,
