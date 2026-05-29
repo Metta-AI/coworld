@@ -38,6 +38,36 @@ def test_coworld_play_accepts_backend_coworld_path(httpserver: HTTPServer, monke
     assert captured["manifest"] == manifest
 
 
+def test_coworld_replay_resolves_coworld_id_against_site_api_server(
+    tmp_path: Path, httpserver: HTTPServer, monkeypatch: MonkeyPatch
+) -> None:
+    manifest = {"game": {"name": "downloaded"}}
+    replay_path = tmp_path / "replay.json"
+    replay_path.write_text('{"events":[]}', encoding="utf-8")
+    httpserver.expect_request(f"/api/observatory{COWORLD_PATH}").respond_with_json({"manifest": manifest})
+    captured: dict[str, object] = {}
+
+    def fake_replay_coworld(
+        resolved_manifest_path: Path,
+        resolved_replay_path: Path,
+        **_kwargs: object,
+    ) -> SimpleNamespace:
+        captured["manifest"] = json.loads(resolved_manifest_path.read_text())
+        captured["replay_path"] = resolved_replay_path
+        return SimpleNamespace(artifacts=SimpleNamespace(logs_dir=Path("/tmp/logs")))
+
+    monkeypatch.setattr("coworld.cli.replay_coworld", fake_replay_coworld)
+
+    result = CliRunner().invoke(
+        app,
+        ["replay", COWORLD_ID, str(replay_path), "--server", httpserver.url_for("/api")],
+    )
+
+    assert result.exit_code == 0, result.output
+    assert captured["manifest"] == manifest
+    assert captured["replay_path"] == replay_path.resolve()
+
+
 def test_coworld_play_prefers_cached_coworld_id_manifest(tmp_path: Path, monkeypatch: MonkeyPatch) -> None:
     manifest = {"game": {"name": "cached"}}
     manifest_path = tmp_path / "coworld" / COWORLD_ID / "coworld_manifest.json"

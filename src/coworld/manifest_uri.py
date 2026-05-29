@@ -69,12 +69,20 @@ def _resolve_manifest_uri(manifest_uri: str, *, server: str | None = None) -> st
     if manifest_uri.startswith("cow_") and "/" not in manifest_uri:
         if server is None:
             raise ValueError(f"Coworld ID requires --server: {manifest_uri}")
-        return urljoin(f"{server.rstrip('/')}/", f"v2/coworlds/{manifest_uri}")
+        return urljoin(f"{_observatory_manifest_server(server)}/", f"v2/coworlds/{manifest_uri}")
     if manifest_uri.startswith("/v2/coworlds/"):
         if server is None:
             raise ValueError(f"Backend Coworld manifest URI requires --server: {manifest_uri}")
-        return urljoin(f"{server.rstrip('/')}/", manifest_uri.lstrip("/"))
+        return urljoin(f"{_observatory_manifest_server(server)}/", manifest_uri.lstrip("/"))
     return manifest_uri
+
+
+def _observatory_manifest_server(server: str) -> str:
+    server = server.rstrip("/")
+    parsed = urlparse(server)
+    if parsed.path.rstrip("/") == "/api":
+        return f"{server}/observatory"
+    return server
 
 
 def _download_bytes(uri: str) -> bytes:

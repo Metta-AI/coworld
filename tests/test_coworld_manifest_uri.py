@@ -65,6 +65,16 @@ def test_materialized_manifest_path_resolves_bare_coworld_id_against_server(http
         assert json.loads(resolved.read_text()) == manifest
 
 
+def test_materialized_manifest_path_resolves_bare_coworld_id_against_site_api_server(
+    httpserver: HTTPServer,
+) -> None:
+    manifest = {"game": {"name": "downloaded"}}
+    httpserver.expect_request(f"/api/observatory{COWORLD_PATH}").respond_with_json({"manifest": manifest})
+
+    with materialized_manifest_path(COWORLD_ID, server=httpserver.url_for("/api")) as resolved:
+        assert json.loads(resolved.read_text()) == manifest
+
+
 def test_materialized_replay_path_downloads_replay_uri(httpserver: HTTPServer) -> None:
     replay_bytes = zlib.compress(b'{"events":[]}')
     httpserver.expect_request("/replay.json.z").respond_with_data(replay_bytes)
