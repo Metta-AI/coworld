@@ -127,6 +127,10 @@ At hosted execution time, image tags resolve to immutable digests.
 non-empty contents and a Dockerfile at that path or an ancestor build root. Point it at the repository, directory, or
 file that implements the runnable, not just a documentation page.
 
+`repository_url` is an optional, machine-readable field used by `coworld optimize`: on an `optimizer[]` entry it names
+the Git repository the command clones and runs locally (falling back to `Metta-AI/optimizers` when unset). Unlike
+`source_url`, which may point at a subdirectory or file, `repository_url` must be the workbench repository root.
+
 Backend storage, ECR publishing, public mirrors for bundled images, and private submitted-policy images are backend
 mechanics; see
 [`COWORLD_MECHANICS.md`](../../../../../app_backend/src/metta/app_backend/v2/COWORLD_MECHANICS.md).

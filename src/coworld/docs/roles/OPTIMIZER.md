@@ -30,6 +30,10 @@ When an optimizer entry declares a GitHub `source_url`, point it at the implemen
 `coworld certify` checks that the source has non-empty contents and that a Dockerfile exists at that path or an ancestor
 build root.
 
+Each optimizer entry may also set an optional `repository_url` pointing at the Git repository that `coworld optimize`
+clones and runs locally. When unset, the command falls back to [`Metta-AI/optimizers`](https://github.com/Metta-AI/optimizers).
+This is distinct from `source_url`, which is a human-facing link that may point at a subdirectory or file.
+
 ## Contract (tentative)
 
 An optimizer runnable is a long-running workbench image. The invoker opens it for a Coworld; the workbench hosts the
@@ -37,12 +41,22 @@ policy-improvement loop until the user closes it.
 
 ### Invocation
 
-An optimizer is opened with a CLI command (planned: `coworld open-optimizer` — exact shape TBD) or directly via
-`docker run`. The optimizer container exposes a web UI; the developer connects to it (typically through a browser) and
-works in the workbench.
+An optimizer is opened with `coworld optimize`. Run it with no arguments to open the default optimizer workbench, or
+pass a downloaded manifest to preload a Coworld:
 
-The mechanism for passing Coworld context (manifest reference, initial policies, initial episodes) into a freshly opened
-optimizer instance is not yet defined.
+```bash
+uv run coworld optimize
+uv run coworld optimize ./coworld/<coworld-id>/coworld_manifest.json
+```
+
+The command clones the optimizer repository into a local cache, installs its dependencies, starts the workbench's
+Postgres container, initializes the schema, launches the dev server, and opens the web UI in a browser. When a manifest
+is provided, the Coworld is imported into the workbench and the command deep-links to that game.
+
+Which optimizer repository is launched is resolved from the manifest's optional `optimizer[].repository_url` (see
+[Where it lives in the manifest](#where-it-lives-in-the-manifest)), falling back to
+[`Metta-AI/optimizers`](https://github.com/Metta-AI/optimizers). `--optimizer-repo` and `--optimizer-ref` override the
+manifest-derived values.
 
 ### Inputs
 

@@ -19,8 +19,9 @@ from coworld.certifier import (
     load_manifest_episode_job_spec,
 )
 from coworld.cli_support import console, emit_json
-from coworld.config import DEFAULT_SUBMIT_SERVER
+from coworld.config import DEFAULT_OPTIMIZER_PORT, DEFAULT_SUBMIT_SERVER
 from coworld.manifest_uri import materialized_manifest_path, materialized_replay_path
+from coworld.optimizer.runtime import OptimizerSetupError, run_optimizer_session
 from coworld.play import PlaySession, ReplaySession, _resolve_bedrock_aws_env, play_coworld, replay_coworld
 from coworld.runner.runner import EpisodeArtifacts, run_coworld_episode
 from coworld.starter_policy import (
@@ -497,6 +498,71 @@ def replay(
                 on_ready=_print_replay_session,
             )
     typer.echo(f"Logs: {session.artifacts.logs_dir}")
+
+
+@app.command("optimize")
+def optimize(
+    manifest_uri: Annotated[
+        str | None,
+        typer.Argument(
+            help=(
+                "Optional path, URI, or Coworld ID for coworld_manifest.json. When provided, the Coworld is "
+                "imported into the workbench. Omit to open the default optimizer with no game preloaded."
+            )
+        ),
+    ] = None,
+    port: Annotated[int, typer.Option("--port", min=1, max=65535, help="Port for the optimizer dev server.")] = (
+        DEFAULT_OPTIMIZER_PORT
+    ),
+    open_browser: Annotated[
+        bool,
+        typer.Option("--open-browser/--no-open-browser", help="Open the optimizer in a browser when ready."),
+    ] = True,
+    refresh: Annotated[
+        bool,
+        typer.Option("--refresh", help="Update the cached optimizer checkout before launching."),
+    ] = False,
+    optimizer_repo: Annotated[
+        str | None,
+        typer.Option("--optimizer-repo", help="GitHub URL of the optimizer to run. Overrides the manifest value."),
+    ] = None,
+    optimizer_ref: Annotated[
+        str | None,
+        typer.Option("--optimizer-ref", help="Git ref (branch or tag) of the optimizer to run."),
+    ] = None,
+    optimizer_dir: Annotated[
+        Path | None,
+        typer.Option("--optimizer-dir", help="Cache root for optimizer checkouts. Defaults to the XDG data dir."),
+    ] = None,
+    server: Annotated[str, typer.Option("--server", help="Observatory API server URL.")] = DEFAULT_SUBMIT_SERVER,
+) -> None:
+    """Install and launch the local optimizer workbench, optionally preloaded with a Coworld."""
+    install_root = optimizer_dir.resolve() if optimizer_dir is not None else None
+    try:
+        if manifest_uri is None:
+            run_optimizer_session(
+                None,
+                port=port,
+                open_browser=open_browser,
+                refresh=refresh,
+                optimizer_repo=optimizer_repo,
+                optimizer_ref=optimizer_ref,
+                install_root=install_root,
+            )
+            return
+        with _materialized_manifest_path(manifest_uri, server=server) as manifest_path:
+            run_optimizer_session(
+                manifest_path,
+                port=port,
+                open_browser=open_browser,
+                refresh=refresh,
+                optimizer_repo=optimizer_repo,
+                optimizer_ref=optimizer_ref,
+                install_root=install_root,
+            )
+    except OptimizerSetupError as error:
+        console.print(f"[red]{error}[/red]")
+        raise typer.Exit(1)
 
 
 @hosted_game_app.command("create")

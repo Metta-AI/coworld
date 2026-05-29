@@ -69,6 +69,14 @@ class CoworldManifestRoleSpec(CoworldRunnableSpec):
         min_length=1,
         description="Human-readable summary of what this runnable does.",
     )
+    repository_url: str | None = Field(
+        default=None,
+        description=(
+            "Optional Git repository the local optimizer tooling clones and runs. "
+            "Used by `coworld optimize` to resolve a game-specific optimizer workbench; "
+            "informational for other roles."
+        ),
+    )
 
 
 class CoworldTextDoc(BaseModel):
