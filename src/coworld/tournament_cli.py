@@ -918,10 +918,9 @@ def _available_agent_indices(log_names: list[str]) -> list[int]:
 
 
 def _agent_indices_for_policies(row: V2EpisodeRequestRow, policy_version_ids: set[UUID]) -> set[int]:
-    positions = {
+    return {
         participant.position for participant in row.participants if participant.policy_version_id in policy_version_ids
     }
-    return {agent_idx for agent_idx, position in enumerate(row.assignments) if position in positions}
 
 
 def _print_policy_logs(agent_indices: list[int]) -> None:

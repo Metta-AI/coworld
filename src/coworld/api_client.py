@@ -5,7 +5,7 @@ from typing import Any, Self
 from uuid import UUID
 
 import httpx
-from pydantic import BaseModel, ConfigDict, Field, TypeAdapter, computed_field
+from pydantic import BaseModel, ConfigDict, TypeAdapter, computed_field
 
 
 class CoworldAPIModel(BaseModel):
@@ -227,8 +227,8 @@ class V2EpisodeRequestRow(CoworldAPIModel):
     mod_name: str | None = None
     env_config_name: str | None = None
     coworld_id: str | None = None
+    game_config: dict[str, Any] | None = None
     seed: int | None = None
-    assignments: list[int] = Field(default_factory=list)
     max_steps: int | None = None
     status: str
     policy_version_ids: list[UUID]
@@ -236,6 +236,11 @@ class V2EpisodeRequestRow(CoworldAPIModel):
     job_id: UUID | None = None
     episode_id: UUID | None = None
     replay_url: str | None = None
+    live_url: str | None = None
+    error_type: str | None = None
+    error: str | None = None
+    failed_policy_index: int | None = None
+    failed_agent_index: int | None = None
     scores: list[EpisodeRequestScore]
     created_at: datetime
 

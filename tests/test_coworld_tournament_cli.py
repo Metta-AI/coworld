@@ -162,7 +162,7 @@ def test_episodes_accepts_bulk_rows_without_assignments(
     assert result.exit_code == 0, result.output
     rows = json.loads(result.output)
     assert rows[0]["id"] == EPISODE_REQUEST_ID
-    assert rows[0]["assignments"] == []
+    assert "assignments" not in rows[0]
 
 
 def test_episode_logs_downloads_only_my_policy_agents(
@@ -171,11 +171,13 @@ def test_episode_logs_downloads_only_my_policy_agents(
     tmp_path: Path,
 ) -> None:
     monkeypatch.setattr("coworld.api_client._load_current_cogames_token", lambda: "token")
+    episode_request = _episode_request(episode_request_id=EPISODE_REQUEST_ID, replay_url=None)
+    del episode_request["assignments"]
     httpserver.expect_request(
         f"/observatory/v2/episode-requests/{EPISODE_REQUEST_ID}",
         method="GET",
         headers={"X-Auth-Token": "token"},
-    ).respond_with_json(_episode_request(episode_request_id=EPISODE_REQUEST_ID, replay_url=None))
+    ).respond_with_json(episode_request)
     httpserver.expect_request(
         f"/observatory/jobs/{JOB_ID}/policy-logs",
         method="GET",
