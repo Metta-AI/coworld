@@ -162,7 +162,7 @@ player pod.
 ## Output URIs
 
 The runner uploads each episode artifact to a separate URI. There is no single bundled output URI — bundling is a
-consumption-time concern handled by the bundling layer; see [EPISODE_BUNDLE_README.md](../EPISODE_BUNDLE_README.md).
+consumption-time concern handled by the bundling layer; see [artifacts/EPISODE_BUNDLE.md](../docs/artifacts/EPISODE_BUNDLE.md).
 
 All output environment variables are optional, but hosted jobs normally provide them:
 

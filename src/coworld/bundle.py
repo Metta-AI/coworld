@@ -23,7 +23,12 @@ def build_coworld_manifest(
     if not compose_file.is_file():
         raise RuntimeError(f"Compose file not found for Coworld build: {compose_file}")
 
-    manifest = _load_template_manifest(template_path, version, _compose_image_placeholders(compose_file))
+    manifest_json = load_json_object(template_path)
+    game = manifest_json["game"]
+    if "version" in game:
+        raise RuntimeError(f"Coworld manifest templates must not set game.version: {template_path}")
+
+    manifest = _load_template_manifest(manifest_json, version, _compose_image_placeholders(compose_file))
     # Pull image-only services before building; buildable services are produced locally below.
     subprocess.run(
         ["docker", "compose", "-f", str(compose_file), "pull", "--ignore-buildable", "--ignore-pull-failures"],
@@ -41,11 +46,10 @@ def build_coworld_manifest(
     return output_path
 
 
-def _load_template_manifest(template_path: Path, version: str, image_placeholders: dict[str, str]) -> CoworldManifest:
-    manifest_json = load_json_object(template_path)
+def _load_template_manifest(
+    manifest_json: dict[str, Any], version: str, image_placeholders: dict[str, str]
+) -> CoworldManifest:
     game = manifest_json["game"]
-    if "version" in game:
-        raise RuntimeError(f"Coworld manifest templates must not set game.version: {template_path}")
     game["version"] = version
     runnables: list[dict[str, Any]] = [game["runnable"]]
     for section in ROLE_SECTIONS:

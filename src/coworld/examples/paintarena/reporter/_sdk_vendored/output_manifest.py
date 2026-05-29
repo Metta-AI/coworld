@@ -20,7 +20,7 @@ validation in :func:`build_report_zip` enforces both constraints before
 the zip is produced — a misdeclared manifest is the kind of bug that
 silently breaks the platform's report viewer, so reporters fail fast.
 
-See metta's ``packages/coworld/src/coworld/docs/roles/reporter.md`` for
+See metta's ``packages/coworld/src/coworld/docs/roles/REPORTER.md`` for
 the canonical contract this implements.
 """
 

@@ -77,6 +77,17 @@ _CORE_SRCS = [
     "src/coworld/types.py",
 ]
 
+# Test-only runfiles for validating checked-in generated schemas against
+# coworld.types' dynamic Pydantic schema output.
+filegroup(
+    name = "generated_schema_files",
+    srcs = [
+        "src/coworld/coworld_manifest_schema.json",
+        "src/coworld/runner/episode_request_schema.json",
+    ],
+    visibility = ["//packages/coworld/tests:__pkg__"],
+)
+
 py_library(
     name = "coworld_core",
     srcs = _CORE_SRCS,

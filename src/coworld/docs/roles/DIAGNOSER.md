@@ -20,8 +20,9 @@ episode and emit guidance about the policy itself.
 
 ## Where it lives in the manifest
 
-`manifest.diagnoser[]`, with `type: "diagnoser"` on every entry. The section is required, but the array may be empty
-while the role is reserved. See [`MANIFEST_README.md`](../../MANIFEST_README.md) for the full runnable shape.
+`manifest.diagnoser[]`, with `type: "diagnoser"` on every entry. The section is optional in the current schema, but
+intended to become required once the role is no longer reserved. See [`COWORLD_MANIFEST.md`](../COWORLD_MANIFEST.md) for
+the full runnable shape.
 
 ## Contract (highly tentative)
 
@@ -32,8 +33,8 @@ about a particular policy's behavior in a particular episode. It does not expose
 
 A diagnoser receives at least these env vars:
 
-- `COGAME_EPISODE_BUNDLE_URI` — URI of a `.zip` file containing the episode's artifacts. Same bundle shape that
-  reporters and graders receive. See [`EPISODE_BUNDLE_README.md`](../../EPISODE_BUNDLE_README.md).
+- `COGAME_EPISODE_BUNDLE_URI` — URI of the episode bundle the diagnoser consumes; see
+  [`artifacts/EPISODE_BUNDLE.md`](../artifacts/EPISODE_BUNDLE.md).
 - `COGAME_TARGET_POLICY_URI` — URI of, or reference to, the target policy this run should evaluate. The exact format of
   this reference (policy image, policy version ID, checkpoint URI, etc.) is **not yet defined**; see
   [Open questions](#open-questions).
@@ -42,11 +43,7 @@ A diagnoser receives at least these env vars:
 
 A diagnoser writes its output to one env var:
 
-- `COGAME_DIAGNOSIS_URI` — URI where the diagnoser writes a single `.zip` containing all diagnosis files.
-
-The output zip is structured similarly to a reporter's output, with an optional `manifest.json` at the root identifying
-renderable and structured files. The exact required and optional fields for diagnoser `manifest.json` are not yet
-defined.
+- `COGAME_DIAGNOSIS_URI` — URI where the diagnoser writes its [diagnosis artifact](../artifacts/DIAGNOSIS.md).
 
 ### Execution
 
@@ -67,9 +64,8 @@ load-bearing decisions still live.
 - **Single-episode vs multi-episode input.** Some diagnoses ("did this policy avoid the wall?") work fine over a single
   episode. Others ("does this policy generalize?") need many. Whether the contract supports multi-episode input — and if
   so, how — is undefined.
-- **Output structure.** Reporters' `manifest.json` defines `render` and `event_log` fields. Diagnoser output is likely
-  richer (advice, structured findings, suggested code changes) and probably needs its own field vocabulary that has not
-  been written yet.
+- **Output structure.** The [diagnosis artifact](../artifacts/DIAGNOSIS.md) is currently only a reserved zip shape.
+  Advice, structured findings, suggested code changes, and manifest fields still need a stable vocabulary.
 - **Interaction with reporters and graders.** A diagnoser may want to consume already-produced reporter output or grader
   scores when forming its advice. The bundling layer does not currently surface prior supporting-runnable output; if
   diagnosers need it, the bundle contract has to be extended.
@@ -79,19 +75,19 @@ load-bearing decisions still live.
 ## How it fits with other roles
 
 Diagnosers live in the post-episode artifact layer alongside reporters, graders, and optimizers. They are the only
-supporting role whose primary subject is the policy rather than the episode — the bundle is evidence, but the diagnosis
-is about the policy. Diagnoser output feeds two main downstream surfaces:
+supporting role whose primary subject is the policy rather than the episode. The
+[diagnosis artifact](../artifacts/DIAGNOSIS.md) feeds two main downstream surfaces:
 
 - Coding agents and researchers iterating on a policy use diagnosis advice as a directed signal for what to change.
 - Optimizers may consume diagnoser output as part of their input when iterating on policies algorithmically. The
   specifics of this pipeline are not yet defined.
 
-See [`OVERVIEW.md`](OVERVIEW.md) for the full artifact flow.
+See [`README.md`](../README.md) for the full artifact flow.
 
 ## See Also
 
-- [`EPISODE_BUNDLE_README.md`](../../EPISODE_BUNDLE_README.md) — bundle contract the diagnoser's episode input follows.
-- [`MANIFEST_README.md`](../../MANIFEST_README.md) — manifest field reference for `manifest.diagnoser[]`.
-- [`COWORLD_README.md`](../../COWORLD_README.md) — Role Status framework, runnable conventions.
-- [`reporter.md`](reporter.md), [`grader.md`](grader.md), [`optimizer.md`](optimizer.md) — sibling supporting runnables.
-- [`OVERVIEW.md`](OVERVIEW.md) — full artifact flow.
+- [`artifacts/EPISODE_BUNDLE.md`](../artifacts/EPISODE_BUNDLE.md) — episode bundle consumed by this role.
+- [`artifacts/DIAGNOSIS.md`](../artifacts/DIAGNOSIS.md) — output artifact produced by this role.
+- [`COWORLD_MANIFEST.md`](../COWORLD_MANIFEST.md) — manifest guide and generated-schema pointer.
+- [`README.md`](../README.md) — role status framework, runnable conventions, and artifact flow.
+- [`REPORTER.md`](REPORTER.md), [`GRADER.md`](GRADER.md), [`OPTIMIZER.md`](OPTIMIZER.md) — sibling supporting runnables.

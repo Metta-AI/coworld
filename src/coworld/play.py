@@ -343,7 +343,7 @@ def replay_coworld(
                         f"for {REPLAY_LOAD_ENV_VAR}={container_replay_uri}). "
                         f"The game image may not implement {REPLAY_LOAD_ENV_VAR}, "
                         f"or the replay file may not be reachable inside the container. "
-                        f"See packages/coworld/src/coworld/GAME_RUNTIME_README.md for the contract."
+                        f"See packages/coworld/src/coworld/docs/roles/GAME.md for the contract."
                     ) from probe_error
             on_ready(session)
             return_code = replay_process.wait()

@@ -1,7 +1,7 @@
 # Paint Arena Player Protocol
 
 Browsers request `GET /client/player?slot=<slot>&token=<token>` to load the player client; the page and its websocket
-follow the contract in [GAME_RUNTIME_README.md § Browser Clients](../../../../GAME_RUNTIME_README.md#browser-clients). By
+follow the contract in [GAME.md § Browser Clients](../../../../docs/roles/GAME.md#browser-clients). By
 default the client opens `/player?slot=<slot>&token=<token>`.
 
 The server sends an observation every tick:

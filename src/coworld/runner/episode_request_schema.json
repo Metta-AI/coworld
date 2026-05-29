@@ -5,10 +5,12 @@
       "properties": {
         "game_config": {
           "additionalProperties": true,
+          "description": "Token-free game config used for certification and default local episode runs.",
           "title": "Game Config",
           "type": "object"
         },
         "players": {
+          "description": "Ordered bundled-player slots for the certification episode.",
           "items": {
             "$ref": "#/$defs/CoworldCertificationPlayer"
           },
@@ -25,6 +27,7 @@
       "additionalProperties": false,
       "properties": {
         "player_id": {
+          "description": "ID of a bundled player runnable to use for this certification slot.",
           "minLength": 1,
           "title": "Player Id",
           "type": "string"
@@ -38,6 +41,7 @@
       "additionalProperties": false,
       "properties": {
         "id": {
+          "description": "Stable document page id. Exactly one rules.md and one play_*.md page are required.",
           "if": {
             "pattern": "^play_"
           },
@@ -49,11 +53,13 @@
           "type": "string"
         },
         "title": {
+          "description": "Human-readable page title.",
           "minLength": 1,
           "title": "Title",
           "type": "string"
         },
         "content": {
+          "description": "Inline or URI-backed page content.",
           "discriminator": {
             "mapping": {
               "text": "#/$defs/CoworldTextDoc",
@@ -103,6 +109,7 @@
             }
           ],
           "default": null,
+          "description": "Optional top-level game readme document.",
           "title": "Readme"
         },
         "pages": {
@@ -134,6 +141,7 @@
               "minContains": 1
             }
           ],
+          "description": "Game-authored documentation pages. Must include exactly one rules.md and exactly one play_*.md.",
           "items": {
             "$ref": "#/$defs/CoworldDocPage"
           },
@@ -149,37 +157,44 @@
       "additionalProperties": false,
       "properties": {
         "name": {
+          "description": "Short Coworld name.",
           "minLength": 1,
           "title": "Name",
           "type": "string"
         },
         "version": {
+          "description": "Coworld package version. Pydantic validation requires a valid PEP 440 version.",
           "minLength": 1,
           "title": "Version",
           "type": "string"
         },
         "description": {
+          "description": "Human-readable game description surfaced by product UIs.",
           "minLength": 1,
           "title": "Description",
           "type": "string"
         },
         "owner": {
+          "description": "Maintainer email or handle.",
           "minLength": 1,
           "title": "Owner",
           "type": "string"
         },
         "config_schema": {
           "additionalProperties": true,
+          "description": "JSON Schema for runtime game configs. It must require a fixed-length string-array `tokens` field; variants and certification configs omit tokens because the runner injects them.",
           "title": "Config Schema",
           "type": "object"
         },
         "results_schema": {
           "additionalProperties": true,
+          "description": "JSON Schema for the game-written results artifact. Cross-game consumers require `scores`.",
           "title": "Results Schema",
           "type": "object"
         },
         "runnable": {
           "$ref": "#/$defs/CoworldRunnableSpec",
+          "description": "Game container runnable. Its `type` must be `game`.",
           "properties": {
             "type": {
               "const": "game"
@@ -187,10 +202,12 @@
           }
         },
         "protocols": {
-          "$ref": "#/$defs/CoworldProtocolDocs"
+          "$ref": "#/$defs/CoworldProtocolDocs",
+          "description": "Protocol documentation for game-owned WebSocket surfaces."
         },
         "docs": {
-          "$ref": "#/$defs/CoworldDocs"
+          "$ref": "#/$defs/CoworldDocs",
+          "description": "Game-authored documentation surfaced through Coworld tools and UIs."
         }
       },
       "required": [
@@ -222,63 +239,87 @@
             }
           ],
           "default": null,
+          "description": "Optional JSON Schema URI for IDE tooling.",
           "title": "$Schema"
         },
         "game": {
           "$ref": "#/$defs/CoworldGameManifest",
-          "description": "Game runnable and protocol metadata. Role docs: docs/roles/game.md."
+          "description": "Game runnable and protocol metadata. Role docs: docs/roles/GAME.md.",
+          "markdownDescription": "See the [Game role](docs/roles/GAME.md) documentation for this role's contract.",
+          "x-coworld-role-doc": "docs/roles/GAME.md"
         },
         "player": {
-          "description": "Bundled player runnables. Role docs: docs/roles/player.md.",
+          "description": "Bundled player runnables. Role docs: docs/roles/PLAYER.md.",
           "items": {
             "$ref": "#/$defs/CoworldManifestRoleSpec"
           },
+          "markdownDescription": "See the [Player role](docs/roles/PLAYER.md) documentation for this role's contract.",
           "minItems": 1,
           "title": "Player",
-          "type": "array"
+          "type": "array",
+          "x-coworld-role-doc": "docs/roles/PLAYER.md"
         },
         "reporter": {
-          "description": "Reporter runnables. Must declare at least one entry; Coworlds without a custom reporter may reference `ghcr.io/metta-ai/reporters-default:latest`. Role docs: docs/roles/reporter.md.",
+          "description": "Reporter runnables. Must declare at least one entry; Coworlds without a custom reporter may reference `ghcr.io/metta-ai/reporters-default:latest`. Role docs: docs/roles/REPORTER.md.",
           "items": {
             "$ref": "#/$defs/CoworldManifestRoleSpec"
           },
+          "markdownDescription": "See the [Reporter role](docs/roles/REPORTER.md) documentation for this role's contract.",
           "minItems": 1,
           "title": "Reporter",
-          "type": "array"
+          "type": "array",
+          "x-coworld-role-doc": "docs/roles/REPORTER.md"
         },
         "commissioner": {
-          "description": "Optional commissioner runnables. Role docs: docs/roles/commissioner.md.",
+          "$comment": "Optional in the current schema; intended to become required as this role stabilizes.",
+          "description": "Commissioner runnables. Optional today, but expected to become required once the containerized commissioner runtime is live. Role docs: docs/roles/COMMISSIONER.md.",
           "items": {
             "$ref": "#/$defs/CoworldManifestRoleSpec"
           },
+          "markdownDescription": "See the [Commissioner role](docs/roles/COMMISSIONER.md) documentation for this role's contract.",
           "title": "Commissioner",
-          "type": "array"
+          "type": "array",
+          "x-coworld-future-required": true,
+          "x-coworld-role-doc": "docs/roles/COMMISSIONER.md"
         },
         "grader": {
-          "description": "Optional grader runnables. Role docs: docs/roles/grader.md.",
+          "$comment": "Optional in the current schema; intended to become required as this role stabilizes.",
+          "description": "Grader runnables. Optional today, but expected to become required once the grader runtime contract is enforced. Coworlds without a custom grader may reference `ghcr.io/metta-ai/graders-default:latest`. Role docs: docs/roles/GRADER.md.",
           "items": {
             "$ref": "#/$defs/CoworldManifestRoleSpec"
           },
+          "markdownDescription": "See the [Grader role](docs/roles/GRADER.md) documentation for this role's contract.",
           "title": "Grader",
-          "type": "array"
+          "type": "array",
+          "x-coworld-future-required": true,
+          "x-coworld-role-doc": "docs/roles/GRADER.md"
         },
         "diagnoser": {
-          "description": "Optional diagnoser runnables. Role docs: docs/roles/diagnoser.md.",
+          "$comment": "Optional in the current schema; intended to become required as this role stabilizes.",
+          "description": "Diagnoser runnables. Optional today, but expected to become required once the diagnoser contract stabilizes. Role docs: docs/roles/DIAGNOSER.md.",
           "items": {
             "$ref": "#/$defs/CoworldManifestRoleSpec"
           },
+          "markdownDescription": "See the [Diagnoser role](docs/roles/DIAGNOSER.md) documentation for this role's contract.",
           "title": "Diagnoser",
-          "type": "array"
+          "type": "array",
+          "x-coworld-future-required": true,
+          "x-coworld-role-doc": "docs/roles/DIAGNOSER.md"
         },
         "optimizer": {
-          "description": "Optional optimizer runnables. Role docs: docs/roles/optimizer.md.",
+          "$comment": "Optional in the current schema; intended to become required as this role stabilizes.",
+          "description": "Optimizer runnables. Optional today, but expected to become required once the optimizer contract stabilizes. Role docs: docs/roles/OPTIMIZER.md.",
           "items": {
             "$ref": "#/$defs/CoworldManifestRoleSpec"
           },
+          "markdownDescription": "See the [Optimizer role](docs/roles/OPTIMIZER.md) documentation for this role's contract.",
           "title": "Optimizer",
-          "type": "array"
+          "type": "array",
+          "x-coworld-future-required": true,
+          "x-coworld-role-doc": "docs/roles/OPTIMIZER.md"
         },
         "variants": {
+          "description": "Named token-free game configs.",
           "items": {
             "$ref": "#/$defs/CoworldVariant"
           },
@@ -287,7 +328,8 @@
           "type": "array"
         },
         "certification": {
-          "$ref": "#/$defs/CoworldCertificationFixture"
+          "$ref": "#/$defs/CoworldCertificationFixture",
+          "description": "Smoke-test episode used by coworld certify and default local episode runs."
         }
       },
       "required": ["game", "player", "reporter", "variants", "certification"],
@@ -298,15 +340,18 @@
       "additionalProperties": false,
       "properties": {
         "type": {
+          "description": "Manifest role section this runnable belongs to.",
           "enum": ["player", "reporter", "commissioner", "grader", "diagnoser", "optimizer"],
           "title": "Type",
           "type": "string"
         },
         "image": {
+          "description": "Docker image reference to run for this role.",
           "title": "Image",
           "type": "string"
         },
         "run": {
+          "description": "Optional process command overriding the image entrypoint or default command.",
           "items": {
             "type": "string"
           },
@@ -317,6 +362,7 @@
           "additionalProperties": {
             "type": "string"
           },
+          "description": "Public environment variables passed to the runnable. Do not put secrets here.",
           "title": "Env",
           "type": "object"
         },
@@ -330,19 +376,23 @@
             }
           ],
           "default": null,
+          "description": "Optional public source repository, directory, or file URL for this runnable.",
           "title": "Source Url"
         },
         "id": {
+          "description": "Stable runnable identifier within this manifest. Certification fixtures reference player ids.",
           "minLength": 1,
           "title": "Id",
           "type": "string"
         },
         "name": {
+          "description": "Human-readable runnable name for CLIs and UIs.",
           "minLength": 1,
           "title": "Name",
           "type": "string"
         },
         "description": {
+          "description": "Human-readable summary of what this runnable does.",
           "minLength": 1,
           "title": "Description",
           "type": "string"
@@ -356,6 +406,7 @@
       "additionalProperties": false,
       "properties": {
         "player": {
+          "description": "Game-authored player WebSocket protocol documentation.",
           "discriminator": {
             "mapping": {
               "text": "#/$defs/CoworldTextDoc",
@@ -374,6 +425,7 @@
           "title": "Player"
         },
         "global": {
+          "description": "Game-authored global viewer protocol documentation.",
           "discriminator": {
             "mapping": {
               "text": "#/$defs/CoworldTextDoc",
@@ -400,15 +452,18 @@
       "additionalProperties": false,
       "properties": {
         "type": {
+          "description": "Role contract implemented by this runnable.",
           "enum": ["game", "player", "reporter", "commissioner", "grader", "diagnoser", "optimizer"],
           "title": "Type",
           "type": "string"
         },
         "image": {
+          "description": "Docker image reference to run for this role.",
           "title": "Image",
           "type": "string"
         },
         "run": {
+          "description": "Optional process command overriding the image entrypoint or default command.",
           "items": {
             "type": "string"
           },
@@ -419,6 +474,7 @@
           "additionalProperties": {
             "type": "string"
           },
+          "description": "Public environment variables passed to the runnable. Do not put secrets here.",
           "title": "Env",
           "type": "object"
         },
@@ -432,6 +488,7 @@
             }
           ],
           "default": null,
+          "description": "Optional public source repository, directory, or file URL for this runnable.",
           "title": "Source Url"
         }
       },
@@ -444,10 +501,12 @@
       "properties": {
         "type": {
           "const": "text",
+          "description": "Document reference kind for inline text.",
           "title": "Type",
           "type": "string"
         },
         "value": {
+          "description": "Inline document text, usually Markdown.",
           "minLength": 1,
           "title": "Value",
           "type": "string"
@@ -462,10 +521,12 @@
       "properties": {
         "type": {
           "const": "uri",
+          "description": "Document reference kind for a public HTTP(S) document.",
           "title": "Type",
           "type": "string"
         },
         "value": {
+          "description": "Public HTTP(S) URL for the document.",
           "minLength": 1,
           "pattern": "^https?://",
           "title": "Value",
@@ -480,21 +541,25 @@
       "additionalProperties": false,
       "properties": {
         "id": {
+          "description": "Stable variant identifier used by CLIs and league configuration.",
           "minLength": 1,
           "title": "Id",
           "type": "string"
         },
         "name": {
+          "description": "Human-readable variant name.",
           "minLength": 1,
           "title": "Name",
           "type": "string"
         },
         "game_config": {
           "additionalProperties": true,
+          "description": "Token-free game config that validates against game.config_schema.",
           "title": "Game Config",
           "type": "object"
         },
         "description": {
+          "description": "Human-readable variant description.",
           "minLength": 1,
           "title": "Description",
           "type": "string"

@@ -4,7 +4,7 @@ Pure function of the episode bundle pointed at by ``COGAME_EPISODE_BUNDLE_URI``.
 Produces a single ``.zip`` written to ``COGAME_REPORT_URI`` containing a
 Markdown summary and a JSON stats blob, plus a top-level ``manifest.json``
 flagging ``summary.md`` as the renderable per the canonical Coworld
-reporter contract (``docs/roles/reporter.md`` in this package).
+reporter contract (``docs/roles/REPORTER.md`` in this package).
 
 This reporter is the minimal *reference* implementation of the contract
 for a PaintArena bundle. Grid dimensions come from the game-owned

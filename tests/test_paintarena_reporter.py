@@ -4,7 +4,7 @@ Covers pure-function zip construction (build_zip_bytes, build_stats) plus
 end-to-end run() invocations against file:// bundle URIs.
 
 Output contract (canonical Coworld reporter contract,
-``docs/roles/reporter.md``):
+``docs/roles/REPORTER.md``):
 - A single zip is written to COGAME_REPORT_URI.
 - Top-level entries: manifest.json, summary.md, stats.json.
 - The in-zip manifest.json flags ``render: "summary.md"`` and carries
@@ -121,7 +121,7 @@ def make_bundle_bytes(
 ) -> bytes:
     """Pack the loose JSON fixtures into a canonical episode bundle zip.
 
-    Layout follows ``EPISODE_BUNDLE_README.md``: a root ``manifest.json``
+    Layout follows ``artifacts/EPISODE_BUNDLE.md``: a root ``manifest.json``
     mapping tokens to entries inside the zip, plus the JSON files those
     tokens point at.
     """

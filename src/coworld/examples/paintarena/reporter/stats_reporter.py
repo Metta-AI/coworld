@@ -3,7 +3,7 @@
 Reads an episode bundle pointed at by ``COGAME_EPISODE_BUNDLE_URI``,
 projects PaintArena replay frames plus final results into the canonical
 ``(ts, player, key, value)`` event-log Parquet schema (see
-``docs/roles/reporter.md``), and writes a single ``.zip`` to
+``docs/roles/REPORTER.md``), and writes a single ``.zip`` to
 ``COGAME_REPORT_URI`` containing the Parquet plus a top-level
 ``manifest.json`` flagging the Parquet via the ``event_log`` field.
 

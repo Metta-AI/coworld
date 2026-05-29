@@ -19,9 +19,9 @@ streams results back.
 
 ## Where it lives in the manifest
 
-`manifest.commissioner[]`, with `type: "commissioner"` on every entry. The section is required, but the array may be
-empty until the container-driven commissioner runtime ships. See [`MANIFEST_README.md`](../../MANIFEST_README.md) for
-the full runnable shape.
+`manifest.commissioner[]`, with `type: "commissioner"` on every entry. The section is optional in the current schema,
+but intended to become required once the container-driven commissioner runtime ships. See
+[`COWORLD_MANIFEST.md`](../COWORLD_MANIFEST.md) for the full runnable shape.
 
 ### Manifest examples
 
@@ -215,7 +215,12 @@ Sent each time a scheduled episode completes:
 ```
 
 The `game_results` field contains the full results object conforming to the Coworld's `game.results_schema`. The
-`scores` array is a convenience extraction from `game_results.scores`, decomposed per policy.
+`scores` array is a convenience extraction from the game-written [results artifact](../artifacts/RESULTS.md),
+decomposed per policy.
+
+The commissioner does not receive or create episode bundles. It consumes round-level `episode_result` and
+`episode_failed` messages; detailed per-episode artifacts are available through the
+[`episode bundle`](../artifacts/EPISODE_BUNDLE.md) when a post-episode consumer asks for them.
 
 ##### `episode_failed`
 
@@ -305,6 +310,9 @@ Results are grouped per division. The commissioner can produce rankings for mult
 
 `graduation_changes` moves policies between divisions. These are applied after the round results are recorded.
 
+The complete output shape is documented as the [round decisions artifact](../artifacts/ROUND_DECISIONS.md). It is not an
+episode artifact and is not part of the episode bundle.
+
 The `state` field is an opaque JSON blob (max 10 MB) stored by the platform and passed back in the next round's
 `round_start`. This lets a commissioner maintain ratings, bracket progress, Swiss pairings, etc. across rounds without
 external storage.
@@ -386,14 +394,14 @@ flags:
 The commissioner sits at the top of the league control loop. It tells the platform which episodes to run; the platform's
 game runner dispatches those episodes (with the requested policy versions in the requested slots); the game runnable
 produces episode results; the platform routes those results back to the commissioner as `episode_result` messages; and
-the commissioner eventually closes the round with rankings.
+the commissioner eventually closes the round with [round decisions](../artifacts/ROUND_DECISIONS.md).
 
-Unlike reporter, grader, diagnoser, and optimizer — all of which consume _individual_ episode artifacts on demand after
+Unlike reporter, grader, diagnoser, and optimizer — all of which consume _individual_ episode evidence on demand after
 episodes finish — the commissioner consumes a stream of episode results in aggregate during a round and emits
 round-level decisions. It is the only supporting role besides game that holds a long-lived WebSocket contract with the
 platform.
 
-See [`OVERVIEW.md`](OVERVIEW.md) for the full artifact and control-flow diagram.
+See [`README.md`](../README.md) for the full artifact and control-flow diagram.
 
 ## Implementation status
 
@@ -450,8 +458,11 @@ backend.
 - [`commissioner/protocol.py`](../../commissioner/protocol.py) — Pydantic models for every protocol message.
 - [`AMONGTHEM_COMMISSIONER.md`](../../../../../../app_backend/src/metta/app_backend/v2/AMONGTHEM_COMMISSIONER.md) —
   in-process AmongThem commissioner reference (backend doc).
-- [`MANIFEST_README.md`](../../MANIFEST_README.md) — manifest field reference for `manifest.commissioner[]`.
-- [`COWORLD_README.md`](../../COWORLD_README.md) — Role Status framework, runnable conventions.
-- [`reporter.md`](reporter.md), [`grader.md`](grader.md), [`diagnoser.md`](diagnoser.md), [`optimizer.md`](optimizer.md)
+- [`artifacts/EPISODE_BUNDLE.md`](../artifacts/EPISODE_BUNDLE.md) — post-episode artifact package that commissioner
+  protocol messages do not directly carry.
+- [`artifacts/RESULTS.md`](../artifacts/RESULTS.md) — game-written episode results routed into `episode_result`.
+- [`artifacts/ROUND_DECISIONS.md`](../artifacts/ROUND_DECISIONS.md) — commissioner output recorded by the platform.
+- [`COWORLD_MANIFEST.md`](../COWORLD_MANIFEST.md) — manifest guide and generated-schema pointer.
+- [`README.md`](../README.md) — role status framework, runnable conventions, and artifact flow.
+- [`REPORTER.md`](REPORTER.md), [`GRADER.md`](GRADER.md), [`DIAGNOSER.md`](DIAGNOSER.md), [`OPTIMIZER.md`](OPTIMIZER.md)
   — sibling supporting runnables; all per-episode.
-- [`OVERVIEW.md`](OVERVIEW.md) — full artifact and control-flow diagram.

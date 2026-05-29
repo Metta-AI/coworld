@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import json
+from pathlib import Path
 from typing import Any
 
 import pytest
@@ -43,7 +45,7 @@ def test_runnable_and_manifest_role_fields_are_flat() -> None:
 
 def test_manifest_rejects_wrong_game_runnable_type() -> None:
     schema = coworld_manifest_schema()["$defs"]["CoworldGameManifest"]["properties"]["runnable"]["properties"]["type"]
-    assert schema == {"const": "game"}
+    assert schema["const"] == "game"
     with pytest.raises(ValidationError, match="game.runnable.type"):
         _manifest(game_type="player")
 
@@ -100,7 +102,7 @@ def test_episode_job_players_are_flat_runnable_payloads() -> None:
 
 def test_episode_job_rejects_non_player_runnable() -> None:
     schema = coworld_episode_request_schema()["properties"]["players"]["items"]["properties"]["type"]
-    assert schema == {"const": "player"}
+    assert schema["const"] == "player"
     with pytest.raises(ValidationError, match="players.0.type"):
         CoworldEpisodeJobSpec(
             manifest=_manifest(),
@@ -270,8 +272,58 @@ def test_manifest_schema_accepts_required_game_docs_pages() -> None:
     validate_json_schema(_manifest_data(), coworld_manifest_schema())
 
 
+def test_manifest_schema_documents_public_fields() -> None:
+    schema = coworld_manifest_schema()
+
+    _assert_schema_properties_have_descriptions("CoworldManifest", schema)
+    for name, definition in schema["$defs"].items():
+        _assert_schema_properties_have_descriptions(name, definition)
+
+    assert "commissioner" not in schema["required"]
+    assert "grader" not in schema["required"]
+    assert "diagnoser" not in schema["required"]
+    assert "optimizer" not in schema["required"]
+    role_docs = {
+        "game": "docs/roles/GAME.md",
+        "player": "docs/roles/PLAYER.md",
+        "reporter": "docs/roles/REPORTER.md",
+        "commissioner": "docs/roles/COMMISSIONER.md",
+        "grader": "docs/roles/GRADER.md",
+        "diagnoser": "docs/roles/DIAGNOSER.md",
+        "optimizer": "docs/roles/OPTIMIZER.md",
+    }
+    for section, role_doc in role_docs.items():
+        section_schema = schema["properties"][section]
+        assert section_schema["x-coworld-role-doc"] == role_doc
+        assert f"]({role_doc})" in section_schema["markdownDescription"]
+    for section in ("commissioner", "grader", "diagnoser", "optimizer"):
+        section_schema = schema["properties"][section]
+        assert section_schema["x-coworld-future-required"] is True
+        assert "intended to become required" in section_schema["$comment"]
+
+
+def test_generated_schema_files_match_types() -> None:
+    package_dir = Path(__file__).parents[1] / "src" / "coworld"
+
+    assert json.loads((package_dir / "coworld_manifest_schema.json").read_text(encoding="utf-8")) == (
+        coworld_manifest_schema()
+    )
+    assert json.loads((package_dir / "runner" / "episode_request_schema.json").read_text(encoding="utf-8")) == (
+        coworld_episode_request_schema()
+    )
+
+
 def _manifest(game_type: str = "game", player_type: str = "player") -> CoworldManifest:
     return CoworldManifest.model_validate(_manifest_data(game_type=game_type, player_type=player_type))
+
+
+def _assert_schema_properties_have_descriptions(schema_name: str, schema: dict[str, Any]) -> None:
+    missing = [
+        f"{schema_name}.{field_name}"
+        for field_name, field_schema in schema.get("properties", {}).items()
+        if "description" not in field_schema
+    ]
+    assert missing == []
 
 
 def _assert_docs_page_error(

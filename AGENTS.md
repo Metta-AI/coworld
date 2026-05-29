@@ -1,66 +1,98 @@
-# AGENTS.md — coworld
+# AGENTS.md - coworld
 
-Public CLI and Python package for Softmax v2 tournaments ("Coworlds"): download Coworlds, scaffold starter policies, run
-local episodes, host live play sessions, upload game/policy containers, submit to leagues, and inspect standings, logs,
-and replays. Depends on `softmax-cli` (workspace source) for auth; also uses `kubernetes`, `typer`, `websockets`, and
-`pyarrow`. Published to PyPI.
+Public CLI and Python package for Softmax v2 tournaments ("Coworlds"). This package owns the user-facing `coworld`
+entrypoint, local episode/play tooling, Coworld uploads, policy uploads/submission helpers, the Paint Arena reference
+Coworld, and the public Coworld docs shipped with the package. It depends on `softmax-cli` for auth-backed commands.
+
+## Before Editing
+
+- Read this file, `LESSONS.md`, the package [README](README.md), and the [Coworld docs map](src/coworld/docs/README.md)
+  before changing user-facing Coworld behavior or docs.
+- Keep package docs public-package-facing. Avoid private Metta backend paths unless the document is intentionally
+  explaining a platform integration boundary.
+- Treat Paint Arena under `src/coworld/examples/paintarena/` as the canonical in-tree example.
 
 ## CLI
 
-Installs a `coworld` entrypoint (`coworld.cli:app`, Typer):
+The package installs the Typer app at `coworld.cli:app`:
 
 ```bash
 uv run coworld --help
-uv run coworld leagues                                   # list public leagues (needs `softmax login`)
+uv run coworld leagues
 uv run coworld download <coworld-name-or-id> --output-dir ./coworld
-uv run coworld run-episode <manifest.json> <image:tag>   # local episode
-uv run coworld play <manifest.json> [image|request.json] # interactive local play
-uv run coworld build / certify / upload-coworld          # game-author loop
-uv run coworld upload-policy / submit                     # player loop
-uv run coworld hosted-game create|join                   # hosted browser play (subapp)
+uv run coworld run-episode <manifest.json> <image:tag>
+uv run coworld play <manifest.json> [image|request.json]
+uv run coworld build / certify / upload-coworld
+uv run coworld upload-policy / submit
 ```
 
-Auth-backed commands require `uv run softmax login` first (the `auth` extra pulls in `softmax-cli`).
+Auth-backed commands require `uv run softmax login` first. The `auth` extra pulls in `softmax-cli`.
 
-## Tests
+## Validation
+
+Use the narrowest check that covers the touched surface, then broaden when changing shared contracts:
 
 ```bash
+uv run metta pytest packages/coworld/tests/test_types.py -v
 uv run metta pytest packages/coworld/tests -v
 uv run metta pytest --changed
+uv run metta lint --fix
 ```
 
-A `slow` marker is defined; the `test` extra adds `fastapi`, `uvicorn`, `numpy`, `pyarrow`, and `pytest-httpserver`.
-
-## Lint
+When changing manifest Pydantic models or generated schema files, update `types.py` first and regenerate the checked-in
+schema JSON:
 
 ```bash
-uv run metta lint --fix              # ruff (also runs via the Edit/Write hook)
+uv run --project packages/coworld python packages/coworld/scripts/generate_coworld_schemas.py
+uv run metta pytest packages/coworld/tests/test_types.py -v
 ```
 
-## Source layout (`src/coworld/`)
+Do not hand-edit `src/coworld/coworld_manifest_schema.json` or `src/coworld/runner/episode_request_schema.json` as the
+source of truth. They are generated docs and `$schema` targets; `test_types.py` checks that they match `types.py`.
 
-- `cli.py`, `tournament_cli.py` — Typer command surface (local episodes, uploads, leagues, hosted play).
-- `cli_support.py`, `api_client.py` — shared CLI helpers and the Softmax/Coworld API client.
-- `certifier.py` — `coworld certify` smoke-test pipeline.
-- `manifest_validation.py`, `schema_validation.py`, `manifest_uri.py` — manifest + schema validation.
-- `bundle.py` — episode-bundle assembly (`COGAME_EPISODE_BUNDLE_URI`).
-- `play.py`, `runner/` — local episode runner and request schema.
-- `starter_policy.py`, `policies/` — packaged starter policy templates (`coworld make-policy`).
-- `commissioner/`, `submit.py`, `upload.py` — league round-running and uploads.
-- `examples/` — smallest complete Coworld (`paintarena`); `docs/roles/` — per-role contracts.
+## Source Layout
 
-## Reference docs (`src/coworld/`)
+- `src/coworld/cli.py`, `tournament_cli.py` - Typer command surface for local episodes, uploads, leagues, and hosted
+  tournament inspection.
+- `src/coworld/cli_support.py`, `api_client.py` - shared CLI helpers and the Softmax/Coworld API client.
+- `src/coworld/certifier.py` - `coworld certify` smoke-test pipeline.
+- `src/coworld/manifest_validation.py`, `schema_validation.py`, `manifest_uri.py` - manifest and schema validation.
+- `src/coworld/bundle.py` - episode-bundle assembly around `COGAME_EPISODE_BUNDLE_URI`.
+- `src/coworld/play.py`, `src/coworld/runner/` - local play, local episode runner, and hosted-runner contracts.
+- `src/coworld/starter_policy.py`, `src/coworld/policies/` - packaged starter policy templates.
+- `src/coworld/commissioner/`, `submit.py`, `upload.py` - league round-running, submission, and upload support.
+- `src/coworld/examples/paintarena/` - smallest complete Coworld and reference implementation.
 
-- `COWORLD_README.md` — overview and concepts (also the published package readme).
-- `CLI_README.md` — full command reference.
-- `GAME_RUNTIME_README.md` — game-container runtime contract.
-- `MANIFEST_README.md` — `coworld_manifest.json` field reference.
-- `API_GUIDE.md`, `EPISODE_BUNDLE_README.md` — public API and bundle contracts.
+## Documentation Map
 
-## Gotchas
+- [README.md](README.md) - package landing page, player-first orientation, and navigation.
+- [COOKBOOK.md](COOKBOOK.md) - task recipes for local play, policy upload/submission, tournament results, and
+  Coworld upload.
+- [src/coworld/docs/README.md](src/coworld/docs/README.md) - Coworld concept map, role statuses, artifact flow, and
+  cross-links.
+- [src/coworld/docs/COWORLD_MANIFEST.md](src/coworld/docs/COWORLD_MANIFEST.md) - manifest semantics and schema source
+  of truth.
+- [src/coworld/docs/LIFECYCLE.md](src/coworld/docs/LIFECYCLE.md) - local and hosted episode lifecycle.
+- `src/coworld/docs/roles/*.md` - per-role contracts.
+- `src/coworld/docs/artifacts/*.md` - artifact contracts.
+- `src/coworld/runner/RUNNER_README.md` and `src/coworld/runner/KUBERNETES_RUNNER_README.md` - runner-specific
+  behavior.
 
-- Versioned via `setuptools_scm` off `coworld-v*` git tags (`fallback_version = 0.0.0`).
-- The wheel's `package-data` deliberately **excludes** `Dockerfile`s and example READMEs: non-runtime edits must not
-  change wheel content, or they invalidate Bazel action keys for every downstream `@pyenv` consumer. Keep that exclusion
-  list in mind when adding example assets.
-- Antfarm hosts Coworld game containers — the runtime contract is shared (`packages/antfarm`).
+## Manifest And Role Contracts
+
+- The schema currently requires `game`, `player`, and `reporter`. `commissioner`, `grader`, `diagnoser`, and
+  `optimizer` are optional today and marked future-required in generated schema metadata.
+- Role semantics belong in `src/coworld/docs/roles/`. Field-level manifest shape belongs in `src/coworld/types.py` and
+  the generated schema JSON, not in duplicated Markdown tables.
+- Manifest role changes usually need matching updates to role docs, Paint Arena templates, generated schemas,
+  certifier/runner tests, and any README links that name the role.
+- Do not describe `coworld hosted-game` as a supported player workflow unless product/runtime support is restored.
+  Current hosted execution means tournament jobs where the platform runs the game and every player container.
+
+## Package Data Gotchas
+
+- Versioning uses `setuptools_scm` from `coworld-v*` git tags (`fallback_version = "0.0.0"`).
+- `pyproject.toml` deliberately excludes Dockerfiles and example READMEs from wheel package data. Non-runtime example
+  edits should not change wheel content or Bazel action keys for downstream `@pyenv` consumers.
+- Antfarm hosts Coworld game containers; keep `packages/antfarm/README.md` aligned when the game-container contract
+  changes.

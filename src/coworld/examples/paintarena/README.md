@@ -9,11 +9,14 @@ Painting overwrites the previous owner. Final scores are the number of tiles pai
 
 ## Build And Upload
 
-The repository root keeps the canonical Compose build at `worlds/paintarena/compose.yaml`. This example keeps the same
-build path locally:
+From the repository root, build from the packaged example files:
 
 ```bash
-uv run coworld build worlds/paintarena/compose.yaml worlds/paintarena/coworld_manifest_template.json 0.1.0 tmp/paintarena/coworld_manifest.json
+uv run coworld build \
+  packages/coworld/src/coworld/examples/paintarena/compose.yaml \
+  packages/coworld/src/coworld/examples/paintarena/coworld_manifest_template.json \
+  0.1.0 \
+  tmp/paintarena/coworld_manifest.json
 uv run coworld upload-coworld tmp/paintarena/coworld_manifest.json
 ```
 

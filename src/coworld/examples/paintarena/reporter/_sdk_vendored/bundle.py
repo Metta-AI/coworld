@@ -2,12 +2,12 @@
 
 A reporter receives one ``COGAME_EPISODE_BUNDLE_URI`` pointing at a zip
 whose root holds a ``manifest.json`` mapping named tokens (``results``,
-``replay``, ``config``, ``metadata``, ``game_logs``, ``player_logs``,
-``error_info``) to their paths inside the zip. The reader fetches the
+``replay``, ``metadata``, ``game_logs``, ``player_logs``, ``error_info``)
+to their paths inside the zip. The reader fetches the
 zip via :func:`reporter_sdk.io.read_uri`, parses the inner manifest, and
 exposes typed accessors keyed by token name.
 
-Schema mirrors metta's ``packages/coworld/src/coworld/EPISODE_BUNDLE_README.md``.
+Schema mirrors metta's ``packages/coworld/src/coworld/docs/artifacts/EPISODE_BUNDLE.md``.
 ``BundleInnerManifest`` allows extra fields so forward-extension keys
 the metta bundler may add (for example, an ``episode_id`` carrier) do
 not trip validation.

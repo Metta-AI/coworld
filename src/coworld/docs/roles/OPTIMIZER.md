@@ -22,8 +22,9 @@ uploaded via `coworld upload-policy`.
 
 ## Where it lives in the manifest
 
-`manifest.optimizer[]`, with `type: "optimizer"` on every entry. The section is required, but the array may be empty
-while the role is reserved. See [`MANIFEST_README.md`](../../MANIFEST_README.md) for the full runnable shape.
+`manifest.optimizer[]`, with `type: "optimizer"` on every entry. The section is optional in the current schema, but
+intended to become required once the role is no longer reserved. See [`COWORLD_MANIFEST.md`](../COWORLD_MANIFEST.md) for
+the full runnable shape.
 
 When an optimizer entry declares a GitHub `source_url`, point it at the implementation source, not only a docs folder.
 `coworld certify` checks that the source has non-empty contents and that a Dockerfile exists at that path or an ancestor
@@ -53,16 +54,13 @@ The optimizer needs at least:
 
 Whether these arrive as env vars, CLI args, mounted config files, or some combination is not yet locked.
 
+The optimizer does not currently define a standard `COGAME_EPISODE_BUNDLE_URI` input, but an optimizer workbench may load
+episode bundles as seed evidence; see [`artifacts/EPISODE_BUNDLE.md`](../artifacts/EPISODE_BUNDLE.md).
+
 ### Outputs
 
-Optimizer outputs are side effects, not artifact files:
-
-- candidate policy versions written into the optimizer's local policy workspace, exportable via `coworld upload-policy`;
-- task documents, comments, attachments, and run transcripts persisted in the optimizer's own database;
-- evaluation results comparing candidate policies against a champion.
-
-The platform does not consume optimizer output through a standard env-var artifact contract the way it does for reporter
-and grader. The optimizer is responsible for surfacing its own state through its UI.
+Optimizer outputs are side effects and optional workbench artifacts, not one standardized output file; see
+[OPTIMIZER_OUTPUTS.md](../artifacts/OPTIMIZER_OUTPUTS.md).
 
 ### Execution
 
@@ -86,18 +84,24 @@ pipeline; they are opened by a user (or an agent acting on a user's behalf) when
 
 The optimizer is the rightmost node in the Coworld supporting-runnable flow — it ingests episode evidence and, in
 principle, reporter renders, grader rankings, and diagnoser advice, and turns them into policy improvements. In practice
-today, the optimizer pulls episode artifacts directly via the Coworld CLI and is the human-facing surface over the loop
-the other roles support.
+today, the optimizer pulls episode artifacts directly via the Coworld CLI and produces
+[optimizer outputs](../artifacts/OPTIMIZER_OUTPUTS.md) such as candidate workspaces, evaluation runs, and uploaded
+policy versions.
 
-See [`OVERVIEW.md`](OVERVIEW.md) for the full artifact flow, and
+See [`README.md`](../README.md) for the full artifact flow, and
 [`Metta-AI/optimizers`](https://github.com/Metta-AI/optimizers) for the canonical optimizer implementation.
 
 ## See Also
 
 - [`Metta-AI/optimizers`](https://github.com/Metta-AI/optimizers) — canonical game-agnostic optimizer implementation
   (Next.js workbench, Postgres + pgvector, agent coordination, replay debugger).
-- [`MANIFEST_README.md`](../../MANIFEST_README.md) — manifest field reference for `manifest.optimizer[]`.
-- [`COWORLD_README.md`](../../COWORLD_README.md) — Role Status framework, runnable conventions.
-- [`reporter.md`](reporter.md), [`grader.md`](grader.md), [`diagnoser.md`](diagnoser.md) — sibling supporting runnables;
+- [`artifacts/EPISODE_BUNDLE.md`](../artifacts/EPISODE_BUNDLE.md) — episode artifact package an optimizer may load as
+  seed evidence.
+- [`artifacts/OPTIMIZER_OUTPUTS.md`](../artifacts/OPTIMIZER_OUTPUTS.md) — side effects and optional workbench artifacts
+  produced by this role.
+- [`artifacts/REPORT.md`](../artifacts/REPORT.md), [`artifacts/GRADE.md`](../artifacts/GRADE.md), and
+  [`artifacts/DIAGNOSIS.md`](../artifacts/DIAGNOSIS.md) — supporting-role outputs an optimizer may consume.
+- [`COWORLD_MANIFEST.md`](../COWORLD_MANIFEST.md) — manifest guide and generated-schema pointer.
+- [`README.md`](../README.md) — role status framework, runnable conventions, and artifact flow.
+- [`REPORTER.md`](REPORTER.md), [`GRADER.md`](GRADER.md), [`DIAGNOSER.md`](DIAGNOSER.md) — sibling supporting runnables;
   note the optimizer's shape differs.
-- [`OVERVIEW.md`](OVERVIEW.md) — full artifact flow.
