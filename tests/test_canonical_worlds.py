@@ -89,6 +89,19 @@ def test_canonical_cogs_vs_clips_build_declares_game_context() -> None:
     assert "additional_contexts:" not in compose_text
 
 
+def test_canonical_crewrift_build_declares_game_context() -> None:
+    compose_text = (WORLDS / "crewrift" / "compose.yaml").read_text(encoding="utf-8")
+
+    assert "GAME_CONTEXT" in compose_text
+    assert "PLAYER_CONTEXT" in compose_text
+    assert "coworld-crewrift" in compose_text
+    assert "Dockerfile" in compose_text
+    assert "players/notsus/Dockerfile" in compose_text
+    assert "coworld-crewrift-game:latest" in compose_text
+    assert "coworld-crewrift-notsus:latest" in compose_text
+    assert "ghcr.io/metta-ai/reporters-default:latest" in compose_text
+
+
 def test_canonical_world_compose_files_build_manifest_images() -> None:
     for template_path in _world_templates():
         template = json.loads(template_path.read_text(encoding="utf-8"))
@@ -220,6 +233,38 @@ def test_canonical_cogs_vs_clips_template_points_to_source_repo(tmp_path: Path) 
     )
 
 
+def test_canonical_crewrift_template_points_to_source_repo(tmp_path: Path) -> None:
+    package = load_coworld_package(
+        _materialized_template(tmp_path, WORLDS / "crewrift" / "coworld_manifest_template.json")
+    )
+    pages = {page.id: page.content.value for page in package.manifest.game.docs.pages}
+
+    assert package.manifest.game.runnable.source_url == "https://github.com/Metta-AI/coworld-crewrift/tree/master"
+    assert package.manifest.game.docs.readme is not None
+    assert (
+        package.manifest.game.docs.readme.value == "https://github.com/Metta-AI/coworld-crewrift/blob/master/README.md"
+    )
+    assert (
+        package.manifest.game.protocols.player.value
+        == "https://github.com/Metta-AI/coworld-crewrift/blob/master/docs/sprite_v1.md"
+    )
+    assert (
+        package.manifest.game.protocols.global_.value
+        == "https://github.com/Metta-AI/coworld-crewrift/blob/master/docs/sprite_v1.md"
+    )
+    assert pages["rules.md"] == "https://github.com/Metta-AI/coworld-crewrift/blob/master/docs/rules.md"
+    assert pages["play_crewrift.md"] == "https://github.com/Metta-AI/coworld-crewrift/blob/master/docs/play_crewrift.md"
+    assert pages["player"] == "https://github.com/Metta-AI/coworld-crewrift/blob/master/players/how_to_make_a_bot.md"
+    assert pages["submit"] == (
+        "https://github.com/Metta-AI/coworld-crewrift/blob/master/players/how_to_submit_coworld_policy.md"
+    )
+    assert pages["optimizer"] == "https://github.com/Metta-AI/coworld-crewrift/blob/master/players/SMART_BOT_GUIDE.md"
+    assert (
+        package.manifest.player[0].source_url
+        == "https://github.com/Metta-AI/coworld-crewrift/tree/master/players/notsus"
+    )
+
+
 def test_canonical_among_them_template_declares_all_viability_role_sections() -> None:
     template = json.loads((WORLDS / "among_them" / "coworld_manifest_template.json").read_text(encoding="utf-8"))
 
@@ -231,8 +276,8 @@ def test_canonical_among_them_template_declares_all_viability_role_sections() ->
     assert [role["type"] for role in template["optimizer"]] == ["optimizer"]
 
 
-def test_cogs_vs_clips_and_paintarena_templates_declare_all_viability_role_sections() -> None:
-    for world_name in ("cogs_vs_clips", "paintarena"):
+def test_cogs_vs_clips_crewrift_and_paintarena_templates_declare_all_viability_role_sections() -> None:
+    for world_name in ("cogs_vs_clips", "crewrift", "paintarena"):
         template = json.loads((WORLDS / world_name / "coworld_manifest_template.json").read_text(encoding="utf-8"))
 
         assert set(VIABILITY_ROLE_SECTIONS).issubset(template)
@@ -257,6 +302,13 @@ def test_cogs_vs_clips_and_paintarena_templates_declare_all_viability_role_secti
     assert [role["id"] for role in cogs_vs_clips["grader"]] == ["cogs-v-clips-grader"]
     assert cogs_vs_clips["grader"][0]["image"] == "ghcr.io/metta-ai/graders-cogs-v-clips:latest"
     assert "source_url" not in cogs_vs_clips["grader"][0]
+
+    crewrift = json.loads((WORLDS / "crewrift" / "coworld_manifest_template.json").read_text(encoding="utf-8"))
+    for section in ("optimizer", "commissioner", "grader", "diagnoser"):
+        assert crewrift[section] == []
+    assert [role["id"] for role in crewrift["reporter"]] == ["default-reporter"]
+    assert crewrift["reporter"][0]["image"] == "{{REPORTER_IMAGE}}"
+    assert "source_url" not in crewrift["reporter"][0]
 
     paintarena = json.loads((WORLDS / "paintarena" / "coworld_manifest_template.json").read_text(encoding="utf-8"))
     for section in ("commissioner", "diagnoser"):
@@ -294,6 +346,7 @@ def _world_compose_files() -> tuple[Path, ...]:
     return (
         WORLDS / "among_them" / "compose.yaml",
         WORLDS / "cogs_vs_clips" / "compose.yaml",
+        WORLDS / "crewrift" / "compose.yaml",
         WORLDS / "paintarena" / "compose.yaml",
     )
 
@@ -302,6 +355,7 @@ def _world_templates() -> tuple[Path, ...]:
     return (
         WORLDS / "among_them" / "coworld_manifest_template.json",
         WORLDS / "cogs_vs_clips" / "coworld_manifest_template.json",
+        WORLDS / "crewrift" / "coworld_manifest_template.json",
         WORLDS / "paintarena" / "coworld_manifest_template.json",
     )
 
@@ -322,6 +376,11 @@ def _materialized_template(base_dir: Path, template_path: Path) -> Path:
         "cogs_vs_clips": {
             "{{GAME_IMAGE}}": "coworld-cogs-vs-clips-game:latest",
             "{{PLAYER_IMAGE}}": "coworld-cogs-vs-clips-reference-player:latest",
+            "{{REPORTER_IMAGE}}": "ghcr.io/metta-ai/reporters-default:latest",
+        },
+        "crewrift": {
+            "{{GAME_IMAGE}}": "coworld-crewrift-game:latest",
+            "{{PLAYER_IMAGE}}": "coworld-crewrift-notsus:latest",
             "{{REPORTER_IMAGE}}": "ghcr.io/metta-ai/reporters-default:latest",
         },
         "paintarena": {"{{PAINTARENA_IMAGE}}": "coworld-paintarena:latest"},
