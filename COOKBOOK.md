@@ -13,16 +13,21 @@ uv run coworld <command> --help
 For API reference, use the OpenAPI docs at `https://softmax.com/api/observatory/docs` or the OpenAPI JSON at
 `https://softmax.com/api/observatory/openapi.json`.
 
-Prefer these layers in order:
+Every recipe below has two paths:
 
-1. The `coworld` CLI, especially commands with `--json`, for task automation.
-2. `coworld.api_client.CoworldApiClient` for Python scripts that inspect leagues, rounds, episodes, logs, and replays.
-3. Raw HTTP only when the CLI and Python client do not cover the job.
+- **CLI**: the supported public command shape.
+- **Non-CLI**: use Python/API for hosted Observatory work, and Docker-backed Python helpers or raw Docker for local work.
+
+For remote recipes, prefer the public clients in `coworld.api_client` and `coworld.upload`. For local recipes, the
+non-CLI path is Docker-backed: it starts the same game and player containers the CLI starts, passes the same environment
+variables, and writes the same artifact files.
 
 All examples use Paint Arena as the canonical Coworld example. Replace `cow_...`, `league_...`, `div_...`, `round_...`,
 `pool_...`, and `ereq_...` with the IDs returned by the commands in your environment.
 
 ## Set Up Auth
+
+### CLI
 
 Install Coworld in a project that will run player or Coworld commands:
 
@@ -39,7 +44,35 @@ uv run softmax status
 
 Pass `--server` only when targeting a non-default Observatory API environment.
 
+### Non-CLI API
+
+Python API clients load the same login token:
+
+```python
+from coworld.api_client import CoworldApiClient
+from softmax.auth import get_api_server
+
+
+with CoworldApiClient.from_login(server_url=get_api_server()) as client:
+    leagues = client.list_leagues()
+```
+
+For raw HTTP, pass an Observatory token as `Authorization: Bearer ...`:
+
+```bash
+SERVER=https://softmax.com/api
+API_BASE="${SERVER}/observatory"
+TOKEN="$(uv run softmax get-token)"
+
+curl -H "Authorization: Bearer ${TOKEN}" "${API_BASE}/v2/leagues"
+```
+
+`X-Auth-Token: ${TOKEN}` is also accepted by the current Python helpers, but `Authorization: Bearer` is the better
+default for hand-written clients.
+
 ## Find A League And Coworld
+
+### CLI
 
 Start by finding the league, division, and Coworld package you are working against:
 
@@ -57,13 +90,42 @@ uv run coworld download cow_... --output-dir ./coworld
 uv run python -m json.tool ./coworld/cow_.../coworld_manifest.json
 ```
 
-Downloaded packages live under `./coworld/<coworld-id>/` and include `coworld_manifest.json` plus
-`coworld_images.json`. The manifest tells you the game, player slots, role runnables, variants, protocol docs, and
-certification fixture for the Coworld.
+Downloaded packages live under `./coworld/<coworld-id>/` and include `coworld_manifest.json`, `coworld_images.json`, and
+an `AGENTS.md` for local policy work. The downloaded manifest rewrites uploaded image references to local Docker tags
+after pulling the public images.
+
+### Non-CLI API
+
+Use `CoworldApiClient` for league data and `download_coworld` when you only need the manifest payload:
+
+```python
+import json
+from pathlib import Path
+
+from coworld.api_client import CoworldApiClient
+from coworld.upload import download_coworld
+from softmax.auth import get_api_server
+
+
+server = get_api_server()
+with CoworldApiClient.from_login(server_url=server) as client:
+    leagues = client.list_leagues()
+    league = client.get_league(leagues[0].id)
+    divisions = client.list_divisions(league_id=league.id)
+    leaderboard = client.get_division_leaderboard(divisions[0].id, include_recent_rounds=3)
+
+coworld = download_coworld("cow_...", server=server)
+Path("coworld_manifest.json").write_text(json.dumps(coworld.manifest, indent=2) + "\n")
+```
+
+If you intend to run the downloaded Coworld locally, also pull and tag the manifest images or use `coworld download`,
+which does that Docker work for you.
 
 ## Build And Run Paint Arena Locally
 
-From the repository root, hydrate the in-package Paint Arena manifest and build its image:
+### CLI
+
+From the repository root, hydrate the in-package Paint Arena manifest and build its images:
 
 ```bash
 uv run coworld build \
@@ -86,9 +148,136 @@ uv run coworld run-episode tmp/paintarena/coworld_manifest.json
 ```
 
 Use `play` when you want browser links for a live local episode. Use `run-episode` when you want a headless smoke test
-that waits for completion and writes results, replay, and logs.
+that waits for completion and writes results, replay, and logs. For a local manifest like the one above, `run-episode`
+writes those artifacts under `tmp/paintarena/results/` by default.
+
+To show the resulting local replay, use `coworld replay` with the local replay file:
+
+```bash
+uv run coworld replay tmp/paintarena/coworld_manifest.json tmp/paintarena/results/replay
+```
+
+`run-episode --verify-replay` verifies the game image can serve replay mode, but it does not leave a viewer running. Use
+`coworld replay` when you want an actual local replay URL.
+
+### Non-CLI Docker-Backed Python
+
+The public Python helpers run the same Docker containers:
+
+```python
+from pathlib import Path
+
+from coworld.bundle import build_coworld_manifest
+from coworld.certifier import build_manifest_episode_job_spec, load_coworld_package
+from coworld.play import play_coworld, replay_coworld
+from coworld.runner.runner import EpisodeArtifacts, run_coworld_episode
+
+
+manifest_path = build_coworld_manifest(
+    Path("packages/coworld/src/coworld/examples/paintarena/compose.yaml"),
+    Path("packages/coworld/src/coworld/examples/paintarena/coworld_manifest_template.json"),
+    "0.1.0",
+    Path("tmp/paintarena/coworld_manifest.json"),
+)
+
+play_coworld(
+    manifest_path,
+    workspace=Path("tmp/paintarena/play"),
+    on_ready=lambda session: print(session.links.global_),
+)
+
+package = load_coworld_package(manifest_path)
+artifacts = EpisodeArtifacts.create(Path("tmp/paintarena/results"))
+run_coworld_episode(
+    build_manifest_episode_job_spec(package),
+    artifacts,
+    timeout_seconds=3600,
+)
+
+replay_coworld(
+    manifest_path,
+    artifacts.replay_path,
+    on_ready=lambda session: print(session.link),
+)
+```
+
+### Raw Docker Shape
+
+Use raw Docker when you need to debug the runtime contract directly. The game container receives config/results/replay
+URIs; each player container receives a slot-specific WebSocket URL.
+
+```bash
+docker network inspect coworld-local >/dev/null 2>&1 || docker network create coworld-local
+mkdir -p tmp/paintarena/docker/logs
+
+cat > tmp/paintarena/docker/config.json <<'JSON'
+{
+  "width": 12,
+  "height": 8,
+  "max_ticks": 100,
+  "tick_rate": 5,
+  "player_connect_timeout_seconds": 180,
+  "players": [{"name": "Sweep Painter 1"}, {"name": "Sweep Painter 2"}],
+  "tokens": ["token-0", "token-1"]
+}
+JSON
+
+docker run --rm --name paintarena-game \
+  --network coworld-local --network-alias coworld-game \
+  -p 127.0.0.1:18080:8080 \
+  -e COGAME_HOST=0.0.0.0 \
+  -e COGAME_PORT=8080 \
+  -e COGAME_CONFIG_URI=file:///coworld/config.json \
+  -e COGAME_RESULTS_URI=file:///coworld/results.json \
+  -e COGAME_SAVE_REPLAY_URI=file:///coworld/replay \
+  -v "$PWD/tmp/paintarena/docker:/coworld:rw" \
+  coworld-paintarena:latest \
+  python -m coworld.examples.paintarena.game.server
+```
+
+For browser-controlled play, skip the player containers and open the player client links below. For a headless policy
+test, start one player container per slot in separate terminals:
+
+```bash
+docker run --rm --network coworld-local \
+  -e COWORLD_PLAYER_WS_URL='ws://coworld-game:8080/player?slot=0&token=token-0' \
+  -e COGAMES_ENGINE_WS_URL='ws://coworld-game:8080/player?slot=0&token=token-0' \
+  coworld-paintarena:latest \
+  python -m coworld.examples.paintarena.player.player
+
+docker run --rm --network coworld-local \
+  -e COWORLD_PLAYER_WS_URL='ws://coworld-game:8080/player?slot=1&token=token-1' \
+  -e COGAMES_ENGINE_WS_URL='ws://coworld-game:8080/player?slot=1&token=token-1' \
+  coworld-paintarena:latest \
+  python -m coworld.examples.paintarena.player.player
+```
+
+Browser clients are served by the game container:
+
+```text
+http://127.0.0.1:18080/client/global
+http://127.0.0.1:18080/client/player?slot=0&token=token-0
+http://127.0.0.1:18080/client/player?slot=1&token=token-1
+```
+
+Serve the replay with the same game image in replay mode:
+
+```bash
+docker run --rm --name paintarena-replay \
+  -p 127.0.0.1:18081:8080 \
+  -e COGAME_HOST=0.0.0.0 \
+  -e COGAME_PORT=8080 \
+  -e COGAME_LOAD_REPLAY_URI=file:///coworld-replay/replay \
+  -v "$PWD/tmp/paintarena/docker:/coworld-replay:ro" \
+  coworld-paintarena:latest \
+  python -m coworld.examples.paintarena.game.server
+```
+
+Then open `http://127.0.0.1:18081/client/replay`. The replay WebSocket is `/replay`.
 
 ## Test A Player Image Locally
+
+### CLI
 
 Build the Paint Arena image as a stand-in player image:
 
@@ -114,7 +303,48 @@ uv run coworld play tmp/paintarena/coworld_manifest.json paintarena-player:local
 For multi-slot games, one supplied image is reused for every player slot. If you need per-slot images, pass one image
 per slot.
 
+### Non-CLI Docker-Backed Python
+
+Build the player with Docker, then override the manifest's certification players in the runner spec:
+
+```python
+from pathlib import Path
+from subprocess import run
+
+from coworld.certifier import build_manifest_episode_job_spec, load_coworld_package
+from coworld.runner.runner import EpisodeArtifacts, run_coworld_episode
+
+
+run(
+    [
+        "docker",
+        "build",
+        "--platform=linux/amd64",
+        "-t",
+        "paintarena-player:local",
+        "packages/coworld/src/coworld/examples/paintarena",
+    ],
+    check=True,
+)
+
+package = load_coworld_package(Path("tmp/paintarena/coworld_manifest.json"))
+spec = build_manifest_episode_job_spec(
+    package,
+    player_images=["paintarena-player:local"],
+    player_run=["python", "-m", "coworld.examples.paintarena.player.player"],
+)
+artifacts = EpisodeArtifacts.create(Path("tmp/paintarena/player-test"))
+run_coworld_episode(spec, artifacts, timeout_seconds=3600)
+print(artifacts.results_path)
+print(artifacts.replay_path)
+```
+
+For raw Docker, use the [Raw Docker Shape](#raw-docker-shape) and change only the player image and command in the player
+`docker run` calls.
+
 ## Run An Exact Episode Request
+
+### CLI
 
 Use an explicit episode request when you need exact game config, player images, player commands, environment variables,
 episode tags, or policy names:
@@ -127,7 +357,29 @@ uv run coworld play tmp/paintarena/coworld_manifest.json episode_request.json
 The request file must match `coworld/runner/episode_request_schema.json`. Request files cannot be combined with
 `--run`; put per-player commands in the request instead.
 
+### Non-CLI Docker-Backed Python
+
+Load and validate the same request, then run it through the Docker runner:
+
+```python
+from pathlib import Path
+
+from coworld.certifier import load_coworld_package, load_manifest_episode_job_spec
+from coworld.runner.runner import EpisodeArtifacts, run_coworld_episode
+
+
+package = load_coworld_package(Path("tmp/paintarena/coworld_manifest.json"))
+spec = load_manifest_episode_job_spec(package, Path("episode_request.json"))
+artifacts = EpisodeArtifacts.create(Path("tmp/paintarena/exact-request"))
+run_coworld_episode(spec, artifacts, timeout_seconds=3600)
+```
+
+For raw Docker, translate the request's `game_config` into the mounted `config.json` and translate each request
+`players[]` entry into one player container.
+
 ## Use Secrets Or Bedrock Locally
+
+### CLI
 
 Pass local secret environment variables at run time rather than baking them into an image:
 
@@ -148,7 +400,65 @@ uv run coworld run-episode tmp/paintarena/coworld_manifest.json paintarena-playe
 
 `--aws-profile` and `--aws-region` require `--use-bedrock`.
 
+### Non-CLI Docker-Backed Python
+
+Pass secret values through the local runner's `secret_env` mapping. The runner forwards only the variable names to
+Docker and puts the values in the subprocess environment.
+
+```python
+import os
+from pathlib import Path
+
+from coworld.certifier import build_manifest_episode_job_spec, load_coworld_package
+from coworld.runner.runner import EpisodeArtifacts, run_coworld_episode
+
+
+package = load_coworld_package(Path("tmp/paintarena/coworld_manifest.json"))
+spec = build_manifest_episode_job_spec(
+    package,
+    player_images=["paintarena-player:local"],
+    player_run=["python", "-m", "coworld.examples.paintarena.player.player"],
+)
+artifacts = EpisodeArtifacts.create(Path("tmp/paintarena/secret-test"))
+run_coworld_episode(
+    spec,
+    artifacts,
+    timeout_seconds=3600,
+    secret_env={
+        "API_KEY": os.environ["API_KEY"],
+        "MODEL_NAME": os.environ["MODEL_NAME"],
+    },
+)
+```
+
+For raw Docker, prefer `-e API_KEY` with `API_KEY` set in the parent shell over `-e API_KEY=value`, so the secret value
+does not appear in the command line.
+
+For local browser play with Bedrock, use `play_coworld`'s Bedrock credential resolution:
+
+```python
+from pathlib import Path
+
+from coworld.play import play_coworld
+
+
+play_coworld(
+    Path("tmp/paintarena/coworld_manifest.json"),
+    player_images=["paintarena-player:local"],
+    player_run=["python", "-m", "coworld.examples.paintarena.player.player"],
+    use_bedrock=True,
+    aws_profile="default",
+    aws_region="us-west-2",
+    on_ready=lambda session: print(session.links.global_),
+)
+```
+
+For headless `run_coworld_episode`, resolve AWS credentials in your script and pass `USE_BEDROCK`, `AWS_ACCESS_KEY_ID`,
+`AWS_SECRET_ACCESS_KEY`, optional `AWS_SESSION_TOKEN`, `AWS_REGION`, and `AWS_DEFAULT_REGION` through `secret_env`.
+
 ## Upload And Submit A Player
+
+### CLI
 
 Before uploading, run the image locally against the Coworld manifest:
 
@@ -179,13 +489,51 @@ uv run coworld upload-policy paintarena-player:local --name paintarena-player \
   --use-bedrock
 ```
 
-`upload-policy` requires Docker and the AWS CLI because it logs in to the Softmax ECR registry before pushing the image.
-`--use-bedrock` stores `USE_BEDROCK=true` with the policy version. Hosted Coworld tournaments run on AWS; when a policy
-opts into Bedrock, the player pod runs with the tournament Bedrock IAM role, so the player does not need to bring its own
-Bedrock API key. For other LLM providers, pass API keys with `--secret-env`; those secrets are stored in AWS Secrets
-Manager and injected only into that policy version's player pod.
+`upload-policy` requires Docker and the AWS CLI because it hashes the local Docker image, obtains scoped registry
+credentials, pushes the image, and registers the policy version. `--use-bedrock` stores `USE_BEDROCK=true` with the
+policy version. Hosted Coworld tournaments run on AWS; when a policy opts into Bedrock, the player pod runs with the
+tournament Bedrock IAM role, so the player does not need to bring its own Bedrock API key. For other LLM providers,
+pass API keys with `--secret-env`; those secrets are stored in AWS Secrets Manager and injected only into that policy
+version's player pod.
+
+### Non-CLI API
+
+The non-CLI flow is an API sequence with a Docker registry step:
+
+1. Compute the local Docker image client hash from `docker image save`.
+2. `POST /v2/container_images/upload` with `{"name": "...", "client_hash": "sha256:..."}`.
+3. If `pre_signed_info` is returned, push the Docker image to the returned registry/repository/tag.
+4. `POST /v2/container_images/upload/complete` with `{"id": "<container-image-id>"}`.
+5. `POST /stats/policies/docker-img/complete` with the container image ID, policy name, optional `run`, and optional
+   `policy_secret_env`.
+6. `POST /v2/league-submissions` with the returned policy version ID and target league.
+
+Use the Python upload client if you want the API calls without hand-writing request models:
+
+```python
+from uuid import UUID
+
+from coworld.upload import CoworldUploadClient
+from softmax.auth import get_api_server
+
+
+server = get_api_server()
+with CoworldUploadClient.from_login(server_url=server) as client:
+    policy_version = client.complete_docker_image_policy(
+        name="paintarena-player",
+        container_image_id="img_...",
+        run=["python", "-m", "coworld.examples.paintarena.player.player"],
+        secret_env={"USE_BEDROCK": "true"},
+    )
+    submission = client.submit_to_league("league_...", UUID(policy_version.id))
+```
+
+That snippet assumes the container image has already been uploaded and completed. The CLI remains the shortest safe path
+when you are starting from a local Docker tag.
 
 ## Check Submission Status
+
+### CLI
 
 After submitting, inspect the submission and the active membership created from it:
 
@@ -201,14 +549,32 @@ Useful statuses:
 - `placed`: successfully placed into a division or pool.
 - `rejected`: failed validation or was not accepted into the league.
 
+### Non-CLI API
+
+```python
+from coworld.api_client import CoworldApiClient
+from softmax.auth import get_api_server
+
+
+with CoworldApiClient.from_login(server_url=get_api_server()) as client:
+    submissions = client.list_submissions(league_id="league_...", mine=True)
+    memberships = client.list_memberships(division_id="div_...", mine=True, active_only=True)
+```
+
+The corresponding raw API routes are `GET /v2/league-submissions` and `GET /v2/league-policy-memberships`.
+
 ## Watch Results And Find Episodes
+
+### CLI
 
 Find completed rounds and standings:
 
 ```bash
 uv run coworld rounds --division div_... --status completed --json
+uv run coworld pools --round round_... --json
 uv run coworld results div_... --json
 uv run coworld results round_... --json
+uv run coworld events --round round_... --json
 ```
 
 Find episodes involving your policy memberships:
@@ -222,7 +588,34 @@ uv run coworld episodes ereq_... --json
 Use `--mine` when you only want episodes involving policies owned by the current login. Use `--policy` when you need a
 specific policy name, policy version suffix, or policy version UUID.
 
+### Non-CLI API
+
+```python
+from coworld.api_client import CoworldApiClient
+from softmax.auth import get_api_server
+
+
+with CoworldApiClient.from_login(server_url=get_api_server()) as client:
+    rounds = client.list_rounds(division_id="div_...", status="completed", limit=5)
+    pools = client.list_pools(round_id="round_...")
+    round_detail = client.get_round("round_...")
+    episodes = client.list_episode_requests(pool_id=pools[0].id, limit=200)
+    events = client.list_events(round_id="round_...")
+```
+
+Raw API routes:
+
+```text
+GET /v2/rounds?division_id=div_...&status=completed
+GET /v2/pools?round_id=round_...
+GET /v2/rounds/round_...
+GET /v2/episode-requests?pool_id=pool_...
+GET /v2/competition-events?round_id=round_...
+```
+
 ## Retrieve Logs, Results, And Replays
+
+### CLI
 
 List accessible player logs for an episode:
 
@@ -251,18 +644,100 @@ uv run coworld episode-results ereq_... --output results.json
 uv run coworld episode-stats ereq_... --json
 ```
 
-Find and download replays:
+Find and download hosted replays:
 
 ```bash
 uv run coworld replays --round round_... --mine --download-dir replays/
+```
+
+Open replays:
+
+```bash
+# Local replay file from coworld run-episode or coworld play:
+uv run coworld replay tmp/paintarena/coworld_manifest.json tmp/paintarena/results/replay
+
+# Hosted episode request, served through a local Docker replay container:
 uv run coworld replay-open ereq_...
+
+# Hosted episode request, served by Observatory:
 uv run coworld replay-open ereq_... --hosted
 ```
 
-Local `replay-open` downloads the Coworld package if needed, starts the local replay viewer, and prints a browser URL.
-`--hosted` asks Observatory for a hosted replay viewer URL. It does not start a hosted game session.
+Use `coworld replay` when you already have a replay file and a manifest. It starts the game image locally with
+`COGAME_LOAD_REPLAY_URI`, prints a `http://127.0.0.1:<port>/client/replay` URL, and waits for the replay container to
+exit.
+
+Use `coworld replay-open` when you have an Observatory episode request ID. Without `--hosted`, it downloads or reuses the
+Coworld package, pulls only the game image needed for replay mode, downloads the hosted replay artifact, and serves it
+locally through Docker. With `--hosted`, it asks Observatory to create a hosted replay viewer session and prints the
+returned viewer URL.
+
+Hosted replay artifacts are stored as zlib-compressed `replay.json.z`. `coworld replay` and `replay-open` materialize
+compressed replay URIs before passing them to local Docker. Raw Docker replay mode should point `COGAME_LOAD_REPLAY_URI`
+at a replay payload the game image can load.
+
+### Non-CLI API
+
+Use the API client for metadata, logs, results, and hosted replay sessions:
+
+```python
+from pathlib import Path
+
+from coworld.api_client import CoworldApiClient
+from softmax.auth import get_api_server
+
+
+with CoworldApiClient.from_login(server_url=get_api_server()) as client:
+    episode = client.get_episode_request("ereq_...")
+    job_id = episode.job_id
+    assert job_id is not None
+
+    stats = client.get_job_episode_stats(job_id)
+    Path("results.json").write_bytes(client.get_job_artifact_bytes(job_id, "results"))
+    Path("replay.json.z").write_bytes(client.get_job_artifact_bytes(job_id, "replay"))
+
+    player_logs = client.list_job_policy_logs(job_id)
+    first_player_log = client.get_job_policy_log(job_id, 0)
+
+    assert episode.coworld_id is not None
+    assert episode.episode_id is not None
+    assert episode.replay_url is not None
+    viewer = client.create_replay_session(
+        coworld_id=episode.coworld_id,
+        episode_id=episode.episode_id,
+        replay_uri=episode.replay_url,
+    )
+    print(viewer.viewer_url)
+```
+
+For raw HTTP hosted replay creation, the public request body is:
+
+```bash
+curl -X POST \
+  -H "Authorization: Bearer ${TOKEN}" \
+  -H "Content-Type: application/json" \
+  "${API_BASE}/v2/coworlds/replays/session" \
+  -d '{"coworld_id":"cow_...","replay_uri":"https://.../replay.json.z"}'
+```
+
+For a local replay file without the CLI, use `replay_coworld`:
+
+```python
+from pathlib import Path
+
+from coworld.play import replay_coworld
+
+
+replay_coworld(
+    Path("tmp/paintarena/coworld_manifest.json"),
+    Path("tmp/paintarena/results/replay"),
+    on_ready=lambda session: print(session.link),
+)
+```
 
 ## Certify And Upload A Coworld
+
+### CLI
 
 Coworld authors should build, certify, and upload the Coworld package. For Paint Arena:
 
@@ -286,6 +761,37 @@ uv run coworld list
 uv run coworld show cow_...
 uv run coworld images
 ```
+
+### Non-CLI Docker/API
+
+Use Docker-backed build/certification helpers locally and the upload client for the hosted API:
+
+```python
+from pathlib import Path
+
+from coworld.bundle import build_coworld_manifest
+from coworld.certifier import certify_coworld
+from coworld.upload import upload_coworld
+from softmax.auth import get_api_server
+
+
+manifest_path = build_coworld_manifest(
+    Path("packages/coworld/src/coworld/examples/paintarena/compose.yaml"),
+    Path("packages/coworld/src/coworld/examples/paintarena/coworld_manifest_template.json"),
+    "0.1.0",
+    Path("tmp/paintarena/coworld_manifest.json"),
+)
+
+certification = certify_coworld(manifest_path, timeout_seconds=60)
+print(certification.artifacts.replay_path)
+
+upload = upload_coworld(manifest_path, server=get_api_server(), timeout_seconds=60)
+print(upload.id)
+```
+
+The lower-level API sequence for Coworld upload is the same container-image upload flow used by policies, repeated for
+every runnable image in the manifest. Replace each manifest `image` with the returned container image ID, then
+`POST /v2/coworlds/upload` with `{"manifest": ...}`.
 
 ## Read Tournament Data From Python
 
@@ -313,14 +819,11 @@ Use raw HTTP for gaps in the CLI or Python client:
 
 ```bash
 SERVER=https://softmax.com/api
-API_BASE=https://softmax.com/api/observatory
+API_BASE="${SERVER}/observatory"
 TOKEN="$(uv run softmax get-token)"
 
 curl -H "Authorization: Bearer ${TOKEN}" "${API_BASE}/v2/leagues"
 ```
-
-`X-Auth-Token: ${TOKEN}` is also accepted by current helpers, but `Authorization: Bearer` is the better default for
-hand-written clients.
 
 Avoid relying on internal routes such as Coworld browser proxy paths, job runner internals, SQL/admin routes, legacy
 tournament routes, social feed routes, or one-off maintenance endpoints. If a browser URL, replay URL, or artifact URL
@@ -332,9 +835,14 @@ is returned by the API or CLI, use the returned URL rather than reconstructing a
 - `403`: the current user or player credential does not have access to that object or artifact.
 - `404`: the object may not exist, may be private, or may be hidden from the current principal.
 - `409`: the requested transition conflicts with current state.
-- `503` with `Retry-After`: a hosted replay viewer or artifact route is still starting.
+- `503` with `Retry-After`: a hosted replay viewer, hosted play session, artifact route, or proxy route is still
+  starting.
 - Docker errors during local runs: make sure Docker is running and build Linux AMD64 images with
   `docker build --platform=linux/amd64`.
+- Local replay opens but shows no frames: verify the game image implements `COGAME_LOAD_REPLAY_URI`, serves
+  `/client/replay`, and emits replay frames on `/replay`.
+- `run-episode --verify-replay` passes but you do not see a browser URL: that flag only probes replay mode. Use
+  `coworld replay MANIFEST REPLAY_FILE` to keep a local replay viewer running.
 - Policy upload failures before the API call: confirm the AWS CLI is installed and can run `aws ecr get-login-password`.
 - Missing command examples: trust `uv run coworld --help` and `uv run coworld <command> --help`; old docs may mention
   commands that no longer exist.

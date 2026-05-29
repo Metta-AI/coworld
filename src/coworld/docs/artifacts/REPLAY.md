@@ -32,7 +32,8 @@ Replays are consumed by:
 
 - replay viewers, either local or hosted;
 - reporters, graders, diagnosers, and optimizers through the [episode bundle](EPISODE_BUNDLE.md) `replay` token;
-- humans and agents through `coworld replays` and `coworld replay-open`.
+- humans and agents through `coworld replay` for local replay files and `coworld replays` / `coworld replay-open` for
+  hosted episode artifacts.
 
 The episode bundle stores replay bytes as `replay.json` inside the outer zip. Hosted storage may use compressed
 `replay.json.z`, but bundle consumers should treat the bundled `replay` token as the uncompressed replay payload.
