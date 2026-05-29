@@ -100,6 +100,7 @@ def test_canonical_crewrift_build_declares_game_context() -> None:
     assert "coworld-crewrift-game:latest" in compose_text
     assert "coworld-crewrift-notsus:latest" in compose_text
     assert "ghcr.io/metta-ai/reporters-default:latest" in compose_text
+    assert "ghcr.io/metta-ai/graders-crewrift:latest" in compose_text
 
 
 def test_canonical_world_compose_files_build_manifest_images() -> None:
@@ -304,11 +305,17 @@ def test_cogs_vs_clips_crewrift_and_paintarena_templates_declare_all_viability_r
     assert "source_url" not in cogs_vs_clips["grader"][0]
 
     crewrift = json.loads((WORLDS / "crewrift" / "coworld_manifest_template.json").read_text(encoding="utf-8"))
-    for section in ("optimizer", "commissioner", "grader", "diagnoser"):
+    for section in ("optimizer", "commissioner", "diagnoser"):
         assert crewrift[section] == []
     assert [role["id"] for role in crewrift["reporter"]] == ["default-reporter"]
     assert crewrift["reporter"][0]["image"] == "{{REPORTER_IMAGE}}"
     assert "source_url" not in crewrift["reporter"][0]
+    assert [role["id"] for role in crewrift["grader"]] == ["crewrift-grader"]
+    assert crewrift["grader"][0]["image"] == "ghcr.io/metta-ai/graders-crewrift:latest"
+    assert (
+        crewrift["grader"][0]["source_url"]
+        == "https://github.com/Metta-AI/graders/tree/main/graders/crewrift/crewrift_grader"
+    )
 
     paintarena = json.loads((WORLDS / "paintarena" / "coworld_manifest_template.json").read_text(encoding="utf-8"))
     for section in ("commissioner", "diagnoser"):
