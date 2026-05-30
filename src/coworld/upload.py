@@ -184,7 +184,7 @@ class CoworldUploadClient:
         self.close()
 
     def _headers(self) -> dict[str, str]:
-        return {"X-Auth-Token": self._token}
+        return {"Authorization": f"Bearer {self._token}"}
 
     def upload_manifest(self, manifest: dict[str, object]) -> CoworldUploadResponse:
         response = self._http_client.post(

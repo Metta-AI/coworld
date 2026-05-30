@@ -18,7 +18,7 @@ def test_submit_policy_to_league_posts_v2_submission(
     httpserver.expect_request(
         "/observatory/v2/league-submissions",
         method="POST",
-        headers={"X-Auth-Token": "token"},
+        headers={"Authorization": "Bearer token"},
         json={"league_id": LEAGUE_ID, "policy_version_id": POLICY_VERSION_ID},
     ).respond_with_json(
         {
@@ -98,7 +98,7 @@ def _expect_policy_versions(httpserver: HTTPServer, entries: list[dict[str, obje
     httpserver.expect_request(
         "/observatory/stats/policy-versions",
         method="GET",
-        headers={"X-Auth-Token": "token"},
+        headers={"Authorization": "Bearer token"},
     ).respond_with_json({"entries": entries, "total_count": len(entries)})
 
 

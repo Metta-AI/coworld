@@ -57,7 +57,7 @@ def test_upload_coworld_posts_standalone_manifest(
     httpserver.expect_request(
         "/observatory/v2/container_images/upload",
         method="POST",
-        headers={"X-Auth-Token": "token"},
+        headers={"Authorization": "Bearer token"},
         json={"name": "graders-default", "client_hash": "sha256:client-hash"},
     ).respond_with_json(
         {
@@ -76,7 +76,7 @@ def test_upload_coworld_posts_standalone_manifest(
     httpserver.expect_request(
         "/observatory/v2/container_images/upload",
         method="POST",
-        headers={"X-Auth-Token": "token"},
+        headers={"Authorization": "Bearer token"},
         json={"name": "unit-test-runtime", "client_hash": "sha256:client-hash"},
     ).respond_with_json(
         {
@@ -106,7 +106,7 @@ def test_upload_coworld_posts_standalone_manifest(
     httpserver.expect_request(
         "/observatory/v2/container_images/upload/complete",
         method="POST",
-        headers={"X-Auth-Token": "token"},
+        headers={"Authorization": "Bearer token"},
         json={"id": image_id},
     ).respond_with_json(
         {
@@ -122,7 +122,7 @@ def test_upload_coworld_posts_standalone_manifest(
     httpserver.expect_request(
         "/observatory/v2/coworlds/upload",
         method="POST",
-        headers={"X-Auth-Token": "token"},
+        headers={"Authorization": "Bearer token"},
     ).respond_with_json(
         {
             "id": "cow_00000000-0000-0000-0000-000000000001",
@@ -261,7 +261,7 @@ def test_upload_policy_command_creates_docker_image_policy(
     httpserver.expect_request(
         "/observatory/v2/container_images/upload",
         method="POST",
-        headers={"X-Auth-Token": "token"},
+        headers={"Authorization": "Bearer token"},
         json={"name": "unit-test-policy", "client_hash": "sha256:client-hash"},
     ).respond_with_json(
         {
@@ -280,7 +280,7 @@ def test_upload_policy_command_creates_docker_image_policy(
     httpserver.expect_request(
         "/observatory/stats/policies/docker-img/complete",
         method="POST",
-        headers={"X-Auth-Token": "token"},
+        headers={"Authorization": "Bearer token"},
         json={
             "name": "paintbot",
             "container_image_id": "img_00000000-0000-0000-0000-000000000030",
@@ -321,7 +321,7 @@ def test_upload_policy_command_sends_policy_secrets(
     httpserver.expect_request(
         "/observatory/v2/container_images/upload",
         method="POST",
-        headers={"X-Auth-Token": "token"},
+        headers={"Authorization": "Bearer token"},
         json={"name": "unit-test-policy", "client_hash": "sha256:client-hash"},
     ).respond_with_json(
         {
@@ -340,7 +340,7 @@ def test_upload_policy_command_sends_policy_secrets(
     httpserver.expect_request(
         "/observatory/stats/policies/docker-img/complete",
         method="POST",
-        headers={"X-Auth-Token": "token"},
+        headers={"Authorization": "Bearer token"},
         json={
             "name": "paintbot",
             "container_image_id": "img_00000000-0000-0000-0000-000000000030",
@@ -381,7 +381,7 @@ def test_coworld_list_command_prints_json(httpserver: HTTPServer, monkeypatch: p
     httpserver.expect_request(
         "/observatory/v2/coworlds",
         method="GET",
-        headers={"X-Auth-Token": "token"},
+        headers={"Authorization": "Bearer token"},
         query_string="limit=50&offset=0",
     ).respond_with_json(
         [
@@ -419,7 +419,7 @@ def test_hosted_game_create_posts_play_session(httpserver: HTTPServer, monkeypat
     httpserver.expect_request(
         "/observatory/v2/coworlds/play/session",
         method="POST",
-        headers={"X-Auth-Token": "token"},
+        headers={"Authorization": "Bearer token"},
         json={
             "coworld_id": coworld_id,
             "variant_id": "default",
@@ -465,7 +465,7 @@ def test_hosted_game_join_posts_join_session(httpserver: HTTPServer, monkeypatch
     httpserver.expect_request(
         f"/observatory/v2/coworlds/play/session/{session_id}/join",
         method="POST",
-        headers={"X-Auth-Token": "token"},
+        headers={"Authorization": "Bearer token"},
     ).respond_with_json(
         {
             "player_url": "https://api.example.com/v2/coworlds/play/session/ps_00000000/proxy/client/player",
@@ -497,7 +497,7 @@ def test_coworld_show_command_prints_json(httpserver: HTTPServer, monkeypatch: p
     httpserver.expect_request(
         "/observatory/v2/coworlds",
         method="GET",
-        headers={"X-Auth-Token": "token"},
+        headers={"Authorization": "Bearer token"},
         query_string="limit=200&offset=0",
     ).respond_with_json(
         [
@@ -536,7 +536,7 @@ def test_coworld_show_command_pages_until_uploaded_world(
     httpserver.expect_request(
         "/observatory/v2/coworlds",
         method="GET",
-        headers={"X-Auth-Token": "token"},
+        headers={"Authorization": "Bearer token"},
         query_string="limit=200&offset=0",
     ).respond_with_json(
         [
@@ -556,7 +556,7 @@ def test_coworld_show_command_pages_until_uploaded_world(
     httpserver.expect_request(
         "/observatory/v2/coworlds",
         method="GET",
-        headers={"X-Auth-Token": "token"},
+        headers={"Authorization": "Bearer token"},
         query_string="limit=200&offset=200",
     ).respond_with_json(
         [
@@ -592,7 +592,7 @@ def test_coworld_images_command_lists_uploaded_images(httpserver: HTTPServer, mo
     httpserver.expect_request(
         "/observatory/v2/container_images",
         method="GET",
-        headers={"X-Auth-Token": "token"},
+        headers={"Authorization": "Bearer token"},
         query_string="limit=25&offset=0",
     ).respond_with_json(
         [
@@ -629,7 +629,7 @@ def test_coworld_images_command_shows_uploaded_image(httpserver: HTTPServer, mon
     httpserver.expect_request(
         f"/observatory/v2/container_images/{image_id}",
         method="GET",
-        headers={"X-Auth-Token": "token"},
+        headers={"Authorization": "Bearer token"},
     ).respond_with_json(
         {
             "id": image_id,
@@ -741,7 +741,7 @@ def test_download_coworld_command_resolves_canonical_name(
     httpserver.expect_request(
         "/observatory/v2/coworlds",
         method="GET",
-        headers={"X-Auth-Token": "token"},
+        headers={"Authorization": "Bearer token"},
         query_string="limit=200&offset=0",
     ).respond_with_json(
         [

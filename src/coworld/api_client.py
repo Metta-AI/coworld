@@ -339,7 +339,7 @@ class CoworldApiClient:
     def _headers(self) -> dict[str, str]:
         if self._token is None:
             return {}
-        return {"X-Auth-Token": self._token}
+        return {"Authorization": f"Bearer {self._token}"}
 
     def _request(self, method: str, path: str, response_type: Any, **kwargs: Any) -> Any:
         response = self._http_client.request(method, path, headers=self._headers(), **kwargs)

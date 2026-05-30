@@ -37,7 +37,7 @@ def test_replays_downloads_mine_division_replays(
     httpserver.expect_request(
         "/observatory/v2/episode-requests",
         method="GET",
-        headers={"X-Auth-Token": "token"},
+        headers={"Authorization": "Bearer token"},
     ).respond_with_json(
         [
             _episode_request(episode_request_id=EPISODE_REQUEST_ID, replay_url=replay_url),
@@ -90,12 +90,12 @@ def test_episode_stats_prints_job_stats_json(httpserver: HTTPServer, monkeypatch
     httpserver.expect_request(
         f"/observatory/v2/episode-requests/{EPISODE_REQUEST_ID}",
         method="GET",
-        headers={"X-Auth-Token": "token"},
+        headers={"Authorization": "Bearer token"},
     ).respond_with_json(_episode_request(episode_request_id=EPISODE_REQUEST_ID, replay_url=None))
     httpserver.expect_request(
         f"/observatory/jobs/{JOB_ID}/episode-stats",
         method="GET",
-        headers={"X-Auth-Token": "token"},
+        headers={"Authorization": "Bearer token"},
     ).respond_with_json(
         {
             "game_stats": {"duration": 12.0},
@@ -143,7 +143,7 @@ def test_episodes_accepts_bulk_rows_without_assignments(
     httpserver.expect_request(
         "/observatory/v2/episode-requests",
         method="GET",
-        headers={"X-Auth-Token": "token"},
+        headers={"Authorization": "Bearer token"},
     ).respond_with_json([episode_request])
 
     result = CliRunner().invoke(
@@ -175,7 +175,7 @@ def test_episodes_mine_division_uses_direct_episode_query(
     httpserver.expect_request(
         "/observatory/v2/episode-requests",
         method="GET",
-        headers={"X-Auth-Token": "token"},
+        headers={"Authorization": "Bearer token"},
     ).respond_with_json([_episode_request(episode_request_id=EPISODE_REQUEST_ID, replay_url="s3://replay")])
     _expect_mine_memberships(httpserver)
 
@@ -209,7 +209,7 @@ def test_memberships_accepts_status_substatus_payload(
     httpserver.expect_request(
         "/observatory/v2/league-policy-memberships",
         method="GET",
-        headers={"X-Auth-Token": "token"},
+        headers={"Authorization": "Bearer token"},
     ).respond_with_json([_membership(substatus="champion")])
 
     result = CliRunner().invoke(
@@ -242,18 +242,18 @@ def test_episode_logs_downloads_only_my_policy_agents(
     httpserver.expect_request(
         f"/observatory/v2/episode-requests/{EPISODE_REQUEST_ID}",
         method="GET",
-        headers={"X-Auth-Token": "token"},
+        headers={"Authorization": "Bearer token"},
     ).respond_with_json(episode_request)
     httpserver.expect_request(
         f"/observatory/jobs/{JOB_ID}/policy-logs",
         method="GET",
-        headers={"X-Auth-Token": "token"},
+        headers={"Authorization": "Bearer token"},
     ).respond_with_json(["policy_agent_0.log", "policy_agent_1.log"])
     _expect_mine_memberships(httpserver, division_id=None)
     httpserver.expect_request(
         f"/observatory/jobs/{JOB_ID}/policy-logs/0",
         method="GET",
-        headers={"X-Auth-Token": "token"},
+        headers={"Authorization": "Bearer token"},
     ).respond_with_data("mine log\n", content_type="text/plain")
 
     result = CliRunner().invoke(
@@ -283,12 +283,12 @@ def test_episode_logs_downloads_game_log(
     httpserver.expect_request(
         f"/observatory/v2/episode-requests/{EPISODE_REQUEST_ID}",
         method="GET",
-        headers={"X-Auth-Token": "token"},
+        headers={"Authorization": "Bearer token"},
     ).respond_with_json(_episode_request(episode_request_id=EPISODE_REQUEST_ID, replay_url=None))
     httpserver.expect_request(
         f"/observatory/v2/episode-requests/{EPISODE_REQUEST_ID}/artifacts/logs",
         method="GET",
-        headers={"X-Auth-Token": "token"},
+        headers={"Authorization": "Bearer token"},
     ).respond_with_data("game log\n", content_type="text/plain")
 
     result = CliRunner().invoke(
@@ -321,7 +321,7 @@ def test_replay_open_downloads_only_game_image_for_local_replay(
     httpserver.expect_request(
         f"/observatory/v2/episode-requests/{EPISODE_REQUEST_ID}",
         method="GET",
-        headers={"X-Auth-Token": "token"},
+        headers={"Authorization": "Bearer token"},
     ).respond_with_json(_episode_request(episode_request_id=EPISODE_REQUEST_ID, replay_url=replay_path.as_uri()))
 
     calls: dict[str, Any] = {}
@@ -402,12 +402,12 @@ def test_replay_open_hosted_opens_viewer_url(httpserver: HTTPServer, monkeypatch
     httpserver.expect_request(
         f"/observatory/v2/episode-requests/{EPISODE_REQUEST_ID}",
         method="GET",
-        headers={"X-Auth-Token": "token"},
+        headers={"Authorization": "Bearer token"},
     ).respond_with_json(_episode_request(episode_request_id=EPISODE_REQUEST_ID, replay_url=replay_url))
     httpserver.expect_request(
         "/observatory/v2/coworlds/replays/session",
         method="POST",
-        headers={"X-Auth-Token": "token"},
+        headers={"Authorization": "Bearer token"},
     ).respond_with_json({"viewer_url": viewer_url})
     monkeypatch.setattr("coworld.tournament_cli.webbrowser.open", opened_urls.append)
 
@@ -431,7 +431,7 @@ def _expect_mine_memberships(httpserver: HTTPServer, *, division_id: str | None 
     httpserver.expect_request(
         "/observatory/v2/league-policy-memberships",
         method="GET",
-        headers={"X-Auth-Token": "token"},
+        headers={"Authorization": "Bearer token"},
     ).respond_with_json([_membership(division_id=division_id or DIVISION_ID)])
 
 

@@ -67,8 +67,8 @@ TOKEN="$(uv run softmax get-token)"
 curl -H "Authorization: Bearer ${TOKEN}" "${API_BASE}/v2/leagues"
 ```
 
-`X-Auth-Token: ${TOKEN}` is also accepted by the current Python helpers, but `Authorization: Bearer` is the better
-default for hand-written clients.
+`Authorization: Bearer` is the only supported header for hand-written clients. The backend still accepts a legacy
+`X-Auth-Token` header for old external clients, but it is being sunset — do not use it.
 
 ## Find A League And Coworld
 
