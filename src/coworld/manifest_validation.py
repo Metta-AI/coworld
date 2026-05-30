@@ -91,11 +91,18 @@ def _game_config_with_slot_names(
         raise ValueError(f"game_config.{slot_field} must not have more entries than player_names")
 
     slots: list[dict[str, Any]] = []
+    used_names: set[str] = set()
     for slot, player_name in enumerate(player_names):
         slot_config = copy.deepcopy(raw_slots[slot]) if slot < len(raw_slots) else {}
         if not isinstance(slot_config, dict):
             raise ValueError(f"game_config.{slot_field}[{slot}] must be an object")
-        slot_config["name"] = player_name
+        slot_name = player_name
+        suffix = 2
+        while slot_name in used_names:
+            slot_name = f"{player_name} ({suffix})"
+            suffix += 1
+        used_names.add(slot_name)
+        slot_config["name"] = slot_name
         slots.append(slot_config)
 
     game_config[slot_field] = slots

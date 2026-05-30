@@ -43,6 +43,26 @@ def test_game_config_with_player_names_creates_slots_array() -> None:
     assert player_names_from_game_config(config) == ["alpha:v1", "beta:v2"]
 
 
+def test_game_config_with_player_names_disambiguates_duplicate_slots() -> None:
+    schema = {
+        "type": "object",
+        "additionalProperties": False,
+        "properties": {
+            "tokens": {"type": "array"},
+            "slots": {"type": "array", "items": {"type": "object"}},
+        },
+    }
+
+    config = game_config_with_player_names(
+        {},
+        ["daveey", "daveey", "daveey (2)"],
+        schema,
+    )
+
+    assert config == {"slots": [{"name": "daveey"}, {"name": "daveey (2)"}, {"name": "daveey (2) (2)"}]}
+    assert player_names_from_game_config(config) == ["daveey", "daveey (2)", "daveey (2) (2)"]
+
+
 def test_game_config_with_player_names_uses_player_names_field() -> None:
     schema = {
         "type": "object",

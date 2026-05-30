@@ -165,6 +165,28 @@ def test_bitworld_templates_accept_runner_player_names_in_slots(tmp_path: Path, 
         CoworldEpisodeJobSpec.model_validate({**runner_payload, "policy_names": player_names})
 
 
+@pytest.mark.parametrize("world_name", ("among_them", "crewrift"))
+def test_bitworld_templates_disambiguate_duplicate_runner_player_names(tmp_path: Path, world_name: str) -> None:
+    package = load_coworld_package(
+        _materialized_template(tmp_path, WORLDS / world_name / "coworld_manifest_template.json")
+    )
+    token_count = infer_fixed_token_count(package.manifest.game.config_schema)
+
+    game_config = game_config_with_player_names(
+        package.manifest.variants[0].game_config,
+        ["daveey"] * token_count,
+        package.manifest.game.config_schema,
+    )
+
+    slot_names = [slot["name"] for slot in game_config["slots"]]
+    assert len(set(slot_names)) == token_count
+    assert slot_names[0] == "daveey"
+    validate_json_schema(
+        game_config_with_tokens(game_config, [f"token-{slot}" for slot in range(token_count)]),
+        package.manifest.game.config_schema,
+    )
+
+
 def test_canonical_world_templates_use_role_types_as_contracts() -> None:
     for template_path in (*_world_templates(), PAINTARENA_EXAMPLE / "coworld_manifest_template.json"):
         template = json.loads(template_path.read_text(encoding="utf-8"))
