@@ -625,22 +625,6 @@
       },
       "title": "Episode Tags",
       "type": "object"
-    },
-    "policy_names": {
-      "anyOf": [
-        {
-          "items": {
-            "type": "string"
-          },
-          "type": "array"
-        },
-        {
-          "type": "null"
-        }
-      ],
-      "default": null,
-      "description": "Optional runner metadata with one display name per player slot. These names stay outside game_config; runners expose them through runner-owned channels.",
-      "title": "Policy Names"
     }
   },
   "required": ["manifest", "game_config", "players"],

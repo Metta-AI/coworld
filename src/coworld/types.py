@@ -354,13 +354,6 @@ class CoworldEpisodeJobSpec(BaseModel):
     game_config: dict[str, Any]
     players: list[Annotated[CoworldRunnableSpec, Field(json_schema_extra=_runnable_type_schema("player"))]]
     episode_tags: dict[str, str] = Field(default_factory=dict)
-    policy_names: list[str] | None = Field(
-        default=None,
-        description=(
-            "Optional runner metadata with one display name per player slot. "
-            "These names stay outside game_config; runners expose them through runner-owned channels."
-        ),
-    )
 
     @field_validator("players", mode="after")
     @classmethod
@@ -368,9 +361,7 @@ class CoworldEpisodeJobSpec(BaseModel):
         return [player.as_runnable_spec() for player in players]
 
     @model_validator(mode="after")
-    def validate_player_lengths(self) -> "CoworldEpisodeJobSpec":
-        if self.policy_names is not None and len(self.policy_names) != len(self.players):
-            raise ValueError("policy_names must have one entry per player")
+    def validate_player_types(self) -> "CoworldEpisodeJobSpec":
         for index, player in enumerate(self.players):
             if player.type != "player":
                 raise ValueError(f"players.{index}.type must be 'player'")

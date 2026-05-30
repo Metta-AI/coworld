@@ -514,7 +514,7 @@ def test_run_episode_accepts_episode_request_file_with_per_slot_env(
     assert [player.image for player in spec.players] == ["slot-zero:latest", "slot-one:latest"]
     assert [player.run for player in spec.players] == [["python", "/slot-zero.py"], ["python", "/slot-one.py"]]
     assert [player.env for player in spec.players] == [{"PLAYER_SLOT": "0"}, {"PLAYER_SLOT": "1"}]
-    assert spec.policy_names == ["slot-zero:v1", "slot-one:v1"]
+    assert spec.game_config["players"] == [{"name": "slot-zero:v1"}, {"name": "slot-one:v1"}]
     assert kwargs == {"timeout_seconds": 3600.0, "verify_replay": False, "container_prefix": "coworld-run"}
 
 
@@ -610,7 +610,7 @@ def _write_episode_request(tmp_path: Path, manifest_path: Path) -> Path:
                     "max_ticks": 3,
                     "tick_rate": 5,
                     "player_connect_timeout_seconds": 0.1,
-                    "players": [{"name": "Slot Zero"}, {"name": "Slot One"}],
+                    "players": [{"name": "slot-zero:v1"}, {"name": "slot-one:v1"}],
                 },
                 "players": [
                     {
@@ -626,7 +626,6 @@ def _write_episode_request(tmp_path: Path, manifest_path: Path) -> Path:
                         "env": {"PLAYER_SLOT": "1"},
                     },
                 ],
-                "policy_names": ["slot-zero:v1", "slot-one:v1"],
             }
         ),
         encoding="utf-8",

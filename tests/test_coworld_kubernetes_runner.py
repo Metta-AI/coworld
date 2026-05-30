@@ -157,7 +157,7 @@ def test_require_http_ok_accepts_replay_client_redirect(monkeypatch):
     runner_module._require_http_ok("http://example.test/client/replay", allow_redirect=True)
 
 
-def test_run_episode_containers_uses_docker_dns_and_omits_empty_policy_names_env(tmp_path, monkeypatch):
+def test_run_episode_containers_uses_docker_dns_and_omits_policy_names_env(tmp_path, monkeypatch):
     commands: list[list[str]] = []
     run_commands: list[list[str]] = []
 
@@ -193,7 +193,6 @@ def test_run_episode_containers_uses_docker_dns_and_omits_empty_policy_names_env
             game=RunnableLaunchSpec(image="game:latest"),
             players=[PlayerLaunchSpec(image="player:latest", env={"PLAYER_MODE": "test"})],
             tokens=["token-0"],
-            policy_names=[],
             artifacts=EpisodeArtifacts.create(tmp_path),
             timeout_seconds=1,
             container_prefix="coworld-run",
@@ -260,7 +259,6 @@ def test_run_episode_containers_verifies_hosted_zlib_replay_uri(tmp_path, monkey
             game=RunnableLaunchSpec(image="game:latest"),
             players=[],
             tokens=[],
-            policy_names=[],
             artifacts=artifacts,
             timeout_seconds=1,
             container_prefix="coworld-run",

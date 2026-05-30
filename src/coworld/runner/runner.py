@@ -79,7 +79,6 @@ class EpisodeRunSpec:
     game: RunnableLaunchSpec
     players: list[PlayerLaunchSpec]
     tokens: list[str]
-    policy_names: list[str] | None
     artifacts: EpisodeArtifacts
     timeout_seconds: float
     container_prefix: str = LOCAL_EPISODE_CONTAINER_PREFIX
@@ -162,7 +161,6 @@ def run_coworld_episode(
         game=RunnableLaunchSpec.from_model(job.game_runnable),
         players=[PlayerLaunchSpec.from_model(player) for player in job.players],
         tokens=tokens,
-        policy_names=job.policy_names,
         artifacts=artifacts,
         timeout_seconds=timeout_seconds,
         container_prefix=container_prefix,
@@ -265,7 +263,6 @@ def run_episode_containers(spec: EpisodeRunSpec, *, verify_replay: bool = True) 
                     f"{RESULTS_ENV_VAR}=file://{CONTAINER_WORKDIR}/results.json",
                     "-e",
                     f"{REPLAY_SAVE_ENV_VAR}=file://{CONTAINER_WORKDIR}/replay",
-                    *_env_args({"COWORLD_POLICY_NAMES": json.dumps(spec.policy_names)} if spec.policy_names else {}),
                     "-v",
                     f"{spec.artifacts.workspace.resolve()}:{CONTAINER_WORKDIR}:rw",
                     *_image_command(spec.game),

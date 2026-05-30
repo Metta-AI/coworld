@@ -41,6 +41,95 @@ def game_config_with_tokens(game_config: dict[str, Any], tokens: list[str]) -> J
     return cast(JsonObject, playable_config)
 
 
+def game_config_with_player_names(
+    game_config: dict[str, Any],
+    player_names: list[str],
+    config_schema: JsonSchema,
+) -> JsonObject:
+    if "player_names" in game_config:
+        raise ValueError("game_config must not include commissioner-managed player_names")
+
+    named_config = copy.deepcopy(game_config)
+    if "players" in named_config or _schema_has_property(config_schema, "players"):
+        return _game_config_with_slot_names(named_config, player_names, "players")
+    if "slots" in named_config or _schema_has_property(config_schema, "slots"):
+        return _game_config_with_slot_names(named_config, player_names, "slots")
+    if (
+        _schema_has_property(config_schema, "player_names")
+        or config_schema.get("additionalProperties", True) is not False
+    ):
+        named_config["player_names"] = list(player_names)
+        return cast(JsonObject, named_config)
+
+    raise ValueError("game.config_schema must define players, slots, or player_names for commissioner-managed names")
+
+
+def player_names_from_game_config(game_config: dict[str, Any]) -> list[str] | None:
+    if "player_names" in game_config:
+        return _string_list(game_config["player_names"], "game_config.player_names")
+    if "players" in game_config:
+        return _slot_names(game_config["players"], "game_config.players")
+    if "slots" in game_config:
+        return _slot_names(game_config["slots"], "game_config.slots")
+    return None
+
+
+def _schema_has_property(config_schema: JsonSchema, field_name: str) -> bool:
+    properties = config_schema.get("properties", {})
+    return isinstance(properties, dict) and field_name in properties
+
+
+def _game_config_with_slot_names(
+    game_config: dict[str, Any],
+    player_names: list[str],
+    slot_field: str,
+) -> JsonObject:
+    raw_slots = game_config[slot_field] if slot_field in game_config else []
+    if not isinstance(raw_slots, list):
+        raise ValueError(f"game_config.{slot_field} must be a list")
+    if len(raw_slots) > len(player_names):
+        raise ValueError(f"game_config.{slot_field} must not have more entries than player_names")
+
+    slots: list[dict[str, Any]] = []
+    for slot, player_name in enumerate(player_names):
+        slot_config = copy.deepcopy(raw_slots[slot]) if slot < len(raw_slots) else {}
+        if not isinstance(slot_config, dict):
+            raise ValueError(f"game_config.{slot_field}[{slot}] must be an object")
+        slot_config["name"] = player_name
+        slots.append(slot_config)
+
+    game_config[slot_field] = slots
+    return cast(JsonObject, game_config)
+
+
+def _string_list(value: Any, field_name: str) -> list[str]:
+    if not isinstance(value, list) or not all(isinstance(item, str) for item in value):
+        raise ValueError(f"{field_name} must be a list of strings")
+    return list(value)
+
+
+def _slot_names(value: Any, field_name: str) -> list[str] | None:
+    if not isinstance(value, list):
+        raise ValueError(f"{field_name} must be a list")
+    names: list[str | None] = []
+    has_names = False
+    for slot, item in enumerate(value):
+        if not isinstance(item, dict):
+            raise ValueError(f"{field_name}[{slot}] must be an object")
+        if "name" not in item:
+            names.append(None)
+            continue
+        if not isinstance(item["name"], str):
+            raise ValueError(f"{field_name}[{slot}].name must be a string")
+        has_names = True
+        names.append(item["name"])
+    if not has_names:
+        return None
+    if any(name is None for name in names):
+        raise ValueError(f"{field_name} entries must all define name when any entry defines one")
+    return cast(list[str], names)
+
+
 def validate_coworld_manifest_game_configs(manifest: CoworldManifest) -> int:
     token_count = infer_fixed_token_count(manifest.game.config_schema)
     if len(manifest.certification.players) != token_count:
