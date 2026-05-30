@@ -7,7 +7,14 @@ import pytest
 from pydantic import ValidationError
 
 from coworld.certifier import load_coworld_package
-from coworld.types import CoworldManifest
+from coworld.manifest_validation import (
+    game_config_with_player_names,
+    game_config_with_tokens,
+    infer_fixed_token_count,
+    player_names_from_game_config,
+)
+from coworld.schema_validation import validate_json_schema
+from coworld.types import CoworldEpisodeJobSpec, CoworldManifest
 
 COWORLD_PACKAGE_ROOT = Path(__file__).resolve().parents[1]
 REPO_ROOT = COWORLD_PACKAGE_ROOT.parents[1]
@@ -124,6 +131,38 @@ def test_canonical_world_compose_files_build_manifest_images() -> None:
 def test_canonical_world_templates_hydrate_to_valid_manifests(tmp_path: Path) -> None:
     for template_path in (*_world_templates(), PAINTARENA_EXAMPLE / "coworld_manifest_template.json"):
         load_coworld_package(_materialized_template(tmp_path, template_path))
+
+
+@pytest.mark.parametrize("world_name", ("among_them", "crewrift"))
+def test_bitworld_templates_accept_runner_player_names_in_slots(tmp_path: Path, world_name: str) -> None:
+    package = load_coworld_package(
+        _materialized_template(tmp_path, WORLDS / world_name / "coworld_manifest_template.json")
+    )
+    token_count = infer_fixed_token_count(package.manifest.game.config_schema)
+    player_names = [f"policy-{slot}:v{slot + 1}" for slot in range(token_count)]
+
+    game_config = game_config_with_player_names(
+        package.manifest.variants[0].game_config,
+        player_names,
+        package.manifest.game.config_schema,
+    )
+
+    assert [slot["name"] for slot in game_config["slots"]] == player_names
+    assert player_names_from_game_config(game_config) == player_names
+    validate_json_schema(
+        game_config_with_tokens(game_config, [f"token-{slot}" for slot in range(token_count)]),
+        package.manifest.game.config_schema,
+    )
+    runner_spec = CoworldEpisodeJobSpec(
+        manifest=package.manifest,
+        game_config=game_config,
+        players=[package.manifest.player[0]] * token_count,
+    )
+    runner_payload = runner_spec.model_dump(mode="json", by_alias=True, exclude_none=True)
+
+    assert "policy_names" not in runner_payload
+    with pytest.raises(ValidationError, match="policy_names"):
+        CoworldEpisodeJobSpec.model_validate({**runner_payload, "policy_names": player_names})
 
 
 def test_canonical_world_templates_use_role_types_as_contracts() -> None:
