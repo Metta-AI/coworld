@@ -250,8 +250,8 @@ def test_canonical_crewrift_template_points_to_source_repo(tmp_path: Path) -> No
         package.manifest.game.protocols.global_.value
         == "https://github.com/Metta-AI/coworld-crewrift/blob/master/docs/sprite_v1.md"
     )
-    assert pages["rules.md"] == "https://github.com/Metta-AI/coworld-crewrift/blob/master/docs/rules.md"
-    assert pages["play_crewrift.md"] == "https://github.com/Metta-AI/coworld-crewrift/blob/master/docs/play_crewrift.md"
+    assert pages["rules.md"] == "https://softmax.com/play_crewrift.md#game-rules"
+    assert pages["play_crewrift.md"] == "https://softmax.com/play_crewrift.md"
     assert pages["player"] == "https://github.com/Metta-AI/coworld-crewrift/blob/master/players/how_to_make_a_bot.md"
     assert pages["submit"] == (
         "https://github.com/Metta-AI/coworld-crewrift/blob/master/players/how_to_submit_coworld_policy.md"

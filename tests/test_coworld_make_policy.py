@@ -24,11 +24,12 @@ def test_make_policy_writes_among_them_starter_project(tmp_path: Path) -> None:
     assert (output / ".dockerignore").is_file()
 
     dockerfile = (output / "Dockerfile").read_text(encoding="utf-8")
-    assert "BITWORLD_REF=master" in dockerfile
-    assert "COPY --from=build /workspace/bitworld/client/data ./client/data" in dockerfile
+    assert "AMONG_THEM_REF=master" in dockerfile
+    assert "COPY --from=build /workspace/among_them/data ./data" in dockerfile
     assert 'CMD ["/bin/amongthemstarter", "--address:host.docker.internal", "--port:8080"]' in dockerfile
 
     source = (output / "amongthemstarter.nim").read_text(encoding="utf-8")
+    assert "bitworld/bitstreamprotocol" in source
     assert "proc holdTaskAction" in source
     assert "TaskHoldPadding = 8" in source
     assert "starting amongthemstarter" in source

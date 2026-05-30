@@ -1,5 +1,5 @@
-import pixie, protocol, ../../sim, ../../texts, ../../votereader,
-  ../../../common/server
+import pixie, bitworld/bitstreamprotocol, ../../sim, ../../texts, ../../votereader,
+  bitworld/server
 when not defined(italkalotLibrary):
   import whisky
   when not defined(botHeadless):

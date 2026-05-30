@@ -34,7 +34,6 @@ def test_replays_downloads_mine_division_replays(
     monkeypatch.setattr("coworld.api_client._load_current_cogames_token", lambda: "token")
     replay_payload = b'{"frames":[]}\n'
     replay_url = httpserver.url_for("/replay.json")
-    _expect_round_scope(httpserver)
     httpserver.expect_request(
         "/observatory/v2/episode-requests",
         method="GET",
@@ -76,8 +75,9 @@ def test_replays_downloads_mine_division_replays(
     assert replay_path.read_bytes() == replay_payload
     index = json.loads((tmp_path / "index.json").read_text())
     assert index == metadata
-    round_query = next(request for request, _ in httpserver.log if request.path == "/observatory/v2/rounds")
-    assert round_query.args["division_id"] == DIVISION_ID
+    episode_query = next(request for request, _ in httpserver.log if request.path == "/observatory/v2/episode-requests")
+    assert episode_query.args["division_id"] == DIVISION_ID
+    assert not any(request.path == "/observatory/v2/rounds" for request, _ in httpserver.log)
     membership_query = next(
         request for request, _ in httpserver.log if request.path == "/observatory/v2/league-policy-memberships"
     )
@@ -138,7 +138,6 @@ def test_episodes_accepts_bulk_rows_without_assignments(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     monkeypatch.setattr("coworld.api_client._load_current_cogames_token", lambda: "token")
-    _expect_round_scope(httpserver)
     episode_request = _episode_request(episode_request_id=EPISODE_REQUEST_ID, replay_url=None)
     del episode_request["assignments"]
     httpserver.expect_request(
@@ -163,6 +162,73 @@ def test_episodes_accepts_bulk_rows_without_assignments(
     rows = json.loads(result.output)
     assert rows[0]["id"] == EPISODE_REQUEST_ID
     assert "assignments" not in rows[0]
+    episode_query = next(request for request, _ in httpserver.log if request.path == "/observatory/v2/episode-requests")
+    assert episode_query.args["round_id"] == ROUND_ID
+    assert not any(request.path == "/observatory/v2/rounds" for request, _ in httpserver.log)
+
+
+def test_episodes_mine_division_uses_direct_episode_query(
+    httpserver: HTTPServer,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr("coworld.api_client._load_current_cogames_token", lambda: "token")
+    httpserver.expect_request(
+        "/observatory/v2/episode-requests",
+        method="GET",
+        headers={"X-Auth-Token": "token"},
+    ).respond_with_json([_episode_request(episode_request_id=EPISODE_REQUEST_ID, replay_url="s3://replay")])
+    _expect_mine_memberships(httpserver)
+
+    result = CliRunner().invoke(
+        app,
+        [
+            "episodes",
+            "--division",
+            DIVISION_ID,
+            "--mine",
+            "--with-replay",
+            "--server",
+            httpserver.url_for(""),
+            "--json",
+        ],
+    )
+
+    assert result.exit_code == 0, result.output
+    rows = json.loads(result.output)
+    assert [row["id"] for row in rows] == [EPISODE_REQUEST_ID]
+    episode_query = next(request for request, _ in httpserver.log if request.path == "/observatory/v2/episode-requests")
+    assert episode_query.args["division_id"] == DIVISION_ID
+    assert not any(request.path == "/observatory/v2/rounds" for request, _ in httpserver.log)
+
+
+def test_memberships_accepts_status_substatus_payload(
+    httpserver: HTTPServer,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr("coworld.api_client._load_current_cogames_token", lambda: "token")
+    httpserver.expect_request(
+        "/observatory/v2/league-policy-memberships",
+        method="GET",
+        headers={"X-Auth-Token": "token"},
+    ).respond_with_json([_membership(substatus="champion")])
+
+    result = CliRunner().invoke(
+        app,
+        [
+            "memberships",
+            "--mine",
+            "--server",
+            httpserver.url_for(""),
+            "--json",
+        ],
+    )
+
+    assert result.exit_code == 0, result.output
+    rows = json.loads(result.output)
+    assert rows[0]["status"] == "competing"
+    assert rows[0]["substatus"] == "champion"
+    assert "is_active" not in rows[0]
+    assert "is_champion" not in rows[0]
 
 
 def test_episode_logs_downloads_only_my_policy_agents(
@@ -361,19 +427,6 @@ def test_replay_open_hosted_opens_viewer_url(httpserver: HTTPServer, monkeypatch
     assert opened_urls == [viewer_url]
 
 
-def _expect_round_scope(httpserver: HTTPServer) -> None:
-    httpserver.expect_request(
-        "/observatory/v2/rounds",
-        method="GET",
-        headers={"X-Auth-Token": "token"},
-    ).respond_with_json({"entries": [_round_public()], "total_count": 1, "limit": 200, "offset": 0})
-    httpserver.expect_request(
-        f"/observatory/v2/rounds/{ROUND_ID}",
-        method="GET",
-        headers={"X-Auth-Token": "token"},
-    ).respond_with_json(_round_detail())
-
-
 def _expect_mine_memberships(httpserver: HTTPServer, *, division_id: str | None = DIVISION_ID) -> None:
     httpserver.expect_request(
         "/observatory/v2/league-policy-memberships",
@@ -417,44 +470,11 @@ def _division(division_id: str = DIVISION_ID) -> dict[str, object]:
     }
 
 
-def _round_public() -> dict[str, object]:
-    return {
-        "id": ROUND_ID,
-        "round_number": 7,
-        "commissioner_key": "auto",
-        "execution_backend": "dispatch",
-        "round_config": {},
-        "round_display": None,
-        "status": "completed",
-        "division": _division(),
-        "created_at": NOW,
-    }
-
-
-def _round_detail() -> dict[str, object]:
-    return {**_round_public(), "pools": [_pool()], "results": []}
-
-
-def _pool() -> dict[str, object]:
-    return {
-        "id": POOL_ID,
-        "round_id": ROUND_ID,
-        "pool_index": 0,
-        "label": "Pool A",
-        "pool_type": "round_robin",
-        "env_config": None,
-        "coworld_id": COWORLD_ID,
-        "config": {},
-        "status": "completed",
-        "created_at": NOW,
-    }
-
-
-def _membership(*, division_id: str = DIVISION_ID) -> dict[str, object]:
+def _membership(*, division_id: str = DIVISION_ID, substatus: str | None = None) -> dict[str, object]:
     return {
         "id": "lpm_00000000-0000-0000-0000-000000000051",
-        "is_active": True,
-        "is_champion": False,
+        "status": "competing",
+        "substatus": substatus,
         "start_time": NOW,
         "league": _league(),
         "division": _division(division_id),

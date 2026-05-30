@@ -83,8 +83,8 @@ class DivisionLadderEntryPublic(CoworldAPIModel):
 
 class LeaguePolicyMembershipPublic(CoworldAPIModel):
     id: str
-    is_active: bool
-    is_champion: bool
+    status: str
+    substatus: str | None = None
     start_time: datetime
     end_time: datetime | None = None
     league: LeaguePublic
@@ -486,6 +486,8 @@ class CoworldApiClient:
         self,
         *,
         pool_id: str | None = None,
+        division_id: str | None = None,
+        round_id: str | None = None,
         player_id: str | None = None,
         limit: int = 200,
         offset: int = 0,
@@ -493,6 +495,10 @@ class CoworldApiClient:
         params: dict[str, str | int] = {"limit": limit, "offset": offset}
         if pool_id is not None:
             params["pool_id"] = pool_id
+        if division_id is not None:
+            params["division_id"] = division_id
+        if round_id is not None:
+            params["round_id"] = round_id
         if player_id is not None:
             params["player_id"] = player_id
         return self._get("/v2/episode-requests", list[V2EpisodeRequestRow], params=params)

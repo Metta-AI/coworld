@@ -728,16 +728,16 @@ def _print_memberships(rows: list[LeaguePolicyMembershipPublic]) -> None:
     table.add_column("Player")
     table.add_column("Policy")
     table.add_column("Division")
-    table.add_column("Active")
-    table.add_column("Champion")
+    table.add_column("Status")
+    table.add_column("Substatus")
     for row in rows:
         table.add_row(
             row.id,
             _player_label(row.player),
             _policy_label(row.policy_version),
             row.division.name,
-            str(row.is_active).lower(),
-            str(row.is_champion).lower(),
+            row.status,
+            row.substatus or "-",
         )
     console.print(table)
 
@@ -774,24 +774,6 @@ def _print_events(rows: list[Any]) -> None:
     console.print(table)
 
 
-def _list_all_rounds(
-    client: CoworldApiClient,
-    *,
-    division_id: str | None,
-    round_id: str | None,
-) -> list[RoundPublic | RoundDetailPublic]:
-    if round_id is not None:
-        return [client.get_round(round_id)]
-    rounds: list[RoundPublic] = []
-    offset = 0
-    while True:
-        page = client.list_rounds(division_id=division_id, limit=200, offset=offset)
-        rounds.extend(page.entries)
-        offset += page.limit
-        if offset >= page.total_count:
-            return rounds
-
-
 def _collect_episode_requests(
     client: CoworldApiClient,
     *,
@@ -801,21 +783,13 @@ def _collect_episode_requests(
     limit: int,
     offset: int,
 ) -> list[V2EpisodeRequestRow]:
-    if pool_id is not None:
-        return client.list_episode_requests(pool_id=pool_id, limit=limit, offset=offset)
-    if round_id is None and division_id is None:
-        return client.list_episode_requests(limit=limit, offset=offset)
-
-    pool_ids: list[str] = []
-    for round_row in _list_all_rounds(client, division_id=division_id, round_id=round_id):
-        round_detail = round_row if isinstance(round_row, RoundDetailPublic) else client.get_round(round_row.id)
-        pool_ids.extend(pool.id for pool in round_detail.pools)
-
-    rows: list[V2EpisodeRequestRow] = []
-    for scoped_pool_id in pool_ids:
-        rows.extend(client.list_episode_requests(pool_id=scoped_pool_id, limit=1000, offset=0))
-    rows.sort(key=lambda row: row.created_at, reverse=True)
-    return rows[offset : offset + limit]
+    return client.list_episode_requests(
+        pool_id=pool_id,
+        division_id=division_id,
+        round_id=round_id,
+        limit=limit,
+        offset=offset,
+    )
 
 
 def _mine_policy_version_ids(client: CoworldApiClient, *, division_id: str | None) -> set[UUID]:

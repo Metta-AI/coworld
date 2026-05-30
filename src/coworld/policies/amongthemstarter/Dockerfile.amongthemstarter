@@ -1,11 +1,11 @@
 # Generated starter Dockerfile for the Among Them starter policy.
 #
 # This keeps the editable starter small while building against the same
-# BitWorld source revision that the copied starter policy came from.
+# Coworld Among Them source tree that the copied starter policy came from.
 FROM alpine AS build
 
-ARG BITWORLD_REPO=https://github.com/Metta-AI/bitworld.git
-ARG BITWORLD_REF=master
+ARG AMONG_THEM_REPO=https://github.com/Metta-AI/coworld-among-them.git
+ARG AMONG_THEM_REF=master
 
 RUN apk add --no-cache build-base curl gcompat git
 
@@ -26,32 +26,28 @@ https://github.com/treeform/nimby/releases/download/0.1.26/nimby-Linux-ARM64; \
 ENV PATH="/root/.nimby/nim/bin:$PATH"
 
 WORKDIR /workspace
-RUN git clone "$BITWORLD_REPO" bitworld
-WORKDIR /workspace/bitworld
-RUN git checkout "$BITWORLD_REF"
+RUN git clone "$AMONG_THEM_REPO" among_them
+WORKDIR /workspace/among_them
+RUN git checkout "$AMONG_THEM_REF"
 
-RUN nimby --global sync nimby.lock && \
-  cat nim.cfg >> /root/.nimby/nim/config/nim.cfg
+RUN nimby --global sync nimby.lock
 
-COPY amongthemstarter.nim among_them/players/amongthemstarter/amongthemstarter.nim
-WORKDIR /workspace/bitworld/among_them/players/amongthemstarter
+RUN mkdir -p players/amongthemstarter
+COPY amongthemstarter.nim players/amongthemstarter/amongthemstarter.nim
 RUN nim c \
   -d:release \
   -d:botHeadless \
-  --nimcache:/tmp/bitworld-nimcache \
-  --out:amongthemstarter \
-  amongthemstarter.nim
+  --nimcache:/tmp/among-them-nimcache \
+  --out:/tmp/amongthemstarter \
+  players/amongthemstarter/amongthemstarter.nim
 
 FROM alpine
 
-WORKDIR /workspace/bitworld
+WORKDIR /workspace/among_them
 COPY --from=build \
-  /workspace/bitworld/among_them/players/amongthemstarter/amongthemstarter \
+  /tmp/amongthemstarter \
   /bin/amongthemstarter
-COPY --from=build /workspace/bitworld/among_them/*.json ./among_them/
-COPY --from=build /workspace/bitworld/among_them/*.aseprite ./among_them/
-COPY --from=build /workspace/bitworld/among_them/*.png ./among_them/
-COPY --from=build /workspace/bitworld/client/data ./client/data
+COPY --from=build /workspace/among_them/data ./data
 
-WORKDIR /workspace/bitworld/among_them/players
+WORKDIR /workspace/among_them/players
 CMD ["/bin/amongthemstarter", "--address:host.docker.internal", "--port:8080"]
