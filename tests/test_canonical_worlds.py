@@ -59,9 +59,8 @@ def test_canonical_among_them_build_declares_role_starter_contexts() -> None:
     assert "OPTIMIZER_CONTEXT" in compose_text
     assert "coworld-among-them" in compose_text
     assert "players/ivotewell/Dockerfile" in compose_text
-    # The commissioner is the shared published default image, not a local build context.
     assert "COMMISSIONER_CONTEXT" not in compose_text
-    assert "ghcr.io/metta-ai/commissioners-default:latest" in compose_text
+    assert "ghcr.io/metta-ai/commissioners-default:latest" not in compose_text
     assert "reporters/reporters" in compose_text
     assert "among_them/among_them_summarizer/Dockerfile" in compose_text
     assert "graders/graders/among_them/among_them_grader" in compose_text
@@ -100,8 +99,6 @@ def test_canonical_crewrift_build_declares_game_context() -> None:
     assert "players/notsus/Dockerfile" in compose_text
     assert "coworld-crewrift-game:latest" in compose_text
     assert "coworld-crewrift-notsus:latest" in compose_text
-    assert "ghcr.io/metta-ai/reporters-default:latest" in compose_text
-    assert "ghcr.io/metta-ai/graders-crewrift:latest" in compose_text
 
 
 def test_canonical_world_compose_files_build_manifest_images() -> None:
@@ -157,13 +154,12 @@ def test_canonical_among_them_template_points_to_source_repos(tmp_path: Path) ->
     role_source_urls = {
         "player": package.manifest.player[0].source_url,
         "optimizer": package.manifest.optimizer[0].source_url,
-        "commissioner": package.manifest.commissioner[0].source_url,
         "reporter": package.manifest.reporter[0].source_url,
         "grader": package.manifest.grader[0].source_url,
         "diagnoser": package.manifest.diagnoser[0].source_url,
     }
 
-    assert [role.id for role in package.manifest.commissioner] == ["default-commissioner"]
+    assert package.manifest.commissioner == []
     assert [role.id for role in package.manifest.reporter] == ["among-them-summarizer"]
     assert [role.id for role in package.manifest.grader] == ["among-them-grader"]
     assert [role.id for role in package.manifest.diagnoser] == ["among-them-diagnoser"]
@@ -185,7 +181,7 @@ def test_canonical_among_them_template_points_to_source_repos(tmp_path: Path) ->
     assert pages["optimizer-policy-registry"] == (
         "https://github.com/Metta-AI/optimizers/blob/main/lib/policy-templates.json"
     )
-    assert pages["commissioner"] == "https://github.com/Metta-AI/commissioners/tree/main/commissioners/default"
+    assert "commissioner" not in pages
     assert pages["reporter"] == (
         "https://github.com/Metta-AI/reporters/tree/main/reporters/among_them/among_them_summarizer"
     )
@@ -196,7 +192,6 @@ def test_canonical_among_them_template_points_to_source_repos(tmp_path: Path) ->
     assert role_source_urls == {
         "player": "https://github.com/Metta-AI/coworld-among-them/tree/master/players/ivotewell",
         "optimizer": "https://github.com/Metta-AI/optimizers",
-        "commissioner": "https://github.com/Metta-AI/commissioners/tree/main/commissioners/default",
         "reporter": "https://github.com/Metta-AI/reporters/tree/main/reporters/among_them/among_them_summarizer",
         "grader": "https://github.com/Metta-AI/graders/tree/main/graders/among_them/among_them_grader",
         "diagnoser": "https://github.com/Metta-AI/diagnosers/tree/main/diagnosers/among_them/among_them_diagnoser",
@@ -267,7 +262,7 @@ def test_canonical_among_them_template_declares_all_viability_role_sections() ->
     template = json.loads((WORLDS / "among_them" / "coworld_manifest_template.json").read_text(encoding="utf-8"))
 
     assert set(VIABILITY_ROLE_SECTIONS).issubset(template)
-    assert [role["type"] for role in template["commissioner"]] == ["commissioner"]
+    assert template["commissioner"] == []
     assert [role["type"] for role in template["reporter"]] == ["reporter"]
     assert [role["type"] for role in template["grader"]] == ["grader"]
     assert [role["type"] for role in template["diagnoser"]] == ["diagnoser"]
@@ -291,60 +286,22 @@ def test_cogs_vs_clips_crewrift_and_paintarena_templates_declare_all_viability_r
     assert cogs_vs_clips_pages["game-source"] == "https://github.com/Metta-AI/coworld-cogs-vs-clips/tree/main"
     assert cogs_vs_clips_pages["player"] == "https://github.com/Metta-AI/coworld-cogs-vs-clips/tree/main/coworld/player"
     assert "env" not in cogs_vs_clips["player"][0]
-    # Reporter, grader, and commissioner are populated; the other supporting roles stay empty until required.
-    for section in ("optimizer", "diagnoser"):
+    for section in ("commissioner", "reporter", "grader", "optimizer", "diagnoser"):
         assert cogs_vs_clips[section] == []
-    assert [role["id"] for role in cogs_vs_clips["commissioner"]] == ["default-commissioner"]
-    assert cogs_vs_clips["commissioner"][0]["image"] == "ghcr.io/metta-ai/commissioners-default:latest"
-    assert (
-        cogs_vs_clips["commissioner"][0]["source_url"]
-        == "https://github.com/Metta-AI/commissioners/tree/main/commissioners/default"
-    )
-    assert [role["id"] for role in cogs_vs_clips["reporter"]] == ["softmax-default-reporter"]
-    assert cogs_vs_clips["reporter"][0]["image"] == "{{REPORTER_IMAGE}}"
-    assert "source_url" not in cogs_vs_clips["reporter"][0]
-    assert [role["id"] for role in cogs_vs_clips["grader"]] == ["cogs-v-clips-grader"]
-    assert cogs_vs_clips["grader"][0]["image"] == "ghcr.io/metta-ai/graders-cogs-v-clips:latest"
-    assert "source_url" not in cogs_vs_clips["grader"][0]
 
     crewrift = json.loads((WORLDS / "crewrift" / "coworld_manifest_template.json").read_text(encoding="utf-8"))
-    for section in ("optimizer", "diagnoser"):
+    for section in ("commissioner", "reporter", "grader", "optimizer", "diagnoser"):
         assert crewrift[section] == []
-    assert [role["id"] for role in crewrift["commissioner"]] == ["default-commissioner"]
-    assert crewrift["commissioner"][0]["image"] == "ghcr.io/metta-ai/commissioners-default:latest"
-    assert (
-        crewrift["commissioner"][0]["source_url"]
-        == "https://github.com/Metta-AI/commissioners/tree/main/commissioners/default"
-    )
-    assert [role["id"] for role in crewrift["reporter"]] == ["default-reporter"]
-    assert crewrift["reporter"][0]["image"] == "{{REPORTER_IMAGE}}"
-    assert "source_url" not in crewrift["reporter"][0]
-    assert [role["id"] for role in crewrift["grader"]] == ["crewrift-grader"]
-    assert crewrift["grader"][0]["image"] == "ghcr.io/metta-ai/graders-crewrift:latest"
-    assert (
-        crewrift["grader"][0]["source_url"]
-        == "https://github.com/Metta-AI/graders/tree/main/graders/crewrift/crewrift_grader"
-    )
 
     paintarena = json.loads((WORLDS / "paintarena" / "coworld_manifest_template.json").read_text(encoding="utf-8"))
+    assert paintarena["commissioner"] == []
+    assert paintarena["grader"] == []
     assert paintarena["diagnoser"] == []
-    assert [role["id"] for role in paintarena["commissioner"]] == ["default-commissioner"]
-    assert paintarena["commissioner"][0]["image"] == "ghcr.io/metta-ai/commissioners-default:latest"
-    assert (
-        paintarena["commissioner"][0]["source_url"]
-        == "https://github.com/Metta-AI/commissioners/tree/main/commissioners/default"
-    )
     assert [role["type"] for role in paintarena["reporter"]] == ["reporter", "reporter"]
     assert [role["id"] for role in paintarena["reporter"]] == [
         "paint-arena-summarizer",
         "paint-arena-parquet-stats-reporter",
     ]
-    assert [role["id"] for role in paintarena["grader"]] == ["paint-arena-grader"]
-    assert paintarena["grader"][0]["image"] == "ghcr.io/metta-ai/graders-paint-arena:latest"
-    assert (
-        paintarena["grader"][0]["source_url"]
-        == "https://github.com/Metta-AI/graders/tree/main/graders/paint_arena/paint_arena_grader"
-    )
     assert [role["type"] for role in paintarena["optimizer"]] == ["optimizer"]
     assert [role["id"] for role in paintarena["optimizer"]] == ["paint-arena-reference-optimizer"]
 
@@ -396,12 +353,10 @@ def _materialized_template(base_dir: Path, template_path: Path) -> Path:
         "cogs_vs_clips": {
             "{{GAME_IMAGE}}": "coworld-cogs-vs-clips-game:latest",
             "{{PLAYER_IMAGE}}": "coworld-cogs-vs-clips-reference-player:latest",
-            "{{REPORTER_IMAGE}}": "ghcr.io/metta-ai/reporters-default:latest",
         },
         "crewrift": {
             "{{GAME_IMAGE}}": "coworld-crewrift-game:latest",
             "{{PLAYER_IMAGE}}": "coworld-crewrift-notsus:latest",
-            "{{REPORTER_IMAGE}}": "ghcr.io/metta-ai/reporters-default:latest",
         },
         "paintarena": {"{{PAINTARENA_IMAGE}}": "coworld-paintarena:latest"},
     }

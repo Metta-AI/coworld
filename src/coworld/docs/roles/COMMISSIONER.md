@@ -19,8 +19,7 @@ streams results back.
 
 ## Where it lives in the manifest
 
-`manifest.commissioner[]`, with `type: "commissioner"` on every entry. The section is optional in the current schema,
-but intended to become required once the container-driven commissioner runtime ships. See
+`manifest.commissioner[]`, with `type: "commissioner"` on every entry. The section is optional in the current schema. See
 [`COWORLD_MANIFEST.md`](../COWORLD_MANIFEST.md) for the full runnable shape.
 
 ### Manifest examples

@@ -281,33 +281,21 @@ class CoworldManifest(BaseModel):
         json_schema_extra=_role_doc_schema("player"),
     )
     reporter: list[CoworldManifestRoleSpec] = Field(
-        min_length=1,
-        description="Reporter runnables. Must declare at least one entry; Coworlds without a custom reporter "
-        "may reference `ghcr.io/metta-ai/reporters-default:latest`. Role docs: docs/roles/REPORTER.md.",
+        default_factory=list,
+        description="Reporter runnables. Optional; include entries when the Coworld ships reporter containers. "
+        "Role docs: docs/roles/REPORTER.md.",
         json_schema_extra=_role_doc_schema("reporter"),
     )
     commissioner: list[CoworldManifestRoleSpec] = Field(
         default_factory=list,
-        description=(
-            "Commissioner runnables. Optional today, but expected to become required once the containerized "
-            "commissioner runtime is live. Role docs: docs/roles/COMMISSIONER.md."
-        ),
-        json_schema_extra=_future_required_role_schema("commissioner"),
+        description="Commissioner runnables. Optional. Role docs: docs/roles/COMMISSIONER.md.",
+        json_schema_extra=_role_doc_schema("commissioner"),
     )
     grader: list[CoworldManifestRoleSpec] = Field(
         default_factory=list,
-        description=(
-            "Grader runnables. Required for new Coworld uploads; optional in the base manifest schema so "
-            "historical Coworlds can still be loaded without backfill. Coworlds without a custom grader may reference "
-            "`ghcr.io/metta-ai/graders-default:latest`. Role docs: docs/roles/GRADER.md."
-        ),
-        json_schema_extra={
-            **_future_required_role_schema("grader"),
-            "$comment": (
-                "Optional in the base manifest schema for historical compatibility; "
-                "required by Coworld upload validation."
-            ),
-        },
+        description="Grader runnables. Optional; include entries when the Coworld ships grader containers. "
+        "Role docs: docs/roles/GRADER.md.",
+        json_schema_extra=_role_doc_schema("grader"),
     )
     diagnoser: list[CoworldManifestRoleSpec] = Field(
         default_factory=list,

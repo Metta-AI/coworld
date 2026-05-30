@@ -63,30 +63,34 @@ def test_manifest_rejects_wrong_grader_section_type() -> None:
         CoworldManifest.model_validate(manifest)
 
 
-def test_manifest_allows_missing_grader_entries() -> None:
+@pytest.mark.parametrize("section", ["reporter", "commissioner", "grader"])
+def test_manifest_allows_missing_optional_role_entries(section: str) -> None:
     manifest = _manifest_data()
-    del manifest["grader"]
+    manifest.pop(section, None)
 
-    assert CoworldManifest.model_validate(manifest).grader == []
+    assert getattr(CoworldManifest.model_validate(manifest), section) == []
 
 
-def test_manifest_allows_empty_grader_entries() -> None:
+@pytest.mark.parametrize("section", ["reporter", "commissioner", "grader"])
+def test_manifest_allows_empty_optional_role_entries(section: str) -> None:
     manifest = _manifest_data()
-    manifest["grader"] = []
+    manifest[section] = []
 
-    assert CoworldManifest.model_validate(manifest).grader == []
+    assert getattr(CoworldManifest.model_validate(manifest), section) == []
 
 
-def test_manifest_schema_allows_missing_grader_entries() -> None:
+@pytest.mark.parametrize("section", ["reporter", "commissioner", "grader"])
+def test_manifest_schema_allows_missing_optional_role_entries(section: str) -> None:
     manifest = _manifest_data()
-    del manifest["grader"]
+    manifest.pop(section, None)
 
     validate_json_schema(manifest, coworld_manifest_schema())
 
 
-def test_manifest_schema_allows_empty_grader_entries() -> None:
+@pytest.mark.parametrize("section", ["reporter", "commissioner", "grader"])
+def test_manifest_schema_allows_empty_optional_role_entries(section: str) -> None:
     manifest = _manifest_data()
-    manifest["grader"] = []
+    manifest[section] = []
 
     validate_json_schema(manifest, coworld_manifest_schema())
 
@@ -279,6 +283,7 @@ def test_manifest_schema_documents_public_fields() -> None:
     for name, definition in schema["$defs"].items():
         _assert_schema_properties_have_descriptions(name, definition)
 
+    assert "reporter" not in schema["required"]
     assert "commissioner" not in schema["required"]
     assert "grader" not in schema["required"]
     assert "diagnoser" not in schema["required"]
@@ -296,13 +301,12 @@ def test_manifest_schema_documents_public_fields() -> None:
         section_schema = schema["properties"][section]
         assert section_schema["x-coworld-role-doc"] == role_doc
         assert f"]({role_doc})" in section_schema["markdownDescription"]
-    for section in ("commissioner", "diagnoser", "optimizer"):
+    for section in ("diagnoser", "optimizer"):
         section_schema = schema["properties"][section]
         assert section_schema["x-coworld-future-required"] is True
         assert "intended to become required" in section_schema["$comment"]
-    grader_schema = schema["properties"]["grader"]
-    assert grader_schema["x-coworld-future-required"] is True
-    assert "required by Coworld upload validation" in grader_schema["$comment"]
+    for section in ("reporter", "commissioner", "grader"):
+        assert "x-coworld-future-required" not in schema["properties"][section]
 
 
 def test_generated_schema_files_match_types() -> None:

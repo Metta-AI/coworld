@@ -10,8 +10,8 @@ on-demand: they are triggered by a CLI command or a platform action, not by the 
 
 ## Where it lives in the manifest
 
-`manifest.reporter[]`, with `type: "reporter"` on every entry. The array must contain at least one runnable; Coworlds
-without a custom reporter may reference `ghcr.io/metta-ai/reporters-default:latest`. See
+`manifest.reporter[]`, with `type: "reporter"` on every entry. The section is optional; include reporter runnables when
+the Coworld has custom reporters or a default reporter is useful. See
 [`COWORLD_MANIFEST.md`](../COWORLD_MANIFEST.md) for the full runnable shape.
 
 ## Contract

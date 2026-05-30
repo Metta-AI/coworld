@@ -260,38 +260,33 @@
           "x-coworld-role-doc": "docs/roles/PLAYER.md"
         },
         "reporter": {
-          "description": "Reporter runnables. Must declare at least one entry; Coworlds without a custom reporter may reference `ghcr.io/metta-ai/reporters-default:latest`. Role docs: docs/roles/REPORTER.md.",
+          "description": "Reporter runnables. Optional; include entries when the Coworld ships reporter containers. Role docs: docs/roles/REPORTER.md.",
           "items": {
             "$ref": "#/$defs/CoworldManifestRoleSpec"
           },
           "markdownDescription": "See the [Reporter role](docs/roles/REPORTER.md) documentation for this role's contract.",
-          "minItems": 1,
           "title": "Reporter",
           "type": "array",
           "x-coworld-role-doc": "docs/roles/REPORTER.md"
         },
         "commissioner": {
-          "$comment": "Optional in the current schema; intended to become required as this role stabilizes.",
-          "description": "Commissioner runnables. Optional today, but expected to become required once the containerized commissioner runtime is live. Role docs: docs/roles/COMMISSIONER.md.",
+          "description": "Commissioner runnables. Optional. Role docs: docs/roles/COMMISSIONER.md.",
           "items": {
             "$ref": "#/$defs/CoworldManifestRoleSpec"
           },
           "markdownDescription": "See the [Commissioner role](docs/roles/COMMISSIONER.md) documentation for this role's contract.",
           "title": "Commissioner",
           "type": "array",
-          "x-coworld-future-required": true,
           "x-coworld-role-doc": "docs/roles/COMMISSIONER.md"
         },
         "grader": {
-          "$comment": "Optional in the base manifest schema for historical compatibility; required by Coworld upload validation.",
-          "description": "Grader runnables. Required for new Coworld uploads; optional in the base manifest schema so historical Coworlds can still be loaded without backfill. Coworlds without a custom grader may reference `ghcr.io/metta-ai/graders-default:latest`. Role docs: docs/roles/GRADER.md.",
+          "description": "Grader runnables. Optional; include entries when the Coworld ships grader containers. Role docs: docs/roles/GRADER.md.",
           "items": {
             "$ref": "#/$defs/CoworldManifestRoleSpec"
           },
           "markdownDescription": "See the [Grader role](docs/roles/GRADER.md) documentation for this role's contract.",
           "title": "Grader",
           "type": "array",
-          "x-coworld-future-required": true,
           "x-coworld-role-doc": "docs/roles/GRADER.md"
         },
         "diagnoser": {
@@ -332,7 +327,7 @@
           "description": "Smoke-test episode used by coworld certify and default local episode runs."
         }
       },
-      "required": ["game", "player", "reporter", "variants", "certification"],
+      "required": ["game", "player", "variants", "certification"],
       "title": "Coworld Manifest",
       "type": "object"
     },

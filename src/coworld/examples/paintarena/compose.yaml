@@ -4,9 +4,3 @@ services:
     platform: linux/amd64
     build:
       context: .
-  grader:
-    image: ghcr.io/metta-ai/graders-paint-arena:latest
-    platform: linux/amd64
-  commissioner:
-    image: ghcr.io/metta-ai/commissioners-default:latest
-    platform: linux/amd64

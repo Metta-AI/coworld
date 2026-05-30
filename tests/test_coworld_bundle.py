@@ -374,7 +374,7 @@ def _write_manifest(
                         "description": "Unit test player.",
                     }
                 ],
-                # Always-present stub to satisfy reporter min_length=1; tests override via role_images.
+                # Default stub for bundle image-substitution tests; tests override via role_images.
                 "reporter": [
                     {
                         "id": "unit-test-default-reporter",

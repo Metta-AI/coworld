@@ -147,8 +147,3 @@ def validate_coworld_manifest_game_configs(manifest: CoworldManifest) -> int:
         manifest.game.config_schema,
     )
     return token_count
-
-
-def validate_coworld_manifest_upload_requirements(manifest: CoworldManifest) -> None:
-    if not manifest.grader:
-        raise ValueError("manifest.grader must include at least one grader runnable for Coworld upload")

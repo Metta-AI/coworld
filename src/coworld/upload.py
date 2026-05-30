@@ -23,7 +23,6 @@ from pydantic import BaseModel
 
 from coworld.certifier import certify_coworld, load_coworld_package
 from coworld.config import DEFAULT_SUBMIT_SERVER
-from coworld.manifest_validation import validate_coworld_manifest_upload_requirements
 
 _LOCAL_TAG_SEPARATOR_RE = re.compile(r"[^a-z0-9._-]+")
 DOWNLOAD_AGENTS_MD = """# AGENTS.md
@@ -354,7 +353,6 @@ def upload_coworld(
     timeout_seconds: float = 60.0,
 ) -> CoworldUploadResult:
     package = load_coworld_package(manifest_path)
-    validate_coworld_manifest_upload_requirements(package.manifest)
     certify_coworld(package.manifest_path, timeout_seconds=timeout_seconds)
 
     with CoworldUploadClient.from_login(server_url=server) as client:

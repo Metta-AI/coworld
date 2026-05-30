@@ -249,22 +249,6 @@ def test_upload_coworld_command_certifies_before_uploading(
     assert certification_calls == [(manifest_path.resolve(), 60.0)]
 
 
-@pytest.mark.parametrize("grader", [None, []])
-def test_upload_coworld_rejects_manifest_without_grader(
-    tmp_path: Path,
-    grader: list[object] | None,
-) -> None:
-    manifest = _manifest()
-    if grader is None:
-        del manifest["grader"]
-    else:
-        manifest["grader"] = grader
-    manifest_path = _write_manifest(tmp_path, manifest)
-
-    with pytest.raises(ValueError, match="manifest.grader must include at least one grader runnable"):
-        upload_coworld(manifest_path)
-
-
 def test_upload_policy_command_creates_docker_image_policy(
     httpserver: HTTPServer,
     monkeypatch: pytest.MonkeyPatch,
