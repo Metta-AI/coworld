@@ -164,30 +164,34 @@ def test_canonical_among_them_template_points_to_source_repos(tmp_path: Path) ->
     assert [role.id for role in package.manifest.grader] == ["among-them-grader"]
     assert [role.id for role in package.manifest.diagnoser] == ["among-them-diagnoser"]
     assert [role.id for role in package.manifest.optimizer] == ["coworld-optimizer"]
-    assert pages["rules.md"] == "https://github.com/Metta-AI/coworld-among-them/blob/master/README.md"
+    assert pages["rules.md"] == "https://github.com/Metta-AI/coworld-among-them/blob/master/docs/rules.md"
     assert pages["play_amongthem.md"] == "https://softmax.com/play_amongthem.md"
-    assert pages["player"] == "https://github.com/Metta-AI/coworld-among-them/tree/master/players/ivotewell"
+    assert pages["player"] == "https://github.com/Metta-AI/coworld-among-them/blob/master/players/how_to_make_a_bot.md"
     assert pages["game-source"] == "https://github.com/Metta-AI/coworld-among-them/tree/master"
     assert pages["submit"] == (
         "https://github.com/Metta-AI/coworld-among-them/blob/master/players/how_to_submit_coworld_policy.md"
     )
-    assert pages["optimizer"] == "https://github.com/Metta-AI/optimizers"
+    assert pages["optimizer"] == "https://github.com/Metta-AI/coworld-among-them/blob/master/players/SMART_BOT_GUIDE.md"
     assert (
         pages["optimizer-game-spec"]
         == "https://github.com/Metta-AI/coworld-among-them/blob/master/coworld_manifest.json"
     )
     assert pages["optimizer-game-tutorial"] == "https://softmax.com/play_amongthem.md"
-    assert pages["optimizer-skills"] == "https://github.com/Metta-AI/optimizers/blob/main/lib/skills/data.ts"
+    assert pages["optimizer-skills"] == (
+        "https://github.com/Metta-AI/coworld-among-them/blob/master/docs/supporting_roles.md#optimizer-inputs"
+    )
     assert pages["optimizer-policy-registry"] == (
-        "https://github.com/Metta-AI/optimizers/blob/main/lib/policy-templates.json"
+        "https://github.com/Metta-AI/coworld-among-them/blob/master/docs/supporting_roles.md#optimizer-inputs"
     )
     assert "commissioner" not in pages
     assert pages["reporter"] == (
-        "https://github.com/Metta-AI/reporters/tree/main/reporters/among_them/among_them_summarizer"
+        "https://github.com/Metta-AI/coworld-among-them/blob/master/docs/supporting_roles.md#reporter"
     )
-    assert pages["grader"] == "https://github.com/Metta-AI/graders/tree/main/graders/among_them/among_them_grader"
+    assert (
+        pages["grader"] == "https://github.com/Metta-AI/coworld-among-them/blob/master/docs/supporting_roles.md#grader"
+    )
     assert pages["diagnoser"] == (
-        "https://github.com/Metta-AI/diagnosers/tree/main/diagnosers/among_them/among_them_diagnoser"
+        "https://github.com/Metta-AI/coworld-among-them/blob/master/docs/supporting_roles.md#diagnoser"
     )
     assert role_source_urls == {
         "player": "https://github.com/Metta-AI/coworld-among-them/tree/master/players/ivotewell",
