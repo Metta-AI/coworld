@@ -59,6 +59,23 @@ def test_game_config_with_player_names_uses_player_names_field() -> None:
     assert player_names_from_game_config(config) == ["alpha:v1", "beta:v2"]
 
 
+def test_game_config_with_player_names_leaves_unsupported_schema_unchanged() -> None:
+    schema = {
+        "type": "object",
+        "additionalProperties": False,
+        "properties": {
+            "tokens": {"type": "array"},
+            "width": {"type": "integer"},
+            "height": {"type": "integer"},
+        },
+    }
+
+    config = game_config_with_player_names({"width": 12, "height": 8}, ["alpha:v1", "beta:v2"], schema)
+
+    assert config == {"width": 12, "height": 8}
+    assert player_names_from_game_config(config) is None
+
+
 def test_game_config_with_player_names_rejects_existing_player_names() -> None:
     schema = {
         "type": "object",

@@ -61,7 +61,7 @@ def game_config_with_player_names(
         named_config["player_names"] = list(player_names)
         return cast(JsonObject, named_config)
 
-    raise ValueError("game.config_schema must define players, slots, or player_names for commissioner-managed names")
+    return cast(JsonObject, named_config)
 
 
 def player_names_from_game_config(game_config: dict[str, Any]) -> list[str] | None:
