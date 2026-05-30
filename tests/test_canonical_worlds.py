@@ -134,7 +134,7 @@ def test_canonical_world_templates_hydrate_to_valid_manifests(tmp_path: Path) ->
 
 
 @pytest.mark.parametrize("world_name", ("among_them", "crewrift"))
-def test_bitworld_templates_accept_runner_player_names_in_slots(tmp_path: Path, world_name: str) -> None:
+def test_bitworld_templates_keep_default_variants_open_roster(tmp_path: Path, world_name: str) -> None:
     package = load_coworld_package(
         _materialized_template(tmp_path, WORLDS / world_name / "coworld_manifest_template.json")
     )
@@ -147,8 +147,8 @@ def test_bitworld_templates_accept_runner_player_names_in_slots(tmp_path: Path, 
         package.manifest.game.config_schema,
     )
 
-    assert [slot["name"] for slot in game_config["slots"]] == player_names
-    assert player_names_from_game_config(game_config) == player_names
+    assert "slots" not in game_config
+    assert player_names_from_game_config(game_config) is None
     validate_json_schema(
         game_config_with_tokens(game_config, [f"token-{slot}" for slot in range(token_count)]),
         package.manifest.game.config_schema,
@@ -166,14 +166,14 @@ def test_bitworld_templates_accept_runner_player_names_in_slots(tmp_path: Path, 
 
 
 @pytest.mark.parametrize("world_name", ("among_them", "crewrift"))
-def test_bitworld_templates_disambiguate_duplicate_runner_player_names(tmp_path: Path, world_name: str) -> None:
+def test_bitworld_templates_disambiguate_duplicate_explicit_slot_names(tmp_path: Path, world_name: str) -> None:
     package = load_coworld_package(
         _materialized_template(tmp_path, WORLDS / world_name / "coworld_manifest_template.json")
     )
     token_count = infer_fixed_token_count(package.manifest.game.config_schema)
 
     game_config = game_config_with_player_names(
-        package.manifest.variants[0].game_config,
+        {**package.manifest.variants[0].game_config, "slots": [{} for _slot in range(token_count)]},
         ["daveey"] * token_count,
         package.manifest.game.config_schema,
     )

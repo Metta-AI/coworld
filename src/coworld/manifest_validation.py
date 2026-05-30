@@ -50,9 +50,9 @@ def game_config_with_player_names(
         raise ValueError("game_config must not include commissioner-managed player_names")
 
     named_config = copy.deepcopy(game_config)
-    if "players" in named_config or _schema_has_property(config_schema, "players"):
+    if "players" in named_config:
         return _game_config_with_slot_names(named_config, player_names, "players")
-    if "slots" in named_config or _schema_has_property(config_schema, "slots"):
+    if "slots" in named_config:
         return _game_config_with_slot_names(named_config, player_names, "slots")
     if (
         _schema_has_property(config_schema, "player_names")
