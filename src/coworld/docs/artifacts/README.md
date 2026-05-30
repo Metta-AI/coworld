@@ -21,6 +21,7 @@ consumes something; artifact pages describe the thing itself.
 | --- | --- | --- |
 | [Report](REPORT.md) | Reporter | `COGAME_REPORT_URI` zip |
 | [Event log](EVENT_LOG.md) | Reporter | Optional Parquet entry inside a report zip |
+| [Trace](TRACE.md) | Reporter | Optional JSON/JSONL entry inside a report zip |
 | [Grade](GRADE.md) | Grader | `COGAME_GRADE_URI` JSON |
 | [Diagnosis](DIAGNOSIS.md) | Diagnoser | `COGAME_DIAGNOSIS_URI` zip |
 | [Optimizer outputs](OPTIMIZER_OUTPUTS.md) | Optimizer | Workbench side effects and optional plan artifacts |

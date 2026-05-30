@@ -123,6 +123,7 @@ def test_build_zip_bytes_packs_manifest_and_parquet() -> None:
     assert manifest["reporter_id"] == "paint-arena-parquet-stats-reporter"
     assert manifest["event_log"] == "stats.parquet"
     assert manifest["render"] is None
+    assert manifest["trace"] is None
 
 
 def test_build_zip_parquet_uses_canonical_event_log_schema() -> None:

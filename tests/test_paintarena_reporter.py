@@ -9,7 +9,7 @@ Output contract (canonical Coworld reporter contract,
 - Top-level entries: manifest.json, summary.md, stats.json.
 - The in-zip manifest.json flags ``render: "summary.md"`` and carries
   ``reporter_id: "paint-arena-summarizer"``. No event_log (markdown-only
-  reference reporter).
+  reference reporter) and no trace.
 - Every zip entry has a pinned mtime of (1980, 1, 1, 0, 0, 0) so identical
   inputs produce byte-identical zips.
 """
@@ -209,6 +209,7 @@ def test_manifest_flags_summary_md_as_render() -> None:
     assert manifest["render"] == "summary.md"
     assert manifest["reporter_id"] == "paint-arena-summarizer"
     assert manifest["event_log"] is None
+    assert manifest["trace"] is None
 
 
 def test_manifest_render_target_exists_in_zip_with_renderable_extension() -> None:

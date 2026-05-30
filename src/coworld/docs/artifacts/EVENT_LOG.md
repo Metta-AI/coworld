@@ -42,5 +42,6 @@ to tie policy behavior, game events, and interesting moments back to concrete ep
 ## See Also
 
 - [Report](REPORT.md) for the containing zip and manifest.
+- [Trace](TRACE.md) for richer reporter-defined machine timelines.
 - [Reporter role](../roles/REPORTER.md) for the producer.
 - [Diagnosis](DIAGNOSIS.md) and [optimizer outputs](OPTIMIZER_OUTPUTS.md) for likely downstream consumers.

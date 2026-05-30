@@ -10,13 +10,16 @@ aggregators):
     {
       "reporter_id": "paint-arena-summarizer",
       "render": "summary.html",
-      "event_log": "proximity.parquet"
+      "event_log": "proximity.parquet",
+      "trace": "trace.jsonl"
     }
 
 ``render`` is optional and at most one entry; if set it must point at an
 in-zip ``.md`` or ``.html`` entry. ``event_log`` is optional and at most
-one entry; if set it must point at an in-zip ``.parquet`` entry. The
-validation in :func:`build_report_zip` enforces both constraints before
+one entry; if set it must point at an in-zip ``.parquet`` entry. ``trace``
+is optional and at most one entry; if set it must point at an in-zip
+``.jsonl`` or ``.json`` entry. The validation in :func:`build_report_zip`
+enforces all declared constraints before
 the zip is produced — a misdeclared manifest is the kind of bug that
 silently breaks the platform's report viewer, so reporters fail fast.
 
@@ -38,6 +41,9 @@ RENDERABLE_EXTENSIONS = frozenset({".md", ".html"})
 # Event-log file extensions for the ``event_log`` field. Lowercase compared.
 EVENT_LOG_EXTENSIONS = frozenset({".parquet"})
 
+# Trace file extensions for the ``trace`` field. Lowercase compared.
+TRACE_EXTENSIONS = frozenset({".jsonl", ".json"})
+
 
 class OutputManifest(BaseModel):
     """The shape of the in-zip ``manifest.json`` a reporter emits.
@@ -47,11 +53,13 @@ class OutputManifest(BaseModel):
     the in-zip path to a ``.md`` or ``.html`` UIs should display.
     ``event_log`` is the in-zip path to a Parquet file using the
     canonical event-log schema (see :mod:`reporter_sdk.event_log`).
+    ``trace`` is the in-zip path to a machine-readable timeline artifact.
     """
 
     reporter_id: str
     render: str | None = None
     event_log: str | None = None
+    trace: str | None = None
 
 
 def build_report_zip(
@@ -69,6 +77,9 @@ def build_report_zip(
     - ``manifest.event_log``, if set, must equal the name of an entry in
       ``entries`` whose lowercase extension is in
       :data:`EVENT_LOG_EXTENSIONS`.
+    - ``manifest.trace``, if set, must equal the name of an entry in
+      ``entries`` whose lowercase extension is in
+      :data:`TRACE_EXTENSIONS`.
 
     Misdeclared manifests raise ``ValueError``. The output ``manifest.json``
     payload is written with :func:`stable_json` so the bytes are stable
@@ -94,6 +105,15 @@ def build_report_zip(
             raise ValueError(
                 f"manifest.event_log={manifest.event_log!r} has extension {ext!r}; "
                 f"expected one of {sorted(EVENT_LOG_EXTENSIONS)}"
+            )
+
+    if manifest.trace is not None:
+        if manifest.trace not in names:
+            raise ValueError(f"manifest.trace={manifest.trace!r} is not present in the report zip entries")
+        ext = PurePosixPath(manifest.trace).suffix.lower()
+        if ext not in TRACE_EXTENSIONS:
+            raise ValueError(
+                f"manifest.trace={manifest.trace!r} has extension {ext!r}; expected one of {sorted(TRACE_EXTENSIONS)}"
             )
 
     manifest_bytes = stable_json(manifest.model_dump(exclude_none=False)).encode("utf-8")

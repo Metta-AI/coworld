@@ -34,7 +34,7 @@ episode artifacts after the episode ends.
 | **game** | per episode, WebSocket server | live | Runs the episode, serves browser clients, and writes result/replay artifacts. | [Game role](roles/GAME.md) |
 | **player** | per episode, WebSocket client | live | Connects to the game and acts in one player slot. | [Player role](roles/PLAYER.md) |
 | **commissioner** | per round, WebSocket server | contract defined, runtime pending | Schedules league-round episodes and ranks policy memberships. | [Commissioner role](roles/COMMISSIONER.md) |
-| **reporter** | post episode, on demand | contract defined, runtime pending | Turns episode artifacts into human-readable reports or structured event logs. | [Reporter role](roles/REPORTER.md) |
+| **reporter** | post episode, on demand | contract defined, runtime pending | Turns episode artifacts into reports, event logs, or traces. | [Reporter role](roles/REPORTER.md) |
 | **grader** | post episode, on demand | contract defined, runtime pending | Scores how useful or interesting an episode is. | [Grader role](roles/GRADER.md) |
 | **diagnoser** | post episode, on demand | reserved | Evaluates a target policy and emits policy-facing advice. | [Diagnoser role](roles/DIAGNOSER.md) |
 | **optimizer** | workbench, long running | reserved | Drives longer-running policy-improvement work. | [Optimizer role](roles/OPTIMIZER.md) |
@@ -151,7 +151,7 @@ Supporting runnables receive an episode bundle via `COGAME_EPISODE_BUNDLE_URI`, 
 logic, and write or create their own artifact:
 
 - a **reporter** writes a [report](artifacts/REPORT.md) to `COGAME_REPORT_URI`, optionally including an
-  [event log](artifacts/EVENT_LOG.md);
+  [event log](artifacts/EVENT_LOG.md) or [trace](artifacts/TRACE.md);
 - a **grader** writes a [grade](artifacts/GRADE.md) to `COGAME_GRADE_URI`;
 - a **diagnoser** writes a [diagnosis](artifacts/DIAGNOSIS.md) to `COGAME_DIAGNOSIS_URI` and also receives
   `COGAME_TARGET_POLICY_URI` identifying the policy it is evaluating;

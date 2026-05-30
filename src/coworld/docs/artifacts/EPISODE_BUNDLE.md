@@ -125,7 +125,7 @@ runnable does not need to know whether the bundle came from a local workspace or
 
 Supporting-role outputs are separate artifacts, not entries in the episode bundle today:
 
-- [Report](REPORT.md), optionally including an [event log](EVENT_LOG.md).
+- [Report](REPORT.md), optionally including an [event log](EVENT_LOG.md) or [trace](TRACE.md).
 - [Grade](GRADE.md).
 - [Diagnosis](DIAGNOSIS.md).
 - [Optimizer outputs](OPTIMIZER_OUTPUTS.md).

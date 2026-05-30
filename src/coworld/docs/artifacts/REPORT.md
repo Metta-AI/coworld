@@ -17,7 +17,8 @@ top-level `manifest.json` that describes the important entries:
 {
   "reporter_id": "paint-arena-summarizer",
   "render": "summary.md",
-  "event_log": "events.parquet"
+  "event_log": "events.parquet",
+  "trace": "trace.jsonl"
 }
 ```
 
@@ -28,9 +29,10 @@ Fields:
 | `reporter_id` | recommended | Reporter self-identification, conventionally matching the runnable id in `manifest.reporter[]`. |
 | `render` | optional | Path inside the zip to one `.md` or `.html` file that UIs should render. |
 | `event_log` | optional | Path inside the zip to one `.parquet` file following the [event log](EVENT_LOG.md) schema. |
+| `trace` | optional | Path inside the zip to one `.jsonl` or `.json` machine-readable trace artifact. |
 
-All other files in the zip are reporter-defined. Consumers should use `manifest.json` to find renderable and structured
-entries instead of assuming fixed filenames.
+All other files in the zip are reporter-defined. Consumers should use `manifest.json` to find renderable, trace, and
+structured entries instead of assuming fixed filenames.
 
 ## Determinism
 

@@ -5,7 +5,7 @@
 ## What it does
 
 The reporter role compresses sparse episode experience into dense highlight signals — narrative summaries, news-caster
-reports, interesting-moment cutdowns, structured statistics, and machine-readable event logs. Reporter runs are
+reports, interesting-moment cutdowns, structured statistics, event logs, and machine-readable traces. Reporter runs are
 on-demand: they are triggered by a CLI command or a platform action, not by the episode runner itself.
 
 ## Where it lives in the manifest
@@ -33,7 +33,8 @@ A reporter writes its output to one env var:
 
 - `COGAME_REPORT_URI` — URI where the reporter writes its [report artifact](../artifacts/REPORT.md).
 
-Reports may include an [event log](../artifacts/EVENT_LOG.md) for structured tick-aligned events.
+Reports may include an [event log](../artifacts/EVENT_LOG.md) for structured tick-aligned events and a
+[trace](../artifacts/TRACE.md) for richer reporter-defined machine timelines.
 
 ### Execution
 
@@ -61,8 +62,9 @@ Reporters live in the post-episode artifact layer. They consume the episode bund
 
 The paintarena example reporters (`paint_arena_summarizer.py`, `stats_reporter.py`) run on the canonical
 `COGAME_EPISODE_BUNDLE_URI` / `COGAME_REPORT_URI` contract and write an in-zip `manifest.json` flagging their `render` /
-`event_log` outputs. They are the in-tree reference implementations of the contract; the richer production reporters
-live in [`Metta-AI/reporters`](https://github.com/Metta-AI/reporters).
+`event_log` outputs. Production reporters may also flag a `trace` output. They are the in-tree reference implementations
+of the contract; the richer production reporters live in
+[`Metta-AI/reporters`](https://github.com/Metta-AI/reporters).
 
 ## Future directions
 
@@ -81,6 +83,7 @@ considered but deferred until a real use case lands.
 - [`artifacts/EPISODE_BUNDLE.md`](../artifacts/EPISODE_BUNDLE.md) — episode bundle consumed by this role.
 - [`artifacts/REPORT.md`](../artifacts/REPORT.md) — output zip produced by this role.
 - [`artifacts/EVENT_LOG.md`](../artifacts/EVENT_LOG.md) — optional structured event log inside a report.
+- [`artifacts/TRACE.md`](../artifacts/TRACE.md) — optional machine-readable trace inside a report.
 - [`COWORLD_MANIFEST.md`](../COWORLD_MANIFEST.md) — manifest guide and generated-schema pointer.
 - [`README.md`](../README.md) — role status framework, runnable conventions, and artifact flow.
 - [`GRADER.md`](GRADER.md), [`DIAGNOSER.md`](DIAGNOSER.md), [`OPTIMIZER.md`](OPTIMIZER.md) — sibling supporting

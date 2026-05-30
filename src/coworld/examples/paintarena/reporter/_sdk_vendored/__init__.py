@@ -10,9 +10,10 @@ Coworld reporter contract without taking a cross-repo dependency.
 
 - Repo: ``https://github.com/Metta-AI/reporters``
 - Path: ``reporters/reporter_sdk/reporter_sdk``
-- Commit: ``f9cc98760aac059e1e21e32c05e21dd2442d2362`` (branch
+- Base commit: ``f9cc98760aac059e1e21e32c05e21dd2442d2362`` (branch
   ``at-summ-09-reporter-sdk-extraction`` at vendor time; the post-F2
-  extraction commit)
+  extraction commit), with the local ``trace`` manifest extension mirrored
+  from the reporters repo.
 
 **Why vendored, not pip-installed:** the upstream SDK's
 ``pyproject.toml`` currently pins ``requires-python = ">=3.13"``, which
@@ -51,6 +52,7 @@ from .io import (
 from .output_manifest import (
     EVENT_LOG_EXTENSIONS,
     RENDERABLE_EXTENSIONS,
+    TRACE_EXTENSIONS,
     OutputManifest,
     build_report_zip,
 )
@@ -61,6 +63,7 @@ __all__ = [
     "EVENT_LOG_SCHEMA",
     "MTIME_SENTINEL",
     "RENDERABLE_EXTENSIONS",
+    "TRACE_EXTENSIONS",
     "BundleInnerManifest",
     "BundleReader",
     "OutputManifest",
