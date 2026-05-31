@@ -1305,6 +1305,11 @@ def test_cogs_vs_clips_coworld_manifest_validates(tmp_path: Path) -> None:
         "https://github.com/Metta-AI/coworld-cogs-vs-clips/tree/main/coworld/player"
     )
     assert package.manifest.player[0].env == {}
+    assert package.manifest.commissioner[0].id == "cogs-vs-clips-commissioner"
+    assert package.manifest.commissioner[0].image == "coworld-cogs-vs-clips-commissioner:latest"
+    assert package.manifest.commissioner[0].source_url == (
+        "https://github.com/Metta-AI/commissioners/tree/main/commissioners/cogs_vs_clips/cogs_vs_clips_commissioner"
+    )
     daily_variant = next(variant for variant in package.manifest.variants if variant.id == "machina-1-daily")
     assert daily_variant.game_config["max_steps"] == 10000
     assert config == {
@@ -1416,6 +1421,7 @@ def _materialized_template(tmp_path: Path, template_path: Path) -> Path:
             "{{PLAYER_IMAGE}}": "coworld-cogs-vs-clips-reference-player:latest",
             "{{REPORTER_IMAGE}}": "coworld-default-reporter:latest",
             "{{COGS_VS_CLIPS_REPORTER_IMAGE}}": "coworld-cogs-vs-clips-summarizer:latest",
+            "{{COGS_VS_CLIPS_COMMISSIONER_IMAGE}}": "coworld-cogs-vs-clips-commissioner:latest",
         },
         "paintarena": {"{{PAINTARENA_IMAGE}}": "coworld-paintarena:latest"},
     }

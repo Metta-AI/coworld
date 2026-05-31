@@ -83,18 +83,26 @@ def test_canonical_among_them_build_declares_role_starter_contexts() -> None:
     assert "WORLD_CONTEXT" not in compose_text
 
 
-def test_canonical_cogs_vs_clips_build_declares_game_context() -> None:
+def test_canonical_cogs_vs_clips_build_declares_role_contexts() -> None:
     compose_text = (WORLDS / "cogs_vs_clips" / "compose.yaml").read_text(encoding="utf-8")
 
     assert "GAME_CONTEXT" in compose_text
     assert "PLAYER_CONTEXT" in compose_text
+    assert "REPORTER_CONTEXT" in compose_text
+    assert "COMMISSIONER_CONTEXT" in compose_text
     assert "METTASCOPE_CONTEXT" in compose_text
     assert "coworld-cogs-vs-clips" in compose_text
+    assert "reporters/reporters" in compose_text
+    assert "commissioners" in compose_text
     assert "Dockerfile.game" in compose_text
     assert "Dockerfile.player" in compose_text
+    assert "cogs_vs_clips/cogs_vs_clips_summarizer/Dockerfile" in compose_text
+    assert "commissioners/cogs_vs_clips/cogs_vs_clips_commissioner/Dockerfile" in compose_text
     assert "cogs_src:" in compose_text
     assert "mettascope_src:" in compose_text
     assert "../../packages/mettagrid/nim/mettascope" in compose_text
+    assert "coworld-cogs-vs-clips-summarizer:latest" in compose_text
+    assert "coworld-cogs-vs-clips-commissioner:latest" in compose_text
     assert "games/games/cogsguard" not in compose_text
 
 
@@ -271,6 +279,10 @@ def test_canonical_cogs_vs_clips_template_points_to_source_repo(tmp_path: Path) 
     assert package.manifest.player[0].source_url == (
         "https://github.com/Metta-AI/coworld-cogs-vs-clips/tree/main/coworld/player"
     )
+    assert [role.id for role in package.manifest.commissioner] == ["cogs-vs-clips-commissioner"]
+    assert package.manifest.commissioner[0].source_url == (
+        "https://github.com/Metta-AI/commissioners/tree/main/commissioners/cogs_vs_clips/cogs_vs_clips_commissioner"
+    )
     assert [role.id for role in package.manifest.reporter] == [
         "softmax-default-reporter",
         "cogs-vs-clips-summarizer",
@@ -343,7 +355,8 @@ def test_cogs_vs_clips_crewrift_and_paintarena_templates_declare_all_viability_r
     assert cogs_vs_clips_pages["game-source"] == "https://github.com/Metta-AI/coworld-cogs-vs-clips/tree/main"
     assert cogs_vs_clips_pages["player"] == "https://github.com/Metta-AI/coworld-cogs-vs-clips/tree/main/coworld/player"
     assert "env" not in cogs_vs_clips["player"][0]
-    for section in ("commissioner", "grader", "optimizer", "diagnoser"):
+    assert [role["id"] for role in cogs_vs_clips["commissioner"]] == ["cogs-vs-clips-commissioner"]
+    for section in ("grader", "optimizer", "diagnoser"):
         assert cogs_vs_clips[section] == []
     assert [role["id"] for role in cogs_vs_clips["reporter"]] == [
         "softmax-default-reporter",
@@ -416,6 +429,7 @@ def _materialized_template(base_dir: Path, template_path: Path) -> Path:
             "{{PLAYER_IMAGE}}": "coworld-cogs-vs-clips-reference-player:latest",
             "{{REPORTER_IMAGE}}": "coworld-default-reporter:latest",
             "{{COGS_VS_CLIPS_REPORTER_IMAGE}}": "coworld-cogs-vs-clips-summarizer:latest",
+            "{{COGS_VS_CLIPS_COMMISSIONER_IMAGE}}": "coworld-cogs-vs-clips-commissioner:latest",
         },
         "crewrift": {
             "{{GAME_IMAGE}}": "coworld-crewrift-game:latest",

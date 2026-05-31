@@ -580,6 +580,7 @@ def _materialized_template(tmp_path: Path, template_path: Path) -> Path:
             "{{PLAYER_IMAGE}}": "coworld-cogs-vs-clips-reference-player:latest",
             "{{REPORTER_IMAGE}}": "coworld-default-reporter:latest",
             "{{COGS_VS_CLIPS_REPORTER_IMAGE}}": "coworld-cogs-vs-clips-summarizer:latest",
+            "{{COGS_VS_CLIPS_COMMISSIONER_IMAGE}}": "coworld-cogs-vs-clips-commissioner:latest",
         },
         "paintarena": {"{{PAINTARENA_IMAGE}}": "coworld-paintarena:latest"},
     }
