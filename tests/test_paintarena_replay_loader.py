@@ -35,6 +35,24 @@ def test_paintarena_replay_client_autoplays_and_loops() -> None:
     assert "stop();\n      } else" not in replay_html
 
 
+def test_paintarena_replay_client_uses_compact_header_layout() -> None:
+    replay_html = (
+        Path(__file__).resolve().parents[1]
+        / "src"
+        / "coworld"
+        / "examples"
+        / "paintarena"
+        / "game"
+        / "client"
+        / "replay.html"
+    ).read_text(encoding="utf-8")
+
+    assert '<header class="topbar">' in replay_html
+    assert '<section id="arenaShell">' in replay_html
+    assert "<aside" not in replay_html
+    assert '<div class="eyebrow">Playback</div>' not in replay_html
+
+
 def _load_paintarena_server_module():
     root = Path(__file__).resolve().parents[1] / "src" / "coworld" / "examples" / "paintarena"
     spec = importlib.util.spec_from_file_location("paintarena_replay_loader_test", root / "game" / "server.py")

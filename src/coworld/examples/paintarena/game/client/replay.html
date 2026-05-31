@@ -1,26 +1,40 @@
 <!doctype html>
 <title>Coworld Paint Arena Replay Client</title>
 <style>
+  html {
+    height: 100%;
+  }
   body {
-    background: radial-gradient(circle at top left, #ffffff 0, #eef2f7 420px);
+    background: #f6f8fb;
     color: #172033;
     font-family: Inter, ui-sans-serif, system-ui, sans-serif;
+    height: 100vh;
     margin: 0;
-    min-height: 100vh;
-    padding: 28px;
+    overflow: hidden;
+    padding: 16px;
   }
   * {
     box-sizing: border-box;
   }
   main {
     display: grid;
-    gap: 18px;
-    grid-template-columns: minmax(280px, 720px) minmax(240px, 360px);
+    gap: 12px;
+    grid-template-rows: auto minmax(0, 1fr);
+    height: calc(100vh - 32px);
+  }
+  .topbar {
+    display: grid;
+    gap: 10px 12px;
+    grid-template-columns: auto minmax(180px, 1fr) minmax(320px, 1.4fr) auto;
+    align-items: center;
+  }
+  .title-block {
+    min-width: 150px;
   }
   h1 {
-    font-size: clamp(28px, 4vw, 44px);
+    font-size: clamp(24px, 3vw, 36px);
     line-height: 1;
-    margin: 0 0 6px;
+    margin: 0;
   }
   .eyebrow {
     color: #637089;
@@ -29,13 +43,6 @@
     letter-spacing: .08em;
     text-transform: uppercase;
   }
-  .panel {
-    background: color-mix(in srgb, #ffffff 92%, transparent);
-    border: 1px solid rgba(126, 140, 162, .35);
-    border-radius: 8px;
-    box-shadow: 0 18px 50px rgba(23, 32, 51, .12);
-    padding: 18px;
-  }
   #status {
     background: #172033;
     border-radius: 999px;
@@ -43,18 +50,15 @@
     display: inline-flex;
     font-size: 13px;
     font-weight: 800;
-    margin-top: 8px;
+    justify-self: end;
     padding: 7px 12px;
-  }
-  .hud {
-    display: grid;
-    gap: 10px;
-    margin-top: 10px;
+    white-space: nowrap;
   }
   #scores {
     display: flex;
     flex-wrap: wrap;
-    gap: 8px;
+    gap: 6px;
+    min-width: 0;
   }
   .score {
     align-items: center;
@@ -71,13 +75,15 @@
     background: var(--color);
     border-radius: 999px;
     content: "";
+    flex: 0 0 auto;
     height: 10px;
     width: 10px;
   }
   #timer {
     background: #d8e0ec;
     border-radius: 999px;
-    height: 10px;
+    grid-column: 1 / -1;
+    height: 6px;
     overflow: hidden;
     width: 100%;
   }
@@ -88,6 +94,13 @@
     transition: width 120ms linear;
     width: 100%;
   }
+  #arenaShell {
+    align-items: start;
+    display: grid;
+    justify-items: center;
+    min-height: 0;
+    overflow: hidden;
+  }
   #arena {
     background: #d8e0ec;
     border: 1px solid #b8c4d8;
@@ -95,10 +108,8 @@
     box-shadow: inset 0 1px 0 rgba(255, 255, 255, .8), 0 18px 50px rgba(23, 32, 51, .12);
     display: grid;
     gap: 3px;
-    margin-top: 16px;
     overflow: hidden;
     padding: 6px;
-    width: 100%;
   }
   .cell {
     aspect-ratio: 1;
@@ -145,14 +156,15 @@
     background: linear-gradient(145deg, #a78bfa, #7c3aed);
   }
   .controls {
-    display: grid;
-    gap: 12px;
-    margin-top: 14px;
-  }
-  .buttons {
+    align-items: center;
     display: flex;
     flex-wrap: wrap;
     gap: 8px;
+    min-width: 0;
+  }
+  .buttons {
+    display: flex;
+    gap: 6px;
   }
   button {
     background: linear-gradient(#ffffff, #eef3fa);
@@ -161,7 +173,9 @@
     color: #172033;
     cursor: pointer;
     font-weight: 800;
-    padding: 8px 12px;
+    min-height: 32px;
+    padding: 6px 10px;
+    white-space: nowrap;
   }
   button:hover {
     border-color: #64748b;
@@ -169,30 +183,36 @@
   }
   input {
     accent-color: #2563eb;
-    width: 100%;
+    flex: 1 1 160px;
+    min-width: 120px;
   }
-  @media (max-width: 860px) {
+  @media (max-width: 980px) {
     body {
-      padding: 18px;
+      overflow: auto;
+      padding: 12px;
     }
     main {
+      height: auto;
+      min-height: calc(100vh - 24px);
+    }
+    .topbar {
       grid-template-columns: 1fr;
+    }
+    #status {
+      justify-self: start;
+    }
+    #arenaShell {
+      min-height: 360px;
     }
   }
 </style>
 <main>
-  <section>
-    <div class="eyebrow">Replay viewer</div>
-    <h1>Paint Arena</h1>
-    <div id="status">Connecting</div>
-    <div class="hud">
-      <div id="scores"></div>
-      <div id="timer"><div id="timerFill"></div></div>
+  <header class="topbar">
+    <div class="title-block">
+      <div class="eyebrow">Replay viewer</div>
+      <h1>Paint Arena</h1>
     </div>
-    <div id="arena"></div>
-  </section>
-  <aside class="panel">
-    <div class="eyebrow">Playback</div>
+    <div id="scores"></div>
     <div class="controls">
       <div class="buttons">
         <button id="play" type="button">Play</button>
@@ -200,9 +220,14 @@
         <button id="slower" type="button">Slower</button>
         <button id="faster" type="button">Faster</button>
       </div>
-      <input id="scrubber" min="0" type="range" value="0" />
+      <input id="scrubber" aria-label="Replay frame" min="0" type="range" value="0" />
     </div>
-  </aside>
+    <div id="status">Connecting</div>
+    <div id="timer"><div id="timerFill"></div></div>
+  </header>
+  <section id="arenaShell">
+    <div id="arena"></div>
+  </section>
 </main>
 <script type="module">
   const websocketUrl = new URL(window.location.href);
@@ -210,6 +235,7 @@
   websocketUrl.pathname = websocketUrl.pathname.replace(/\/client\/replay(\/.*)?$/, "/replay$1");
 
   const arena = document.getElementById("arena");
+  const arenaShell = document.getElementById("arenaShell");
   const status = document.getElementById("status");
   const scores = document.getElementById("scores");
   const timerFill = document.getElementById("timerFill");
@@ -228,6 +254,7 @@
 
   function draw(message) {
     arena.style.gridTemplateColumns = `repeat(${message.width}, 1fr)`;
+    resizeArena(message);
     const agents = new Map(message.positions.map((position, slot) => [`${position[0]},${position[1]}`, slot]));
     const previous = frames[Math.max(frameIndex - 1, 0)] || message;
     const cells = [];
@@ -257,6 +284,20 @@
       return scoreEl;
     }));
     status.textContent = `Frame ${frameIndex + 1}/${frames.length} · tick ${message.tick}/${message.max_ticks} · ${speed}x`;
+  }
+
+  function resizeArena(message) {
+    const bounds = arenaShell.getBoundingClientRect();
+    if (bounds.width <= 0 || bounds.height <= 0) return;
+    const aspect = message.width / message.height;
+    let width = bounds.width;
+    let height = width / aspect;
+    if (height > bounds.height) {
+      height = bounds.height;
+      width = height * aspect;
+    }
+    arena.style.width = `${Math.floor(width)}px`;
+    arena.style.height = `${Math.floor(height)}px`;
   }
 
   function headingFor(previous, current) {
@@ -326,4 +367,7 @@
     stop();
     showFrame(Number(scrubber.value));
   };
+  window.addEventListener("resize", () => {
+    if (frames.length > 0) resizeArena(frames[frameIndex]);
+  });
 </script>
