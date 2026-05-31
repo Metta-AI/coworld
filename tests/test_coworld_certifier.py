@@ -1414,7 +1414,8 @@ def _materialized_template(tmp_path: Path, template_path: Path) -> Path:
         "cogs_vs_clips": {
             "{{GAME_IMAGE}}": "coworld-cogs-vs-clips-game:latest",
             "{{PLAYER_IMAGE}}": "coworld-cogs-vs-clips-reference-player:latest",
-            "{{REPORTER_IMAGE}}": "ghcr.io/metta-ai/reporters-default:latest",
+            "{{REPORTER_IMAGE}}": "coworld-default-reporter:latest",
+            "{{COGS_VS_CLIPS_REPORTER_IMAGE}}": "coworld-cogs-vs-clips-summarizer:latest",
         },
         "paintarena": {"{{PAINTARENA_IMAGE}}": "coworld-paintarena:latest"},
     }

@@ -271,6 +271,16 @@ def test_canonical_cogs_vs_clips_template_points_to_source_repo(tmp_path: Path) 
     assert package.manifest.player[0].source_url == (
         "https://github.com/Metta-AI/coworld-cogs-vs-clips/tree/main/coworld/player"
     )
+    assert [role.id for role in package.manifest.reporter] == [
+        "softmax-default-reporter",
+        "cogs-vs-clips-summarizer",
+    ]
+    assert (
+        package.manifest.reporter[0].source_url == "https://github.com/Metta-AI/reporters/tree/main/reporters/default"
+    )
+    assert package.manifest.reporter[1].source_url == (
+        "https://github.com/Metta-AI/reporters/tree/main/reporters/cogs_vs_clips/cogs_vs_clips_summarizer"
+    )
 
 
 def test_canonical_crewrift_template_points_to_source_repo(tmp_path: Path) -> None:
@@ -333,8 +343,12 @@ def test_cogs_vs_clips_crewrift_and_paintarena_templates_declare_all_viability_r
     assert cogs_vs_clips_pages["game-source"] == "https://github.com/Metta-AI/coworld-cogs-vs-clips/tree/main"
     assert cogs_vs_clips_pages["player"] == "https://github.com/Metta-AI/coworld-cogs-vs-clips/tree/main/coworld/player"
     assert "env" not in cogs_vs_clips["player"][0]
-    for section in ("commissioner", "reporter", "grader", "optimizer", "diagnoser"):
+    for section in ("commissioner", "grader", "optimizer", "diagnoser"):
         assert cogs_vs_clips[section] == []
+    assert [role["id"] for role in cogs_vs_clips["reporter"]] == [
+        "softmax-default-reporter",
+        "cogs-vs-clips-summarizer",
+    ]
 
     crewrift = json.loads((WORLDS / "crewrift" / "coworld_manifest_template.json").read_text(encoding="utf-8"))
     for section in ("commissioner", "reporter", "grader", "optimizer", "diagnoser"):
@@ -400,6 +414,8 @@ def _materialized_template(base_dir: Path, template_path: Path) -> Path:
         "cogs_vs_clips": {
             "{{GAME_IMAGE}}": "coworld-cogs-vs-clips-game:latest",
             "{{PLAYER_IMAGE}}": "coworld-cogs-vs-clips-reference-player:latest",
+            "{{REPORTER_IMAGE}}": "coworld-default-reporter:latest",
+            "{{COGS_VS_CLIPS_REPORTER_IMAGE}}": "coworld-cogs-vs-clips-summarizer:latest",
         },
         "crewrift": {
             "{{GAME_IMAGE}}": "coworld-crewrift-game:latest",
