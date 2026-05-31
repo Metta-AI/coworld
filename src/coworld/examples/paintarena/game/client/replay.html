@@ -1,9 +1,6 @@
 <!doctype html>
 <title>Coworld Paint Arena Replay Client</title>
 <style>
-  html {
-    height: 100%;
-  }
   body {
     background: #f6f8fb;
     color: #172033;
@@ -20,16 +17,13 @@
     display: grid;
     gap: 12px;
     grid-template-rows: auto minmax(0, 1fr);
-    height: calc(100vh - 32px);
+    height: 100%;
   }
   .topbar {
     display: grid;
     gap: 10px 12px;
     grid-template-columns: auto minmax(180px, 1fr) minmax(320px, 1.4fr) auto;
     align-items: center;
-  }
-  .title-block {
-    min-width: 150px;
   }
   h1 {
     font-size: clamp(24px, 3vw, 36px);
@@ -95,11 +89,10 @@
     width: 100%;
   }
   #arenaShell {
-    align-items: start;
     display: grid;
-    justify-items: center;
     min-height: 0;
     overflow: hidden;
+    place-items: start center;
   }
   #arena {
     background: #d8e0ec;
@@ -208,7 +201,7 @@
 </style>
 <main>
   <header class="topbar">
-    <div class="title-block">
+    <div>
       <div class="eyebrow">Replay viewer</div>
       <h1>Paint Arena</h1>
     </div>
@@ -290,12 +283,8 @@
     const bounds = arenaShell.getBoundingClientRect();
     if (bounds.width <= 0 || bounds.height <= 0) return;
     const aspect = message.width / message.height;
-    let width = bounds.width;
-    let height = width / aspect;
-    if (height > bounds.height) {
-      height = bounds.height;
-      width = height * aspect;
-    }
+    const width = Math.min(bounds.width, bounds.height * aspect);
+    const height = width / aspect;
     arena.style.width = `${Math.floor(width)}px`;
     arena.style.height = `${Math.floor(height)}px`;
   }
