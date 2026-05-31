@@ -73,7 +73,7 @@ For a new Coworld, start from the Paint Arena manifest template and keep the gen
 The exact field names, required fields, and nested object shapes belong to the schema. The manifest guide should stay at
 this workflow level.
 
-## Game Configs And Runner-Injected Tokens
+## Game Configs, Tokens, And Player Names
 
 `game.config_schema` is a JSON Schema for the runtime config the game reads from `COGAME_CONFIG_URI`. It has one
 cross-Coworld requirement that is easier to explain here than in a field table: it must require a fixed-length
@@ -87,6 +87,17 @@ Coworld-authored configs do **not** include `tokens`:
 The runner injects fresh tokens when it creates the concrete per-episode config. That means authoring tools should
 validate the author-provided configs by adding placeholder tokens first, not by expecting tokens to appear in the
 manifest.
+
+Games that need policy or player display names use `game_config.players[].name`, matching the Paint Arena example.
+
+- Declare `game.config_schema.properties.players` as a fixed-length array with the same slot count as `tokens`.
+- Each `players[]` item must be an object with required string field `name`.
+- Hosted dispatch overwrites `game_config.players[].name` with resolved, per-slot display names when the schema declares
+  the field.
+- Local raw configs may set `players[].name` directly when a developer wants readable names without hosted dispatch.
+
+Game-specific `slots` config objects remain game-owned and can carry mechanics such as roles, colors, spawn settings,
+or other per-slot fields. Cross-Coworld player identity names flow through `game_config.players[].name`.
 
 See [Game Role](roles/GAME.md#player-slots) and [Lifecycle](LIFECYCLE.md) for the runtime path.
 

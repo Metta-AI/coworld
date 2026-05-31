@@ -1308,6 +1308,16 @@ def test_cogs_vs_clips_coworld_manifest_validates(tmp_path: Path) -> None:
     daily_variant = next(variant for variant in package.manifest.variants if variant.id == "machina-1-daily")
     assert daily_variant.game_config["max_steps"] == 10000
     assert config == {
+        "players": [
+            {"name": "Player 1"},
+            {"name": "Player 2"},
+            {"name": "Player 3"},
+            {"name": "Player 4"},
+            {"name": "Player 5"},
+            {"name": "Player 6"},
+            {"name": "Player 7"},
+            {"name": "Player 8"},
+        ],
         "mission": "cogsguard",
         "max_steps": 3,
         "seed": 0,

@@ -87,7 +87,7 @@ POD_UID
       "results_schema": {}
     }
   },
-  "game_config": { "map": "default", "player_names": ["policy:v1"] },
+  "game_config": { "map": "default", "players": [{ "name": "policy:v1" }] },
   "players": [
     {
       "image": "example-player:latest",
@@ -101,8 +101,8 @@ POD_UID
 
 This is the only payload shape consumed by the coordinator. Backend bookkeeping such as the uploaded Coworld ID or
 manifest hash lives in the backend's stored job payload and is converted out before `spec.json` is uploaded.
-Player display names are game config. Hosted commissioners inject resolved names into the game-owned name field before
-the coordinator receives the request.
+Runner specs do not carry backend-owned display-name metadata. Hosted dispatch injects resolved player names only into
+`game_config.players[].name`, and only when the game declares that field.
 
 ## Player Pods
 

@@ -8,10 +8,9 @@ from pydantic import ValidationError
 
 from coworld.certifier import load_coworld_package
 from coworld.manifest_validation import (
-    game_config_with_player_names,
+    game_config_with_named_players,
     game_config_with_tokens,
     infer_fixed_token_count,
-    player_names_from_game_config,
 )
 from coworld.schema_validation import validate_json_schema
 from coworld.types import CoworldEpisodeJobSpec, CoworldManifest
@@ -141,14 +140,16 @@ def test_bitworld_templates_keep_default_variants_open_roster(tmp_path: Path, wo
     token_count = infer_fixed_token_count(package.manifest.game.config_schema)
     player_names = [f"policy-{slot}:v{slot + 1}" for slot in range(token_count)]
 
-    game_config = game_config_with_player_names(
+    game_config = game_config_with_named_players(
         package.manifest.variants[0].game_config,
         player_names,
         package.manifest.game.config_schema,
     )
 
     assert "slots" not in game_config
-    assert player_names_from_game_config(game_config) is None
+    assert [player["name"] for player in game_config["players"]] == player_names
+    slot_properties = package.manifest.game.config_schema["properties"]["slots"]["items"]["properties"]
+    assert "name" not in slot_properties
     validate_json_schema(
         game_config_with_tokens(game_config, [f"token-{slot}" for slot in range(token_count)]),
         package.manifest.game.config_schema,
@@ -163,28 +164,6 @@ def test_bitworld_templates_keep_default_variants_open_roster(tmp_path: Path, wo
     assert "policy_names" not in runner_payload
     with pytest.raises(ValidationError, match="policy_names"):
         CoworldEpisodeJobSpec.model_validate({**runner_payload, "policy_names": player_names})
-
-
-@pytest.mark.parametrize("world_name", ("among_them", "crewrift"))
-def test_bitworld_templates_disambiguate_duplicate_explicit_slot_names(tmp_path: Path, world_name: str) -> None:
-    package = load_coworld_package(
-        _materialized_template(tmp_path, WORLDS / world_name / "coworld_manifest_template.json")
-    )
-    token_count = infer_fixed_token_count(package.manifest.game.config_schema)
-
-    game_config = game_config_with_player_names(
-        {**package.manifest.variants[0].game_config, "slots": [{} for _slot in range(token_count)]},
-        ["daveey"] * token_count,
-        package.manifest.game.config_schema,
-    )
-
-    slot_names = [slot["name"] for slot in game_config["slots"]]
-    assert len(set(slot_names)) == token_count
-    assert slot_names[0] == "daveey"
-    validate_json_schema(
-        game_config_with_tokens(game_config, [f"token-{slot}" for slot in range(token_count)]),
-        package.manifest.game.config_schema,
-    )
 
 
 def test_canonical_world_templates_use_role_types_as_contracts() -> None:
