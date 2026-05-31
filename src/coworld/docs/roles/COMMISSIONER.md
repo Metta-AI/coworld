@@ -6,12 +6,13 @@
 
 The commissioner role decides the structure of a league: which episodes get scheduled in each round, which policy
 versions play in each episode and in which slots, and how policies move between divisions based on results.
-Commissioners run once per league round — they are scoped to a single round, not a single episode.
+Commissioners run once per league round — the lifetime of a commissioner container session is exactly the lifetime of
+one round, not one episode and not the whole league.
 
 A commissioner is a long-lived container scoped to one round that communicates with the platform via WebSocket,
-consistent with how games and policies communicate. It schedules episodes incrementally, receives results as they
-complete, and signals when the round is done. Authors who don't need custom logic can use the platform-provided default
-commissioner configured via CLI flags.
+consistent with how games and policies communicate. It schedules episodes incrementally, receives results and failures
+as they complete, can schedule additional episodes in response to those episode outcomes, and signals when the round is
+done. Authors who don't need custom logic can use the platform-provided default commissioner configured via CLI flags.
 
 The commissioner is a black box from the platform's perspective — the platform doesn't know or care whether it's doing
 round-robin, elimination, Swiss, or something exotic. It just executes the episodes the commissioner asks for and
@@ -19,8 +20,15 @@ streams results back.
 
 ## Where it lives in the manifest
 
-`manifest.commissioner[]`, with `type: "commissioner"` on every entry. The section is optional in the current schema. See
+`manifest.commissioner[]`, with `type: "commissioner"` on every entry. The section is optional in the current schema,
+but intended to become required once the container-driven commissioner runtime ships. Coworld leagues that do not select
+a custom commissioner use the platform default commissioner image. Custom commissioners are selected by the league's
+`commissioner_config.commissioner_runnable_id`, which must match one `manifest.commissioner[].id`. See
 [`COWORLD_MANIFEST.md`](../COWORLD_MANIFEST.md) for the full runnable shape.
+
+Runnable `env` values are public configuration only. Secrets, credentials, private league data, and policy credentials
+do not belong in the manifest or container environment; the platform sends scoped round context over the WebSocket
+protocol.
 
 ### Manifest examples
 
@@ -92,7 +100,8 @@ that WebSocket connection as JSON messages with a `"type"` field.
 5. Commissioner reads its state, sends `schedule_episodes` listing the episodes it wants to run.
 6. Platform responds with `episodes_accepted` or `episodes_rejected`, dispatches valid episodes.
 7. As episodes complete, platform sends `episode_result` or `episode_failed`.
-8. Commissioner may schedule more episodes or declare the round done.
+8. Platform calls the commissioner's episode-completed hook for the result or failure; the commissioner may schedule
+   more episodes, including retries or replacements after failures, or declare the round done.
 9. Commissioner sends `round_complete` (per-division rankings, graduation changes, optional state blob) and exits.
 10. Platform records results, applies graduation changes, stores commissioner state for the next round.
 11. Container is terminated.
@@ -147,11 +156,13 @@ Sent once after the WebSocket connects, providing the full round context:
     {
       "id": "arena_4p",
       "name": "4-Player Arena",
+      "num_agents": 4,
       "game_config": { "tokens": ["", "", "", ""], "map_size": 32, "max_steps": 1000 }
     },
     {
       "id": "arena_2p",
       "name": "1v1 Arena",
+      "num_agents": 2,
       "game_config": { "tokens": ["", ""], "map_size": 16, "max_steps": 500 }
     }
   ],
@@ -163,9 +174,10 @@ The commissioner receives all divisions in the league and all active memberships
 for any division and move policies between divisions via `graduation_changes` in `round_complete`. Each membership
 includes its `division_id` so the commissioner knows where each policy currently sits.
 
-The `variants` array comes directly from the Coworld manifest's declared variants. The number of agents per variant is
-inferred from the length of the `tokens` array in each variant's `game_config` (required by the Coworld's
-`config_schema`). The commissioner selects a variant by ID when scheduling episodes.
+The `variants` array comes from the Coworld manifest's declared variants, plus platform-derived `num_agents` metadata.
+The number of agents is inferred from the Coworld `config_schema` token count and is included explicitly so
+commissioner containers do not need to duplicate schema inspection. The commissioner selects a variant by ID when
+scheduling episodes.
 
 The `state` field contains the opaque blob returned by the commissioner's previous `round_complete` message (or `null`
 for the first round). State is stored as a JSON column and limited to 10 MB.
@@ -278,6 +290,11 @@ Repeating a policy version is valid when one policy should control multiple slot
 The `request_id` is commissioner-generated and opaque to the platform. It's echoed back in `episode_result`,
 `episode_failed`, `episodes_accepted`, and `episodes_rejected`.
 
+The commissioner may send `schedule_episodes` more than once during a round. After each `episode_result` or
+`episode_failed`, the platform invokes the commissioner's `on_episode_completed` hook. Any episodes returned by that
+hook are scheduled before the round can complete, so a commissioner can replace failed episodes, retry with new seeds,
+or adapt the remaining round schedule to observed results.
+
 ##### `round_complete`
 
 Signal that the round is done:
@@ -365,7 +382,9 @@ container only drives what happens _within_ a round.
 
 When a Coworld with a commissioner is deployed:
 
-1. Platform creates a `League` with `commissioner_key = "container"` and stores the Coworld release reference.
+1. Platform creates a `League` with `commissioner_key = "container"` and stores the Coworld release reference. If
+   `commissioner_config.commissioner_runnable_id` is omitted, the platform default commissioner is used; otherwise the
+   value must match a `manifest.commissioner[].id`.
 2. Platform creates default divisions (configurable in manifest, defaults to a single "open" division).
 3. The round runner begins scheduling rounds per `commissioner_config`.
 4. Each round, the platform starts the commissioner container and drives the WebSocket protocol.
@@ -392,8 +411,9 @@ flags:
 
 The commissioner sits at the top of the league control loop. It tells the platform which episodes to run; the platform's
 game runner dispatches those episodes (with the requested policy versions in the requested slots); the game runnable
-produces episode results; the platform routes those results back to the commissioner as `episode_result` messages; and
-the commissioner eventually closes the round with [round decisions](../artifacts/ROUND_DECISIONS.md).
+produces episode results; the platform routes those results back to the commissioner as `episode_result` or
+`episode_failed` messages; the commissioner may respond by scheduling more episodes through its `on_episode_completed`
+hook; and the commissioner eventually closes the round with [round decisions](../artifacts/ROUND_DECISIONS.md).
 
 Unlike reporter, grader, diagnoser, and optimizer — all of which consume _individual_ episode evidence on demand after
 episodes finish — the commissioner consumes a stream of episode results in aggregate during a round and emits

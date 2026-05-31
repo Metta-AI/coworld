@@ -51,6 +51,7 @@ class LeaguePublic(CoworldAPIModel):
     slug: str | None = None
     game: GamePublic
     commissioner_key: str | None = None
+    commissioner_config: dict[str, Any] | None = None
     public: bool = False
     hidden: bool = False
     is_game_of_week: bool = False

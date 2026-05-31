@@ -46,6 +46,10 @@ The schema also links each role section back to its role contract using `x-cowor
 `markdownDescription`. That round trip is intentional: someone reading `coworld_manifest_schema.json` cold should be
 able to jump from `manifest.player[]` or `manifest.reporter[]` to the corresponding role doc.
 
+For commissioner runnables, `id` is also the value used by
+`commissioner_config.commissioner_runnable_id` when a Coworld league opts into a custom container commissioner. If that
+config key is absent or null, the platform runs its default commissioner image instead of a manifest entry.
+
 For role semantics, use the role docs rather than the schema:
 
 - [Game](roles/GAME.md)
