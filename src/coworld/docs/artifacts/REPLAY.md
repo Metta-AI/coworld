@@ -26,6 +26,9 @@ The replay viewer enters through `/client/replay`, and the replay WebSocket uses
 replay artifact location through `COGAME_LOAD_REPLAY_URI` when it starts the replay container. Hosted Observatory replay
 sessions pass the hosted `replay.json.z` artifact URI directly through `COGAME_LOAD_REPLAY_URI`.
 
+`GET /client/replay` starts playback automatically by default. When playback reaches the recorded end, the viewer loops
+back to tick 0 and continues until a user pauses or seeks.
+
 ## Consumers
 
 Replays are consumed by:
@@ -45,6 +48,7 @@ The episode bundle stores replay bytes as `replay.json` inside the outer zip. Ho
 - Hosted artifact: `REPLAY_URI`, stored as zlib-compressed `replay.json.z`.
 - Episode bundle entry: `replay.json`.
 - Replay server mode: same game image, with `COGAME_LOAD_REPLAY_URI` pointing at the replay bytes.
+- Replay viewer default: autoplay and loop from the recorded end back to tick 0.
 
 Certification checks that the replay file exists and that the game image can start a replay viewer for it.
 

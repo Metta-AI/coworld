@@ -33,6 +33,7 @@ It must:
 - Serve player WebSocket connections at `/player?slot=...&token=...`.
 - Serve a live global viewer at `GET /client/global` and `/global`.
 - In replay mode, with `COGAME_LOAD_REPLAY_URI` set, serve `GET /client/replay` and `/replay`.
+- Make `GET /client/replay` start playback automatically and loop from the recorded end back to tick 0 by default.
 - Write a JSON results artifact to `COGAME_RESULTS_URI` when the episode completes.
 - Write replay bytes to `COGAME_SAVE_REPLAY_URI`.
 
@@ -64,7 +65,8 @@ config fields.
 
 The game owns browser-client behavior. Player-facing flows expect `GET /client/player?slot=...&token=...` to serve the
 slot-specific player UI. Viewer flows expect `GET /client/global` for live viewing and `GET /client/replay` for replay
-mode.
+mode. Replay viewers may expose pause, seek, speed, and loop controls, but the default browser replay surface should
+begin playing and wrap back to tick 0 when it reaches the recorded end.
 
 The example Paint Arena protocol docs link here because the exact in-game messages are game-specific, while the route
 families and token semantics are Coworld-wide.

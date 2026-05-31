@@ -281,9 +281,10 @@
 
   function start() {
     stop();
+    if (frames.length === 0) return;
     timer = setInterval(() => {
       if (frameIndex >= frames.length - 1) {
-        stop();
+        showFrame(0);
       } else {
         showFrame(frameIndex + 1);
       }
@@ -300,7 +301,10 @@
     frames = message.frames.map(frame => ({ ...frame, player_names: message.player_names }));
     results = message.results;
     scrubber.max = Math.max(frames.length - 1, 0);
-    if (frames.length > 0) showFrame(0);
+    if (frames.length > 0) {
+      showFrame(0);
+      start();
+    }
   };
   socket.onclose = () => {
     if (frames.length === 0) status.textContent = "Disconnected";
