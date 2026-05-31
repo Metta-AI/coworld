@@ -88,11 +88,14 @@ def test_canonical_cogs_vs_clips_build_declares_game_context() -> None:
 
     assert "GAME_CONTEXT" in compose_text
     assert "PLAYER_CONTEXT" in compose_text
+    assert "METTASCOPE_CONTEXT" in compose_text
     assert "coworld-cogs-vs-clips" in compose_text
     assert "Dockerfile.game" in compose_text
     assert "Dockerfile.player" in compose_text
+    assert "cogs_src:" in compose_text
+    assert "mettascope_src:" in compose_text
+    assert "../../packages/mettagrid/nim/mettascope" in compose_text
     assert "games/games/cogsguard" not in compose_text
-    assert "additional_contexts:" not in compose_text
 
 
 def test_canonical_crewrift_build_declares_game_context() -> None:
