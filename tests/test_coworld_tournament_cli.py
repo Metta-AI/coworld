@@ -35,7 +35,7 @@ def test_replays_downloads_mine_division_replays(
     replay_payload = b'{"frames":[]}\n'
     replay_url = httpserver.url_for("/replay.json")
     httpserver.expect_request(
-        "/observatory/v2/episode-requests",
+        "/observatory/v2/experience-request-episodes",
         method="GET",
         headers={"Authorization": "Bearer token"},
     ).respond_with_json(
@@ -75,7 +75,9 @@ def test_replays_downloads_mine_division_replays(
     assert replay_path.read_bytes() == replay_payload
     index = json.loads((tmp_path / "index.json").read_text())
     assert index == metadata
-    episode_query = next(request for request, _ in httpserver.log if request.path == "/observatory/v2/episode-requests")
+    episode_query = next(
+        request for request, _ in httpserver.log if request.path == "/observatory/v2/experience-request-episodes"
+    )
     assert episode_query.args["division_id"] == DIVISION_ID
     assert not any(request.path == "/observatory/v2/rounds" for request, _ in httpserver.log)
     membership_query = next(
@@ -88,7 +90,7 @@ def test_replays_downloads_mine_division_replays(
 def test_episode_stats_prints_job_stats_json(httpserver: HTTPServer, monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr("coworld.api_client._load_current_cogames_token", lambda: "token")
     httpserver.expect_request(
-        f"/observatory/v2/episode-requests/{EPISODE_REQUEST_ID}",
+        f"/observatory/v2/experience-request-episodes/{EPISODE_REQUEST_ID}",
         method="GET",
         headers={"Authorization": "Bearer token"},
     ).respond_with_json(_episode_request(episode_request_id=EPISODE_REQUEST_ID, replay_url=None))
@@ -141,7 +143,7 @@ def test_episodes_accepts_bulk_rows_without_assignments(
     episode_request = _episode_request(episode_request_id=EPISODE_REQUEST_ID, replay_url=None)
     del episode_request["assignments"]
     httpserver.expect_request(
-        "/observatory/v2/episode-requests",
+        "/observatory/v2/experience-request-episodes",
         method="GET",
         headers={"Authorization": "Bearer token"},
     ).respond_with_json([episode_request])
@@ -162,7 +164,9 @@ def test_episodes_accepts_bulk_rows_without_assignments(
     rows = json.loads(result.output)
     assert rows[0]["id"] == EPISODE_REQUEST_ID
     assert "assignments" not in rows[0]
-    episode_query = next(request for request, _ in httpserver.log if request.path == "/observatory/v2/episode-requests")
+    episode_query = next(
+        request for request, _ in httpserver.log if request.path == "/observatory/v2/experience-request-episodes"
+    )
     assert episode_query.args["round_id"] == ROUND_ID
     assert not any(request.path == "/observatory/v2/rounds" for request, _ in httpserver.log)
 
@@ -173,7 +177,7 @@ def test_episodes_mine_division_uses_direct_episode_query(
 ) -> None:
     monkeypatch.setattr("coworld.api_client._load_current_cogames_token", lambda: "token")
     httpserver.expect_request(
-        "/observatory/v2/episode-requests",
+        "/observatory/v2/experience-request-episodes",
         method="GET",
         headers={"Authorization": "Bearer token"},
     ).respond_with_json([_episode_request(episode_request_id=EPISODE_REQUEST_ID, replay_url="s3://replay")])
@@ -196,7 +200,9 @@ def test_episodes_mine_division_uses_direct_episode_query(
     assert result.exit_code == 0, result.output
     rows = json.loads(result.output)
     assert [row["id"] for row in rows] == [EPISODE_REQUEST_ID]
-    episode_query = next(request for request, _ in httpserver.log if request.path == "/observatory/v2/episode-requests")
+    episode_query = next(
+        request for request, _ in httpserver.log if request.path == "/observatory/v2/experience-request-episodes"
+    )
     assert episode_query.args["division_id"] == DIVISION_ID
     assert not any(request.path == "/observatory/v2/rounds" for request, _ in httpserver.log)
 
@@ -240,7 +246,7 @@ def test_episode_logs_downloads_only_my_policy_agents(
     episode_request = _episode_request(episode_request_id=EPISODE_REQUEST_ID, replay_url=None)
     del episode_request["assignments"]
     httpserver.expect_request(
-        f"/observatory/v2/episode-requests/{EPISODE_REQUEST_ID}",
+        f"/observatory/v2/experience-request-episodes/{EPISODE_REQUEST_ID}",
         method="GET",
         headers={"Authorization": "Bearer token"},
     ).respond_with_json(episode_request)
@@ -281,12 +287,12 @@ def test_episode_logs_downloads_game_log(
 ) -> None:
     monkeypatch.setattr("coworld.api_client._load_current_cogames_token", lambda: "token")
     httpserver.expect_request(
-        f"/observatory/v2/episode-requests/{EPISODE_REQUEST_ID}",
+        f"/observatory/v2/experience-request-episodes/{EPISODE_REQUEST_ID}",
         method="GET",
         headers={"Authorization": "Bearer token"},
     ).respond_with_json(_episode_request(episode_request_id=EPISODE_REQUEST_ID, replay_url=None))
     httpserver.expect_request(
-        f"/observatory/v2/episode-requests/{EPISODE_REQUEST_ID}/artifacts/logs",
+        f"/observatory/v2/experience-request-episodes/{EPISODE_REQUEST_ID}/artifacts/logs",
         method="GET",
         headers={"Authorization": "Bearer token"},
     ).respond_with_data("game log\n", content_type="text/plain")
@@ -319,7 +325,7 @@ def test_replay_open_downloads_only_game_image_for_local_replay(
     replay_path.write_text('{"frames":[]}\n')
     opened_urls: list[str] = []
     httpserver.expect_request(
-        f"/observatory/v2/episode-requests/{EPISODE_REQUEST_ID}",
+        f"/observatory/v2/experience-request-episodes/{EPISODE_REQUEST_ID}",
         method="GET",
         headers={"Authorization": "Bearer token"},
     ).respond_with_json(_episode_request(episode_request_id=EPISODE_REQUEST_ID, replay_url=replay_path.as_uri()))
@@ -400,7 +406,7 @@ def test_replay_open_hosted_opens_viewer_url(httpserver: HTTPServer, monkeypatch
     replay_url = "https://storage.example/replay.json.z"
     viewer_url = "https://softmax.example/observatory/coworld-replays/session"
     httpserver.expect_request(
-        f"/observatory/v2/episode-requests/{EPISODE_REQUEST_ID}",
+        f"/observatory/v2/experience-request-episodes/{EPISODE_REQUEST_ID}",
         method="GET",
         headers={"Authorization": "Bearer token"},
     ).respond_with_json(_episode_request(episode_request_id=EPISODE_REQUEST_ID, replay_url=replay_url))
