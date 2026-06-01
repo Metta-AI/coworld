@@ -8,33 +8,39 @@
     height: 100vh;
     margin: 0;
     overflow: hidden;
-    padding: 16px;
+    padding: 10px;
   }
   * {
     box-sizing: border-box;
   }
   main {
     display: grid;
-    gap: 12px;
+    gap: 8px;
     grid-template-rows: auto minmax(0, 1fr);
     height: 100%;
   }
   .topbar {
-    display: grid;
-    gap: 10px 12px;
-    grid-template-columns: auto minmax(180px, 1fr) minmax(320px, 1.4fr) auto;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px 8px;
     align-items: center;
   }
+  .title {
+    align-items: baseline;
+    display: flex;
+    flex: 0 0 auto;
+    gap: 6px;
+  }
   h1 {
-    font-size: clamp(24px, 3vw, 36px);
+    font-size: clamp(18px, 2.3vw, 26px);
     line-height: 1;
     margin: 0;
   }
   .eyebrow {
     color: #637089;
-    font-size: 12px;
+    font-size: 11px;
     font-weight: 800;
-    letter-spacing: .08em;
+    letter-spacing: .04em;
     text-transform: uppercase;
   }
   #status {
@@ -42,16 +48,17 @@
     border-radius: 999px;
     color: white;
     display: inline-flex;
-    font-size: 13px;
+    font-size: 12px;
     font-weight: 800;
-    justify-self: end;
-    padding: 7px 12px;
+    margin-left: auto;
+    padding: 5px 9px;
     white-space: nowrap;
   }
   #scores {
     display: flex;
+    flex: 1 1 220px;
     flex-wrap: wrap;
-    gap: 6px;
+    gap: 4px;
     min-width: 0;
   }
   .score {
@@ -60,10 +67,10 @@
     border: 1px solid #cdd6e4;
     border-radius: 999px;
     display: inline-flex;
-    font-size: 13px;
+    font-size: 12px;
     font-weight: 900;
-    gap: 7px;
-    padding: 6px 10px;
+    gap: 6px;
+    padding: 4px 8px;
   }
   .score::before {
     background: var(--color);
@@ -72,21 +79,6 @@
     flex: 0 0 auto;
     height: 10px;
     width: 10px;
-  }
-  #timer {
-    background: #d8e0ec;
-    border-radius: 999px;
-    grid-column: 1 / -1;
-    height: 6px;
-    overflow: hidden;
-    width: 100%;
-  }
-  #timerFill {
-    background: #172033;
-    border-radius: inherit;
-    height: 100%;
-    transition: width 120ms linear;
-    width: 100%;
   }
   #arenaShell {
     display: grid;
@@ -109,6 +101,9 @@
     background: #f8fafc;
     border-radius: 5px;
     box-shadow: inset 0 1px 0 rgba(255, 255, 255, .85);
+    min-height: 0;
+    min-width: 0;
+    overflow: hidden;
     position: relative;
   }
   .owned-0 {
@@ -133,7 +128,7 @@
   }
   .agent::after {
     content: attr(data-heading);
-    font-size: clamp(20px, 3.4vw, 42px);
+    font-size: min(42px, calc(var(--cell-size, 24px) * .72));
     line-height: 1;
   }
   .agent-0 {
@@ -151,13 +146,14 @@
   .controls {
     align-items: center;
     display: flex;
+    flex: 1 1 300px;
     flex-wrap: wrap;
-    gap: 8px;
+    gap: 6px;
     min-width: 0;
   }
   .buttons {
     display: flex;
-    gap: 6px;
+    gap: 4px;
   }
   button {
     background: linear-gradient(#ffffff, #eef3fa);
@@ -165,9 +161,10 @@
     border-radius: 8px;
     color: #172033;
     cursor: pointer;
+    font-size: 12px;
     font-weight: 800;
-    min-height: 32px;
-    padding: 6px 10px;
+    min-height: 28px;
+    padding: 4px 8px;
     white-space: nowrap;
   }
   button:hover {
@@ -176,33 +173,28 @@
   }
   input {
     accent-color: #2563eb;
-    flex: 1 1 160px;
-    min-width: 120px;
+    flex: 1 1 90px;
+    min-width: 80px;
   }
   @media (max-width: 980px) {
     body {
-      overflow: auto;
-      padding: 12px;
+      padding: 8px;
     }
     main {
-      height: auto;
-      min-height: calc(100vh - 24px);
+      gap: 6px;
     }
     .topbar {
-      grid-template-columns: 1fr;
+      align-items: center;
     }
     #status {
-      justify-self: start;
-    }
-    #arenaShell {
-      min-height: 360px;
+      margin-left: 0;
     }
   }
 </style>
 <main>
   <header class="topbar">
-    <div>
-      <div class="eyebrow">Replay viewer</div>
+    <div class="title">
+      <div class="eyebrow">Replay</div>
       <h1>Paint Arena</h1>
     </div>
     <div id="scores"></div>
@@ -216,7 +208,6 @@
       <input id="scrubber" aria-label="Replay frame" min="0" type="range" value="0" />
     </div>
     <div id="status">Connecting</div>
-    <div id="timer"><div id="timerFill"></div></div>
   </header>
   <section id="arenaShell">
     <div id="arena"></div>
@@ -231,7 +222,6 @@
   const arenaShell = document.getElementById("arenaShell");
   const status = document.getElementById("status");
   const scores = document.getElementById("scores");
-  const timerFill = document.getElementById("timerFill");
   const play = document.getElementById("play");
   const pause = document.getElementById("pause");
   const slower = document.getElementById("slower");
@@ -246,7 +236,15 @@
   let timer = null;
 
   function draw(message) {
-    arena.style.gridTemplateColumns = `repeat(${message.width}, 1fr)`;
+    scrubber.value = frameIndex;
+    scores.replaceChildren(...message.scores.map((score, slot) => {
+      const scoreEl = document.createElement("div");
+      scoreEl.className = "score";
+      scoreEl.style.setProperty("--color", colors[slot]);
+      scoreEl.textContent = `${message.player_names[slot]}: ${score}`;
+      return scoreEl;
+    }));
+    status.textContent = `Frame ${frameIndex + 1}/${frames.length} · tick ${message.tick}/${message.max_ticks} · ${speed}x`;
     resizeArena(message);
     const agents = new Map(message.positions.map((position, slot) => [`${position[0]},${position[1]}`, slot]));
     const previous = frames[Math.max(frameIndex - 1, 0)] || message;
@@ -267,26 +265,27 @@
       }
     }
     arena.replaceChildren(...cells);
-    scrubber.value = frameIndex;
-    timerFill.style.width = `${Math.max(100 - (message.tick / message.max_ticks) * 100, 0)}%`;
-    scores.replaceChildren(...message.scores.map((score, slot) => {
-      const scoreEl = document.createElement("div");
-      scoreEl.className = "score";
-      scoreEl.style.setProperty("--color", colors[slot]);
-      scoreEl.textContent = `${message.player_names[slot]}: ${score}`;
-      return scoreEl;
-    }));
-    status.textContent = `Frame ${frameIndex + 1}/${frames.length} · tick ${message.tick}/${message.max_ticks} · ${speed}x`;
   }
 
   function resizeArena(message) {
     const bounds = arenaShell.getBoundingClientRect();
     if (bounds.width <= 0 || bounds.height <= 0) return;
-    const aspect = message.width / message.height;
-    const width = Math.min(bounds.width, bounds.height * aspect);
-    const height = width / aspect;
-    arena.style.width = `${Math.floor(width)}px`;
-    arena.style.height = `${Math.floor(height)}px`;
+    const style = window.getComputedStyle(arena);
+    const gap = Number.parseFloat(style.columnGap) || 0;
+    const paddingX = (Number.parseFloat(style.paddingLeft) || 0) + (Number.parseFloat(style.paddingRight) || 0);
+    const paddingY = (Number.parseFloat(style.paddingTop) || 0) + (Number.parseFloat(style.paddingBottom) || 0);
+    const borderX = (Number.parseFloat(style.borderLeftWidth) || 0) + (Number.parseFloat(style.borderRightWidth) || 0);
+    const borderY = (Number.parseFloat(style.borderTopWidth) || 0) + (Number.parseFloat(style.borderBottomWidth) || 0);
+    const cellSize = Math.floor(Math.min(
+      (bounds.width - paddingX - borderX - gap * (message.width - 1)) / message.width,
+      (bounds.height - paddingY - borderY - gap * (message.height - 1)) / message.height,
+    ));
+    if (cellSize <= 0) return;
+    arena.style.setProperty("--cell-size", `${cellSize}px`);
+    arena.style.gridTemplateColumns = `repeat(${message.width}, ${cellSize}px)`;
+    arena.style.gridAutoRows = `${cellSize}px`;
+    arena.style.width = `${cellSize * message.width + gap * (message.width - 1) + paddingX + borderX}px`;
+    arena.style.height = `${cellSize * message.height + gap * (message.height - 1) + paddingY + borderY}px`;
   }
 
   function headingFor(previous, current) {
