@@ -107,6 +107,10 @@
       }
     },
     "docs": {
+      "readme": {
+        "type": "uri",
+        "value": "https://github.com/Metta-AI/coworld/blob/main/src/coworld/examples/paintarena/README.md"
+      },
       "pages": [
         {
           "id": "rules.md",

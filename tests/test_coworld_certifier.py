@@ -1537,6 +1537,7 @@ def _game_manifest(*, config_schema_required: list[str] | None = None) -> dict[s
             "global": {"type": "uri", "value": "https://example.com/global_protocol_spec.md"},
         },
         "docs": {
+            "readme": {"type": "uri", "value": "https://example.com/README.md"},
             "pages": [
                 {
                     "id": "rules.md",
@@ -1548,7 +1549,7 @@ def _game_manifest(*, config_schema_required: list[str] | None = None) -> dict[s
                     "title": "play_unittest.md",
                     "content": {"type": "uri", "value": "https://example.com/play_unittest.md"},
                 },
-            ]
+            ],
         },
     }
 

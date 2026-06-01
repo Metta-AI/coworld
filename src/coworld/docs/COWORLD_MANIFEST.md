@@ -23,7 +23,7 @@ The schema generated from `CoworldManifest` is the source of truth for:
 - allowed role `type` values;
 - defaulted arrays;
 - `additionalProperties` behavior;
-- required `game.docs.pages` entries;
+- the required `game.docs.readme` entry;
 - role-documentation links through each role section's `x-coworld-role-doc` and `markdownDescription` metadata;
 - minimum lengths and other directly expressible validation rules.
 
@@ -118,13 +118,13 @@ See [Results Artifact](artifacts/RESULTS.md) for the artifact contract.
 The manifest stores document references, not local file uploads. A document is either inline text or a public HTTP(S)
 URI. Referenced URI docs should be fetchable by users and tools after the Coworld is uploaded.
 
-`game.docs.pages` must include:
+`game.docs.readme` is required and points to the Coworld's `README.md`. That README is the canonical game-authored
+onboarding document for game rules, setup, player guidance, and context. It should be usable by humans and coding
+agents after the Coworld is uploaded.
 
-- exactly one `rules.md` page;
-- exactly one `play_*.md` page whose id matches `^play_[a-z0-9][a-z0-9_-]*\.md$`.
-
-The `rules.md` page explains the game. The `play_*.md` page is the player-onboarding guide surfaced by player-facing
-flows. Additional game-authored pages can be included for strategy notes, protocol supplements, or reference material.
+`game.docs.pages` is optional supplemental documentation. Coworlds may include pages for strategy notes, protocol
+supplements, reference material, or legacy rule/play guides, but the manifest contract no longer requires a `rules.md`
+or `play_*.md` page.
 
 ## Images, Runnables, And Releases
 

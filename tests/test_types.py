@@ -131,68 +131,64 @@ def test_manifest_rejects_missing_game_docs() -> None:
         CoworldManifest.model_validate(manifest)
 
 
-def test_manifest_rejects_empty_game_docs_pages() -> None:
+def test_manifest_rejects_missing_game_docs_readme() -> None:
+    manifest = _manifest_data()
+    del manifest["game"]["docs"]["readme"]
+
+    with pytest.raises(ValidationError, match="game.docs.readme"):
+        CoworldManifest.model_validate(manifest)
+
+
+def test_manifest_allows_missing_game_docs_pages() -> None:
+    manifest = _manifest_data()
+    del manifest["game"]["docs"]["pages"]
+
+    assert CoworldManifest.model_validate(manifest).game.docs.pages == []
+
+
+def test_manifest_allows_empty_game_docs_pages() -> None:
     manifest = _manifest_data()
     manifest["game"]["docs"]["pages"] = []
 
-    _assert_docs_page_error(manifest, rules_count=0, play_count=0)
+    assert CoworldManifest.model_validate(manifest).game.docs.pages == []
 
 
-def test_manifest_rejects_game_docs_pages_without_play_page() -> None:
+def test_manifest_allows_docs_pages_without_play_page() -> None:
     manifest = _manifest_data()
     manifest["game"]["docs"]["pages"] = [
         {"id": "rules.md", "title": "rules.md", "content": {"type": "text", "value": "# Rules"}}
     ]
 
-    _assert_docs_page_error(manifest, play_count=0)
+    assert [page.id for page in CoworldManifest.model_validate(manifest).game.docs.pages] == ["rules.md"]
 
 
-def test_manifest_rejects_game_docs_pages_without_rules_page() -> None:
+def test_manifest_allows_docs_pages_without_rules_page() -> None:
     manifest = _manifest_data()
     manifest["game"]["docs"]["pages"] = [
         {"id": "play_unittest.md", "title": "play_unittest.md", "content": {"type": "text", "value": "# Play"}}
     ]
 
-    _assert_docs_page_error(manifest, rules_count=0)
+    assert [page.id for page in CoworldManifest.model_validate(manifest).game.docs.pages] == ["play_unittest.md"]
 
 
-def test_manifest_rejects_duplicate_required_game_docs_pages() -> None:
+def test_manifest_allows_duplicate_supplemental_game_docs_pages() -> None:
     manifest = _manifest_data()
-    pages = manifest["game"]["docs"]["pages"]
-    pages.append({"id": "rules.md", "title": "rules.md", "content": {"type": "text", "value": "# Other Rules"}})
+    manifest["game"]["docs"]["pages"] = [
+        {"id": "rules.md", "title": "rules.md", "content": {"type": "text", "value": "# Rules"}},
+        {"id": "rules.md", "title": "rules.md", "content": {"type": "text", "value": "# Other Rules"}},
+    ]
 
-    _assert_docs_page_error(manifest, rules_count=2)
+    assert [page.id for page in CoworldManifest.model_validate(manifest).game.docs.pages] == ["rules.md", "rules.md"]
 
+
+@pytest.mark.parametrize("page_id", ["play_Foo.md", "play_-foo.md", "play__foo.md"])
+def test_manifest_allows_noncanonical_play_page_id(page_id: str) -> None:
     manifest = _manifest_data()
-    pages = manifest["game"]["docs"]["pages"]
-    pages.append(
-        {
-            "id": "play_advanced.md",
-            "title": "play_advanced.md",
-            "content": {"type": "text", "value": "# Advanced Play"},
-        }
-    )
+    manifest["game"]["docs"]["pages"] = [
+        {"id": page_id, "title": page_id, "content": {"type": "text", "value": "# Play"}}
+    ]
 
-    _assert_docs_page_error(manifest, play_count=2)
-
-
-@pytest.mark.parametrize(
-    "page_id",
-    [
-        "play_Foo.md",
-        "play_-foo.md",
-        "play__foo.md",
-    ],
-)
-def test_manifest_rejects_noncanonical_play_page_id(page_id: str) -> None:
-    manifest = _manifest_data()
-    manifest["game"]["docs"]["pages"][1]["id"] = page_id
-
-    with pytest.raises(ValidationError) as exc_info:
-        CoworldManifest.model_validate(manifest)
-    message = str(exc_info.value)
-    assert page_id in message
-    assert "`play_` prefix" in message
+    assert CoworldManifest.model_validate(manifest).game.docs.pages[0].id == page_id
 
 
 @pytest.mark.parametrize(
@@ -203,35 +199,30 @@ def test_manifest_rejects_noncanonical_play_page_id(page_id: str) -> None:
         "play__foo.md",
     ],
 )
-def test_manifest_rejects_extra_noncanonical_play_page_alongside_canonical(extra_play_id: str) -> None:
+def test_manifest_allows_extra_noncanonical_play_page_alongside_canonical(extra_play_id: str) -> None:
     manifest = _manifest_data()
     manifest["game"]["docs"]["pages"].append(
         {
             "id": extra_play_id,
             "title": extra_play_id,
-            "content": {"type": "text", "value": "# Stale noncanonical play guide"},
+            "content": {"type": "text", "value": "# Supplemental play guide"},
         }
     )
 
-    with pytest.raises(ValidationError) as exc_info:
-        CoworldManifest.model_validate(manifest)
-    message = str(exc_info.value)
-    assert extra_play_id in message
-    assert "`play_` prefix" in message
+    assert CoworldManifest.model_validate(manifest).game.docs.pages[-1].id == extra_play_id
 
 
-def test_manifest_schema_rejects_extra_noncanonical_play_page_alongside_canonical() -> None:
+def test_manifest_schema_allows_extra_noncanonical_play_page_alongside_canonical() -> None:
     manifest = _manifest_data()
     manifest["game"]["docs"]["pages"].append(
         {
             "id": "play_AmongThem.md",
             "title": "play_AmongThem.md",
-            "content": {"type": "text", "value": "# Stale noncanonical play guide"},
+            "content": {"type": "text", "value": "# Supplemental play guide"},
         }
     )
 
-    with pytest.raises(JsonSchemaValidationError):
-        validate_json_schema(manifest, coworld_manifest_schema())
+    validate_json_schema(manifest, coworld_manifest_schema())
 
 
 def test_manifest_strips_doc_page_id_trailing_newlines() -> None:
@@ -244,15 +235,22 @@ def test_manifest_strips_doc_page_id_trailing_newlines() -> None:
     assert [page.id for page in typed_manifest.game.docs.pages] == ["rules.md", "play_unittest.md"]
 
 
-def test_manifest_schema_rejects_missing_required_game_docs_pages() -> None:
+def test_manifest_schema_rejects_missing_required_game_docs_readme() -> None:
     manifest = _manifest_data()
-    manifest["game"]["docs"]["pages"] = []
+    del manifest["game"]["docs"]["readme"]
 
     with pytest.raises(JsonSchemaValidationError):
         validate_json_schema(manifest, coworld_manifest_schema())
 
 
-def test_manifest_schema_rejects_duplicate_required_game_docs_pages() -> None:
+def test_manifest_schema_allows_empty_game_docs_pages() -> None:
+    manifest = _manifest_data()
+    manifest["game"]["docs"]["pages"] = []
+
+    validate_json_schema(manifest, coworld_manifest_schema())
+
+
+def test_manifest_schema_allows_duplicate_supplemental_game_docs_pages() -> None:
     manifest = _manifest_data()
     manifest["game"]["docs"]["pages"].append(
         {
@@ -262,17 +260,16 @@ def test_manifest_schema_rejects_duplicate_required_game_docs_pages() -> None:
         }
     )
 
-    with pytest.raises(JsonSchemaValidationError):
-        validate_json_schema(manifest, coworld_manifest_schema())
+    validate_json_schema(manifest, coworld_manifest_schema())
 
 
-def test_manifest_accepts_required_game_docs_pages() -> None:
+def test_manifest_accepts_required_game_docs_readme() -> None:
     manifest = CoworldManifest.model_validate(_manifest_data())
 
-    assert [page.id for page in manifest.game.docs.pages] == ["rules.md", "play_unittest.md"]
+    assert manifest.game.docs.readme.value == "https://example.com/README.md"
 
 
-def test_manifest_schema_accepts_required_game_docs_pages() -> None:
+def test_manifest_schema_accepts_required_game_docs_readme() -> None:
     validate_json_schema(_manifest_data(), coworld_manifest_schema())
 
 
@@ -333,24 +330,6 @@ def _assert_schema_properties_have_descriptions(schema_name: str, schema: dict[s
     assert missing == []
 
 
-def _assert_docs_page_error(
-    manifest: dict[str, Any],
-    *,
-    rules_count: int = 1,
-    play_count: int = 1,
-) -> None:
-    assert rules_count != 1 or play_count != 1
-    with pytest.raises(ValidationError) as exc_info:
-        CoworldManifest.model_validate(manifest)
-    message = str(exc_info.value)
-    if rules_count != 1:
-        assert f"expected exactly one `rules.md` page; found {rules_count}" in message
-    if play_count != 1:
-        assert (
-            f"expected exactly one page matching `play_*.md` (`^play_[a-z0-9][a-z0-9_-]*\\.md$`); found {play_count}"
-        ) in message
-
-
 def _manifest_data(game_type: str = "game", player_type: str = "player") -> dict[str, Any]:
     return {
         "game": {
@@ -363,6 +342,7 @@ def _manifest_data(game_type: str = "game", player_type: str = "player") -> dict
             "results_schema": {},
             "protocols": {"player": {"type": "text", "value": "p"}, "global": {"type": "text", "value": "g"}},
             "docs": {
+                "readme": {"type": "uri", "value": "https://example.com/README.md"},
                 "pages": [
                     {"id": "rules.md", "title": "rules.md", "content": {"type": "text", "value": "# Rules"}},
                     {
@@ -370,7 +350,7 @@ def _manifest_data(game_type: str = "game", player_type: str = "player") -> dict
                         "title": "play_unittest.md",
                         "content": {"type": "text", "value": "# Play"},
                     },
-                ]
+                ],
             },
         },
         "player": [

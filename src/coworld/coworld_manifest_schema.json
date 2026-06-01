@@ -41,14 +41,8 @@
       "additionalProperties": false,
       "properties": {
         "id": {
-          "description": "Stable document page id. Exactly one rules.md and one play_*.md page are required.",
-          "if": {
-            "pattern": "^play_"
-          },
+          "description": "Stable supplemental document page id.",
           "minLength": 1,
-          "then": {
-            "pattern": "^play_[a-z0-9][a-z0-9_-]*\\.md$"
-          },
           "title": "Id",
           "type": "string"
         },
@@ -86,62 +80,26 @@
       "additionalProperties": false,
       "properties": {
         "readme": {
-          "anyOf": [
+          "description": "Required top-level README.md document for game rules, setup, and player onboarding.",
+          "discriminator": {
+            "mapping": {
+              "text": "#/$defs/CoworldTextDoc",
+              "uri": "#/$defs/CoworldUriDoc"
+            },
+            "propertyName": "type"
+          },
+          "oneOf": [
             {
-              "discriminator": {
-                "mapping": {
-                  "text": "#/$defs/CoworldTextDoc",
-                  "uri": "#/$defs/CoworldUriDoc"
-                },
-                "propertyName": "type"
-              },
-              "oneOf": [
-                {
-                  "$ref": "#/$defs/CoworldTextDoc"
-                },
-                {
-                  "$ref": "#/$defs/CoworldUriDoc"
-                }
-              ]
+              "$ref": "#/$defs/CoworldTextDoc"
             },
             {
-              "type": "null"
+              "$ref": "#/$defs/CoworldUriDoc"
             }
           ],
-          "default": null,
-          "description": "Optional top-level game readme document.",
           "title": "Readme"
         },
         "pages": {
-          "allOf": [
-            {
-              "contains": {
-                "properties": {
-                  "id": {
-                    "const": "rules.md"
-                  }
-                },
-                "required": ["id"],
-                "type": "object"
-              },
-              "maxContains": 1,
-              "minContains": 1
-            },
-            {
-              "contains": {
-                "properties": {
-                  "id": {
-                    "pattern": "^play_[a-z0-9][a-z0-9_-]*\\.md$"
-                  }
-                },
-                "required": ["id"],
-                "type": "object"
-              },
-              "maxContains": 1,
-              "minContains": 1
-            }
-          ],
-          "description": "Game-authored documentation pages. Must include exactly one rules.md and exactly one play_*.md.",
+          "description": "Optional supplemental game-authored documentation pages.",
           "items": {
             "$ref": "#/$defs/CoworldDocPage"
           },
@@ -149,7 +107,7 @@
           "type": "array"
         }
       },
-      "required": ["pages"],
+      "required": ["readme"],
       "title": "CoworldDocs",
       "type": "object"
     },

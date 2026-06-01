@@ -19,8 +19,8 @@ an array. Identifying metadata (`game.name`, `game.version`, `game.description`,
 
 See [`COWORLD_MANIFEST.md`](../COWORLD_MANIFEST.md) for the manifest semantics and generated-schema source of truth.
 
-The `game` object also requires `game.docs.pages` to include exactly one `rules.md` entry and exactly one `play_*.md`
-entry for player onboarding. Those manifest docs are public HTTP(S) or inline references surfaced after upload.
+The `game` object also requires `game.docs.readme`, the Coworld's public `README.md` reference for player onboarding,
+rules, setup, and context. Additional `game.docs.pages` entries are optional supplemental docs surfaced after upload.
 
 ## Contract
 

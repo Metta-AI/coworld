@@ -1103,6 +1103,7 @@ def _manifest() -> dict[str, object]:
                 "global": {"type": "uri", "value": "https://example.com/global_protocol_spec.md"},
             },
             "docs": {
+                "readme": {"type": "uri", "value": "https://example.com/README.md"},
                 "pages": [
                     {
                         "id": "rules.md",
@@ -1114,7 +1115,7 @@ def _manifest() -> dict[str, object]:
                         "title": "play_unittest.md",
                         "content": {"type": "uri", "value": "https://example.com/play_unittest.md"},
                     },
-                ]
+                ],
             },
         },
         "player": [
