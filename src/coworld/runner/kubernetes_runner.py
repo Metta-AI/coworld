@@ -38,6 +38,19 @@ GAME_PORT = int(os.environ.get("COGAME_PORT", "8080"))
 _BEDROCK_SERVICE_ACCOUNT = "episode-runner"
 DEFAULT_PLAYER_CPU_REQUEST = "2"
 DEFAULT_PLAYER_MEMORY_REQUEST = "2Gi"
+_PLAYER_WAITING_POLICY_FAILURE_REASONS = {
+    "CrashLoopBackOff",
+    "CreateContainerConfigError",
+    "ErrImagePull",
+    "ImagePullBackOff",
+    "InvalidImageName",
+}
+
+
+class PlayerPodFailure(RuntimeError):
+    def __init__(self, failed_policy_index: int, message: str):
+        super().__init__(message)
+        self.failed_policy_index = failed_policy_index
 
 
 def init_config_from_env() -> None:
@@ -75,7 +88,14 @@ def _write_error_info(exc: Exception) -> None:
     error_info_uri = os.environ.get("ERROR_INFO_URI")
     if error_info_uri is None:
         return
-    runner_error = RunnerError(error_type="crash", message=str(exc)[:2000])
+    if isinstance(exc, PlayerPodFailure):
+        runner_error = RunnerError(
+            error_type="policy_error",
+            message=str(exc)[:2000],
+            failed_policy_index=exc.failed_policy_index,
+        )
+    else:
+        runner_error = RunnerError(error_type="crash", message=str(exc)[:2000])
     upload_data(error_info_uri, runner_error.model_dump_json(), content_type="application/json")
 
 
@@ -178,6 +198,7 @@ def _run_kubernetes_episode(
             core_v1,
             namespace,
             pod_name,
+            child_names,
             timeout_seconds=timeout_seconds,
             require_replay=os.environ.get("REPLAY_URI") is not None,
         )
@@ -321,13 +342,13 @@ def _wait_for_episode_artifacts(
     core_v1,
     namespace: str,
     pod_name: str,
+    player_pod_names: list[str] | None = None,
     *,
     timeout_seconds: float,
     require_replay: bool,
 ) -> None:
-    # Episode success is decided solely by the game container: it owns whether a
-    # player leaving (cleanly or not) ends the game. A player pod exiting or being
-    # garbage-collected is never itself a failure.
+    # Game artifacts win. Player pod failures are attributed only after the game
+    # times out without writing the required episode artifacts.
     deadline = time.monotonic() + timeout_seconds
     expected = [artifacts.results_path]
     if require_replay:
@@ -351,8 +372,43 @@ def _wait_for_episode_artifacts(
             raise TimeoutError(f"Game container exited before writing episode artifact(s): {missing_list}")
 
         time.sleep(0.5)
+    _raise_if_player_pod_failed(core_v1, namespace, player_pod_names or ())
     expected_list = ", ".join(str(path) for path in expected)
     raise TimeoutError(f"Timed out waiting for game container to finish writing episode artifact(s): {expected_list}")
+
+
+def _raise_if_player_pod_failed(core_v1, namespace: str, player_pod_names: tuple[str, ...] | list[str]) -> None:
+    for slot, player_pod_name in enumerate(player_pod_names):
+        try:
+            player_pod = core_v1.read_namespaced_pod(name=player_pod_name, namespace=namespace)
+        except ApiException as exc:
+            if exc.status == 404:
+                continue
+            raise
+        for status in player_pod.status.container_statuses or []:
+            if status.name != "player":
+                continue
+            state = status.state
+            terminated = state.terminated
+            if terminated is not None:
+                if terminated.exit_code == 0:
+                    continue
+                parts = [
+                    f"Player pod {player_pod_name} for slot {slot} terminated with exit code "
+                    f"{terminated.exit_code} before episode artifacts were written"
+                ]
+                parts.extend(part for part in (terminated.reason, terminated.message) if part)
+                raise PlayerPodFailure(slot, ": ".join(parts))
+            waiting = state.waiting
+            waiting_reason = waiting.reason if waiting is not None else None
+            if waiting_reason in _PLAYER_WAITING_POLICY_FAILURE_REASONS:
+                parts = [
+                    f"Player pod {player_pod_name} for slot {slot} waiting: {waiting_reason} "
+                    "before episode artifacts were written"
+                ]
+                if waiting.message:
+                    parts.append(waiting.message)
+                raise PlayerPodFailure(slot, ": ".join(parts))
 
 
 def _game_container_exit_code(core_v1, namespace: str, pod_name: str) -> int | None:

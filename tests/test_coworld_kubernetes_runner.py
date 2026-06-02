@@ -40,9 +40,11 @@ class _FakeCoreV1:
         self,
         artifact_writes: list[list[Path]] | None = None,
         game_exit_codes: list[int | None] | None = None,
+        player_statuses: dict[str, list] | None = None,
     ):
         self._artifact_writes = artifact_writes or []
         self._game_exit_codes = game_exit_codes or []
+        self._player_statuses = player_statuses or {}
         self.game_read_count = 0
 
     def read_namespaced_pod(self, *, name: str, namespace: str):
@@ -61,6 +63,8 @@ class _FakeCoreV1:
                             state=SimpleNamespace(terminated=SimpleNamespace(exit_code=exit_code)),
                         )
                     ]
+        elif name in self._player_statuses:
+            container_statuses = self._player_statuses[name]
         return SimpleNamespace(
             status=SimpleNamespace(
                 phase="Running",
@@ -85,7 +89,7 @@ def _container_status(
             terminated=SimpleNamespace(exit_code=exit_code, reason=reason, message=message)
             if exit_code is not None
             else None,
-            waiting=object() if waiting else None,
+            waiting=SimpleNamespace(reason=reason, message=message) if waiting else None,
         ),
     )
 
@@ -377,6 +381,9 @@ def test_wait_for_episode_artifacts_fails_when_game_exits_without_replay(tmp_pat
     core_v1 = _FakeCoreV1(
         artifact_writes=[[artifacts.results_path]],
         game_exit_codes=[0],
+        player_statuses={
+            "player-0": [_container_status("player", exit_code=0, reason="Completed")],
+        },
     )
 
     with pytest.raises(TimeoutError, match="replay"):
@@ -385,8 +392,58 @@ def test_wait_for_episode_artifacts_fails_when_game_exits_without_replay(tmp_pat
             core_v1,
             "default",
             "game-pod",
+            ["player-0"],
             timeout_seconds=1.0,
             require_replay=True,
+        )
+
+
+@pytest.mark.parametrize(
+    ("player_status", "expected_message"),
+    [
+        (_container_status("player", exit_code=1, reason="Error", message="websocket returned 403"), "websocket"),
+        (
+            _container_status("player", waiting=True, reason="ImagePullBackOff", message="pull failed"),
+            "ImagePullBackOff",
+        ),
+    ],
+)
+def test_wait_for_episode_artifacts_reports_failed_player_on_timeout(tmp_path, player_status, expected_message):
+    artifacts = EpisodeArtifacts.create(tmp_path)
+    core_v1 = _FakeCoreV1(player_statuses={"player-0": [player_status]})
+
+    with pytest.raises(kubernetes_runner.PlayerPodFailure) as exc_info:
+        _wait_for_episode_artifacts(
+            artifacts,
+            core_v1,
+            "default",
+            "game-pod",
+            ["player-0"],
+            timeout_seconds=0.01,
+            require_replay=False,
+        )
+
+    assert exc_info.value.failed_policy_index == 0
+    assert expected_message in str(exc_info.value)
+
+
+def test_wait_for_episode_artifacts_ignores_clean_player_exit_on_timeout(tmp_path):
+    artifacts = EpisodeArtifacts.create(tmp_path)
+    core_v1 = _FakeCoreV1(
+        player_statuses={
+            "player-0": [_container_status("player", exit_code=0, reason="Completed")],
+        }
+    )
+
+    with pytest.raises(TimeoutError, match="results"):
+        _wait_for_episode_artifacts(
+            artifacts,
+            core_v1,
+            "default",
+            "game-pod",
+            ["player-0"],
+            timeout_seconds=0.01,
+            require_replay=False,
         )
 
 
@@ -407,6 +464,7 @@ def test_wait_for_episode_artifacts_ignores_player_pods(tmp_path, monkeypatch):
         core_v1,
         "default",
         "game-pod",
+        ["player-0"],
         timeout_seconds=1.0,
         require_replay=True,
     )
@@ -694,6 +752,18 @@ def test_write_error_info_marks_failure_as_crash(monkeypatch, tmp_path):
     assert error_info["error_type"] == "crash"
     assert error_info["failed_policy_index"] is None
     assert "Game container exited with code 1" in error_info["message"]
+
+
+def test_write_error_info_marks_player_pod_failure_as_policy_error(monkeypatch, tmp_path):
+    error_dest = tmp_path / "error_info.json"
+    monkeypatch.setenv("ERROR_INFO_URI", error_dest.as_uri())
+
+    kubernetes_runner._write_error_info(kubernetes_runner.PlayerPodFailure(3, "player pod failed"))
+
+    error_info = json.loads(error_dest.read_text(encoding="utf-8"))
+    assert error_info["error_type"] == "policy_error"
+    assert error_info["failed_policy_index"] == 3
+    assert error_info["message"] == "player pod failed"
 
 
 def test_create_player_pod_keeps_default_service_account_without_bedrock():
