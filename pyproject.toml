@@ -16,7 +16,11 @@ dependencies = [
   "packaging>=24.0.0",
   "pyarrow>=16.1.0",
   "pydantic>=2.11.5",
+  # referencing is a runtime resolver used by jsonschema's referencing
+  # machinery; reachable via jsonschema but kept explicit since coworld's
+  # schema_validation.py interacts with it directly.
   "referencing>=0.36.2",
+  "requests>=2.32",
   "rich>=13.7.0",
   "softmax-cli==0.26.14",
   "typer>=0.19.2",
