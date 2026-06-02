@@ -122,9 +122,17 @@ URI. Referenced URI docs should be fetchable by users and tools after the Coworl
 onboarding document for game rules, setup, player guidance, and context. It should be usable by humans and coding
 agents after the Coworld is uploaded.
 
+Game uploaders should put the durable game-owned material in `game.docs.readme`: rules, strategies, how to use or
+modify a game-specific policy, and game-specific FAQs.
+
 `game.docs.pages` is optional supplemental documentation. Coworlds may include pages for strategy notes, protocol
 supplements, reference material, or legacy rule/play guides, but the manifest contract no longer requires a `rules.md`
-or `play_*.md` page.
+or `play_*.md` page. When a Softmax league lists a `play_*.md` page, treat it as the platform play guide for Coworld CLI
+setup, policy upload, league submission, placement matches, standings, logs, and replays rather than as game-owned
+rules.
+
+Protocol docs belong under `game.protocols`. If the game uses a shared protocol, point at the shared protocol document
+instead of copying it into the game repo.
 
 ## Images, Runnables, And Releases
 

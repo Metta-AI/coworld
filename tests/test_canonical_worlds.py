@@ -308,19 +308,14 @@ def test_canonical_crewrift_template_points_to_source_repo(tmp_path: Path) -> No
     )
     assert (
         package.manifest.game.protocols.player.value
-        == "https://github.com/Metta-AI/coworld-crewrift/blob/master/docs/sprite_v1.md"
+        == "https://github.com/Metta-AI/bitworld/blob/master/docs/sprite_v1.md"
     )
     assert (
         package.manifest.game.protocols.global_.value
-        == "https://github.com/Metta-AI/coworld-crewrift/blob/master/docs/sprite_v1.md"
+        == "https://github.com/Metta-AI/bitworld/blob/master/docs/sprite_v1.md"
     )
-    assert pages["rules.md"] == "https://softmax.com/play_crewrift.md#game-rules"
+    assert pages["notsus.md"].endswith("/players/notsus/README.md")
     assert pages["play_crewrift.md"] == "https://softmax.com/play_crewrift.md"
-    assert pages["player"] == "https://github.com/Metta-AI/coworld-crewrift/blob/master/players/how_to_make_a_bot.md"
-    assert pages["submit"] == (
-        "https://github.com/Metta-AI/coworld-crewrift/blob/master/players/how_to_submit_coworld_policy.md"
-    )
-    assert pages["optimizer"] == "https://github.com/Metta-AI/coworld-crewrift/blob/master/players/SMART_BOT_GUIDE.md"
     assert (
         package.manifest.player[0].source_url
         == "https://github.com/Metta-AI/coworld-crewrift/tree/master/players/notsus"
@@ -365,7 +360,7 @@ def test_cogs_vs_clips_crewrift_and_paintarena_templates_declare_all_viability_r
 
     crewrift = json.loads((WORLDS / "crewrift" / "coworld_manifest_template.json").read_text(encoding="utf-8"))
     for section in ("commissioner", "reporter", "grader", "optimizer", "diagnoser"):
-        assert crewrift[section] == []
+        assert crewrift[section]
 
     paintarena = json.loads((WORLDS / "paintarena" / "coworld_manifest_template.json").read_text(encoding="utf-8"))
     assert paintarena["commissioner"] == []
@@ -434,6 +429,11 @@ def _materialized_template(base_dir: Path, template_path: Path) -> Path:
         "crewrift": {
             "{{GAME_IMAGE}}": "coworld-crewrift-game:latest",
             "{{PLAYER_IMAGE}}": "coworld-crewrift-notsus:latest",
+            "{{REPORTER_IMAGE}}": "coworld-default-reporter:latest",
+            "{{GRADER_IMAGE}}": "coworld-crewrift-grader:latest",
+            "{{DIAGNOSER_IMAGE}}": "coworld-crewrift-diagnoser:latest",
+            "{{OPTIMIZER_IMAGE}}": "coworld-optimizer:latest",
+            "{{COMMISSIONER_IMAGE}}": "coworld-crewrift-commissioner:latest",
         },
         "paintarena": {"{{PAINTARENA_IMAGE}}": "coworld-paintarena:latest"},
     }

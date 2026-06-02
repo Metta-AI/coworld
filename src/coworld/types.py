@@ -98,8 +98,8 @@ CoworldDoc = Annotated[CoworldTextDoc | CoworldUriDoc, Field(discriminator="type
 class CoworldProtocolDocs(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    player: CoworldDoc = Field(description="Game-authored player WebSocket protocol documentation.")
-    global_: CoworldDoc = Field(alias="global", description="Game-authored global viewer protocol documentation.")
+    player: CoworldDoc = Field(description="Public player WebSocket protocol documentation.")
+    global_: CoworldDoc = Field(alias="global", description="Public global viewer protocol documentation.")
 
 
 class CoworldDocPage(BaseModel):
@@ -124,11 +124,14 @@ class CoworldDocs(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     readme: CoworldDoc = Field(
-        description="Required top-level README.md document for game rules, setup, and player onboarding.",
+        description="Required top-level README.md document for game rules, strategy, player guidance, and FAQs.",
     )
     pages: list[CoworldDocPage] = Field(
         default_factory=list,
-        description="Optional supplemental game-authored documentation pages.",
+        description=(
+            "Optional public documentation pages. Use game-authored pages for supplemental material; "
+            "Softmax leagues may also list a platform-owned play_*.md guide for setup, upload, and submission."
+        ),
     )
 
 

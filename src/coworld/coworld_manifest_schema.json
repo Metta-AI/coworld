@@ -80,7 +80,7 @@
       "additionalProperties": false,
       "properties": {
         "readme": {
-          "description": "Required top-level README.md document for game rules, setup, and player onboarding.",
+          "description": "Required top-level README.md document for game rules, strategy, player guidance, and FAQs.",
           "discriminator": {
             "mapping": {
               "text": "#/$defs/CoworldTextDoc",
@@ -99,7 +99,7 @@
           "title": "Readme"
         },
         "pages": {
-          "description": "Optional supplemental game-authored documentation pages.",
+          "description": "Optional public documentation pages. Use game-authored pages for supplemental material; Softmax leagues may also list a platform-owned play_*.md guide for setup, upload, and submission.",
           "items": {
             "$ref": "#/$defs/CoworldDocPage"
           },
@@ -265,7 +265,7 @@
       "additionalProperties": false,
       "properties": {
         "player": {
-          "description": "Game-authored player WebSocket protocol documentation.",
+          "description": "Public player WebSocket protocol documentation.",
           "discriminator": {
             "mapping": {
               "text": "#/$defs/CoworldTextDoc",
@@ -284,7 +284,7 @@
           "title": "Player"
         },
         "global": {
-          "description": "Game-authored global viewer protocol documentation.",
+          "description": "Public global viewer protocol documentation.",
           "discriminator": {
             "mapping": {
               "text": "#/$defs/CoworldTextDoc",

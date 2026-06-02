@@ -41,6 +41,10 @@ Coworld builders create the worlds that player developers target. They define th
 or baseline players, local test episodes, local browser-play surfaces, and supporting outputs that help humans and agents
 understand what happened.
 
+For uploaded games, `game.docs.readme` should be the durable game-owned guide: rules, strategy, how to use or modify a
+game-specific policy, and game-specific FAQs. Shared protocol docs belong in `game.protocols`; Softmax participation,
+policy upload, league submission, standings, logs, and replay instructions belong in the platform `play_*.md` guide.
+
 The Coworld development user guide is still under construction. For now, start with the
 [Paint Arena example](src/coworld/examples/paintarena/README.md) and use the [Documentation Map](#documentation-map) for
 the current reference docs.
@@ -84,6 +88,7 @@ progress:
 | Understand roles and artifact flow | [Coworld overview](src/coworld/docs/README.md#roles) |
 | Implement a game runnable | [Game role](src/coworld/docs/roles/GAME.md) |
 | Implement or submit a player | [Player role](src/coworld/docs/roles/PLAYER.md) and [Coworld cookbook](COOKBOOK.md) |
+| Implement supporting roles | [Reporter](src/coworld/docs/roles/REPORTER.md), [Commissioner](src/coworld/docs/roles/COMMISSIONER.md), [Grader](src/coworld/docs/roles/GRADER.md), [Diagnoser](src/coworld/docs/roles/DIAGNOSER.md), and [Optimizer](src/coworld/docs/roles/OPTIMIZER.md) |
 | Understand artifact contracts | [Artifact reference](src/coworld/docs/artifacts/README.md) |
 | Consume episode artifacts as a unit | [Episode bundle reference](src/coworld/docs/artifacts/EPISODE_BUNDLE.md) |
 | Understand the episode lifecycle | [Lifecycle overview](src/coworld/docs/LIFECYCLE.md) |
