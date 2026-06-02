@@ -1,43 +1,15 @@
-load("//tools:pytest.bzl", "pytest_test")
+load("//bazel:py_pyproject.bzl", "pytest_tests_pyproject")
 
-_TEST_FILES = glob(
-    ["test_*.py"],
-    allow_empty = False,
+# test_types diffs the checked-in generated schema JSONs (kept in
+# `:generated_schema_files`) against coworld.types' dynamic Pydantic
+# schema output.
+pytest_tests_pyproject(
+    extra_tags = [
+        "no-sandbox",
+        "requires-network",
+    ],
+    per_test = {
+        "test_types": {"data": ["//packages/coworld:generated_schema_files"]},
+    },
+    typecheck = False,
 )
-
-_SHARED_SRCS = glob(
-    ["__init__.py"],
-    allow_empty = True,
-)
-
-_TEST_TYPES_DATA = ["//packages/coworld:generated_schema_files"]
-
-[
-    pytest_test(
-        name = test_file.removesuffix(".py"),
-        srcs = [test_file] + _SHARED_SRCS,
-        data = _TEST_TYPES_DATA if test_file == "test_types.py" else [],
-        args = [
-            "--rootdir=packages/coworld/tests",
-            "--confcutdir=packages/coworld/tests",
-            "--import-mode=importlib",
-            "-p",
-            "no:importnb",
-            "-o",
-            "addopts=",
-            "-o",
-            "pythonpath=",
-        ],
-        tags = [
-            "no-sandbox",
-            "requires-network",
-        ],
-        deps = [
-            "//packages/coworld:coworld",
-            "@pypi//pytest",
-            "@pypi//pytest_httpserver",
-            "@pypi//torch",
-        ],
-    )
-    for test_file in _TEST_FILES
-]
