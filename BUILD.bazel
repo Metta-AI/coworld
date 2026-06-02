@@ -1,3 +1,11 @@
+# Not pyproject_library: hand-split into :coworld_core (importable
+# library surface) + :coworld (CLI/examples/policies) + :coworld_bin
+# for action-key isolation — edits under examples/, policies/, cli.py
+# don't re-key tests that only need the library surface.
+# pyproject_library emits a single target per pyproject and can't
+# express the split. (PR #14752 reverted an attempted two-dist split
+# of the package that would have let this become two pyproject_library
+# calls.)
 load("@rules_python//python:defs.bzl", "py_binary", "py_library")
 
 # Build the paintarena example image via the host docker daemon. Tags the
