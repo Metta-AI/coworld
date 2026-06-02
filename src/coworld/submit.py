@@ -1,8 +1,10 @@
 from __future__ import annotations
 
+import webbrowser
+
 import typer
 
-from coworld.cli_support import console
+from coworld.cli_support import console, observatory_web_url
 from coworld.config import DEFAULT_SUBMIT_SERVER
 from coworld.upload import CoworldUploadClient, PolicyVersionRow
 
@@ -36,6 +38,7 @@ def submit_policy_to_league_cmd(
     *,
     league_id: str,
     server: str = DEFAULT_SUBMIT_SERVER,
+    open_browser: bool = True,
 ) -> None:
     with CoworldUploadClient.from_login(server_url=server) as client:
         policy_version = _resolve_policy_version(client, policy_identifier)
@@ -44,6 +47,7 @@ def submit_policy_to_league_cmd(
         console.print(f"[bold]Submitting {policy_version.name}{version_label} to league {league_id}[/bold]")
         submission = client.submit_to_league(league_id, policy_version.id)
 
+    policy_url = observatory_web_url(server, f"/observatory/v2#tab=uploads&detail=policy-version:{policy_version.id}")
     console.print("[green]Submitted to league[/green]")
     console.print(f"[dim]League:[/dim] {league_id}")
     console.print(f"[dim]Submission:[/dim] {submission.id}")
@@ -51,4 +55,7 @@ def submit_policy_to_league_cmd(
     if submission.league_policy_membership_id is not None:
         console.print(f"[dim]Membership:[/dim] {submission.league_policy_membership_id}")
     elif submission.status in {"pending", "processing"}:
-        console.print("[dim]Placement runs asynchronously; check the Observatory league page for status.[/dim]")
+        console.print("[dim]Placement runs asynchronously; check the policy page for status.[/dim]")
+    console.print(f"[dim]Policy page:[/dim] {policy_url}", soft_wrap=True)
+    if open_browser:
+        webbrowser.open(policy_url)

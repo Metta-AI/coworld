@@ -480,6 +480,9 @@ Submit the uploaded policy to a league:
 uv run coworld submit paintarena-player --league league_...
 ```
 
+`submit` prints the policy page URL and opens it in a browser so you can watch placement status and the policy event
+log. Pass `--no-open-browser` to skip launching a browser (the URL is still printed).
+
 If the policy needs secrets in hosted evaluation, provide them during `upload-policy`:
 
 ```bash

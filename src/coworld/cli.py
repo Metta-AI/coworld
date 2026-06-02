@@ -5,7 +5,7 @@ import webbrowser
 from contextlib import contextmanager
 from pathlib import Path
 from typing import Annotated, Iterator
-from urllib.parse import urlparse, urlunparse
+from urllib.parse import urlparse
 
 import typer
 from rich import box
@@ -18,7 +18,7 @@ from coworld.certifier import (
     load_coworld_package,
     load_manifest_episode_job_spec,
 )
-from coworld.cli_support import console, emit_json
+from coworld.cli_support import console, emit_json, observatory_web_url
 from coworld.config import DEFAULT_OPTIMIZER_PORT, DEFAULT_SUBMIT_SERVER
 from coworld.manifest_uri import materialized_manifest_path, materialized_replay_path
 from coworld.optimizer.runtime import OptimizerSetupError, run_optimizer_session
@@ -352,11 +352,16 @@ def submit(
         ),
     ],
     server: Annotated[str, typer.Option("--server", help="Observatory API server URL.")] = DEFAULT_SUBMIT_SERVER,
+    open_browser: Annotated[
+        bool,
+        typer.Option("--open-browser/--no-open-browser", help="Open the policy page in a browser after submitting."),
+    ] = True,
 ) -> None:
     submit_policy_to_league_cmd(
         policy,
         league_id=league,
         server=server,
+        open_browser=open_browser,
     )
 
 
@@ -594,9 +599,9 @@ def hosted_game_create(
     typer.echo(f"Hosted game: {session.session_id}")
     typer.echo(f"Player slots: {session.player_count}")
     typer.echo(f"Player command: {_hosted_game_join_command(session.session_id, server)}")
-    typer.echo(f"Player URL: {_observatory_web_url(server, session.join_url)}")
+    typer.echo(f"Player URL: {observatory_web_url(server, session.join_url)}")
     if allow_spectators:
-        typer.echo(f"Spectator URL: {_observatory_web_url(server, session.lobby_url)}")
+        typer.echo(f"Spectator URL: {observatory_web_url(server, session.lobby_url)}")
     else:
         typer.echo("Spectators: disabled")
 
@@ -645,19 +650,6 @@ def _hosted_game_join_command(session_id: str, server: str) -> str:
     if server.rstrip("/") != DEFAULT_SUBMIT_SERVER.rstrip("/"):
         command.extend(["--server", server])
     return shlex.join(command)
-
-
-def _observatory_web_url(server: str, path: str) -> str:
-    if path.startswith(("http://", "https://")):
-        return path
-    if server.rstrip("/") == DEFAULT_SUBMIT_SERVER.rstrip("/"):
-        return f"https://softmax.com{path}"
-
-    parsed = urlparse(server)
-    if parsed.path.rstrip("/") == "/api/observatory":
-        origin = urlunparse((parsed.scheme, parsed.netloc, "", "", "", ""))
-        return f"{origin}{path}"
-    return path
 
 
 def _print_coworld_table(coworlds: list[CoworldListEntry]) -> None:
