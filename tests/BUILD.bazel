@@ -1,9 +1,9 @@
-load("//bazel:py_pyproject.bzl", "pytest_tests_pyproject")
+load("//bazel:pyproject.bzl", "pyproject_test")
 
 # test_types diffs the checked-in generated schema JSONs (kept in
 # `:generated_schema_files`) against coworld.types' dynamic Pydantic
 # schema output.
-pytest_tests_pyproject(
+pyproject_test(
     extra_tags = [
         "no-sandbox",
         "requires-network",
