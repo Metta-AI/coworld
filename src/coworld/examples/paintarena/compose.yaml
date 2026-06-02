@@ -4,3 +4,6 @@ services:
     platform: linux/amd64
     build:
       context: .
+  commissioner:
+    image: ${COMMISSIONER_IMAGE:?Set COMMISSIONER_IMAGE to a pinned commissioner image URI}
+    platform: linux/amd64

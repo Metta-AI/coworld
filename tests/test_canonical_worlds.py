@@ -204,13 +204,14 @@ def test_canonical_among_them_template_points_to_source_repos(tmp_path: Path) ->
     pages = {page.id: page.content.value for page in package.manifest.game.docs.pages}
     role_source_urls = {
         "player": package.manifest.player[0].source_url,
+        "commissioner": package.manifest.commissioner[0].source_url,
         "optimizer": package.manifest.optimizer[0].source_url,
         "reporter": package.manifest.reporter[0].source_url,
         "grader": package.manifest.grader[0].source_url,
         "diagnoser": package.manifest.diagnoser[0].source_url,
     }
 
-    assert package.manifest.commissioner == []
+    assert [role.id for role in package.manifest.commissioner] == ["among-them-commissioner"]
     assert [role.id for role in package.manifest.reporter] == ["among-them-summarizer"]
     assert [role.id for role in package.manifest.grader] == ["among-them-grader"]
     assert [role.id for role in package.manifest.diagnoser] == ["among-them-diagnoser"]
@@ -246,6 +247,9 @@ def test_canonical_among_them_template_points_to_source_repos(tmp_path: Path) ->
     )
     assert role_source_urls == {
         "player": "https://github.com/Metta-AI/coworld-among-them/tree/master/players/ivotewell",
+        "commissioner": (
+            "https://github.com/Metta-AI/commissioners/tree/main/commissioners/among_them/among_them_commissioner"
+        ),
         "optimizer": "https://github.com/Metta-AI/optimizers",
         "reporter": "https://github.com/Metta-AI/reporters/tree/main/reporters/among_them/among_them_summarizer",
         "grader": "https://github.com/Metta-AI/graders/tree/main/graders/among_them/among_them_grader",
@@ -326,7 +330,7 @@ def test_canonical_among_them_template_declares_all_viability_role_sections() ->
     template = json.loads((WORLDS / "among_them" / "coworld_manifest_template.json").read_text(encoding="utf-8"))
 
     assert set(VIABILITY_ROLE_SECTIONS).issubset(template)
-    assert template["commissioner"] == []
+    assert [role["id"] for role in template["commissioner"]] == ["among-them-commissioner"]
     assert [role["type"] for role in template["reporter"]] == ["reporter"]
     assert [role["type"] for role in template["grader"]] == ["grader"]
     assert [role["type"] for role in template["diagnoser"]] == ["diagnoser"]
@@ -359,11 +363,12 @@ def test_cogs_vs_clips_crewrift_and_paintarena_templates_declare_all_viability_r
     ]
 
     crewrift = json.loads((WORLDS / "crewrift" / "coworld_manifest_template.json").read_text(encoding="utf-8"))
-    for section in ("commissioner", "reporter", "grader", "optimizer", "diagnoser"):
+    assert [role["id"] for role in crewrift["commissioner"]] == ["among-them-commissioner"]
+    for section in ("reporter", "grader", "optimizer", "diagnoser"):
         assert crewrift[section]
 
     paintarena = json.loads((WORLDS / "paintarena" / "coworld_manifest_template.json").read_text(encoding="utf-8"))
-    assert paintarena["commissioner"] == []
+    assert [role["id"] for role in paintarena["commissioner"]] == ["default-commissioner"]
     assert paintarena["grader"] == []
     assert paintarena["diagnoser"] == []
     assert [role["type"] for role in paintarena["reporter"]] == ["reporter", "reporter"]
@@ -418,6 +423,10 @@ def _materialized_template(base_dir: Path, template_path: Path) -> Path:
             "{{GRADER_IMAGE}}": "coworld-among-them-grader:latest",
             "{{DIAGNOSER_IMAGE}}": "coworld-among-them-diagnoser:latest",
             "{{OPTIMIZER_IMAGE}}": "coworld-optimizer:latest",
+            "{{COMMISSIONER_IMAGE}}": (
+                "ghcr.io/metta-ai/commissioners-among-them-commissioner@sha256:"
+                "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+            ),
         },
         "cogs_vs_clips": {
             "{{GAME_IMAGE}}": "coworld-cogs-vs-clips-game:latest",
@@ -433,9 +442,18 @@ def _materialized_template(base_dir: Path, template_path: Path) -> Path:
             "{{GRADER_IMAGE}}": "coworld-crewrift-grader:latest",
             "{{DIAGNOSER_IMAGE}}": "coworld-crewrift-diagnoser:latest",
             "{{OPTIMIZER_IMAGE}}": "coworld-optimizer:latest",
-            "{{COMMISSIONER_IMAGE}}": "coworld-crewrift-commissioner:latest",
+            "{{COMMISSIONER_IMAGE}}": (
+                "ghcr.io/metta-ai/commissioners-among-them-commissioner@sha256:"
+                "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"
+            ),
         },
-        "paintarena": {"{{PAINTARENA_IMAGE}}": "coworld-paintarena:latest"},
+        "paintarena": {
+            "{{PAINTARENA_IMAGE}}": "coworld-paintarena:latest",
+            "{{COMMISSIONER_IMAGE}}": (
+                "ghcr.io/metta-ai/commissioners-default@sha256:"
+                "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd"
+            ),
+        },
     }
     placeholders = image_placeholders[template_path.parent.name]
     game_image = manifest["game"]["runnable"]["image"]

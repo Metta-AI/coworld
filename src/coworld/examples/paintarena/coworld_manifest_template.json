@@ -149,7 +149,16 @@
       "description": "Deterministic player that sweeps across the arena repainting tiles."
     }
   ],
-  "commissioner": [],
+  "commissioner": [
+    {
+      "id": "default-commissioner",
+      "name": "Default Commissioner",
+      "type": "commissioner",
+      "description": "Game-agnostic round-robin commissioner with mean-score rankings.",
+      "source_url": "https://github.com/Metta-AI/commissioners/tree/main/commissioners/default/default_commissioner",
+      "image": "{{COMMISSIONER_IMAGE}}"
+    }
+  ],
   "reporter": [
     {
       "id": "paint-arena-summarizer",
