@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 import json
 import os
+import re
 import secrets
 import socket
 import subprocess
@@ -35,6 +36,13 @@ GAME_PORT = 8080
 LOCAL_DOCKER_NETWORK = "coworld-local"
 LOCAL_GAME_NETWORK_ALIAS_PREFIX = "coworld-game-"
 LOCAL_EPISODE_CONTAINER_PREFIX = "coworld-cert"
+
+# Hosted Coworld manifests store images as backend container-image ids: the "img_" prefix followed by a
+# UUID (see ContainerImageId / PrefixedId in metta-app-backend-client). The backend substitutes a pullable
+# URI when serving a manifest, but only once the image has been mirrored to the public registry; until then
+# it leaves the raw id in place. Such an id is not a Docker reference, so guard against it reaching `docker`
+# and surface the real cause. Match the full id shape so legitimate local tags like "img_game:latest" run.
+_CONTAINER_IMAGE_ID_RE = re.compile(r"^img_[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$")
 
 
 class DockerImageInspectEntry(BaseModel):
@@ -109,6 +117,15 @@ class PlayerLaunchSpec(RunnableLaunchSpec):
 
 
 def assert_docker_image_reachable(image: str, *, label: str = "Docker image") -> None:
+    if _CONTAINER_IMAGE_ID_RE.match(image):
+        raise RuntimeError(
+            f"{label} is an unresolved Coworld image id: {image}\n"
+            "The backend has not published this image to the public registry yet, so it cannot be pulled "
+            "locally. Re-download the Coworld after it finishes publishing (`coworld download <coworld> "
+            "--refresh`), or wait and retry; if it never resolves, the Coworld's image may not be available "
+            "for local runs."
+        )
+
     local_result = subprocess.run(["docker", "image", "inspect", image], capture_output=True, text=True, timeout=30)
     if local_result.returncode == 0:
         _assert_linux_amd64_image(image, label=label, inspect_stdout=local_result.stdout)

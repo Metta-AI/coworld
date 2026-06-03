@@ -213,6 +213,31 @@ def test_assert_docker_image_reachable_rejects_missing_image(monkeypatch: pytest
         assert_docker_image_reachable("missing:latest", label="Missing image")
 
 
+def test_assert_docker_image_reachable_rejects_unresolved_container_image_id(monkeypatch: pytest.MonkeyPatch) -> None:
+    def fail_run(cmd, **kwargs):
+        raise AssertionError(f"docker should not be invoked for an unresolved image id: {cmd}")
+
+    monkeypatch.setattr(subprocess, "run", fail_run)
+
+    with pytest.raises(RuntimeError, match="unresolved Coworld image id"):
+        assert_docker_image_reachable("img_d62e1e60-f2a5-480f-a347-f31c748c5c2f", label="game.runnable.image")
+
+
+def test_assert_docker_image_reachable_allows_local_image_named_like_id(monkeypatch: pytest.MonkeyPatch) -> None:
+    calls = []
+
+    def fake_run(cmd, **kwargs):
+        calls.append(cmd)
+        return subprocess.CompletedProcess(cmd, 0, stdout='[{"Os":"linux","Architecture":"amd64"}]', stderr="")
+
+    monkeypatch.setattr(subprocess, "run", fake_run)
+
+    # "img_game:latest" shares the prefix but is not an "img_<uuid>" backend id, so it must run normally.
+    assert_docker_image_reachable("img_game:latest")
+
+    assert calls == [["docker", "image", "inspect", "img_game:latest"]]
+
+
 def test_assert_docker_image_reachable_rejects_wrong_local_platform(monkeypatch: pytest.MonkeyPatch) -> None:
     def fake_run(cmd, **kwargs):
         return subprocess.CompletedProcess(cmd, 0, stdout='[{"Os":"linux","Architecture":"arm64"}]', stderr="")
