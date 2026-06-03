@@ -33,7 +33,7 @@ episode artifacts after the episode ends.
 | ---- | --------- | ------ | ------- | ------- |
 | **game** | per episode, WebSocket server | live | Runs the episode, serves browser clients, and writes result/replay artifacts. | [Game role](roles/GAME.md) |
 | **player** | per episode, WebSocket client | live | Connects to the game and acts in one player slot. | [Player role](roles/PLAYER.md) |
-| **commissioner** | per round, WebSocket server | contract defined, runtime pending | Schedules league-round episodes and ranks policy memberships. | [Commissioner role](roles/COMMISSIONER.md) |
+| **commissioner** | per round, WebSocket server | live for container leagues | Schedules league-round episodes and ranks policy memberships. | [Commissioner role](roles/COMMISSIONER.md) |
 | **reporter** | post episode, on demand | contract defined, runtime pending | Turns episode artifacts into reports, event logs, or traces. | [Reporter role](roles/REPORTER.md) |
 | **grader** | post episode, on demand | contract defined, runtime pending | Scores how useful or interesting an episode is. | [Grader role](roles/GRADER.md) |
 | **diagnoser** | post episode, on demand | reserved | Evaluates a target policy and emits policy-facing advice. | [Diagnoser role](roles/DIAGNOSER.md) |
@@ -45,6 +45,9 @@ New documents and code in this package should use these status labels consistent
 
 - **live**: the role has a full runtime contract that the platform exercises end to end. The contract is stable enough
   to build against.
+- **live for container leagues**: the role has a containerized runtime path for leagues whose backend
+  `commissioner_key` is `container`. Other leagues may still use legacy in-process commissioners until they are cut
+  over.
 - **contract defined, runtime pending**: the role has a written contract and may have partial or in-process
   implementations, but the platform does not yet invoke a containerized runnable for this role automatically. The schema
   may still accept an omitted or empty section until the runtime integration lands.

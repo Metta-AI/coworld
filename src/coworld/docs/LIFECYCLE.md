@@ -31,7 +31,7 @@ This is the short lifecycle view of the roles. For details and status definition
 | ---- | ----------------- | ---------------------------- |
 | Game | Runs for `play`, `run-episode`, `certify`, and replay viewing. | Runs in the hosted Kubernetes episode job. |
 | Player | Runs one container per slot for certification, local episodes, and browser play. | Runs one child pod per player slot, using submitted policy versions. |
-| Commissioner | Not run by the local runner. | Contract defined, runtime pending; current tournament scheduling is platform-owned. |
+| Commissioner | Not run by the local runner. | Runs as a per-round container for leagues with `commissioner_key = "container"`; legacy leagues still use in-process commissioners. |
 | Reporter | Not auto-run by the local runner. | Contract defined, runtime pending; consumes bundles on demand when invoked. |
 | Grader | Not auto-run by the local runner. | Contract defined, runtime pending; consumes bundles on demand when invoked. |
 | Diagnoser | Reserved; not run by default. | Reserved; not run by default. |
@@ -145,7 +145,9 @@ The hosted lifecycle is:
 2. A player author uploads a policy image with its run command and hosted secrets, if any.
 3. The player author submits the policy to a league.
 4. The platform validates or processes the submission and creates an active membership when placement succeeds.
-5. The platform schedules league rounds and creates episode jobs for selected policy memberships.
+5. The platform schedules league rounds and creates episode jobs for selected policy memberships. For container
+   commissioner leagues, it starts the commissioner container and connects to `/round` so the commissioner can request
+   that round's episodes.
 6. Each episode job becomes a hosted Kubernetes Job.
 7. The parent Job mounts an `emptyDir` workdir shared by its init, game, and worker containers.
 8. The init container writes the concrete game config and generated player tokens.
@@ -158,7 +160,9 @@ The hosted lifecycle is:
 14. The game writes results and replay bytes into the shared workdir.
 15. The worker validates results, collects logs, compresses the replay for hosted storage, and uploads the configured
     hosted artifacts.
-16. The platform records episode status, results, logs, replay links, and round/leaderboard state.
+16. The platform records episode status, results, logs, replay links, and round/leaderboard state. For container
+    commissioner leagues, it streams completed or failed episode results back to the commissioner until `round_complete`,
+    then persists commissioner rankings, membership changes, and state for the next round.
 17. The coordinator deletes child player pods and the game Service; the parent Job is later removed by Kubernetes TTL
     cleanup.
 
@@ -199,7 +203,7 @@ See [EPISODE_BUNDLE.md](artifacts/EPISODE_BUNDLE.md) for the bundle shape and pl
 | Player runtime | Docker containers on `coworld-local`. | One Kubernetes child pod per player slot. |
 | Artifact storage | Local workspace files. | Uploaded artifact URIs recorded by the platform. |
 | Replay storage | Exact local replay bytes. | Replay bytes compressed for hosted storage and replay serving. |
-| Supporting roles | Not auto-run. | Not auto-run today; reporter/grader runtime integration is pending. |
+| Supporting roles | Not auto-run. | Commissioner is run for container leagues; reporter/grader runtime integration is pending. |
 | Cleanup | Local containers removed by the runner. | Child pods/service removed by coordinator; parent Job cleaned by TTL. |
 
 ## See Also
