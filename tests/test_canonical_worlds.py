@@ -21,6 +21,14 @@ COWORLD_SRC = COWORLD_PACKAGE_ROOT / "src" / "coworld"
 WORLDS = REPO_ROOT / "worlds"
 PAINTARENA_EXAMPLE = COWORLD_SRC / "examples" / "paintarena"
 VIABILITY_ROLE_SECTIONS = ("player", "optimizer", "commissioner", "reporter", "grader", "diagnoser")
+SUPPORTING_ROLE_REPOS = {
+    "commissioner": "https://github.com/Metta-AI/commissioners",
+    "reporter": "https://github.com/Metta-AI/reporters",
+    "grader": "https://github.com/Metta-AI/graders",
+    "diagnoser": "https://github.com/Metta-AI/diagnosers",
+    "optimizer": "https://github.com/Metta-AI/optimizers",
+}
+IN_TREE_EXAMPLE_SOURCE_PREFIX = "https://github.com/Metta-AI/coworld/tree/main/src/coworld/examples/paintarena/"
 
 
 def test_canonical_worlds_use_compose_builds() -> None:
@@ -196,6 +204,17 @@ def test_canonical_world_templates_use_role_types_as_contracts() -> None:
         for section in VIABILITY_ROLE_SECTIONS:
             for runnable in template[section]:
                 assert runnable["type"] == section
+
+
+def test_canonical_world_supporting_roles_point_to_role_repos() -> None:
+    for template_path in _world_templates():
+        template = json.loads(template_path.read_text(encoding="utf-8"))
+        for section, repo_url in SUPPORTING_ROLE_REPOS.items():
+            for runnable in template[section]:
+                source_url = runnable["source_url"]
+                if source_url.startswith(IN_TREE_EXAMPLE_SOURCE_PREFIX):
+                    continue
+                assert source_url == repo_url or source_url.startswith(f"{repo_url}/")
 
 
 def test_coworld_manifest_rejects_unknown_role_type(tmp_path: Path) -> None:

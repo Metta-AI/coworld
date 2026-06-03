@@ -155,6 +155,25 @@ file that implements the runnable, not just a documentation page.
 the Git repository the command clones and runs locally (falling back to `Metta-AI/optimizers` when unset). Unlike
 `source_url`, which may point at a subdirectory or file, `repository_url` must be the workbench repository root.
 
+## Role Implementation Ownership
+
+Coworld runtime ownership and role implementation ownership are separate:
+
+- Metta/Coworld owns the manifest schema, runtime env vars, runner behavior, upload flow, and CLI.
+- The per-role repositories own reusable role implementations:
+  [`Metta-AI/players`](https://github.com/Metta-AI/players),
+  [`Metta-AI/commissioners`](https://github.com/Metta-AI/commissioners),
+  [`Metta-AI/reporters`](https://github.com/Metta-AI/reporters),
+  [`Metta-AI/graders`](https://github.com/Metta-AI/graders),
+  [`Metta-AI/diagnosers`](https://github.com/Metta-AI/diagnosers), and
+  [`Metta-AI/optimizers`](https://github.com/Metta-AI/optimizers).
+
+At episode or round runtime, the runner does not clone those repositories. It executes the image, command, and env
+already recorded in the manifest. Role catalogs are an authoring/provenance source: when a role repo has a
+`CATALOG.yaml`, manifest authors should copy the catalog entry's `image` and `source_url` into the runnable. Game-local
+starter players and in-tree examples may keep game-repo or package-repo `source_url` values until those implementations
+are promoted into the corresponding role repo with build metadata.
+
 Backend storage, ECR publishing, public mirrors for bundled images, and private submitted-policy images are backend
 mechanics; see
 [`COWORLD_MECHANICS.md`](../../../../../app_backend/src/metta/app_backend/v2/COWORLD_MECHANICS.md).
