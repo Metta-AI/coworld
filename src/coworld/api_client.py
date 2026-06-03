@@ -583,6 +583,6 @@ def _raise_for_status(response: httpx.Response) -> None:
 
 
 def _load_current_cogames_token() -> str | None:
-    from softmax.auth import get_api_server, load_current_cogames_token  # noqa: PLC0415
+    from softmax.auth import get_api_server, load_current_token  # noqa: PLC0415
 
-    return load_current_cogames_token(api_server=get_api_server())
+    return load_current_token(server=get_api_server())
