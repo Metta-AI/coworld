@@ -80,6 +80,20 @@ baseline is 2 CPU and 2Gi memory requests for the game container, runner worker,
 container; see [`KUBERNETES_RUNNER_README.md`](../../runner/KUBERNETES_RUNNER_README.md#hosted-resource-baseline). These
 are scheduling requests, not CPU or memory limits.
 
+## Bedrock and AWS access
+
+In hosted runs your game image can call AWS Bedrock by default — Softmax provides Bedrock credentials and region to the
+game container at runtime, so you do not need to bake AWS keys into the image or have players opt in. The game container
+sees `USE_BEDROCK=true`, `AWS_REGION`, and `AWS_DEFAULT_REGION` set for you; point any Bedrock client (for example
+`anthropic.AnthropicBedrock()`) at the default credential chain and it will work. The replay container gets the same
+defaults. To override the region or disable the default, set the relevant variables in `manifest.game.runnable.env`.
+
+This is hosted-runtime only. Local `coworld play` / `coworld run-episode` do not provide AWS credentials; for local
+Bedrock testing pass host credentials with `--use-bedrock` (see
+[`PLAYER.md`](PLAYER.md#secrets-bedrock-and-llm-credentials)). For non-Bedrock LLM providers, supply the provider key
+through the player upload path rather than the game image, and keep provider selection in environment variables your
+game code reads.
+
 ## Logging
 
 Game stdout and stderr may be exposed to anyone with episode access through the [game logs](../artifacts/GAME_LOGS.md)
