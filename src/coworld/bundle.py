@@ -82,15 +82,15 @@ def _compose_image_placeholders(compose_file: Path) -> dict[str, str]:
 def _built_image_tags(manifest: CoworldManifest) -> dict[str, str]:
     image_tags: dict[str, str] = {}
     for image in _manifest_images(manifest):
-        local_image = image.split("@", 1)[0]
+        tag_image = image.split("@", 1)[0]
         image_id = subprocess.run(
-            ["docker", "image", "inspect", "--format", "{{.Id}}", local_image],
+            ["docker", "image", "inspect", "--format", "{{.Id}}", image],
             check=True,
             capture_output=True,
             text=True,
         ).stdout.strip()
-        build_tag = _sha_tag(local_image, image_id)
-        subprocess.run(["docker", "tag", local_image, build_tag], check=True)
+        build_tag = _sha_tag(tag_image, image_id)
+        subprocess.run(["docker", "tag", image, build_tag], check=True)
         image_tags[image] = build_tag
 
     return image_tags

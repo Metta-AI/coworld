@@ -212,9 +212,7 @@ def test_build_coworld_manifest_tags_primary_role_images(tmp_path: Path, monkeyp
     assert built_manifest["optimizer"][0]["image"] == "optimizer-runtime:coworld-666666666666"
 
 
-def test_build_coworld_manifest_tags_digest_stripped_image_refs(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
+def test_build_coworld_manifest_tags_digest_pinned_image_refs(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     template_path = _write_manifest(
         tmp_path,
         game_image="game-runtime:latest@sha256:1111",
@@ -233,8 +231,8 @@ def test_build_coworld_manifest_tags_digest_stripped_image_refs(
                 "grader": "ghcr.io/metta-ai/graders-default:latest",
             },
             {
-                "game-runtime:latest": "sha256:111111111111",
-                "player-runtime:latest": "sha256:222222222222",
+                "game-runtime:latest@sha256:1111": "sha256:111111111111",
+                "player-runtime:latest@sha256:2222": "sha256:222222222222",
                 "ghcr.io/metta-ai/reporters-default:latest": "sha256:cccccccccccc",
                 "ghcr.io/metta-ai/graders-default:latest": "sha256:dddddddddddd",
             },
@@ -248,10 +246,10 @@ def test_build_coworld_manifest_tags_digest_stripped_image_refs(
     assert built_manifest["game"]["runnable"]["image"] == "game-runtime:coworld-111111111111"
     assert built_manifest["player"][0]["image"] == "player-runtime:coworld-222222222222"
     commands = [command for command, _kwargs in calls]
-    assert ["docker", "image", "inspect", "--format", "{{.Id}}", "game-runtime:latest"] in commands
-    assert ["docker", "tag", "game-runtime:latest", "game-runtime:coworld-111111111111"] in commands
-    assert ["docker", "image", "inspect", "--format", "{{.Id}}", "player-runtime:latest"] in commands
-    assert ["docker", "tag", "player-runtime:latest", "player-runtime:coworld-222222222222"] in commands
+    assert ["docker", "image", "inspect", "--format", "{{.Id}}", "game-runtime:latest@sha256:1111"] in commands
+    assert ["docker", "tag", "game-runtime:latest@sha256:1111", "game-runtime:coworld-111111111111"] in commands
+    assert ["docker", "image", "inspect", "--format", "{{.Id}}", "player-runtime:latest@sha256:2222"] in commands
+    assert ["docker", "tag", "player-runtime:latest@sha256:2222", "player-runtime:coworld-222222222222"] in commands
 
 
 def test_build_command_writes_hydrated_manifest(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
