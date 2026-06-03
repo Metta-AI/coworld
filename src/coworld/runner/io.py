@@ -14,7 +14,7 @@ _RETRYABLE_WRITE_STATUS_CODES = {429, 500, 502, 503, 504}
 
 
 class RunnerError(BaseModel):
-    error_type: Literal["policy_error", "crash"]
+    error_type: Literal["policy_error", "game_timeout", "crash"]
     message: str
     failed_policy_index: int | None = None
 

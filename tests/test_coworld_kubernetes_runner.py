@@ -766,6 +766,18 @@ def test_write_error_info_marks_player_pod_failure_as_policy_error(monkeypatch, 
     assert error_info["message"] == "player pod failed"
 
 
+def test_write_error_info_marks_timeout_as_game_timeout(monkeypatch, tmp_path):
+    error_dest = tmp_path / "error_info.json"
+    monkeypatch.setenv("ERROR_INFO_URI", error_dest.as_uri())
+
+    kubernetes_runner._write_error_info(TimeoutError("Timed out waiting for game container"))
+
+    error_info = json.loads(error_dest.read_text(encoding="utf-8"))
+    assert error_info["error_type"] == "game_timeout"
+    assert error_info["failed_policy_index"] is None
+    assert "Timed out waiting for game container" in error_info["message"]
+
+
 def test_create_player_pod_keeps_default_service_account_without_bedrock():
     created: dict[str, object] = {}
     core_v1 = SimpleNamespace(

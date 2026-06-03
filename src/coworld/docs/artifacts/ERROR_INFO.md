@@ -23,7 +23,7 @@ Fields:
 
 | Field | Required? | Purpose |
 | --- | --- | --- |
-| `error_type` | required | `"policy_error"` for failed player pods, `"crash"` for other coordinator failures. |
+| `error_type` | required | `"policy_error"` for failed player pods, `"game_timeout"` when the game container never writes required artifacts before the episode timeout, `"crash"` for other coordinator failures. |
 | `message` | required | Human-readable failure summary, truncated by the runner. |
 | `failed_policy_index` | optional | Slot index of the failed policy when the runner can identify one. |
 

@@ -94,6 +94,8 @@ def _write_error_info(exc: Exception) -> None:
             message=str(exc)[:2000],
             failed_policy_index=exc.failed_policy_index,
         )
+    elif isinstance(exc, TimeoutError):
+        runner_error = RunnerError(error_type="game_timeout", message=str(exc)[:2000])
     else:
         runner_error = RunnerError(error_type="crash", message=str(exc)[:2000])
     upload_data(error_info_uri, runner_error.model_dump_json(), content_type="application/json")
