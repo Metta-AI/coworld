@@ -292,6 +292,7 @@ def test_coworld_play_accepts_variant(monkeypatch: MonkeyPatch, tmp_path: Path) 
 
 def test_coworld_play_opens_global_client_by_default(monkeypatch: MonkeyPatch, tmp_path: Path) -> None:
     opened_urls: list[str] = []
+    manifest_path = _example_manifest(tmp_path)
 
     def fake_play_coworld(manifest_path: Path, **kwargs: object) -> SimpleNamespace:
         artifacts = SimpleNamespace(
@@ -315,12 +316,14 @@ def test_coworld_play_opens_global_client_by_default(monkeypatch: MonkeyPatch, t
     monkeypatch.setattr("coworld.cli.play_coworld", fake_play_coworld)
     monkeypatch.setattr("coworld.cli.webbrowser.open", opened_urls.append)
 
-    result = CliRunner().invoke(app, ["play", str(_example_manifest(tmp_path))])
+    result = CliRunner().invoke(app, ["play", str(manifest_path)])
 
     assert result.exit_code == 0, result.output
     assert opened_urls == ["http://127.0.0.1/global"]
     assert "Variant: default" in result.output
     assert "Player containers: 1 launched" in result.output
+    assert f"Inspect replay: uv run coworld replay {manifest_path} /tmp/replay.json" in result.output
+    assert "Inspect logs: ls /tmp/logs" in result.output
 
 
 def test_coworld_play_accepts_output_dir(monkeypatch: MonkeyPatch, tmp_path: Path) -> None:
@@ -373,6 +376,35 @@ def test_run_episode_defaults_results_next_to_manifest(monkeypatch: MonkeyPatch,
 
     assert artifacts.workspace == (manifest_path.parent / "results").resolve()
     assert artifacts.results_path == (manifest_path.parent / "results" / "results.json").resolve()
+
+
+def test_run_episode_prints_fast_feedback_commands(monkeypatch: MonkeyPatch, tmp_path: Path) -> None:
+    output_dir = tmp_path / "episode"
+
+    def fake_run_coworld_episode(_spec: CoworldEpisodeJobSpec, _artifacts: object, **_kwargs: object) -> None:
+        return None
+
+    monkeypatch.setattr("coworld.cli.run_coworld_episode", fake_run_coworld_episode)
+    manifest_path = _example_manifest(tmp_path)
+
+    result = CliRunner().invoke(
+        app,
+        [
+            "run-episode",
+            str(manifest_path),
+            "--output-dir",
+            str(output_dir),
+            "--server",
+            "https://staging.example/api",
+        ],
+    )
+
+    assert result.exit_code == 0, result.output
+    assert (
+        f"Inspect replay: uv run coworld replay {manifest_path} {output_dir.resolve() / 'replay'} "
+        "--server https://staging.example/api" in result.output
+    )
+    assert f"Inspect logs: ls {output_dir.resolve() / 'logs'}" in result.output
 
 
 def test_run_episode_defaults_backend_coworld_results_to_coworld_id(

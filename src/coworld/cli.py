@@ -176,6 +176,7 @@ def play(
     typer.echo(f"Results: {result.session.artifacts.results_path}")
     _echo_replay_paths(result.session.artifacts)
     typer.echo(f"Logs: {result.session.artifacts.logs_dir}")
+    _echo_feedback_commands(manifest_uri, result.session.artifacts, server=server)
 
 
 @app.command("list")
@@ -462,6 +463,7 @@ def run_episode(
     typer.echo(f"Results: {artifacts.results_path}")
     _echo_replay_paths(artifacts)
     typer.echo(f"Logs: {artifacts.logs_dir}")
+    _echo_feedback_commands(manifest_uri, artifacts, server=server)
 
 
 @contextmanager
@@ -624,6 +626,14 @@ def hosted_game_join(
 
 def _echo_replay_paths(artifacts: EpisodeArtifacts) -> None:
     typer.echo(f"Replay: {artifacts.replay_path}")
+
+
+def _echo_feedback_commands(manifest_uri: str, artifacts: EpisodeArtifacts, *, server: str) -> None:
+    replay_command = ["uv", "run", "coworld", "replay", manifest_uri, str(artifacts.replay_path)]
+    if server.rstrip("/") != DEFAULT_SUBMIT_SERVER.rstrip("/"):
+        replay_command.extend(["--server", server])
+    typer.echo("Inspect replay: " + shlex.join(replay_command))
+    typer.echo("Inspect logs: " + shlex.join(["ls", str(artifacts.logs_dir)]))
 
 
 def _print_play_session(session: PlaySession) -> None:
