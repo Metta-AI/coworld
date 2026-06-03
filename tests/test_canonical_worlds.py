@@ -122,6 +122,7 @@ def test_canonical_world_compose_files_build_manifest_images() -> None:
     for template_path in _world_templates():
         template = json.loads(template_path.read_text(encoding="utf-8"))
         compose_text = (template_path.parent / "compose.yaml").read_text(encoding="utf-8")
+        normalized_compose_text = compose_text.replace("-", "_")
 
         image_placeholders = [template["game"]["runnable"]["image"]]
         for section in VIABILITY_ROLE_SECTIONS:
@@ -133,9 +134,18 @@ def test_canonical_world_compose_files_build_manifest_images() -> None:
             if placeholder.startswith("{{"):
                 assert placeholder.endswith("_IMAGE}}")
                 service_name = placeholder.removeprefix("{{").removesuffix("_IMAGE}}").lower()
-                assert f"  {service_name}:" in compose_text
+                assert f"  {service_name}:" in normalized_compose_text
             else:
                 assert placeholder in compose_text
+
+
+def test_canonical_world_templates_expose_runnable_source_urls() -> None:
+    for template_path in (*_world_templates(), PAINTARENA_EXAMPLE / "coworld_manifest_template.json"):
+        template = json.loads(template_path.read_text(encoding="utf-8"))
+        assert template["game"]["runnable"].get("source_url"), template_path
+        for section in VIABILITY_ROLE_SECTIONS:
+            for runnable in template[section]:
+                assert runnable.get("source_url"), f"{template_path}: {section}.{runnable['id']}"
 
 
 def test_canonical_world_templates_hydrate_to_valid_manifests(tmp_path: Path) -> None:
@@ -400,6 +410,7 @@ def _world_compose_files() -> tuple[Path, ...]:
         WORLDS / "cogs_vs_clips" / "compose.yaml",
         WORLDS / "crewrift" / "compose.yaml",
         WORLDS / "paintarena" / "compose.yaml",
+        WORLDS / "tribal_village" / "compose.yaml",
     )
 
 
@@ -409,6 +420,7 @@ def _world_templates() -> tuple[Path, ...]:
         WORLDS / "cogs_vs_clips" / "coworld_manifest_template.json",
         WORLDS / "crewrift" / "coworld_manifest_template.json",
         WORLDS / "paintarena" / "coworld_manifest_template.json",
+        WORLDS / "tribal_village" / "coworld_manifest_template.json",
     )
 
 
@@ -453,6 +465,9 @@ def _materialized_template(base_dir: Path, template_path: Path) -> Path:
                 "ghcr.io/metta-ai/commissioners-default@sha256:"
                 "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd"
             ),
+        },
+        "tribal_village": {
+            "{{TRIBAL_VILLAGE_IMAGE}}": "coworld-tribal-village:latest",
         },
     }
     placeholders = image_placeholders[template_path.parent.name]
