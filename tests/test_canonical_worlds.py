@@ -305,10 +305,10 @@ def test_canonical_cogs_vs_clips_template_points_to_source_repo(tmp_path: Path) 
     assert package.manifest.game.protocols.global_.value == (
         "https://github.com/Metta-AI/coworld-cogs-vs-clips/blob/main/coworld/game/docs/global_protocol_spec.md"
     )
-    assert pages["rules.md"] == "https://softmax.com/play_cogsvsclips.md#game-rules"
     assert pages["play_cogsvsclips.md"] == "https://softmax.com/play_cogsvsclips.md"
     assert pages["game-source"] == "https://github.com/Metta-AI/coworld-cogs-vs-clips/tree/main"
     assert pages["player"] == "https://github.com/Metta-AI/coworld-cogs-vs-clips/tree/main/coworld/player"
+    assert "rules.md" not in pages
     assert package.manifest.player[0].source_url == (
         "https://github.com/Metta-AI/coworld-cogs-vs-clips/tree/main/coworld/player"
     )
@@ -378,10 +378,10 @@ def test_cogs_vs_clips_crewrift_and_paintarena_templates_declare_all_viability_r
         (WORLDS / "cogs_vs_clips" / "coworld_manifest_template.json").read_text(encoding="utf-8")
     )
     cogs_vs_clips_pages = {page["id"]: page["content"]["value"] for page in cogs_vs_clips["game"]["docs"]["pages"]}
-    assert cogs_vs_clips_pages["rules.md"] == "https://softmax.com/play_cogsvsclips.md#game-rules"
     assert cogs_vs_clips_pages["play_cogsvsclips.md"] == "https://softmax.com/play_cogsvsclips.md"
     assert cogs_vs_clips_pages["game-source"] == "https://github.com/Metta-AI/coworld-cogs-vs-clips/tree/main"
     assert cogs_vs_clips_pages["player"] == "https://github.com/Metta-AI/coworld-cogs-vs-clips/tree/main/coworld/player"
+    assert "rules.md" not in cogs_vs_clips_pages
     assert "env" not in cogs_vs_clips["player"][0]
     assert [role["id"] for role in cogs_vs_clips["commissioner"]] == ["cogs-vs-clips-commissioner"]
     for section in ("grader", "optimizer", "diagnoser"):

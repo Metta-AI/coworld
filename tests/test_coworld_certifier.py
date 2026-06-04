@@ -1320,9 +1320,9 @@ def test_cogs_vs_clips_coworld_manifest_validates(tmp_path: Path) -> None:
         package.manifest.game.docs.readme.value
         == "https://github.com/Metta-AI/coworld-cogs-vs-clips/blob/main/README.md"
     )
-    assert package.manifest.game.docs.pages[0].id == "rules.md"
-    assert package.manifest.game.docs.pages[1].id == "play_cogsvsclips.md"
-    assert package.manifest.game.docs.pages[1].content.value == "https://softmax.com/play_cogsvsclips.md"
+    pages = {page.id: page.content.value for page in package.manifest.game.docs.pages}
+    assert "rules.md" not in pages
+    assert pages["play_cogsvsclips.md"] == "https://softmax.com/play_cogsvsclips.md"
     assert package.manifest.player[0].id == "reference-player"
     assert package.manifest.player[0].image == "coworld-cogs-vs-clips-reference-player:latest"
     assert package.manifest.player[0].run == ["python", "/app/coworld_reference_player.py"]
