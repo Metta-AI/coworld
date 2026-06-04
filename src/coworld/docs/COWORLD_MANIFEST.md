@@ -67,7 +67,9 @@ For a new Coworld, start from the Paint Arena manifest template and keep the gen
 
 1. Fill in `game` metadata, docs, protocols, config schema, results schema, and game runnable.
 2. Add bundled players used for examples, certification, and local play.
-3. Add reporter runnables when the Coworld has custom reporters or a default reporter is useful.
+3. Add reporter runnables when the Coworld ships custom reporter services. Each reporter entry declares a `purpose`
+   (`narrative`, `timeseries`, or `categorical_events`) and an `output_format` (a bare MIME string, or a `{mime, schema}`
+   descriptor for machine-consumed output). See the [Reporter role](roles/REPORTER.md).
 4. Add grader runnables when the Coworld has custom graders or a default grader is useful.
 5. Add commissioner, diagnoser, and optimizer runnables when the Coworld has custom implementations, or when a default
    image is appropriate for the role.

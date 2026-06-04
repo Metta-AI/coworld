@@ -405,10 +405,11 @@ produces episode results; the platform routes those results back to the commissi
 `episode_failed` messages; the commissioner may respond by scheduling more episodes through its `on_episode_completed`
 hook; and the commissioner eventually closes the round with [round decisions](../artifacts/ROUND_DECISIONS.md).
 
-Unlike reporter, grader, diagnoser, and optimizer — all of which consume _individual_ episode evidence on demand after
-episodes finish — the commissioner consumes a stream of episode results in aggregate during a round and emits
-round-level decisions. It is the only supporting role besides game that holds a long-lived WebSocket contract with the
-platform.
+Unlike grader, diagnoser, and optimizer — all of which consume _individual_ episode evidence after episodes finish — the
+commissioner consumes a stream of episode results in aggregate during a round and emits round-level decisions. The
+[reporter](REPORTER.md) is the other supporting role that holds a long-lived WebSocket contract with the platform, but
+it is a persisted service woken per entity rather than a round-scoped session, and it emits per-entity outputs rather
+than round decisions.
 
 See [`README.md`](../README.md) for the full artifact and control-flow diagram.
 

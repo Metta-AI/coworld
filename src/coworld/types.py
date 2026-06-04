@@ -78,6 +78,56 @@ class CoworldManifestRoleSpec(CoworldRunnableSpec):
     )
 
 
+ReporterPurpose = Literal["narrative", "timeseries", "categorical_events"]
+
+
+class CoworldTypedOutputFormat(BaseModel):
+    """Machine-consumed reporter output: a MIME type plus the JSON Schema its payload validates against.
+
+    The schema is what lets a downstream consumer (diagnoser, optimizer, Observatory surface) parse a
+    reporter's output without out-of-band knowledge. Human-terminal reporters declare a bare MIME string
+    instead; see ``ReporterOutputFormat``.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    mime: str = Field(min_length=1, description="MIME type of the reporter output payload, e.g. application/json.")
+    schema_: JsonSchema = Field(
+        alias="schema",
+        description="JSON Schema the output payload validates against, for machine consumers of this reporter.",
+    )
+
+
+ReporterOutputFormat = Annotated[
+    str | CoworldTypedOutputFormat,
+    Field(
+        description=(
+            'Output format this reporter emits. A bare MIME string (e.g. "text/markdown") for human-terminal '
+            "outputs, or a typed {mime, schema} descriptor for outputs consumed by downstream machines. The string "
+            "form is the clean upgrade lane to a named-format registry later."
+        )
+    ),
+]
+
+
+class CoworldReporterSpec(CoworldManifestRoleSpec):
+    """A reporter runnable: a persisted, WS-woken service plus its declared purpose and output format.
+
+    Reporters extend the shared role spec with the two things the manifest must declare for every reporter:
+    what kind of signal it produces (``purpose``) and the shape of the payload it writes back over the
+    WebSocket (``output_format``). See ``docs/roles/REPORTER.md`` for the runtime contract.
+    """
+
+    purpose: ReporterPurpose = Field(
+        description=(
+            "What kind of signal this reporter produces: narrative (human-readable summaries), timeseries "
+            "(tick-aligned numeric series), or categorical_events (discrete labelled events). The set is expected "
+            "to grow."
+        )
+    )
+    output_format: ReporterOutputFormat
+
+
 class CoworldTextDoc(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -222,10 +272,10 @@ class CoworldManifest(BaseModel):
         description="Bundled player runnables. Role docs: docs/roles/PLAYER.md.",
         json_schema_extra=_role_doc_schema("player"),
     )
-    reporter: list[CoworldManifestRoleSpec] = Field(
+    reporter: list[CoworldReporterSpec] = Field(
         default_factory=list,
-        description="Reporter runnables. Optional; include entries when the Coworld ships reporter containers. "
-        "Role docs: docs/roles/REPORTER.md.",
+        description="Reporter runnables. Optional; include entries when the Coworld ships reporter services. "
+        "Each entry declares a purpose and output_format. Role docs: docs/roles/REPORTER.md.",
         json_schema_extra=_role_doc_schema("reporter"),
     )
     commissioner: list[CoworldManifestRoleSpec] = Field(

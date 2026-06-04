@@ -29,5 +29,5 @@ contains:
 
 The runner does not bundle these into a single archive — bundling is a consumption-time concern. For the canonical
 per-URI output contract used by the hosted runner, see [KUBERNETES_RUNNER_README.md](KUBERNETES_RUNNER_README.md#output-uris).
-For how these files get assembled into a bundle for consumption by reporters, graders, diagnosers, and optimizers,
-see [artifacts/EPISODE_BUNDLE.md](../docs/artifacts/EPISODE_BUNDLE.md).
+For how these files get assembled into a bundle for consumption by graders and diagnosers (the reporter and optimizer
+self-source their inputs instead), see [artifacts/EPISODE_BUNDLE.md](../docs/artifacts/EPISODE_BUNDLE.md).

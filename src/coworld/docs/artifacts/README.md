@@ -19,12 +19,21 @@ consumes something; artifact pages describe the thing itself.
 
 | Artifact | Producer | Where it appears |
 | --- | --- | --- |
-| [Report](REPORT.md) | Reporter | `COGAME_REPORT_URI` zip |
-| [Event log](EVENT_LOG.md) | Reporter | Optional Parquet entry inside a report zip |
-| [Trace](TRACE.md) | Reporter | Optional JSON/JSONL entry inside a report zip |
+| Report output | Reporter | `report_output` message over the reporter's `/report` WebSocket, in the declared `output_format` (see [Reporter role](../roles/REPORTER.md)) |
 | [Grade](GRADE.md) | Grader | `COGAME_GRADE_URI` JSON |
 | [Diagnosis](DIAGNOSIS.md) | Diagnoser | `COGAME_DIAGNOSIS_URI` zip |
 | [Optimizer outputs](OPTIMIZER_OUTPUTS.md) | Optimizer | Workbench side effects and optional plan artifacts |
 | [Round decisions](ROUND_DECISIONS.md) | Commissioner | `round_complete` decisions recorded by the platform |
+
+### Legacy reporter zip artifacts (superseded)
+
+The reporter previously wrote a zip to `COGAME_REPORT_URI`. That contract is superseded by the WebSocket reporter
+service above; these pages are retained because the in-tree paintarena legacy reporters still produce them.
+
+| Artifact | Producer | Where it appears |
+| --- | --- | --- |
+| [Report (legacy)](REPORT.md) | Legacy reporter | `COGAME_REPORT_URI` zip |
+| [Event log (legacy)](EVENT_LOG.md) | Legacy reporter | Optional Parquet entry inside a report zip |
+| [Trace (legacy)](TRACE.md) | Legacy reporter | Optional JSON/JSONL entry inside a report zip |
 
 See [README.md](../README.md) for the role model and artifact flow.

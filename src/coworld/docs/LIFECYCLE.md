@@ -32,7 +32,7 @@ This is the short lifecycle view of the roles. For details and status definition
 | Game | Runs for `play`, `run-episode`, `certify`, and replay viewing. | Runs in the hosted Kubernetes episode job. |
 | Player | Runs one container per slot for certification, local episodes, and browser play. | Runs one child pod per player slot, using submitted policy versions. |
 | Commissioner | Not run by the local runner. | Runs as a per-round container for leagues with `commissioner_key = "container"`; legacy leagues still use in-process commissioners. |
-| Reporter | Not auto-run by the local runner. | Contract defined, runtime pending; consumes bundles on demand when invoked. |
+| Reporter | Not run by the local runner. | Contract defined, runtime pending; persisted WebSocket service woken per entity, self-sourcing inputs. |
 | Grader | Not auto-run by the local runner. | Contract defined, runtime pending; consumes bundles on demand when invoked. |
 | Diagnoser | Reserved; not run by default. | Reserved; not run by default. |
 | Optimizer | Workbench role; not an episode container. | Workbench role; pulls artifacts and submits candidate policies separately. |
@@ -185,10 +185,11 @@ After an episode, the runner has per-URI artifacts rather than one assembled bun
 operation. A consumer asks for a bundle when it needs one episode's artifacts as a unit, and the bundling layer assembles
 the zip on demand with the requested include filters and access checks.
 
-Reporter, grader, and diagnoser runnables receive the bundle through `COGAME_EPISODE_BUNDLE_URI` when those supporting
-runnables are invoked, then produce [reports](artifacts/REPORT.md), [grades](artifacts/GRADE.md), or
-[diagnoses](artifacts/DIAGNOSIS.md). Optimizers usually pull episode artifacts through Coworld tooling while operating
-as a longer-running workbench and produce [optimizer outputs](artifacts/OPTIMIZER_OUTPUTS.md).
+Grader and diagnoser runnables receive the bundle through `COGAME_EPISODE_BUNDLE_URI` when those supporting runnables
+are invoked, then produce [grades](artifacts/GRADE.md) or [diagnoses](artifacts/DIAGNOSIS.md). The reporter is a
+persisted WebSocket service that the platform wakes per entity; it fetches its own inputs over HTTPS and writes a
+[report output](roles/REPORTER.md) back over the socket. Optimizers usually pull episode artifacts through Coworld
+tooling while operating as a longer-running workbench and produce [optimizer outputs](artifacts/OPTIMIZER_OUTPUTS.md).
 
 See [EPISODE_BUNDLE.md](artifacts/EPISODE_BUNDLE.md) for the bundle shape and planned bundle request surface.
 

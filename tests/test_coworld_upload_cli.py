@@ -1135,6 +1135,8 @@ def _manifest() -> dict[str, object]:
                 "description": "Reporter stub; reuses unit-test-runtime so upload dedupe doesn't request a 2nd image.",
                 "type": "reporter",
                 "image": "unit-test-runtime:latest",
+                "purpose": "narrative",
+                "output_format": "text/markdown",
             }
         ],
         "grader": [
