@@ -135,10 +135,12 @@ Sent once after the WebSocket connects, providing the full round context:
   "memberships": [
     {
       "id": "uuid",
+      "league_id": "uuid_league",
       "division_id": "uuid_open",
       "policy_version_id": "uuid",
       "player_id": "player_abc",
-      "is_champion": true
+      "status": "competing",
+      "substatus": "champion"
     }
   ],
   "recent_results": [

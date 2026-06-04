@@ -44,10 +44,12 @@ def test_round_start_serializes_with_message_type() -> None:
         memberships=[
             MembershipInfo(
                 id=membership_id,
+                league_id=league_id,
                 division_id=division_id,
                 policy_version_id=policy_version_id,
                 player_id="player_abc",
-                is_champion=True,
+                status="competing",
+                substatus="champion",
             )
         ],
         recent_results=[],
@@ -244,7 +246,7 @@ def test_episode_completed_request_serializes_episode_result_and_failure() -> No
         league=LeagueInfo(id=uuid4()),
         divisions=[DivisionInfo(id=division_id, name="Bronze", level=0)],
         memberships=[
-            MembershipInfo(id=uuid4(), division_id=division_id, policy_version_id=policy_version_id)
+            MembershipInfo(id=uuid4(), league_id=uuid4(), division_id=division_id, policy_version_id=policy_version_id)
             for policy_version_id in policy_version_ids
         ],
         recent_results=[],

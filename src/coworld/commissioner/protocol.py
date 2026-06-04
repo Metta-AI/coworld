@@ -24,10 +24,12 @@ class DivisionInfo(BaseModel):
 
 class MembershipInfo(BaseModel):
     id: UUID
+    league_id: UUID
     division_id: UUID
     policy_version_id: UUID
     player_id: str | None = None
-    is_champion: bool = False
+    status: str = "competing"
+    substatus: str | None = None
 
 
 class RecentResult(BaseModel):
