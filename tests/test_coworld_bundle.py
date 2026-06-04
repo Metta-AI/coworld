@@ -311,8 +311,6 @@ def _write_manifest(
                 "type": role,
                 "image": image,
                 "description": f"Unit test {role}.",
-                # Reporters carry two extra required fields; harmless to others since each role builds its own dict.
-                **({"purpose": "narrative", "output_format": "text/markdown"} if role == "reporter" else {}),
             }
         ]
         for role, image in (role_images or {}).items()
@@ -383,8 +381,6 @@ def _write_manifest(
                         "type": "reporter",
                         "image": "ghcr.io/metta-ai/reporters-default:latest",
                         "description": "Default reporter stub.",
-                        "purpose": "narrative",
-                        "output_format": "text/markdown",
                     }
                 ],
                 # Default stub; tests override via role_images.

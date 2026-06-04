@@ -1498,8 +1498,6 @@ def _coworld_manifest(
                 "type": "reporter",
                 "image": "ghcr.io/metta-ai/reporters-default:latest",
                 "description": "Default reporter stub for unit tests.",
-                "purpose": "narrative",
-                "output_format": "text/markdown",
             }
         ],
         "grader": [

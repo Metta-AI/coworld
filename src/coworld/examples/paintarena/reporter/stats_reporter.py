@@ -1,12 +1,4 @@
-"""PaintArena parquet stats reporter (LEGACY bundle->zip contract).
-
-.. warning::
-   This module implements the **superseded** reporter contract: it reads
-   ``COGAME_EPISODE_BUNDLE_URI`` and writes a report zip to ``COGAME_REPORT_URI``. The current
-   reporter contract is a persisted WebSocket service that emits a ``report_output`` message in a
-   declared ``output_format`` (manifest ``purpose: "timeseries"`` for this reporter). See
-   ``docs/roles/REPORTER.md``. Retained as a transitional reference until a WebSocket
-   reporter-service reference lands; do not build new reporters against it.
+"""PaintArena parquet stats reporter (reference / canonical contract).
 
 Reads an episode bundle pointed at by ``COGAME_EPISODE_BUNDLE_URI``,
 projects PaintArena replay frames plus final results into the canonical

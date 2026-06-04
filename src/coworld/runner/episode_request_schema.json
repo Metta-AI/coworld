@@ -218,9 +218,9 @@
           "x-coworld-role-doc": "docs/roles/PLAYER.md"
         },
         "reporter": {
-          "description": "Reporter runnables. Optional; include entries when the Coworld ships reporter services. Each entry declares a purpose and output_format. Role docs: docs/roles/REPORTER.md.",
+          "description": "Reporter runnables. Optional; include entries when the Coworld ships reporter containers. Role docs: docs/roles/REPORTER.md.",
           "items": {
-            "$ref": "#/$defs/CoworldReporterSpec"
+            "$ref": "#/$defs/CoworldManifestRoleSpec"
           },
           "markdownDescription": "See the [Reporter role](docs/roles/REPORTER.md) documentation for this role's contract.",
           "title": "Reporter",
@@ -414,104 +414,6 @@
       "title": "CoworldProtocolDocs",
       "type": "object"
     },
-    "CoworldReporterSpec": {
-      "additionalProperties": false,
-      "description": "A reporter runnable: a persisted, WS-woken service plus its declared purpose and output format.\n\nReporters extend the shared role spec with the two things the manifest must declare for every reporter:\nwhat kind of signal it produces (``purpose``) and the shape of the payload it writes back over the\nWebSocket (``output_format``). See ``docs/roles/REPORTER.md`` for the runtime contract.",
-      "properties": {
-        "type": {
-          "description": "Manifest role section this runnable belongs to.",
-          "enum": ["player", "reporter", "commissioner", "grader", "diagnoser", "optimizer"],
-          "title": "Type",
-          "type": "string"
-        },
-        "image": {
-          "description": "Docker image reference to run for this role.",
-          "title": "Image",
-          "type": "string"
-        },
-        "run": {
-          "description": "Optional process command overriding the image entrypoint or default command.",
-          "items": {
-            "type": "string"
-          },
-          "title": "Run",
-          "type": "array"
-        },
-        "env": {
-          "additionalProperties": {
-            "type": "string"
-          },
-          "description": "Public environment variables passed to the runnable. Do not put secrets here.",
-          "title": "Env",
-          "type": "object"
-        },
-        "source_url": {
-          "anyOf": [
-            {
-              "type": "string"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "default": null,
-          "description": "Optional public source repository, directory, or file URL for this runnable.",
-          "title": "Source Url"
-        },
-        "id": {
-          "description": "Stable runnable identifier within this manifest. Certification fixtures reference player ids.",
-          "minLength": 1,
-          "title": "Id",
-          "type": "string"
-        },
-        "name": {
-          "description": "Human-readable runnable name for CLIs and UIs.",
-          "minLength": 1,
-          "title": "Name",
-          "type": "string"
-        },
-        "description": {
-          "description": "Human-readable summary of what this runnable does.",
-          "minLength": 1,
-          "title": "Description",
-          "type": "string"
-        },
-        "repository_url": {
-          "anyOf": [
-            {
-              "type": "string"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "default": null,
-          "description": "Optional Git repository the local optimizer tooling clones and runs. Used by `coworld optimize` to resolve a game-specific optimizer workbench; informational for other roles.",
-          "title": "Repository Url"
-        },
-        "purpose": {
-          "description": "What kind of signal this reporter produces: narrative (human-readable summaries), timeseries (tick-aligned numeric series), or categorical_events (discrete labelled events). The set is expected to grow.",
-          "enum": ["narrative", "timeseries", "categorical_events"],
-          "title": "Purpose",
-          "type": "string"
-        },
-        "output_format": {
-          "anyOf": [
-            {
-              "type": "string"
-            },
-            {
-              "$ref": "#/$defs/CoworldTypedOutputFormat"
-            }
-          ],
-          "description": "Output format this reporter emits. A bare MIME string (e.g. \"text/markdown\") for human-terminal outputs, or a typed {mime, schema} descriptor for outputs consumed by downstream machines. The string form is the clean upgrade lane to a named-format registry later.",
-          "title": "Output Format"
-        }
-      },
-      "required": ["type", "image", "id", "name", "description", "purpose", "output_format"],
-      "title": "CoworldReporterSpec",
-      "type": "object"
-    },
     "CoworldRunnableSpec": {
       "additionalProperties": false,
       "properties": {
@@ -578,27 +480,6 @@
       },
       "required": ["type", "value"],
       "title": "CoworldTextDoc",
-      "type": "object"
-    },
-    "CoworldTypedOutputFormat": {
-      "additionalProperties": false,
-      "description": "Machine-consumed reporter output: a MIME type plus the JSON Schema its payload validates against.\n\nThe schema is what lets a downstream consumer (diagnoser, optimizer, Observatory surface) parse a\nreporter's output without out-of-band knowledge. Human-terminal reporters declare a bare MIME string\ninstead; see ``ReporterOutputFormat``.",
-      "properties": {
-        "mime": {
-          "description": "MIME type of the reporter output payload, e.g. application/json.",
-          "minLength": 1,
-          "title": "Mime",
-          "type": "string"
-        },
-        "schema": {
-          "additionalProperties": true,
-          "description": "JSON Schema the output payload validates against, for machine consumers of this reporter.",
-          "title": "Schema",
-          "type": "object"
-        }
-      },
-      "required": ["mime", "schema"],
-      "title": "CoworldTypedOutputFormat",
       "type": "object"
     },
     "CoworldUriDoc": {

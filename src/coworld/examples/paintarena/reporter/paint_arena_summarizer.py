@@ -1,20 +1,13 @@
-"""PaintArena summarizer reporter (LEGACY bundle->zip contract).
-
-.. warning::
-   This module implements the **superseded** reporter contract: it reads
-   ``COGAME_EPISODE_BUNDLE_URI`` and writes a report zip to ``COGAME_REPORT_URI``. The current
-   reporter contract is a persisted WebSocket service that emits a ``report_output`` message in a
-   declared ``output_format`` (manifest ``purpose: "narrative"`` for this reporter). See
-   ``docs/roles/REPORTER.md``. Retained as a transitional reference until a WebSocket
-   reporter-service reference lands; do not build new reporters against it.
+"""PaintArena summarizer reporter (reference / canonical contract).
 
 Pure function of the episode bundle pointed at by ``COGAME_EPISODE_BUNDLE_URI``.
 Produces a single ``.zip`` written to ``COGAME_REPORT_URI`` containing a
 Markdown summary and a JSON stats blob, plus a top-level ``manifest.json``
-flagging ``summary.md`` as the renderable per the legacy Coworld
+flagging ``summary.md`` as the renderable per the canonical Coworld
 reporter contract (``docs/roles/REPORTER.md`` in this package).
 
-This reporter is the minimal legacy reference for a PaintArena bundle. Grid dimensions come from the game-owned
+This reporter is the minimal *reference* implementation of the contract
+for a PaintArena bundle. Grid dimensions come from the game-owned
 replay's ``config``. PaintArena's replay format is defined by its game
 server in coworld (``examples/paintarena/game/server.py::_replay_payload``).
 

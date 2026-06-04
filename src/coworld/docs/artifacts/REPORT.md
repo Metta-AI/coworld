@@ -1,9 +1,4 @@
-# Report Artifact (Legacy)
-
-> **Superseded.** This zip-to-`COGAME_REPORT_URI` contract is the legacy reporter output. Current reporters are
-> persisted WebSocket services that emit a `report_output` message in a declared `output_format`; see the
-> [Reporter role](../roles/REPORTER.md). This page is retained because the in-tree paintarena legacy reporters still
-> produce it. Do not build new reporters against this contract.
+# Report Artifact
 
 The **report artifact** is a reporter-written zip that explains or summarizes one completed episode.
 

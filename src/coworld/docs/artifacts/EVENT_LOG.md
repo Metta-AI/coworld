@@ -1,8 +1,4 @@
-# Event Log Artifact (Legacy)
-
-> **Superseded.** The event log is part of the legacy report-zip contract. Current reporters declaring `purpose:
-> "timeseries"` emit their series directly as a `report_output` payload in a declared `output_format`; see the
-> [Reporter role](../roles/REPORTER.md). This page is retained for the in-tree paintarena legacy reporters.
+# Event Log Artifact
 
 An **event log** is an optional structured Parquet file inside a [report](REPORT.md) zip. It lets reporters expose
 tick-aligned facts in a game-agnostic table shape.

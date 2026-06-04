@@ -59,10 +59,8 @@ Every bundle contains a `manifest.json` at the zip root describing its contents:
 
 ## Requesting a Bundle
 
-The current package defines the consumer-side bundle contract used by graders, diagnosers, and the legacy Paint Arena
-reporters, including `COGAME_EPISODE_BUNDLE_URI` and the `BundleReader` helper vendored under the Paint Arena reporter
-example. (The current reporter contract fetches its own inputs over HTTPS rather than receiving this env var; see the
-[Reporter role](../roles/REPORTER.md).)
+The current package defines the consumer-side bundle contract used by Paint Arena reporters, including
+`COGAME_EPISODE_BUNDLE_URI` and the `BundleReader` helper vendored under the Paint Arena reporter example.
 
 The public bundle-request surfaces are planned but not implemented in this checkout. Record the intended contract here
 so the CLI, API, and backend implementation converge on one shape.
@@ -114,8 +112,8 @@ actually delivered.
 
 ## Consumption by Supporting Runnables
 
-When an orchestrator invokes a **grader** or **diagnoser** container, it first assembles a bundle and then hands it to
-the runnable via:
+When an orchestrator invokes a supporting runnable — reporter, grader, diagnoser, or optimizer — it first assembles a
+bundle and then hands it to the runnable via:
 
 ```bash
 COGAME_EPISODE_BUNDLE_URI=file:///path/to/bundle.zip
@@ -125,16 +123,9 @@ COGAME_EPISODE_BUNDLE_URI=https://.../ep.zip
 The runnable reads the zip, inspects its `manifest.json` to discover what's inside, and processes the files. The
 runnable does not need to know whether the bundle came from a local workspace or a hosted artifact store.
 
-The **reporter** is no longer a fixed-bundle consumer: it is a persisted WebSocket service that fetches whatever
-episode evidence it needs over HTTPS when woken. A bundle URI is one thing the platform may pass as a `report_request`
-context hint, but the reporter is free to request artifacts directly instead. See the
-[Reporter role](../roles/REPORTER.md). The **optimizer** likewise pulls artifacts through Coworld tooling rather than a
-fixed bundle env var.
-
 Supporting-role outputs are separate artifacts, not entries in the episode bundle today:
 
-- A reporter [report output](../roles/REPORTER.md) over its WebSocket (legacy: [report zip](REPORT.md), optionally with
-  an [event log](EVENT_LOG.md) or [trace](TRACE.md)).
+- [Report](REPORT.md), optionally including an [event log](EVENT_LOG.md) or [trace](TRACE.md).
 - [Grade](GRADE.md).
 - [Diagnosis](DIAGNOSIS.md).
 - [Optimizer outputs](OPTIMIZER_OUTPUTS.md).

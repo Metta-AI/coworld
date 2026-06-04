@@ -166,36 +166,19 @@
       "id": "paint-arena-summarizer",
       "type": "reporter",
       "name": "Paint Arena Summarizer",
-      "description": "Narrative summarizer for a PaintArena episode. NOTE: the linked source still implements the superseded bundle->zip reporter contract; it is retained as a legacy reference until the WebSocket reporter-service runtime ships. See docs/roles/REPORTER.md.",
+      "description": "Per-episode summarizer: zip with Markdown summary and JSON stats from PaintArena results, metadata, and replay config.",
       "source_url": "https://github.com/Metta-AI/coworld/tree/main/src/coworld/examples/paintarena/reporter",
       "image": "{{PAINTARENA_IMAGE}}",
-      "run": ["python", "-m", "coworld.examples.paintarena.reporter.paint_arena_summarizer"],
-      "purpose": "narrative",
-      "output_format": "text/markdown"
+      "run": ["python", "-m", "coworld.examples.paintarena.reporter.paint_arena_summarizer"]
     },
     {
       "id": "paint-arena-parquet-stats-reporter",
       "type": "reporter",
       "name": "Paint Arena Parquet Stats Reporter",
-      "description": "Timeseries reporter emitting per-tick PaintArena stats. NOTE: the linked source still implements the superseded bundle->zip reporter contract; it is retained as a legacy reference until the WebSocket reporter-service runtime ships. See docs/roles/REPORTER.md.",
+      "description": "Rich data reporter: converts PaintArena replay frames and results into replay stats parquet.",
       "source_url": "https://github.com/Metta-AI/coworld/tree/main/src/coworld/examples/paintarena/reporter",
       "image": "{{PAINTARENA_IMAGE}}",
-      "run": ["python", "-m", "coworld.examples.paintarena.reporter.stats_reporter"],
-      "purpose": "timeseries",
-      "output_format": {
-        "mime": "application/vnd.apache.parquet",
-        "schema": {
-          "type": "object",
-          "description": "Tick-aligned event-log rows; see docs/artifacts/EVENT_LOG.md (legacy).",
-          "properties": {
-            "ts": { "type": "integer", "description": "Episode tick when the event occurred." },
-            "player": { "type": "integer", "description": "Player slot, or -1 for global events." },
-            "key": { "type": "string", "description": "Event name or stable stat key." },
-            "value": { "type": "string", "description": "Event value, JSON-encoded when structured." }
-          },
-          "required": ["ts", "player", "key", "value"]
-        }
-      }
+      "run": ["python", "-m", "coworld.examples.paintarena.reporter.stats_reporter"]
     }
   ],
   "grader": [],

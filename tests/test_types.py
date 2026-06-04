@@ -12,9 +12,7 @@ from coworld.schema_validation import validate_json_schema
 from coworld.types import (
     CoworldEpisodeJobSpec,
     CoworldManifest,
-    CoworldReporterSpec,
     CoworldRunnableSpec,
-    CoworldTypedOutputFormat,
     CoworldVariant,
     coworld_episode_request_schema,
     coworld_manifest_schema,
@@ -95,58 +93,6 @@ def test_manifest_schema_allows_empty_optional_role_entries(section: str) -> Non
     manifest[section] = []
 
     validate_json_schema(manifest, coworld_manifest_schema())
-
-
-def _reporter_spec(**overrides: Any) -> dict[str, Any]:
-    spec = {
-        "id": "r1",
-        "name": "Reporter One",
-        "description": "Reporter one.",
-        "type": "reporter",
-        "image": "reporter",
-        "purpose": "narrative",
-        "output_format": "text/markdown",
-    }
-    spec.update(overrides)
-    return spec
-
-
-def test_reporter_accepts_bare_mime_output_format() -> None:
-    spec = CoworldReporterSpec.model_validate(_reporter_spec(purpose="narrative", output_format="text/markdown"))
-
-    assert spec.purpose == "narrative"
-    assert spec.output_format == "text/markdown"
-
-
-def test_reporter_accepts_typed_output_format() -> None:
-    schema = {"type": "object", "properties": {"painted_tiles": {"type": "integer"}}}
-    spec = CoworldReporterSpec.model_validate(
-        _reporter_spec(purpose="timeseries", output_format={"mime": "application/json", "schema": schema})
-    )
-
-    assert isinstance(spec.output_format, CoworldTypedOutputFormat)
-    assert spec.output_format.mime == "application/json"
-    assert spec.output_format.schema_ == schema
-
-
-def test_reporter_rejects_unknown_purpose() -> None:
-    with pytest.raises(ValidationError):
-        CoworldReporterSpec.model_validate(_reporter_spec(purpose="highlight_reel"))
-
-
-def test_reporter_requires_purpose_and_output_format() -> None:
-    for missing in ("purpose", "output_format"):
-        spec = _reporter_spec()
-        del spec[missing]
-        with pytest.raises(ValidationError):
-            CoworldReporterSpec.model_validate(spec)
-
-
-def test_reporter_typed_output_format_rejects_extra_keys() -> None:
-    with pytest.raises(ValidationError):
-        CoworldReporterSpec.model_validate(
-            _reporter_spec(output_format={"mime": "application/json", "schema": {}, "version": 2})
-        )
 
 
 def test_episode_job_players_are_flat_runnable_payloads() -> None:
@@ -425,8 +371,6 @@ def _manifest_data(game_type: str = "game", player_type: str = "player") -> dict
                 "type": "reporter",
                 "image": "reporter",
                 "source_url": "https://example.com/reporter",
-                "purpose": "narrative",
-                "output_format": "text/markdown",
             }
         ],
         "grader": [

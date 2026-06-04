@@ -34,7 +34,7 @@ episode artifacts after the episode ends.
 | **game** | per episode, WebSocket server | live | Runs the episode, serves browser clients, and writes result/replay artifacts. | [Game role](roles/GAME.md) |
 | **player** | per episode, WebSocket client | live | Connects to the game and acts in one player slot. | [Player role](roles/PLAYER.md) |
 | **commissioner** | per round, WebSocket server | live for container leagues | Schedules league-round episodes and ranks policy memberships. | [Commissioner role](roles/COMMISSIONER.md) |
-| **reporter** | persisted service, WebSocket-woken | contract defined, runtime pending | Wakes on demand to turn episode evidence into narrative, timeseries, or categorical-event outputs. | [Reporter role](roles/REPORTER.md) |
+| **reporter** | post episode, on demand | contract defined, runtime pending | Turns episode artifacts into reports, event logs, or traces. | [Reporter role](roles/REPORTER.md) |
 | **grader** | post episode, on demand | contract defined, runtime pending | Scores how useful or interesting an episode is. | [Grader role](roles/GRADER.md) |
 | **diagnoser** | post episode, on demand | reserved | Evaluates a target policy and emits policy-facing advice. | [Diagnoser role](roles/DIAGNOSER.md) |
 | **optimizer** | workbench, long running | reserved | Drives longer-running policy-improvement work. | [Optimizer role](roles/OPTIMIZER.md) |
@@ -103,17 +103,16 @@ The full lifecycle page is under construction: [Coworld lifecycle](LIFECYCLE.md)
 +----------------------------------------------------------------------------------+
 | AFTER AN EPISODE                                                                 |
 |                                                                                  |
-|  bundle (COGAME_EPISODE_BUNDLE_URI) feeds Grader + Diagnoser;                     |
-|  Reporter is WebSocket-woken and self-sources inputs; Optimizer pulls via tooling|
+|                         COGAME_EPISODE_BUNDLE_URI                                |
 |                                      |                                           |
 |                                      v                                           |
 |  +-------------+   +------------+   +----------------+   +------------------+    |
 |  |  Reporter   |   |   Grader   |   |   Diagnoser    |   |    Optimizer     |    |
-|  |   output    |   |   grade    |   |   diagnosis    |   |    workbench     |    |
+|  |   report    |   |   grade    |   |   diagnosis    |   |    workbench     |    |
 |  +-------------+   +------------+   +----------------+   +------------------+    |
-|        ^                                  ^                                      |
-|        |                                  |                                      |
-|   /report WS wake                COGAME_TARGET_POLICY_URI                        |
+|                                           ^                                      |
+|                                           |                                      |
+|                              COGAME_TARGET_POLICY_URI                            |
 +----------------------------------------------------------------------------------+
 ```
 
@@ -151,11 +150,11 @@ zip to the consumer.
 See the [episode bundle reference](artifacts/EPISODE_BUNDLE.md) for the bundle shape, include tokens, inner
 `manifest.json` schema, access-control rules, and planned CLI/API bundle request surface.
 
-The grader and diagnoser receive an episode bundle via `COGAME_EPISODE_BUNDLE_URI`, inspect its `manifest.json`, run
-their logic, and write their own artifact. The reporter and optimizer source their own inputs instead:
+Supporting runnables receive an episode bundle via `COGAME_EPISODE_BUNDLE_URI`, inspect its `manifest.json`, run their
+logic, and write or create their own artifact:
 
-- a **reporter** is a persisted WebSocket service the platform wakes per entity; it fetches the evidence it needs over
-  HTTPS and writes a [report output](roles/REPORTER.md) back over the socket in its declared `output_format`;
+- a **reporter** writes a [report](artifacts/REPORT.md) to `COGAME_REPORT_URI`, optionally including an
+  [event log](artifacts/EVENT_LOG.md) or [trace](artifacts/TRACE.md);
 - a **grader** writes a [grade](artifacts/GRADE.md) to `COGAME_GRADE_URI`;
 - a **diagnoser** writes a [diagnosis](artifacts/DIAGNOSIS.md) to `COGAME_DIAGNOSIS_URI` and also receives
   `COGAME_TARGET_POLICY_URI` identifying the policy it is evaluating;
@@ -163,9 +162,8 @@ their logic, and write their own artifact. The reporter and optimizer source the
   produces [optimizer outputs](artifacts/OPTIMIZER_OUTPUTS.md) such as candidate policies, policy workspaces, and
   evaluation runs.
 
-Grader and diagnoser runs are on-demand container invocations, not auto-triggered by the runner; the planned CLI
-surfaces are `coworld run-grader` and `coworld run-diagnoser`. The reporter is woken over its `/report` WebSocket rather
-than launched per run.
+Reporter, grader, and diagnoser runs are on-demand, not auto-triggered by the runner. The planned CLI surfaces are
+`coworld run-reporter`, `coworld run-grader`, and `coworld run-diagnoser`; exact shapes are still being settled.
 
 ## Role Boundaries
 
@@ -179,10 +177,9 @@ These boundaries are useful when deciding where a new feature, artifact, or debu
   and does not directly modify episode artifacts.
 - **The bundling layer is the handoff to analysis.** Everything before bundling is game and runner output; everything
   after bundling is consumer input.
-- **Container supporting runnables share one input shape.** `COGAME_EPISODE_BUNDLE_URI` is the canonical input env var
-  for the grader and diagnoser container runnables, whose outputs go to `COGAME_GRADE_URI` and `COGAME_DIAGNOSIS_URI`.
-  The reporter is the exception: it is a persisted WebSocket service that fetches its own inputs over HTTPS and writes
-  output back over the socket, not via a fixed bundle env var.
+- **Supporting runnables share one input shape.** `COGAME_EPISODE_BUNDLE_URI` is the canonical input env var for
+  reporter, grader, and diagnoser runnables. Role-specific output env vars are `COGAME_REPORT_URI`, `COGAME_GRADE_URI`,
+  and `COGAME_DIAGNOSIS_URI`.
 - **The optimizer is a workbench, not a one-shot artifact writer.** Final candidate policies leave an optimizer through
   the standard `coworld upload-policy` path.
 

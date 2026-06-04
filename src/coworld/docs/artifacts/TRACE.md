@@ -1,9 +1,4 @@
-# Trace Artifact (Legacy)
-
-> **Superseded.** The trace is part of the legacy report-zip contract. Current reporters declaring `purpose:
-> "categorical_events"` (or another machine purpose) emit their timeline directly as a `report_output` payload in a
-> declared `output_format`; see the [Reporter role](../roles/REPORTER.md). This page is retained for the in-tree
-> paintarena legacy reporters.
+# Trace Artifact
 
 A **trace** is an optional machine-readable timeline inside a [report](REPORT.md) zip. It lets a reporter expose the
 facts it derived from replay, results, or logs without forcing consumers to parse the human render target.
