@@ -29,6 +29,12 @@ SUPPORTING_ROLE_REPOS = {
     "optimizer": "https://github.com/Metta-AI/optimizers",
 }
 IN_TREE_EXAMPLE_SOURCE_PREFIX = "https://github.com/Metta-AI/coworld/tree/main/src/coworld/examples/paintarena/"
+COWORLD_ISSUES_URL = "https://github.com/Metta-AI/coworld/issues"
+PLAY_GUIDE_URI_PREFIXES = (
+    "https://softmax.com/play_",
+    "https://github.com/Metta-AI/coworld/",
+    "https://github.com/Metta-AI/coworld-tribal-village/blob/main/docs/play_tribal_village.md",
+)
 
 
 def test_canonical_worlds_use_compose_builds() -> None:
@@ -60,6 +66,24 @@ def test_canonical_world_templates_do_not_publish_metta_repo_links() -> None:
         assert "ghcr.io/treeform" not in template_text
         assert "src/coworld/examples/cogs_vs_clips" not in template_text
         assert '"version"' not in json.loads(template_text)["game"]
+
+
+def test_canonical_play_pages_use_known_guidance_sources() -> None:
+    for template_path in _world_templates():
+        template = json.loads(template_path.read_text(encoding="utf-8"))
+        play_pages = [page for page in template["game"]["docs"]["pages"] if page["id"].startswith("play_")]
+        assert play_pages, template_path
+
+        for page in play_pages:
+            content = page["content"]
+            value = content["value"]
+            if content["type"] == "uri":
+                assert value.startswith(PLAY_GUIDE_URI_PREFIXES)
+            else:
+                assert COWORLD_ISSUES_URL in value
+                assert "file an issue in the Coworld repo" in value
+                assert "command, league/Coworld ids, logs or replay links, and the smallest repro" in value
+                assert "github.com/Metta-AI/coworld-" not in value
 
 
 def test_canonical_among_them_build_declares_role_starter_contexts() -> None:
