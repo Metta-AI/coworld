@@ -59,7 +59,6 @@ source of truth. They are generated docs and `$schema` targets; `test_types.py` 
 - `src/coworld/manifest_validation.py`, `schema_validation.py`, `manifest_uri.py` - manifest and schema validation.
 - `src/coworld/bundle.py` - episode-bundle assembly around `COGAME_EPISODE_BUNDLE_URI`.
 - `src/coworld/play.py`, `src/coworld/runner/` - local play, local episode runner, and hosted-runner contracts.
-- `src/coworld/starter_policy.py`, `src/coworld/policies/` - packaged starter policy templates.
 - `src/coworld/commissioner/`, `submit.py`, `upload.py` - league round-running, submission, and upload support.
 - `src/coworld/examples/paintarena/` - smallest complete Coworld and reference implementation.
 

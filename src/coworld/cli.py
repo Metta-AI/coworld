@@ -24,10 +24,6 @@ from coworld.manifest_uri import materialized_manifest_path, materialized_replay
 from coworld.optimizer.runtime import OptimizerSetupError, run_optimizer_session
 from coworld.play import PlaySession, ReplaySession, _resolve_bedrock_aws_env, play_coworld, replay_coworld
 from coworld.runner.runner import EpisodeArtifacts, run_coworld_episode
-from coworld.starter_policy import (
-    STARTER_POLICIES,
-    write_starter_policy,
-)
 from coworld.submit import submit_policy_to_league_cmd
 from coworld.tournament_cli import register_tournament_commands
 from coworld.upload import (
@@ -267,36 +263,6 @@ def download(
         output_dir,
         server=server,
         refresh=refresh,
-    )
-
-
-@app.command("make-policy")
-def make_policy(
-    policy: Annotated[
-        str,
-        typer.Argument(help=f"Starter policy to copy. Choices: {', '.join(sorted(STARTER_POLICIES))}."),
-    ],
-    output: Annotated[
-        Path,
-        typer.Option("--output", "-o", help="Output starter policy project directory."),
-    ] = Path("starter-policy"),
-) -> None:
-    if policy not in STARTER_POLICIES:
-        choices = ", ".join(sorted(STARTER_POLICIES))
-        console.print(f"[red]Unknown starter policy '{policy}'. Choices: {choices}[/red]")
-        raise typer.Exit(1)
-    if output.suffix:
-        console.print("[red]Starter policy output must be a project directory, e.g. -o my-player[/red]")
-        raise typer.Exit(1)
-
-    result = write_starter_policy(policy, output)
-    starter = STARTER_POLICIES[policy]
-
-    console.print(f"[green]{result.display_name} starter policy copied to: {result.output_path}[/green]")
-    console.print(f"[dim]Policy source: {result.source_path}[/dim]")
-    console.print(
-        f"[dim]Build: docker build --platform=linux/amd64 -t {starter.image_tag} "
-        f"{shlex.quote(str(result.output_path))}[/dim]"
     )
 
 

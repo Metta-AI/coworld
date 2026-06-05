@@ -1,6 +1,6 @@
 # Not pyproject_library: hand-split into :coworld_core (importable
-# library surface) + :coworld (CLI/examples/policies) + :coworld_bin
-# for action-key isolation — edits under examples/, policies/, cli.py
+# library surface) + :coworld (CLI/examples) + :coworld_bin
+# for action-key isolation — edits under examples/, cli.py
 # don't re-key tests that only need the library surface.
 # pyproject_library emits a single target per pyproject and can't
 # express the split. (PR #14752 reverted an attempted two-dist split
@@ -57,12 +57,12 @@ echo "coworld-paintarena@$$iid" > $@
 #   runner.runner, types).
 #
 # Everything else — the CLI (`cli.py`, `tournament_cli.py`,
-# `bundle.py`, `submit.py`, `upload.py`, `starter_policy.py`,
+# `bundle.py`, `submit.py`, `upload.py`,
 # `manifest_uri.py`, `__main__.py`), the example servers under
-# `examples/**`, the policy templates under `policies/**`, and the
+# `examples/**`, and the
 # kubernetes runner that only the CLI and tests load — stays in
 # `:coworld`. Action keys for downstream tests that only hit the
-# library surface no longer flip when CLI / example / policy files
+# library surface no longer flip when CLI / example files
 # change.
 #
 # `coworld_manifest_schema.json` and `runner/episode_request_schema.json`
@@ -130,10 +130,6 @@ py_library(
             # asserts the paintarena example's compose.yaml.is_file().
             "src/coworld/examples/**/*.yaml",
             "src/coworld/examples/**/Dockerfile*",
-            "src/coworld/policies/amongthemstarter/**/*",
-            "src/coworld/policies/amongthemstarter/.dockerignore",
-            "src/coworld/policies/cogs_vs_clips/**/*",
-            "src/coworld/policies/cogs_vs_clips/.dockerignore",
         ],
         allow_empty = True,
     ),
