@@ -22,7 +22,8 @@ RUN --mount=type=bind,target=/ctx \
     elif [ -n "${COWORLD_VERSION}" ]; then \
         uv pip install --python /opt/coworld/bin/python "coworld==${COWORLD_VERSION}"; \
     else \
-        cp -a /ctx /tmp/coworld-src && \
+        COWORLD_SRC="$(dirname "$(find /ctx -path '*/coworld/pyproject.toml' | head -1)")" && \
+        cp -a "${COWORLD_SRC}" /tmp/coworld-src && \
         uv build /tmp/coworld-src --wheel --out-dir /tmp/wheels && \
         COWORLD_WHEEL=$(ls /tmp/wheels/coworld-*.whl) && \
         uv pip install --python /opt/coworld/bin/python "${COWORLD_WHEEL}"; \
