@@ -355,6 +355,33 @@ def test_canonical_crewrift_template_points_to_source_repo(tmp_path: Path) -> No
     )
 
 
+def test_canonical_tribal_village_template_points_to_source_repo(tmp_path: Path) -> None:
+    package = load_coworld_package(
+        _materialized_template(tmp_path, WORLDS / "tribal_village" / "coworld_manifest_template.json")
+    )
+    pages = {page.id: page.content for page in package.manifest.game.docs.pages}
+
+    assert package.manifest.game.runnable.source_url == "https://github.com/Metta-AI/coworld-tribal-village/tree/main"
+    assert package.manifest.game.docs.readme is not None
+    assert package.manifest.game.docs.readme.value == (
+        "https://github.com/Metta-AI/coworld-tribal-village/blob/main/README.md"
+    )
+    assert package.manifest.game.protocols.player.value == (
+        "https://github.com/Metta-AI/coworld-tribal-village/blob/main/tribal_village_env/coworld/docs/"
+        "player_protocol_spec.md"
+    )
+    assert package.manifest.game.protocols.global_.value == (
+        "https://github.com/Metta-AI/coworld-tribal-village/blob/main/tribal_village_env/coworld/docs/"
+        "global_protocol_spec.md"
+    )
+    assert pages["rules.md"].type == "uri"
+    assert pages["rules.md"].value == "https://github.com/Metta-AI/coworld-tribal-village/blob/main/docs/rules.md"
+    assert pages["play_tribal_village.md"].type == "uri"
+    assert pages["play_tribal_village.md"].value == (
+        "https://github.com/Metta-AI/coworld-tribal-village/blob/main/docs/play_tribal_village.md"
+    )
+
+
 def test_canonical_among_them_template_declares_all_viability_role_sections() -> None:
     template = json.loads((WORLDS / "among_them" / "coworld_manifest_template.json").read_text(encoding="utf-8"))
 
