@@ -502,7 +502,10 @@ class CoworldApiClient:
             params["round_id"] = round_id
         if player_id is not None:
             params["player_id"] = player_id
-        return self._get("/v2/episode-requests", list[V2EpisodeRequestRow], params=params)
+        response = self._http_client.get("/v2/episode-requests", headers=self._headers(), params=params)
+        _raise_for_status(response)
+        page = response.json()
+        return TypeAdapter(list[V2EpisodeRequestRow]).validate_python(page["entries"])
 
     def get_episode_request(self, episode_request_id: str) -> V2EpisodeRequestRow:
         return self._get(f"/v2/episode-requests/{episode_request_id}", V2EpisodeRequestRow)

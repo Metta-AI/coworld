@@ -66,16 +66,21 @@ def test_replays_downloads_mine_division_replays(
         method="GET",
         headers={"Authorization": "Bearer token"},
     ).respond_with_json(
-        [
-            _episode_request(episode_request_id=EPISODE_REQUEST_ID, replay_url=replay_url),
-            _episode_request(
-                episode_request_id=OTHER_EPISODE_REQUEST_ID,
-                policy_version_id=OTHER_POLICY_VERSION_ID,
-                policy_id=OTHER_POLICY_ID,
-                policy_name="otherbot",
-                replay_url=httpserver.url_for("/other-replay.json"),
-            ),
-        ]
+        {
+            "entries": [
+                _episode_request(episode_request_id=EPISODE_REQUEST_ID, replay_url=replay_url),
+                _episode_request(
+                    episode_request_id=OTHER_EPISODE_REQUEST_ID,
+                    policy_version_id=OTHER_POLICY_VERSION_ID,
+                    policy_id=OTHER_POLICY_ID,
+                    policy_name="otherbot",
+                    replay_url=httpserver.url_for("/other-replay.json"),
+                ),
+            ],
+            "total_count": 2,
+            "limit": 1000,
+            "offset": 0,
+        }
     )
     _expect_mine_memberships(httpserver)
     httpserver.expect_request("/replay.json", method="GET").respond_with_data(replay_payload)
@@ -169,7 +174,7 @@ def test_episodes_accepts_bulk_rows_without_assignments(
         "/observatory/v2/episode-requests",
         method="GET",
         headers={"Authorization": "Bearer token"},
-    ).respond_with_json([episode_request])
+    ).respond_with_json({"entries": [episode_request], "total_count": 1, "limit": 1000, "offset": 0})
 
     result = CliRunner().invoke(
         app,
@@ -200,7 +205,14 @@ def test_episodes_mine_division_uses_direct_episode_query(
         "/observatory/v2/episode-requests",
         method="GET",
         headers={"Authorization": "Bearer token"},
-    ).respond_with_json([_episode_request(episode_request_id=EPISODE_REQUEST_ID, replay_url="s3://replay")])
+    ).respond_with_json(
+        {
+            "entries": [_episode_request(episode_request_id=EPISODE_REQUEST_ID, replay_url="s3://replay")],
+            "total_count": 1,
+            "limit": 1000,
+            "offset": 0,
+        }
+    )
     _expect_mine_memberships(httpserver)
 
     result = CliRunner().invoke(
