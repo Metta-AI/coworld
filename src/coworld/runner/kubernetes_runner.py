@@ -4,7 +4,9 @@ import argparse
 import asyncio
 import json
 import os
+import socketserver
 import sys
+import threading
 import time
 import zipfile
 import zlib
@@ -35,6 +37,7 @@ from coworld.types import CoworldEpisodeJobSpec
 WORKDIR = Path(os.environ.get("COWORLD_WORKDIR", "/coworld"))
 STATE_PATH = WORKDIR / "state.json"
 GAME_PORT = int(os.environ.get("COGAME_PORT", "8080"))
+HEALTH_PORT = int(os.environ.get("COWORLD_WORKER_HEALTH_PORT", "9090"))
 _BEDROCK_SERVICE_ACCOUNT = "episode-runner"
 DEFAULT_PLAYER_CPU_REQUEST = "2"
 DEFAULT_PLAYER_MEMORY_REQUEST = "2Gi"
@@ -53,6 +56,16 @@ class PlayerPodFailure(RuntimeError):
         self.failed_policy_index = failed_policy_index
 
 
+class _HealthRequestHandler(socketserver.BaseRequestHandler):
+    def handle(self) -> None:
+        pass
+
+
+def _start_worker_health_server(port: int) -> None:
+    server = socketserver.TCPServer(("0.0.0.0", port), _HealthRequestHandler)
+    threading.Thread(target=server.serve_forever, daemon=True).start()
+
+
 def init_config_from_env() -> None:
     job = _read_job_spec()
     tokens = generate_tokens(len(job.players))
@@ -65,6 +78,10 @@ def init_config_from_env() -> None:
 
 
 def run_from_env() -> None:
+    # Hold a TCP port open for the worker's entire lifetime so the game container can liveness-probe it.
+    # When this process exits for any reason (timeout, crash, OOM) the kernel closes the socket, the
+    # game's probe fails, and the kubelet tears the game container down instead of leaving a hard zombie.
+    _start_worker_health_server(HEALTH_PORT)
     job = _read_job_spec()
     artifacts = EpisodeArtifacts.create(WORKDIR, prefix="coworld-job-")
     try:

@@ -1,5 +1,6 @@
 import json
 import os
+import socket
 import subprocess
 import zipfile
 import zlib
@@ -723,6 +724,7 @@ def test_run_from_env_writes_error_info_on_failure(monkeypatch, tmp_path):
     events: list[str] = []
 
     monkeypatch.setenv("COWORLD_WORKDIR", str(tmp_path))
+    monkeypatch.setattr(kubernetes_runner, "_start_worker_health_server", lambda port: None)
     monkeypatch.setattr(kubernetes_runner, "_read_job_spec", lambda: object())
     monkeypatch.setattr(kubernetes_runner.EpisodeArtifacts, "create", lambda workdir, prefix: object())
     monkeypatch.setattr(
@@ -833,6 +835,7 @@ def test_run_from_env_uploads_debug_logs_on_failure(monkeypatch, tmp_path):
         json.dumps({"0": policy0_dest.as_uri(), "1": policy1_dest.as_uri()}),
     )
 
+    monkeypatch.setattr(kubernetes_runner, "_start_worker_health_server", lambda port: None)
     monkeypatch.setattr(kubernetes_runner, "_read_job_spec", lambda: object())
     monkeypatch.setattr(kubernetes_runner.EpisodeArtifacts, "create", lambda workdir, prefix: artifacts)
 
@@ -856,3 +859,14 @@ def test_run_from_env_uploads_debug_logs_on_failure(monkeypatch, tmp_path):
     # Verify per-policy logs were uploaded individually
     assert policy0_dest.read_text(encoding="utf-8") == "player 0 timeout waiting for server"
     assert policy1_dest.read_text(encoding="utf-8") == "player 1 connection refused"
+
+
+def test_worker_health_server_accepts_connections_until_socket_closes():
+    with socket.socket() as probe:
+        probe.bind(("127.0.0.1", 0))
+        port = probe.getsockname()[1]
+
+    kubernetes_runner._start_worker_health_server(port)
+
+    with socket.create_connection(("127.0.0.1", port), timeout=2) as conn:
+        assert conn.fileno() >= 0

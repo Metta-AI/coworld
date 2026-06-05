@@ -31,16 +31,20 @@ Per-player resource requests are configurable per job via `COWORLD_PLAYER_CPU_RE
 The parent Job has:
 
 - `coworld-init-config`: writes the concrete game config and player tokens into the shared workdir.
-- `game`: regular non-restarting container that runs `manifest.game.runnable.image` and listens on port `8080`.
-- `worker`: regular Job container that runs the Kubernetes coordinator.
+- `game`: regular non-restarting container that runs `manifest.game.runnable.image`, listens on port `8080`, and has a
+  TCP liveness probe against the worker's health port (`9090`) so the kubelet stops it when the worker exits.
+- `worker`: regular Job container that runs the Kubernetes coordinator and holds a TCP health port (`9090`) open for its
+  whole lifetime.
 - `coworld-workdir`: an `emptyDir` volume mounted into all parent containers.
 
 The game receives URI-based artifact environment variables. Today the app backend supplies `file://` URIs inside
 `COWORLD_WORKDIR` so the worker can validate results and upload hosted artifacts, but the game contract is URI-based
 rather than path-based. The worker reaches the game locally for health checks and creates a ClusterIP Service so player
-pods can connect back to the game. If the coordinator fails before the episode completes, it writes runner error info,
-deletes child player pods, then deletes the parent Kubernetes Job so Kubernetes terminates the game container without
-restarting it or exposing worker environment variables through a shared process namespace.
+pods can connect back to the game. On exit — success or failure — the worker writes runner error info, collects logs,
+and deletes its child player pods and Service. Because the worker holds a TCP health port open for its whole lifetime and
+the game container liveness-probes that port, the kubelet stops the non-restarting game container whenever the worker
+exits (timeout, crash, or OOM); the app backend deletes the parent Job. This couples the game's lifetime to the worker
+without restarting the game on its own crash or exposing worker environment variables through a shared process namespace.
 
 ## Commands
 
