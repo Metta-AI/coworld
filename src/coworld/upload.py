@@ -380,7 +380,15 @@ def _raise_for_status(response: httpx.Response) -> None:
             f"Access denied (403) for {response.request.url.path}. "
             "You may lack permissions, or your token may be expired. Run: uv run softmax login"
         )
-    response.raise_for_status()
+    if response.is_error:
+        # httpx's raise_for_status() drops the response body, but the server puts the
+        # actual error there (e.g. FastAPI's {"detail": ...}). Surface it so failures
+        # are diagnosable instead of a bare status code.
+        body = response.text.strip()
+        message = (
+            f"Request to {response.request.method} {response.request.url.path} failed with HTTP {response.status_code}"
+        )
+        raise RuntimeError(f"{message}: {body}" if body else message)
 
 
 def _load_current_cogames_token(*, server_url: str) -> str | None:

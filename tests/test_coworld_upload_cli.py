@@ -276,6 +276,46 @@ def test_upload_coworld_command_certifies_before_uploading(
     assert certification_calls == [(manifest_path.resolve(), 60.0)]
 
 
+def test_upload_coworld_surfaces_server_error_detail(
+    tmp_path: Path,
+    httpserver: HTTPServer,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    manifest_path = _write_manifest(tmp_path)
+    image_id = "img_00000000-0000-0000-0000-000000000040"
+    softmax_image_uri = "123456789012.dkr.ecr.us-east-1.amazonaws.com/coworld/user/unit-test-runtime@sha256:digest"
+
+    monkeypatch.setattr("coworld.upload._load_current_cogames_token", lambda *, server_url: "token")
+    monkeypatch.setattr("coworld.upload.certify_coworld", lambda manifest_path, *, timeout_seconds: None)
+    monkeypatch.setattr("coworld.upload._local_image_client_hash", lambda image: "sha256:client-hash")
+    monkeypatch.setattr("coworld.upload._push_container_image", lambda source_image, push_info: None)
+    httpserver.expect_request("/observatory/v2/container_images/upload", method="POST").respond_with_json(
+        {
+            "image": {
+                "id": image_id,
+                "name": "unit-test-runtime",
+                "version": 1,
+                "client_hash": "sha256:client-hash",
+                "status": "ready",
+                "image_uri": softmax_image_uri,
+                "image_digest": "sha256:digest",
+            },
+            "pre_signed_info": None,
+        }
+    )
+    httpserver.expect_request("/observatory/v2/coworlds/upload", method="POST").respond_with_json(
+        {"detail": "variant 'default' references unknown image"},
+        status=422,
+    )
+
+    with pytest.raises(RuntimeError) as excinfo:
+        upload_coworld(manifest_path, server=httpserver.url_for(""))
+
+    message = str(excinfo.value)
+    assert "422" in message
+    assert "variant 'default' references unknown image" in message
+
+
 def test_upload_policy_command_creates_docker_image_policy(
     httpserver: HTTPServer,
     monkeypatch: pytest.MonkeyPatch,
