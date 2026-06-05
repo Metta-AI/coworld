@@ -126,6 +126,10 @@ py_library(
             "src/coworld/examples/**/*.py",
             "src/coworld/examples/**/*.json",
             "src/coworld/examples/**/*.html",
+            # *.yaml + Dockerfile* needed by test_canonical_worlds, which
+            # asserts the paintarena example's compose.yaml.is_file().
+            "src/coworld/examples/**/*.yaml",
+            "src/coworld/examples/**/Dockerfile*",
             "src/coworld/policies/amongthemstarter/**/*",
             "src/coworld/policies/amongthemstarter/.dockerignore",
             "src/coworld/policies/cogs_vs_clips/**/*",
