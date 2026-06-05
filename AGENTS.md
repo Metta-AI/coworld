@@ -4,6 +4,14 @@ Public CLI and Python package for Softmax v2 tournaments ("Coworlds"). This pack
 entrypoint, local episode/play tooling, Coworld uploads, policy uploads/submission helpers, the Paint Arena reference
 Coworld, and the public Coworld docs shipped with the package. It depends on `softmax-cli` for auth-backed commands.
 
+## Coworlds Expert Agent
+
+A distributable Claude Code agent for coworld developers is available at
+[`docs/coworlds-expert-agent/`](docs/coworlds-expert-agent/). It knows coworld design principles
+(the derivation chain, grader philosophy, player policy design, schema contracts) and can be
+installed into any coworld project's `.claude/agents/` directory. See its
+[README](docs/coworlds-expert-agent/README.md) for install instructions.
+
 ## Before Editing
 
 - Read this file, `LESSONS.md`, the package [README](README.md), and the [Coworld docs map](src/coworld/docs/README.md)
