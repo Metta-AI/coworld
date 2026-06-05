@@ -7,6 +7,7 @@ import pytest
 from pytest_httpserver import HTTPServer
 from typer.testing import CliRunner
 
+from coworld.api_client import CoworldApiClient, _load_current_cogames_token
 from coworld.cli import app
 
 NOW = "2026-05-12T12:00:00Z"
@@ -26,12 +27,38 @@ OTHER_POLICY_VERSION_ID = "00000000-0000-0000-0000-000000000033"
 OTHER_POLICY_ID = "00000000-0000-0000-0000-000000000034"
 
 
+@pytest.fixture(autouse=True)
+def _fake_softmax_token(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr("softmax.auth.load_current_token", lambda *, server: "token")
+
+
+def test_api_client_token_lookup_uses_server_url(monkeypatch: pytest.MonkeyPatch) -> None:
+    requested_servers: list[str] = []
+
+    def fake_load_current_token(*, server: str) -> str:
+        requested_servers.append(server)
+        return "token"
+
+    monkeypatch.setattr("softmax.auth.load_current_token", fake_load_current_token)
+
+    assert _load_current_cogames_token(server_url="http://localhost:3102/api") == "token"
+    assert requested_servers == ["http://localhost:3102/api"]
+
+
+def test_api_client_auth_error_mentions_server_url(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr("softmax.auth.load_current_token", lambda *, server: None)
+
+    with pytest.raises(RuntimeError) as exc_info:
+        CoworldApiClient.from_login(server_url="http://localhost:3102/api")
+
+    assert "uv run softmax login --server http://localhost:3102/api" in str(exc_info.value)
+
+
 def test_replays_downloads_mine_division_replays(
     httpserver: HTTPServer,
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
 ) -> None:
-    monkeypatch.setattr("coworld.api_client._load_current_cogames_token", lambda: "token")
     replay_payload = b'{"frames":[]}\n'
     replay_url = httpserver.url_for("/replay.json")
     httpserver.expect_request(
@@ -86,7 +113,6 @@ def test_replays_downloads_mine_division_replays(
 
 
 def test_episode_stats_prints_job_stats_json(httpserver: HTTPServer, monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr("coworld.api_client._load_current_cogames_token", lambda: "token")
     httpserver.expect_request(
         f"/observatory/v2/episode-requests/{EPISODE_REQUEST_ID}",
         method="GET",
@@ -137,7 +163,6 @@ def test_episodes_accepts_bulk_rows_without_assignments(
     httpserver: HTTPServer,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    monkeypatch.setattr("coworld.api_client._load_current_cogames_token", lambda: "token")
     episode_request = _episode_request(episode_request_id=EPISODE_REQUEST_ID, replay_url=None)
     del episode_request["assignments"]
     httpserver.expect_request(
@@ -171,7 +196,6 @@ def test_episodes_mine_division_uses_direct_episode_query(
     httpserver: HTTPServer,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    monkeypatch.setattr("coworld.api_client._load_current_cogames_token", lambda: "token")
     httpserver.expect_request(
         "/observatory/v2/episode-requests",
         method="GET",
@@ -205,7 +229,6 @@ def test_memberships_accepts_status_substatus_payload(
     httpserver: HTTPServer,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    monkeypatch.setattr("coworld.api_client._load_current_cogames_token", lambda: "token")
     httpserver.expect_request(
         "/observatory/v2/league-policy-memberships",
         method="GET",
@@ -236,7 +259,6 @@ def test_episode_logs_downloads_only_my_policy_agents(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
 ) -> None:
-    monkeypatch.setattr("coworld.api_client._load_current_cogames_token", lambda: "token")
     episode_request = _episode_request(episode_request_id=EPISODE_REQUEST_ID, replay_url=None)
     del episode_request["assignments"]
     httpserver.expect_request(
@@ -279,7 +301,6 @@ def test_episode_logs_downloads_game_log(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
 ) -> None:
-    monkeypatch.setattr("coworld.api_client._load_current_cogames_token", lambda: "token")
     httpserver.expect_request(
         f"/observatory/v2/episode-requests/{EPISODE_REQUEST_ID}",
         method="GET",
@@ -314,7 +335,6 @@ def test_replay_open_downloads_only_game_image_for_local_replay(
     tmp_path: Path,
 ) -> None:
     monkeypatch.chdir(tmp_path)
-    monkeypatch.setattr("coworld.api_client._load_current_cogames_token", lambda: "token")
     replay_path = tmp_path / "replay.json"
     replay_path.write_text('{"frames":[]}\n')
     opened_urls: list[str] = []
@@ -395,7 +415,6 @@ def test_replay_open_downloads_only_game_image_for_local_replay(
 
 
 def test_replay_open_hosted_opens_viewer_url(httpserver: HTTPServer, monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr("coworld.api_client._load_current_cogames_token", lambda: "token")
     opened_urls: list[str] = []
     replay_url = "https://storage.example/replay.json.z"
     viewer_url = "https://softmax.example/observatory/coworld-replays/session"

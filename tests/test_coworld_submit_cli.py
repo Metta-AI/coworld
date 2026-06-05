@@ -9,11 +9,15 @@ POLICY_ID = "00000000-0000-0000-0000-000000000032"
 LEAGUE_ID = "league_00000000-0000-0000-0000-000000000041"
 
 
+@pytest.fixture(autouse=True)
+def _fake_softmax_token(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr("softmax.auth.load_current_token", lambda *, server: "token")
+
+
 def test_submit_policy_to_league_posts_v2_submission(
     httpserver: HTTPServer,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    monkeypatch.setattr("coworld.upload._load_current_cogames_token", lambda: "token")
     opened: list[str] = []
     monkeypatch.setattr("coworld.submit.webbrowser.open", lambda url: opened.append(url) or True)
     _expect_policy_versions(httpserver, [_policy_version(version=3)])
@@ -63,7 +67,6 @@ def test_submit_policy_no_open_browser_skips_launch(
     httpserver: HTTPServer,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    monkeypatch.setattr("coworld.upload._load_current_cogames_token", lambda: "token")
     opened: list[str] = []
     monkeypatch.setattr("coworld.submit.webbrowser.open", lambda url: opened.append(url) or True)
     _expect_policy_versions(httpserver, [_policy_version(version=3)])
@@ -110,7 +113,6 @@ def test_submit_policy_reports_missing_policy_without_posting_submission(
     httpserver: HTTPServer,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    monkeypatch.setattr("coworld.upload._load_current_cogames_token", lambda: "token")
     _expect_policy_versions(httpserver, [])
 
     result = CliRunner().invoke(

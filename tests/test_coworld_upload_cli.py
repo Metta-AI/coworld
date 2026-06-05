@@ -13,7 +13,9 @@ from typer.testing import CliRunner
 
 from coworld.cli import app
 from coworld.upload import (
+    CoworldUploadClient,
     _docker_archive_client_hash,
+    _load_current_cogames_token,
     _local_image_client_hash,
     _local_image_tag,
     _manifest_image_fields,
@@ -21,6 +23,33 @@ from coworld.upload import (
     _push_archive_to_registry,
     upload_coworld,
 )
+
+
+@pytest.fixture(autouse=True)
+def _fake_softmax_token(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr("softmax.auth.load_current_token", lambda *, server: "token")
+
+
+def test_upload_client_token_lookup_uses_server_url(monkeypatch: pytest.MonkeyPatch) -> None:
+    requested_servers: list[str] = []
+
+    def fake_load_current_token(*, server: str) -> str:
+        requested_servers.append(server)
+        return "token"
+
+    monkeypatch.setattr("softmax.auth.load_current_token", fake_load_current_token)
+
+    assert _load_current_cogames_token(server_url="http://localhost:3102/api") == "token"
+    assert requested_servers == ["http://localhost:3102/api"]
+
+
+def test_upload_client_auth_error_mentions_server_url(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr("softmax.auth.load_current_token", lambda *, server: None)
+
+    with pytest.raises(RuntimeError) as exc_info:
+        CoworldUploadClient.from_login(server_url="http://localhost:3102/api")
+
+    assert "uv run softmax login --server http://localhost:3102/api" in str(exc_info.value)
 
 
 def test_upload_coworld_posts_standalone_manifest(
@@ -47,7 +76,6 @@ def test_upload_coworld_posts_standalone_manifest(
         hashed_images.append(image)
         return "sha256:client-hash"
 
-    monkeypatch.setattr("coworld.upload._load_current_cogames_token", lambda: "token")
     monkeypatch.setattr("coworld.upload.certify_coworld", fake_certify)
     monkeypatch.setattr("coworld.upload._local_image_client_hash", fake_hash)
     monkeypatch.setattr(
@@ -180,7 +208,6 @@ def test_upload_coworld_command_certifies_before_uploading(
     grader_image_id = "img_00000000-0000-0000-0000-000000000021"
     softmax_image_uri = "123456789012.dkr.ecr.us-east-1.amazonaws.com/coworld/user/unit-test-runtime@sha256:digest"
 
-    monkeypatch.setattr("coworld.upload._load_current_cogames_token", lambda: "token")
     monkeypatch.setattr(
         "coworld.upload.certify_coworld",
         lambda manifest_path, *, timeout_seconds: certification_calls.append((manifest_path, timeout_seconds)),
@@ -255,7 +282,6 @@ def test_upload_policy_command_creates_docker_image_policy(
 ) -> None:
     softmax_image_uri = "123456789012.dkr.ecr.us-east-1.amazonaws.com/coworld/user/unit-test-policy@sha256:digest"
 
-    monkeypatch.setattr("coworld.upload._load_current_cogames_token", lambda: "token")
     monkeypatch.setattr("coworld.upload._local_image_client_hash", lambda image: "sha256:client-hash")
     monkeypatch.setattr("coworld.upload._push_container_image", lambda source_image, push_info: None)
     httpserver.expect_request(
@@ -315,7 +341,6 @@ def test_upload_policy_command_sends_policy_secrets(
 ) -> None:
     softmax_image_uri = "123456789012.dkr.ecr.us-east-1.amazonaws.com/coworld/user/unit-test-policy@sha256:digest"
 
-    monkeypatch.setattr("coworld.upload._load_current_cogames_token", lambda: "token")
     monkeypatch.setattr("coworld.upload._local_image_client_hash", lambda image: "sha256:client-hash")
     monkeypatch.setattr("coworld.upload._push_container_image", lambda source_image, push_info: None)
     httpserver.expect_request(
@@ -377,7 +402,6 @@ def test_upload_policy_command_sends_policy_secrets(
 
 
 def test_coworld_list_command_prints_json(httpserver: HTTPServer, monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr("coworld.upload._load_current_cogames_token", lambda: "token")
     httpserver.expect_request(
         "/observatory/v2/coworlds",
         method="GET",
@@ -415,7 +439,6 @@ def test_coworld_list_command_prints_json(httpserver: HTTPServer, monkeypatch: p
 
 def test_hosted_game_create_posts_play_session(httpserver: HTTPServer, monkeypatch: pytest.MonkeyPatch) -> None:
     coworld_id = "cow_00000000-0000-0000-0000-000000000001"
-    monkeypatch.setattr("coworld.upload._load_current_cogames_token", lambda: "token")
     httpserver.expect_request(
         "/observatory/v2/coworlds/play/session",
         method="POST",
@@ -461,7 +484,6 @@ def test_hosted_game_create_posts_play_session(httpserver: HTTPServer, monkeypat
 
 def test_hosted_game_join_posts_join_session(httpserver: HTTPServer, monkeypatch: pytest.MonkeyPatch) -> None:
     session_id = "ps_00000000-0000-0000-0000-000000000011"
-    monkeypatch.setattr("coworld.upload._load_current_cogames_token", lambda: "token")
     httpserver.expect_request(
         f"/observatory/v2/coworlds/play/session/{session_id}/join",
         method="POST",
@@ -493,7 +515,6 @@ def test_hosted_game_join_posts_join_session(httpserver: HTTPServer, monkeypatch
 
 def test_coworld_show_command_prints_json(httpserver: HTTPServer, monkeypatch: pytest.MonkeyPatch) -> None:
     coworld_id = "cow_00000000-0000-0000-0000-000000000001"
-    monkeypatch.setattr("coworld.upload._load_current_cogames_token", lambda: "token")
     httpserver.expect_request(
         "/observatory/v2/coworlds",
         method="GET",
@@ -532,7 +553,6 @@ def test_coworld_show_command_pages_until_uploaded_world(
     httpserver: HTTPServer, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     coworld_id = "cow_00000000-0000-0000-0000-000000000001"
-    monkeypatch.setattr("coworld.upload._load_current_cogames_token", lambda: "token")
     httpserver.expect_request(
         "/observatory/v2/coworlds",
         method="GET",
@@ -588,7 +608,6 @@ def test_coworld_show_command_pages_until_uploaded_world(
 
 
 def test_coworld_images_command_lists_uploaded_images(httpserver: HTTPServer, monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr("coworld.upload._load_current_cogames_token", lambda: "token")
     httpserver.expect_request(
         "/observatory/v2/container_images",
         method="GET",
@@ -625,7 +644,6 @@ def test_coworld_images_command_lists_uploaded_images(httpserver: HTTPServer, mo
 
 def test_coworld_images_command_shows_uploaded_image(httpserver: HTTPServer, monkeypatch: pytest.MonkeyPatch) -> None:
     image_id = "img_00000000-0000-0000-0000-000000000010"
-    monkeypatch.setattr("coworld.upload._load_current_cogames_token", lambda: "token")
     httpserver.expect_request(
         f"/observatory/v2/container_images/{image_id}",
         method="GET",
@@ -736,7 +754,6 @@ def test_download_coworld_command_resolves_canonical_name(
         docker_calls.append(command)
         return subprocess.CompletedProcess(command, 0)
 
-    monkeypatch.setattr("coworld.upload._load_current_cogames_token", lambda: "token")
     monkeypatch.setattr("coworld.upload.subprocess.run", fake_run)
     httpserver.expect_request(
         "/observatory/v2/coworlds",
