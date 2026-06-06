@@ -31,7 +31,7 @@ The player runnable is a short-lived container started by the episode runner onc
   slot/token pair; a player must not attempt to control other slots.
 - Exit cleanly when the episode ends.
 
-Hosted runs schedule each player runnable with 2 CPU / 2Gi memory baseline (see
+Hosted runs schedule each player runnable with a 250m CPU / 256Mi memory request by default (see
 [`GAME.md`](GAME.md#hosted-runtime-resources)).
 
 Players may receive policy-scoped secret environment variables (uploaded via `coworld upload-policy --secret-env`)

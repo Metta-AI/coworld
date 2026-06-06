@@ -76,9 +76,10 @@ families and token semantics are Coworld-wide.
 ## Hosted runtime resources
 
 Hosted tournament runs schedule the game as the parent pod and player runnables as child pods. The current hosted
-baseline is 2 CPU and 2Gi memory requests for the game container, runner worker, replay container, and each player
-container; see [`KUBERNETES_RUNNER_README.md`](../../runner/KUBERNETES_RUNNER_README.md#hosted-resource-baseline). These
-are scheduling requests, not CPU or memory limits.
+baseline is 1 CPU / 512Mi for the game container, 250m CPU / 256Mi for the runner worker, 250m CPU / 256Mi for each
+player container, and 2 CPU / 2Gi for replay containers; see
+[`KUBERNETES_RUNNER_README.md`](../../runner/KUBERNETES_RUNNER_README.md#hosted-resource-baseline). These are scheduling
+requests, not CPU or memory limits. Hosted episode Jobs have a 3 hour active deadline.
 
 ## Bedrock and AWS access
 

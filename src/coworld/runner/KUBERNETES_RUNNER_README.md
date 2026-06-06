@@ -14,17 +14,23 @@ reserves real capacity:
 
 | Component                   | Resource request    |
 | --------------------------- | ------------------- |
-| Game container              | 2 CPU and 2Gi memory |
-| Runner worker container      | 2 CPU and 2Gi memory |
-| Each player container        | 2 CPU and 2Gi memory |
+| Game container              | 1 CPU and 512Mi memory |
+| Runner worker container      | 250m CPU and 256Mi memory |
+| Each player container        | 250m CPU and 256Mi memory |
 | Replay container             | 2 CPU and 2Gi memory |
 
 These are scheduling **requests**, not CPU or memory limits. A container may use more if the node has spare
 capacity, but game and player authors should treat the requested capacity as the portable baseline available in
-hosted runs.
+hosted runs. Hosted deployments pass player requests through `COWORLD_PLAYER_CPU_REQUEST` and
+`COWORLD_PLAYER_MEMORY_REQUEST`; if those env vars are omitted in a direct runner invocation, the coordinator falls back
+to 2 CPU and 2Gi memory per player pod.
 
 Per-player resource requests are configurable per job via `COWORLD_PLAYER_CPU_REQUEST` and
 `COWORLD_PLAYER_MEMORY_REQUEST` (see [Optional Inputs](#optional-inputs)).
+
+Hosted episode Jobs have a 3 hour active deadline. The coordinator's per-episode wait defaults to
+`COWORLD_TIMEOUT_SECONDS=3600`; hosted dispatch currently sets the Kubernetes Job deadline to 3 hours and gives
+presigned artifact URLs one extra hour of validity.
 
 ## Parent Job Shape
 
@@ -115,7 +121,7 @@ The coordinator creates one pod per player:
 - image: `players[].image`
 - command/args: `players[].run`
 - env: `players[].env`
-- resource requests: 2 CPU and 2Gi memory by default
+- resource requests: 250m CPU and 256Mi memory in hosted jobs
 - `COWORLD_PLAYER_WS_URL`: points at the parent game's Kubernetes Service.
 
 The player query string includes only the generated slot token and slot index.
@@ -149,8 +155,8 @@ in-pod workspace filename is shorter and extensionless.
 COWORLD_TIMEOUT_SECONDS=3600
 COWORLD_WORKLOAD_TYPE=coworld-jobs
 COWORLD_CAPACITY_TYPE=on-demand
-COWORLD_PLAYER_CPU_REQUEST=2
-COWORLD_PLAYER_MEMORY_REQUEST=2Gi
+COWORLD_PLAYER_CPU_REQUEST=250m
+COWORLD_PLAYER_MEMORY_REQUEST=256Mi
 LOG_LEVEL=...
 ```
 
@@ -159,7 +165,8 @@ backend also applies the same workload-type selector and toleration to the paren
 `COWORLD_CAPACITY_TYPE` optionally adds a Karpenter capacity-type node selector, such as `on-demand`, to the parent Job
 and child player pods.
 `COWORLD_PLAYER_CPU_REQUEST` and `COWORLD_PLAYER_MEMORY_REQUEST` override the resource requests applied to each child
-player pod.
+player pod. `COWORLD_TIMEOUT_SECONDS` controls coordinator waits inside the Job; the hosted parent Job also has its own
+3 hour Kubernetes active deadline.
 
 ## Output URIs
 
@@ -194,6 +201,10 @@ Per-player logs are diagnostic only. After the game has produced valid results, 
 combined stdout/stderr lines from player pods whose `player` container has started and skips pods whose container is
 still waiting, such as `ContainerCreating`. Missing player logs do not fail an otherwise successful episode; result and
 replay upload remain the source of truth for episode success.
+
+There is no separate hosted media artifact for videos, screenshots, or rich human-readable reports in the episode
+runner path. Put compact, replay-critical bytes in the replay artifact, keep `results.json` small and schema-valid, and
+use reporter/support-role artifacts for larger watchability outputs when those runtimes are invoked.
 
 ## Kubernetes Requirements
 
