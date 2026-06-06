@@ -163,7 +163,7 @@ def test_commissioner_message_parses_extended_hook_responses() -> None:
             "rounds": [
                 {
                     "division_id": str(division_id),
-                    "round_config": {"stages": [{"label": "Round", "num_episodes": 8}]},
+                    "round_config": {"stages": [{"label": "Round", "num_episodes": 8, "self_play": True}]},
                     "execution_backend": "dispatch",
                 }
             ],
@@ -173,7 +173,7 @@ def test_commissioner_message_parses_extended_hook_responses() -> None:
         rounds=[
             RoundSpec(
                 division_id=division_id,
-                round_config=RoundConfig(stages=[StageConfig(label="Round", num_episodes=8)]),
+                round_config=RoundConfig(stages=[StageConfig(label="Round", num_episodes=8, self_play=True)]),
                 execution_backend="dispatch",
             )
         ]

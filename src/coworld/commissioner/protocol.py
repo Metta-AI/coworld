@@ -93,6 +93,7 @@ class StageConfig(BaseModel):
     label: str = "Round"
     num_episodes: int = Field(default=1, gt=0)
     min_episodes_per_entrant: int | None = Field(default=None, gt=0)
+    self_play: bool = False
 
 
 class RoundConfig(BaseModel):
