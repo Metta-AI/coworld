@@ -266,6 +266,46 @@ def test_memberships_accepts_status_substatus_payload(
     assert "is_champion" not in rows[0]
 
 
+def test_retire_membership_posts_reason_json(
+    httpserver: HTTPServer,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr("coworld.api_client._load_current_cogames_token", lambda *, server_url: "token")
+    membership_id = "lpm_00000000-0000-0000-0000-000000000051"
+    reason = "Broken action names hang qualifiers."
+    httpserver.expect_request(
+        f"/observatory/v2/league-policy-memberships/{membership_id}/retire",
+        method="POST",
+        headers={"Authorization": "Bearer token"},
+        json={"reason": reason},
+    ).respond_with_json(
+        _membership(
+            status="disqualified",
+            substatus="inactive",
+            end_time=NOW,
+        )
+    )
+
+    result = CliRunner().invoke(
+        app,
+        [
+            "retire-membership",
+            membership_id,
+            "--reason",
+            reason,
+            "--server",
+            httpserver.url_for(""),
+            "--json",
+        ],
+    )
+
+    assert result.exit_code == 0, result.output
+    payload = json.loads(result.output)
+    assert payload["id"] == membership_id
+    assert payload["status"] == "disqualified"
+    assert payload["substatus"] == "inactive"
+
+
 def test_episode_logs_downloads_only_my_policy_agents(
     httpserver: HTTPServer,
     monkeypatch: pytest.MonkeyPatch,
@@ -501,12 +541,19 @@ def _division(division_id: str = DIVISION_ID) -> dict[str, object]:
     }
 
 
-def _membership(*, division_id: str = DIVISION_ID, substatus: str | None = None) -> dict[str, object]:
+def _membership(
+    *,
+    division_id: str = DIVISION_ID,
+    status: str = "competing",
+    substatus: str | None = None,
+    end_time: str | None = None,
+) -> dict[str, object]:
     return {
         "id": "lpm_00000000-0000-0000-0000-000000000051",
-        "status": "competing",
+        "status": status,
         "substatus": substatus,
         "start_time": NOW,
+        "end_time": end_time,
         "league": _league(),
         "division": _division(division_id),
         "policy_version": _policy_version(

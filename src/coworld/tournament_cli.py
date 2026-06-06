@@ -216,6 +216,23 @@ def register_tournament_commands(app: typer.Typer) -> None:
             return
         _print_memberships(rows)
 
+    @app.command("retire-membership")
+    def retire_membership(
+        membership_id: Annotated[str, typer.Argument(help="League policy membership ID to retire.")],
+        reason: Annotated[
+            str | None,
+            typer.Option("--reason", help="Audit reason stored on the retired membership."),
+        ] = None,
+        server: Annotated[str, typer.Option("--server", help="Observatory API server URL.")] = DEFAULT_SUBMIT_SERVER,
+        json_output: Annotated[bool, typer.Option("--json", help="Print raw JSON.")] = False,
+    ) -> None:
+        with CoworldApiClient.from_login(server_url=server) as client:
+            membership = client.retire_membership(membership_id, reason=reason)
+        if json_output:
+            emit_json(membership.model_dump(mode="json"))
+            return
+        _print_memberships([membership])
+
     @app.command("submissions")
     def submissions(
         league_id: Annotated[str | None, typer.Option("--league", "-l", help="Filter by league ID.")] = None,

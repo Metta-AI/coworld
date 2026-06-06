@@ -463,6 +463,21 @@ class CoworldApiClient:
             params["limit"] = limit
         return self._get("/v2/league-policy-memberships", list[LeaguePolicyMembershipPublic], params=params)
 
+    def retire_membership(
+        self,
+        membership_id: str,
+        *,
+        reason: str | None = None,
+    ) -> LeaguePolicyMembershipPublic:
+        kwargs: dict[str, Any] = {}
+        if reason is not None:
+            kwargs["json"] = {"reason": reason}
+        return self._post(
+            f"/v2/league-policy-memberships/{membership_id}/retire",
+            LeaguePolicyMembershipPublic,
+            **kwargs,
+        )
+
     def list_submissions(
         self,
         *,

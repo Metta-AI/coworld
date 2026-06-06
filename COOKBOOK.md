@@ -564,7 +564,14 @@ with CoworldApiClient.from_login(server_url=get_api_server()) as client:
     memberships = client.list_memberships(division_id="div_...", mine=True, active_only=True)
 ```
 
-The corresponding raw API routes are `GET /v2/league-submissions` and `GET /v2/league-policy-memberships`.
+To withdraw a broken or superseded active membership from future rounds, retire the membership ID:
+
+```bash
+uv run coworld retire-membership lpm_... --reason "Superseded by policy-name-fixed:v2"
+```
+
+The corresponding raw API routes are `GET /v2/league-submissions`, `GET /v2/league-policy-memberships`, and
+`POST /v2/league-policy-memberships/{league_policy_membership_id}/retire`.
 
 ## Watch Results And Find Episodes
 
