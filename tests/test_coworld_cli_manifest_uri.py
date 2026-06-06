@@ -550,6 +550,48 @@ def test_run_episode_accepts_episode_request_file_with_per_slot_env(
     assert kwargs == {"timeout_seconds": 3600.0, "verify_replay": False, "container_prefix": "coworld-run"}
 
 
+def test_scrimmage_runs_multiple_local_episodes_with_seed_variation(
+    monkeypatch: MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    captured: list[tuple[CoworldEpisodeJobSpec, EpisodeArtifacts, dict[str, object]]] = []
+
+    def fake_run_coworld_episode(spec: CoworldEpisodeJobSpec, artifacts: object, **kwargs: object) -> None:
+        captured.append((spec, cast(EpisodeArtifacts, artifacts), kwargs))
+
+    monkeypatch.setattr("coworld.cli.run_coworld_episode", fake_run_coworld_episode)
+    manifest_path = _cogs_vs_clips_manifest(tmp_path)
+    artifacts_root = (manifest_path.parent / "scrimmages").resolve()
+
+    result = CliRunner().invoke(
+        app,
+        [
+            "scrimmage",
+            str(manifest_path),
+            "my-player:latest",
+            "--run",
+            "python",
+            "--run",
+            "/app/player.py",
+            "--episodes",
+            "2",
+        ],
+    )
+
+    assert result.exit_code == 0, result.output
+    assert [spec.game_config["seed"] for spec, _artifacts, _kwargs in captured] == [0, 1]
+    assert [artifacts.workspace for _spec, artifacts, _kwargs in captured] == [
+        artifacts_root / "episode-0001",
+        artifacts_root / "episode-0002",
+    ]
+    expected_kwargs = {"timeout_seconds": 3600.0, "verify_replay": False, "container_prefix": "coworld-scrimmage"}
+    assert [kwargs for _spec, _artifacts, kwargs in captured] == [expected_kwargs, expected_kwargs]
+    assert [player.image for player in captured[0][0].players] == ["my-player:latest"] * 8
+    assert [player.run for player in captured[0][0].players] == [["python", "/app/player.py"]] * 8
+    assert "Scrimmage episode 2/2" in result.output
+    assert f"Scrimmage artifacts root: {artifacts_root}" in result.output
+
+
 def _invoke_run_episode_artifacts(monkeypatch: MonkeyPatch, *args: str) -> EpisodeArtifacts:
     captured: dict[str, object] = {}
 

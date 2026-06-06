@@ -58,6 +58,20 @@ Which optimizer repository is launched is resolved from the manifest's optional 
 [`Metta-AI/optimizers`](https://github.com/Metta-AI/optimizers). `--optimizer-repo` and `--optimizer-ref` override the
 manifest-derived values.
 
+### Local experience commands
+
+You have syntax for both `coworld run-episode` and `coworld scrimmage`.
+
+```bash
+uv run coworld run-episode <manifest.json|coworld-id> [episode_request.json|player-image...] \
+  --timeout-seconds 120
+uv run coworld scrimmage <manifest.json|coworld-id> [episode_request.json|player-image...] \
+  --episodes 5 --timeout-seconds 120
+```
+
+Use `run-episode` for one completed local episode and `scrimmage` for repeated optimizer experience. Both accept the
+same episode request, player image, `--run`, secret, Bedrock, timeout, and replay verification syntax.
+
 ### Inputs
 
 The optimizer needs at least:
