@@ -5,5 +5,5 @@ services:
     build:
       context: .
   commissioner:
-    image: ${COMMISSIONER_IMAGE:?Set COMMISSIONER_IMAGE to a pinned commissioner image URI}
+    image: ghcr.io/metta-ai/commissioners-baseline@sha256:02a19be80fa07b3005b443fa5dddd4f4829f3e984cbd5fcea356e84deb014542
     platform: linux/amd64
