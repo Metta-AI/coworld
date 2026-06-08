@@ -151,14 +151,13 @@ def test_canonical_crewrift_build_declares_game_context() -> None:
     upload_text = (WORLDS / "upload.sh").read_text(encoding="utf-8")
 
     assert "GAME_CONTEXT" in compose_text
-    assert "PLAYER_CONTEXT" in compose_text
-    assert "player: &player_context ${PLAYER_CONTEXT:-../../../players}" in compose_text
-    assert 'PLAYER_CONTEXT="${PLAYER_CONTEXT:-${WORKSPACE_DIR}/players}"' in upload_text
+    assert "PLAYER_CONTEXT" not in compose_text
+    assert 'PLAYER_CONTEXT="${PLAYER_CONTEXT:-${WORKSPACE_DIR}/players}"' not in upload_text
     assert "coworld-crewrift" in compose_text
     assert "Dockerfile" in compose_text
-    assert "players/crewrift/crewriftstarter/Dockerfile" in compose_text
+    assert "players/notsus/Dockerfile" in compose_text
     assert "coworld-crewrift-game:latest" in compose_text
-    assert "coworld-crewrift-starter:latest" in compose_text
+    assert "coworld-crewrift-notsus:latest" in compose_text
 
 
 def test_canonical_world_compose_files_build_manifest_images() -> None:
@@ -382,11 +381,14 @@ def test_canonical_crewrift_template_points_to_source_repo(tmp_path: Path) -> No
         package.manifest.game.protocols.global_.value
         == "https://github.com/Metta-AI/bitworld/blob/master/docs/sprite_v1.md"
     )
-    assert pages["crewriftstarter.md"].endswith("/players/crewrift/crewriftstarter/README.md")
+    assert pages["notsus.md"].endswith("/players/notsus/README.md")
     assert pages["play_crewrift.md"] == "https://softmax.com/play_crewrift.md"
     assert (
         package.manifest.player[0].source_url
-        == "https://github.com/Metta-AI/players/tree/main/players/crewrift/crewriftstarter"
+        == "https://github.com/Metta-AI/coworld-crewrift/tree/master/players/notsus"
+    )
+    assert package.manifest.commissioner[0].source_url == (
+        "https://github.com/Metta-AI/commissioners/tree/main/commissioners/ruleset_strategy_commissioner"
     )
 
 
@@ -530,7 +532,7 @@ def _materialized_template(base_dir: Path, template_path: Path) -> Path:
         },
         "crewrift": {
             "{{GAME_IMAGE}}": "coworld-crewrift-game:latest",
-            "{{PLAYER_IMAGE}}": "coworld-crewrift-starter:latest",
+            "{{PLAYER_IMAGE}}": "coworld-crewrift-notsus:latest",
             "{{REPORTER_IMAGE}}": "coworld-default-reporter:latest",
             "{{GRADER_IMAGE}}": "coworld-crewrift-grader:latest",
             "{{DIAGNOSER_IMAGE}}": "coworld-crewrift-diagnoser:latest",
