@@ -70,6 +70,19 @@ def _experience_request_detail() -> dict[str, object]:
     return {**_experience_request_row(), "episodes": [_episode_request()]}
 
 
+def test_xp_request_help_documents_request_shapes() -> None:
+    result = CliRunner().invoke(app, ["xp-request", "--help"], env={"COLUMNS": "200"})
+
+    assert result.exit_code == 0, result.output
+    assert "Create and inspect hosted Experience Requests" in result.output
+    assert "uv run coworld xp-request create xp-request-candidate.json" in result.output
+    assert "target.league_id" in result.output
+    assert "requester.policy_version_id" in result.output
+    assert "rotate_seats" in result.output
+    assert "policy_version_ids" in result.output
+    assert "Compare the previous best and candidate" in result.output
+
+
 def test_xp_request_create_posts_body_and_prints_id(httpserver: HTTPServer) -> None:
     captured: dict[str, object] = {}
 

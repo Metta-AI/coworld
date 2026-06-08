@@ -41,10 +41,25 @@ from coworld.upload import download_coworld, downloaded_coworld_manifest_path, p
 
 _UUID_RE = re.compile(r"^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$")
 _POLICY_LOG_RE = re.compile(r"^policy_agent_(\d+)\.log$")
+_XP_REQUEST_HELP = (
+    "Typical loop: uv run coworld xp-request create xp-request-candidate.json; "
+    "uv run coworld xp-request list --mine; uv run coworld xp-request get xreq_... --json; "
+    "uv run coworld xp-request episodes xreq_.... "
+    "For league-targeted A/B tests, the JSON body usually includes target.league_id, "
+    "requester.policy_version_id, top_n, player_selection, rotate_seats, num_episodes, and notes. "
+    "For direct Coworld runs, use coworld_id, policy_version_ids, and num_episodes. "
+    "Compare the previous best and candidate with matching target, opponent-selection settings, rotate-seats setting, "
+    "episode count, and notes format."
+)
 
 
 def register_tournament_commands(app: typer.Typer) -> None:
-    xp_request_app = typer.Typer(no_args_is_help=True, help="Create and inspect Experience Requests.")
+    xp_request_app = typer.Typer(
+        no_args_is_help=True,
+        help="Create and inspect hosted Experience Requests.",
+        epilog=_XP_REQUEST_HELP,
+        rich_markup_mode=None,
+    )
     app.add_typer(xp_request_app, name="xp-request")
 
     @xp_request_app.command("create")
