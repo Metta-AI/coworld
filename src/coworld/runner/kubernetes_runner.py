@@ -287,6 +287,9 @@ def _create_player_pod(
 ) -> None:
     command, args = _command_args(player.run)
     player_env = dict(player.env) | dict(policy_secret_env)
+    if _uses_bedrock(policy_secret_env):
+        bedrock_region = os.environ["COWORLD_BEDROCK_REGION"]
+        player_env = {"AWS_REGION": bedrock_region, "AWS_DEFAULT_REGION": bedrock_region} | player_env
     player_ws_url = _player_service_ws_url(service_name, slot, token)
     pod = client.V1Pod(
         metadata=client.V1ObjectMeta(
@@ -328,9 +331,13 @@ def _create_player_pod(
 
 
 def _player_service_account_name(policy_secret_env: Mapping[str, str]) -> str | None:
-    if "USE_BEDROCK" in policy_secret_env and policy_secret_env["USE_BEDROCK"] == "true":
+    if _uses_bedrock(policy_secret_env):
         return _BEDROCK_SERVICE_ACCOUNT
     return None
+
+
+def _uses_bedrock(policy_secret_env: Mapping[str, str]) -> bool:
+    return "USE_BEDROCK" in policy_secret_env and policy_secret_env["USE_BEDROCK"] == "true"
 
 
 def _policy_secrets_from_env() -> dict[int, dict[str, str]]:

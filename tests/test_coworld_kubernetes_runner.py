@@ -676,6 +676,7 @@ def test_create_player_pod_injects_policy_secret_env(monkeypatch):
     )
     monkeypatch.setenv("COWORLD_WORKLOAD_TYPE", "jobs")
     monkeypatch.setenv("COWORLD_CAPACITY_TYPE", "on-demand")
+    monkeypatch.setenv("COWORLD_BEDROCK_REGION", "us-east-1")
     player = PlayerLaunchSpec(
         image="paintbot:latest",
         run=(),
@@ -703,6 +704,8 @@ def test_create_player_pod_injects_policy_secret_env(monkeypatch):
     assert env["PUBLIC_SETTING"] == "visible"
     assert env["ANTHROPIC_API_KEY"] == "sk-ant-test"
     assert env["USE_BEDROCK"] == "true"
+    assert env["AWS_REGION"] == "us-east-1"
+    assert env["AWS_DEFAULT_REGION"] == "us-east-1"
     assert env["COWORLD_PLAYER_WS_URL"] == "ws://game-service:8080/player?slot=0&token=slot-token"
     assert env["COGAMES_ENGINE_WS_URL"] == "ws://game-service:8080/player?slot=0&token=slot-token"
     assert container.resources.requests == {"cpu": "2", "memory": "2Gi"}
