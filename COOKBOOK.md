@@ -623,6 +623,52 @@ GET /v2/episode-requests?pool_id=pool_...
 GET /v2/competition-events?round_id=round_...
 ```
 
+## Request Experience Runs
+
+An Experience Request asks the platform to run a batch of hosted episodes against a Coworld (ad hoc, or targeting a
+league/division roster) and fans out into child episode requests you can inspect like any other.
+
+### CLI
+
+Create a request from a `V2CreateExperienceRequestRequest` JSON body (file path, or `-` for stdin), then inspect it:
+
+```bash
+uv run coworld xp-request create body.json
+echo '{"coworld_id": "cow_...", "policy_version_ids": ["<uuid>"], "num_episodes": 5}' | uv run coworld xp-request create -
+uv run coworld xp-request list --mine
+uv run coworld xp-request get xreq_... --json
+uv run coworld xp-request episodes xreq_...
+```
+
+The body is passed through to the backend unchanged, so use the request shape from the v2 API reference (direct
+`coworld_id`/`variant_id`, or a `target` with `league_name`/`division_name`, plus `requester`/`opponents`/`top_n`).
+Children start `pending` and are dispatched asynchronously, so a `get` right after `create` shows them as `pending`.
+
+### Non-CLI API
+
+```python
+import json
+
+from coworld.api_client import CoworldApiClient
+from softmax.auth import get_api_server
+
+
+body = json.loads(open("body.json").read())
+with CoworldApiClient.from_login(server_url=get_api_server()) as client:
+    detail = client.create_experience_request(body)
+    page = client.list_experience_requests(mine=True)
+    episodes = client.list_experience_request_episodes(detail.id)
+```
+
+Raw API routes:
+
+```text
+POST /v2/experience-requests
+GET  /v2/experience-requests?mine=true
+GET  /v2/experience-requests/xreq_...
+GET  /v2/experience-requests/xreq_.../episodes
+```
+
 ## Retrieve Logs, Results, And Replays
 
 ### CLI

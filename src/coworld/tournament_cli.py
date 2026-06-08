@@ -4,6 +4,7 @@ import copy
 import json
 import re
 import shutil
+import sys
 import tempfile
 import webbrowser
 from contextlib import ExitStack
@@ -21,6 +22,8 @@ from coworld.api_client import (
     DivisionLadderEntryPublic,
     DivisionPublic,
     EpisodeStatsResponse,
+    ExperienceRequestDetail,
+    ExperienceRequestRow,
     LeaguePolicyMembershipPublic,
     LeaguePublic,
     LeagueSubmissionPublic,
@@ -41,6 +44,69 @@ _POLICY_LOG_RE = re.compile(r"^policy_agent_(\d+)\.log$")
 
 
 def register_tournament_commands(app: typer.Typer) -> None:
+    xp_request_app = typer.Typer(no_args_is_help=True, help="Create and inspect Experience Requests.")
+    app.add_typer(xp_request_app, name="xp-request")
+
+    @xp_request_app.command("create")
+    def xp_request_create(
+        body: Annotated[
+            str,
+            typer.Argument(help="Path to a V2CreateExperienceRequestRequest JSON body, or '-' to read stdin."),
+        ],
+        server: Annotated[str, typer.Option("--server", help="Observatory API server URL.")] = DEFAULT_SUBMIT_SERVER,
+        json_output: Annotated[bool, typer.Option("--json", help="Print raw JSON.")] = False,
+    ) -> None:
+        raw = sys.stdin.read() if body == "-" else Path(body).read_text(encoding="utf-8")
+        payload = json.loads(raw)
+        with CoworldApiClient.from_login(server_url=server) as client:
+            detail = client.create_experience_request(payload)
+        if json_output:
+            emit_json(detail.model_dump(mode="json"))
+            return
+        _print_experience_request_detail(detail)
+
+    @xp_request_app.command("list")
+    def xp_request_list(
+        mine: Annotated[bool, typer.Option("--mine", help="Show only my Experience Requests.")] = False,
+        limit: Annotated[int, typer.Option("--limit", min=1, max=1000, help="Maximum rows to return.")] = 50,
+        offset: Annotated[int, typer.Option("--offset", min=0, help="Rows to skip.")] = 0,
+        server: Annotated[str, typer.Option("--server", help="Observatory API server URL.")] = DEFAULT_SUBMIT_SERVER,
+        json_output: Annotated[bool, typer.Option("--json", help="Print raw JSON.")] = False,
+    ) -> None:
+        with CoworldApiClient.from_login(server_url=server) as client:
+            page = client.list_experience_requests(mine=mine, limit=limit, offset=offset)
+        if json_output:
+            emit_json(page.model_dump(mode="json"))
+            return
+        _print_experience_requests(page.entries)
+        console.print(f"[dim]Rows {page.offset + 1}-{page.offset + len(page.entries)} of {page.total_count}[/dim]")
+
+    @xp_request_app.command("get")
+    def xp_request_get(
+        experience_request_id: Annotated[str, typer.Argument(help="Experience Request ID (prefix xreq_).")],
+        server: Annotated[str, typer.Option("--server", help="Observatory API server URL.")] = DEFAULT_SUBMIT_SERVER,
+        json_output: Annotated[bool, typer.Option("--json", help="Print raw JSON.")] = False,
+    ) -> None:
+        with CoworldApiClient.from_login(server_url=server) as client:
+            detail = client.get_experience_request(experience_request_id)
+        if json_output:
+            emit_json(detail.model_dump(mode="json"))
+            return
+        _print_experience_request_detail(detail)
+
+    @xp_request_app.command("episodes")
+    def xp_request_episodes(
+        experience_request_id: Annotated[str, typer.Argument(help="Experience Request ID (prefix xreq_).")],
+        server: Annotated[str, typer.Option("--server", help="Observatory API server URL.")] = DEFAULT_SUBMIT_SERVER,
+        json_output: Annotated[bool, typer.Option("--json", help="Print raw JSON.")] = False,
+    ) -> None:
+        with CoworldApiClient.from_login(server_url=server) as client:
+            rows = client.list_experience_request_episodes(experience_request_id)
+        if json_output:
+            emit_json(_dump_models(rows))
+            return
+        _print_episodes(rows)
+
     @app.command("leagues")
     def leagues(
         league_id: Annotated[
@@ -886,6 +952,55 @@ def _print_episode_detail(row: V2EpisodeRequestRow) -> None:
     console.print(f"Episode: {row.episode_id or '-'}")
     console.print(f"Replay: {row.replay_url or '-'}")
     _print_episodes([row])
+
+
+def _print_experience_requests(rows: list[ExperienceRequestRow]) -> None:
+    table = Table(title="Experience Requests", box=box.SIMPLE_HEAVY, show_lines=False, pad_edge=False)
+    table.add_column("ID")
+    table.add_column("Status")
+    table.add_column("Coworld")
+    table.add_column("Variant")
+    table.add_column("Episodes", justify="right")
+    table.add_column("Counts")
+    table.add_column("Created")
+    for row in rows:
+        table.add_row(
+            row.id,
+            row.status,
+            f"{row.coworld_name}:{row.coworld_version}",
+            row.variant_id or "-",
+            str(row.episode_count),
+            _experience_request_counts(row),
+            _format_dt(row.created_at),
+        )
+    console.print(table)
+
+
+def _experience_request_counts(row: ExperienceRequestRow) -> str:
+    parts = [
+        ("pending", row.pending_count),
+        ("submitted", row.submitted_count),
+        ("running", row.running_count),
+        ("completed", row.completed_count),
+        ("failed", row.failed_count),
+    ]
+    return ", ".join(f"{label}={count}" for label, count in parts if count) or "-"
+
+
+def _print_experience_request_detail(row: ExperienceRequestDetail) -> None:
+    console.print(f"[bold]Experience request:[/bold] {row.id}")
+    console.print(f"Status: {row.status}")
+    console.print(f"Coworld: {row.coworld_name}:{row.coworld_version} ({row.coworld_id})")
+    console.print(f"Variant: {row.variant_id or '-'}")
+    console.print(f"Requester: {row.requester or row.requester_user_id}")
+    console.print(f"Episodes: {row.episode_count}")
+    console.print(f"Counts: {_experience_request_counts(row)}")
+    if row.error is not None:
+        console.print(f"[red]Error:[/red] {row.error}")
+    console.print(f"Created: {_format_dt(row.created_at)}")
+    console.print(f"Started: {_format_dt(row.started_at)}")
+    console.print(f"Completed: {_format_dt(row.completed_at)}")
+    _print_episodes(row.episodes)
 
 
 def _require_job_id(row: V2EpisodeRequestRow) -> UUID:

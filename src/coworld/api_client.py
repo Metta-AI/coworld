@@ -246,6 +246,38 @@ class V2EpisodeRequestRow(CoworldAPIModel):
     created_at: datetime
 
 
+class ExperienceRequestRow(CoworldAPIModel):
+    id: str
+    requester_user_id: str
+    requester: str | None = None
+    coworld_id: str
+    coworld_name: str
+    coworld_version: str
+    variant_id: str | None = None
+    status: str
+    episode_count: int
+    pending_count: int
+    submitted_count: int
+    running_count: int
+    completed_count: int
+    failed_count: int
+    error: str | None = None
+    created_at: datetime
+    started_at: datetime | None = None
+    completed_at: datetime | None = None
+
+
+class ExperienceRequestDetail(ExperienceRequestRow):
+    episodes: list[V2EpisodeRequestRow]
+
+
+class ExperienceRequestPage(CoworldAPIModel):
+    entries: list[ExperienceRequestRow]
+    total_count: int
+    limit: int
+    offset: int
+
+
 class CompetitionEventPublic(CoworldAPIModel):
     id: str
     event_type: str
@@ -529,6 +561,31 @@ class CoworldApiClient:
 
     def get_episode_request_artifact_text(self, episode_request_id: str, artifact_type: str) -> str:
         return self.get_text(f"/v2/episode-requests/{episode_request_id}/artifacts/{artifact_type}")
+
+    def create_experience_request(self, body: dict[str, Any]) -> ExperienceRequestDetail:
+        return self._post("/v2/experience-requests", ExperienceRequestDetail, json=body, timeout=120.0)
+
+    def list_experience_requests(
+        self,
+        *,
+        mine: bool = False,
+        limit: int = 50,
+        offset: int = 0,
+    ) -> ExperienceRequestPage:
+        return self._get(
+            "/v2/experience-requests",
+            ExperienceRequestPage,
+            params={"mine": str(mine).lower(), "limit": limit, "offset": offset},
+        )
+
+    def get_experience_request(self, experience_request_id: str) -> ExperienceRequestDetail:
+        return self._get(f"/v2/experience-requests/{experience_request_id}", ExperienceRequestDetail)
+
+    def list_experience_request_episodes(self, experience_request_id: str) -> list[V2EpisodeRequestRow]:
+        return self._get(
+            f"/v2/experience-requests/{experience_request_id}/episodes",
+            list[V2EpisodeRequestRow],
+        )
 
     def list_events(
         self,
