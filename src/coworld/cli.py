@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import shlex
 import webbrowser
 from contextlib import contextmanager
@@ -48,6 +49,80 @@ def _parse_secret_env(value: str) -> tuple[str, str]:
         raise typer.BadParameter(f"Expected KEY=VALUE format, got: {value}")
     key, _, val = value.partition("=")
     return key, val
+
+
+def _parse_override(value: str) -> tuple[str, object]:
+    """Parse a `KEY=VALUE` override; VALUE is JSON-decoded so `flag=true` becomes a bool."""
+    key, sep, raw = value.partition("=")
+    if not sep or not key:
+        raise typer.BadParameter(f"Expected KEY=VALUE format, got: {value}")
+    try:
+        parsed = json.loads(raw)
+    except json.JSONDecodeError:
+        parsed = raw
+    return key, parsed
+
+
+league_app = typer.Typer(no_args_is_help=True, help="Create and inspect Coworld league seeds (team only).")
+app.add_typer(league_app, name="league")
+
+
+@league_app.command("create")
+def league_create(
+    coworld_name: Annotated[str, typer.Argument(help="Canonical coworld name to promote into a league.")],
+    template: Annotated[
+        str,
+        typer.Option("--template", "-t", help="Template: default | social_deduction | cogs_vs_clips."),
+    ] = "default",
+    overrides: Annotated[
+        list[str] | None,
+        typer.Option("--set", help="Override KEY=VALUE (VALUE parsed as JSON when possible). Repeatable."),
+    ] = None,
+    server: Annotated[str, typer.Option("--server", help="Observatory API server URL.")] = DEFAULT_SUBMIT_SERVER,
+    json_output: Annotated[bool, typer.Option("--json", help="Print raw JSON.")] = False,
+) -> None:
+    override_map = dict(_parse_override(item) for item in overrides) if overrides else None
+    with CoworldUploadClient.from_login(server_url=server) as client:
+        seed = client.create_league_seed(coworld_name=coworld_name, template=template, overrides=override_map)
+    if json_output:
+        emit_json(seed.model_dump(mode="json"))
+        return
+    console.print(
+        f"[green]Created league seed[/green] for [bold]{seed.coworld_name}[/bold] (template: {seed.template})"
+    )
+    if seed.league_id is not None:
+        league_url = observatory_web_url(server, f"/observatory/v2#tab=leagues&detail=league:{seed.league_id}")
+        console.print(f"[dim]League:[/dim] {seed.league_id}")
+        console.print(f"[dim]League page:[/dim] {league_url}", soft_wrap=True)
+    else:
+        console.print(
+            "[yellow]No league materialized yet; reconcile creates it once the coworld is canonical.[/yellow]"
+        )
+
+
+@league_app.command("list")
+def league_list(
+    server: Annotated[str, typer.Option("--server", help="Observatory API server URL.")] = DEFAULT_SUBMIT_SERVER,
+    json_output: Annotated[bool, typer.Option("--json", help="Print raw JSON.")] = False,
+) -> None:
+    with CoworldUploadClient.from_login(server_url=server) as client:
+        seeds = client.list_league_seeds()
+    if json_output:
+        emit_json([seed.model_dump(mode="json") for seed in seeds])
+        return
+    table = Table(box=box.SIMPLE)
+    table.add_column("Coworld")
+    table.add_column("Template")
+    table.add_column("Enabled")
+    table.add_column("League")
+    for seed in seeds:
+        table.add_row(
+            seed.coworld_name,
+            seed.template,
+            "yes" if seed.enabled else "no",
+            seed.league_id or "-",
+        )
+    console.print(table)
 
 
 @app.callback()

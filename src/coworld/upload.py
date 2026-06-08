@@ -113,6 +113,17 @@ class LeagueSubmissionResponse(BaseModel):
     notes: str | None = None
 
 
+class CoworldLeagueSeedResponse(BaseModel):
+    id: str
+    coworld_name: str
+    template: str
+    overrides: dict[str, Any] | None = None
+    enabled: bool
+    created_by: str
+    created_at: str
+    league_id: str | None = None
+
+
 class HostedGameCreateResponse(BaseModel):
     session_id: str
     join_url: str
@@ -254,6 +265,37 @@ class CoworldUploadClient:
         )
         _raise_for_status(response)
         return LeagueSubmissionResponse.model_validate(response.json())
+
+    def create_league_seed(
+        self,
+        *,
+        coworld_name: str,
+        template: str,
+        overrides: dict[str, Any] | None = None,
+        enabled: bool = True,
+    ) -> CoworldLeagueSeedResponse:
+        response = self._http_client.post(
+            "/v2/coworld-league-seeds",
+            headers=self._headers(),
+            json={
+                "coworld_name": coworld_name,
+                "template": template,
+                "overrides": overrides,
+                "enabled": enabled,
+            },
+            timeout=120.0,
+        )
+        _raise_for_status(response)
+        return CoworldLeagueSeedResponse.model_validate(response.json())
+
+    def list_league_seeds(self) -> list[CoworldLeagueSeedResponse]:
+        response = self._http_client.get(
+            "/v2/coworld-league-seeds",
+            headers=self._headers(),
+            timeout=60.0,
+        )
+        _raise_for_status(response)
+        return [CoworldLeagueSeedResponse.model_validate(item) for item in response.json()]
 
     def create_hosted_game(
         self,
