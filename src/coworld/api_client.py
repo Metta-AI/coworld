@@ -392,11 +392,13 @@ class CoworldApiClient:
         *,
         include_recent_rounds: int = 0,
     ) -> list[LeaderboardEntryPublic]:
-        return self._get(
+        # The endpoint returns JSON null for divisions with an empty leaderboard; coalesce to [].
+        rows = self._get(
             f"/v2/divisions/{division_id}/leaderboard",
-            list[LeaderboardEntryPublic],
+            list[LeaderboardEntryPublic] | None,
             params={"include_recent_rounds": include_recent_rounds},
         )
+        return rows or []
 
     def list_rounds(
         self,

@@ -164,6 +164,29 @@ def test_episode_stats_prints_job_stats_json(httpserver: HTTPServer, monkeypatch
     assert payload["policy_stats"][0]["agents"][0]["agent_id"] == 0
 
 
+def test_results_handles_empty_division_leaderboard(httpserver: HTTPServer) -> None:
+    # The endpoint returns JSON null for divisions with no completed rounds.
+    httpserver.expect_request(
+        f"/observatory/v2/divisions/{DIVISION_ID}/leaderboard",
+        method="GET",
+        headers={"Authorization": "Bearer token"},
+    ).respond_with_json(None)
+
+    result = CliRunner().invoke(
+        app,
+        [
+            "results",
+            DIVISION_ID,
+            "--server",
+            httpserver.url_for(""),
+            "--json",
+        ],
+    )
+
+    assert result.exit_code == 0, result.output
+    assert json.loads(result.output) == []
+
+
 def test_episodes_accepts_bulk_rows_without_assignments(
     httpserver: HTTPServer,
     monkeypatch: pytest.MonkeyPatch,
