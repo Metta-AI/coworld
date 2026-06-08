@@ -60,17 +60,18 @@ manifest-derived values.
 
 ### Local experience commands
 
-You have syntax for both `coworld run-episode` and `coworld scrimmage`.
+`coworld run-episode` runs one or more local episodes.
 
 ```bash
 uv run coworld run-episode <manifest.json|coworld-id> [episode_request.json|player-image...] \
   --timeout-seconds 120
-uv run coworld scrimmage <manifest.json|coworld-id> [episode_request.json|player-image...] \
+uv run coworld run-episode <manifest.json|coworld-id> [episode_request.json|player-image...] \
   --episodes 5 --timeout-seconds 120
 ```
 
-Use `run-episode` for one completed local episode and `scrimmage` for repeated optimizer experience. Both accept the
-same episode request, player image, `--run`, secret, Bedrock, timeout, and replay verification syntax.
+Run it without `--episodes` for one completed local episode, or pass `--episodes N` (`-n N`) for repeated optimizer
+experience. With more than one episode the game seed is incremented per episode and each episode's artifacts go in an
+`episode-NNNN` subdirectory.
 
 ### Inputs
 

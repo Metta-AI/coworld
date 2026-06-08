@@ -28,8 +28,7 @@ The package installs the Typer app at `coworld.cli:app`:
 uv run coworld --help
 uv run coworld leagues
 uv run coworld download <coworld-name-or-id> --output-dir ./coworld
-uv run coworld run-episode <manifest.json> <image:tag>
-uv run coworld scrimmage <manifest-or-id> [request.json|image...] [-n N]
+uv run coworld run-episode <manifest-or-id> [request.json|image...] [-n N]
 uv run coworld play <manifest.json> [image|request.json]
 uv run coworld xp-request create <body.json|-> / list / get / episodes
 uv run coworld build / certify / upload-coworld

@@ -471,6 +471,18 @@ def run_episode(
             ),
         ),
     ] = None,
+    episodes: Annotated[
+        int,
+        typer.Option(
+            "--episodes",
+            "-n",
+            min=1,
+            help=(
+                "Number of local episodes to run. With more than one, the game seed is incremented per episode "
+                "and each episode's artifacts go in an episode-NNNN subdirectory."
+            ),
+        ),
+    ] = 1,
     server: Annotated[str, typer.Option("--server", help="Observatory API server URL.")] = DEFAULT_SUBMIT_SERVER,
     timeout_seconds: Annotated[float, typer.Option("--timeout-seconds", min=1.0)] = 3600.0,
     verify_replay: Annotated[bool, typer.Option("--verify-replay/--no-verify-replay")] = False,
@@ -528,121 +540,23 @@ def run_episode(
             artifacts_dir = Path("./coworld-results")
         else:
             artifacts_dir = manifest_path.parent / "results"
-    artifacts = EpisodeArtifacts.create(artifacts_dir.resolve(), prefix="coworld-run-")
-    run_coworld_episode(
-        spec,
-        artifacts,
-        timeout_seconds=timeout_seconds,
-        verify_replay=verify_replay,
-        container_prefix="coworld-run",
-        **({"secret_env": parsed_secret_env} if parsed_secret_env else {}),
-    )
-    typer.echo(f"Artifacts: {artifacts.workspace}")
-    typer.echo(f"Results: {artifacts.results_path}")
-    _echo_replay_paths(artifacts)
-    typer.echo(f"Logs: {artifacts.logs_dir}")
-    _echo_feedback_commands(manifest_uri, artifacts, server=server)
-
-
-@app.command("scrimmage")
-def scrimmage(
-    manifest_uri: Annotated[str, typer.Argument(help="Path, URI, or Coworld ID for coworld_manifest.json.")],
-    episode_request_or_player_images: Annotated[
-        list[str] | None,
-        typer.Argument(
-            help=(
-                "Optional episode_request.json, or local player image override(s). One image is reused for every "
-                "player slot; otherwise provide one image per slot."
-            )
-        ),
-    ] = None,
-    run: Annotated[list[str] | None, typer.Option("--run", help="Command argv for supplied player image(s).")] = None,
-    output_dir: Annotated[
-        Path | None,
-        typer.Option(
-            "--output-dir",
-            "-o",
-            help=(
-                "Directory for scrimmage artifacts. Defaults to ./coworld/<coworld-id>/scrimmages for downloaded "
-                "Coworlds, or scrimmages next to coworld_manifest.json for ordinary local manifests."
-            ),
-        ),
-    ] = None,
-    episodes: Annotated[int, typer.Option("--episodes", "-n", min=1, help="Number of local episodes to run.")] = 1,
-    server: Annotated[str, typer.Option("--server", help="Observatory API server URL.")] = DEFAULT_SUBMIT_SERVER,
-    timeout_seconds: Annotated[float, typer.Option("--timeout-seconds", min=1.0)] = 3600.0,
-    verify_replay: Annotated[bool, typer.Option("--verify-replay/--no-verify-replay")] = False,
-    use_bedrock: Annotated[
-        bool,
-        typer.Option(
-            "--use-bedrock",
-            help="Enable AWS Bedrock access for player containers using host AWS credentials.",
-        ),
-    ] = False,
-    aws_profile: Annotated[
-        str | None,
-        typer.Option("--aws-profile", help="AWS profile to use when resolving --use-bedrock credentials."),
-    ] = None,
-    aws_region: Annotated[
-        str | None,
-        typer.Option("--aws-region", help="AWS region to use for --use-bedrock player containers."),
-    ] = None,
-    secret_env: Annotated[
-        list[str] | None,
-        typer.Option(
-            "--secret-env",
-            help="Secret environment variable for player containers (KEY=VALUE, can be repeated).",
-        ),
-    ] = None,
-) -> None:
-    if not use_bedrock and (aws_profile is not None or aws_region is not None):
-        raise typer.BadParameter("--aws-profile and --aws-region require --use-bedrock")
-    parsed_secret_env: dict[str, str] = {}
-    if use_bedrock:
-        parsed_secret_env.update(_resolve_bedrock_aws_env(aws_profile=aws_profile, aws_region=aws_region).container_env)
-    if secret_env:
-        for kv in secret_env:
-            key, val = _parse_secret_env(kv)
-            parsed_secret_env[key] = val
-    episode_request_path, player_images = _split_episode_request_and_player_images(episode_request_or_player_images)
-    if episode_request_path is not None and run:
-        raise typer.BadParameter("episode request files cannot be combined with --run")
-    with _materialized_manifest_path(manifest_uri, server=server) as manifest_path:
-        package = load_coworld_package(manifest_path)
-        if episode_request_path is None:
-            spec = build_manifest_episode_job_spec(package, player_images=player_images, player_run=run)
-        else:
-            spec = load_manifest_episode_job_spec(package, episode_request_path)
-        parsed_manifest_uri = urlparse(manifest_uri)
-        if output_dir is not None:
-            artifacts_dir = output_dir
-        elif manifest_path.name == "coworld_manifest.json" and manifest_path.parent.name.startswith("cow_"):
-            artifacts_dir = manifest_path.parent / "scrimmages"
-        elif (manifest_uri.startswith("cow_") and "/" not in manifest_uri) or parsed_manifest_uri.path.startswith(
-            "/v2/coworlds/"
-        ):
-            artifacts_dir = Path("./coworld") / Path(parsed_manifest_uri.path).name / "scrimmages"
-        elif parsed_manifest_uri.scheme in ("http", "https"):
-            artifacts_dir = Path("./coworld-scrimmages")
-        else:
-            artifacts_dir = manifest_path.parent / "scrimmages"
+    artifacts_root = artifacts_dir.resolve()
     for index in range(episodes):
         episode_spec = spec
-        if "seed" in spec.game_config and isinstance(spec.game_config["seed"], int):
+        if index > 0 and "seed" in spec.game_config and isinstance(spec.game_config["seed"], int):
             game_config = dict(spec.game_config)
             game_config["seed"] += index
             episode_spec = spec.model_copy(deep=True, update={"game_config": game_config})
-        artifacts = EpisodeArtifacts.create(
-            artifacts_dir.resolve() / f"episode-{index + 1:04d}",
-            prefix="coworld-scrimmage-",
-        )
-        typer.echo(f"Scrimmage episode {index + 1}/{episodes}")
+        workspace = artifacts_root if episodes == 1 else artifacts_root / f"episode-{index + 1:04d}"
+        artifacts = EpisodeArtifacts.create(workspace, prefix="coworld-run-")
+        if episodes > 1:
+            typer.echo(f"Episode {index + 1}/{episodes}")
         run_coworld_episode(
             episode_spec,
             artifacts,
             timeout_seconds=timeout_seconds,
             verify_replay=verify_replay,
-            container_prefix="coworld-scrimmage",
+            container_prefix="coworld-run",
             **({"secret_env": parsed_secret_env} if parsed_secret_env else {}),
         )
         typer.echo(f"Artifacts: {artifacts.workspace}")
@@ -650,7 +564,8 @@ def scrimmage(
         _echo_replay_paths(artifacts)
         typer.echo(f"Logs: {artifacts.logs_dir}")
         _echo_feedback_commands(manifest_uri, artifacts, server=server)
-    typer.echo(f"Scrimmage artifacts root: {artifacts_dir.resolve()}")
+    if episodes > 1:
+        typer.echo(f"Artifacts root: {artifacts_root}")
 
 
 @contextmanager
