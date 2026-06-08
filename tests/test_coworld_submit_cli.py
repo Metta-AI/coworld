@@ -52,7 +52,7 @@ def test_submit_policy_to_league_posts_v2_submission(
     assert "Status:" in result.output
     assert "placed" in result.output
     assert "lpm_00000000-0000-0000-0000-000000000061" in result.output
-    policy_path = f"/observatory/v2#tab=uploads&detail=policy-version:{POLICY_VERSION_ID}"
+    policy_path = f"/observatory/policies/versions/{POLICY_VERSION_ID}"
     assert policy_path in result.output
     assert opened == [policy_path]
     policy_query = next(
@@ -89,7 +89,7 @@ def test_submit_policy_no_open_browser_skips_launch(
     )
 
     assert result.exit_code == 0, result.output
-    assert f"/observatory/v2#tab=uploads&detail=policy-version:{POLICY_VERSION_ID}" in result.output
+    assert f"/observatory/policies/versions/{POLICY_VERSION_ID}" in result.output
     assert opened == []
 
 
