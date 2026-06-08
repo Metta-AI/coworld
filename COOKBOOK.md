@@ -492,8 +492,8 @@ uv run coworld upload-policy paintarena-player:local --name paintarena-player \
   --use-bedrock
 ```
 
-`upload-policy` requires Docker and the AWS CLI because it hashes the local Docker image, obtains scoped registry
-credentials, pushes the image, and registers the policy version. `--use-bedrock` stores `USE_BEDROCK=true` with the
+`upload-policy` requires Docker because it hashes the local Docker image, obtains a scoped registry token from the
+backend, pushes the image, and registers the policy version. No AWS CLI or AWS credentials are needed locally. `--use-bedrock` stores `USE_BEDROCK=true` with the
 policy version. Hosted Coworld tournaments run on AWS; when a policy opts into Bedrock, the player pod runs with the
 tournament Bedrock IAM role, so the player does not need to bring its own Bedrock API key. For other LLM providers,
 pass API keys with `--secret-env`; those secrets are stored in AWS Secrets Manager and injected only into that policy
@@ -899,6 +899,6 @@ is returned by the API or CLI, use the returned URL rather than reconstructing a
   `/client/replay`, and emits replay frames on `/replay`.
 - `run-episode --verify-replay` passes but you do not see a browser URL: that flag only probes replay mode. Use
   `coworld replay MANIFEST REPLAY_FILE` to open and keep a local replay viewer running.
-- Policy upload failures before the API call: confirm the AWS CLI is installed and can run `aws ecr get-login-password`.
+- Policy upload failures before the API call: confirm Docker is running and `docker image save` works for your tag.
 - Missing command examples: trust `uv run coworld --help` and `uv run coworld <command> --help`; old docs may mention
   commands that no longer exist.

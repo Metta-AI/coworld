@@ -10,7 +10,6 @@ import shlex
 import subprocess
 import tarfile
 import tempfile
-from base64 import b64encode
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
@@ -68,12 +67,6 @@ class PolicyVersionResponse(BaseModel):
     submit_error: str | None = None
 
 
-class AwsCredentials(BaseModel):
-    access_key_id: str
-    secret_access_key: str
-    session_token: str
-
-
 class EcrPushInfo(BaseModel):
     kind: str = "ecr"
     region: str
@@ -82,7 +75,7 @@ class EcrPushInfo(BaseModel):
     tag: str
     image_uri: str
     endpoint_url: str | None = None
-    credentials: AwsCredentials
+    authorization_token: str
 
 
 class ContainerImageResponse(BaseModel):
@@ -765,18 +758,7 @@ _DOCKER_LAYER_MEDIA_TYPE = "application/vnd.docker.image.rootfs.diff.tar.gzip"
 
 
 def _push_container_image(source_image: str, push_info: EcrPushInfo) -> None:
-    aws_env = os.environ | {
-        "AWS_ACCESS_KEY_ID": push_info.credentials.access_key_id,
-        "AWS_SECRET_ACCESS_KEY": push_info.credentials.secret_access_key,
-        "AWS_SESSION_TOKEN": push_info.credentials.session_token,
-    }
-    aws_env.pop("AWS_PROFILE", None)
-    login_command = ["aws", "ecr", "get-login-password", "--region", push_info.region]
-    if push_info.endpoint_url is not None:
-        login_command.extend(["--endpoint-url", push_info.endpoint_url])
-    password = subprocess.run(login_command, env=aws_env, check=True, capture_output=True, text=True).stdout.strip()
-
-    auth_header = b64encode(f"AWS:{password}".encode()).decode()
+    auth_header = push_info.authorization_token
     if push_info.endpoint_url is not None:
         scheme = "http" if push_info.endpoint_url.startswith("http://") else "https"
     else:

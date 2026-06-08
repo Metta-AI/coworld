@@ -140,11 +140,7 @@ def test_upload_coworld_posts_standalone_manifest(
                 "tag": "v1",
                 "image_uri": "123456789012.dkr.ecr.us-east-1.amazonaws.com/coworld/user/unit-test-runtime:v1",
                 "expires_at": "2026-05-06T22:00:00Z",
-                "credentials": {
-                    "access_key_id": "access-key",
-                    "secret_access_key": "secret-key",
-                    "session_token": "session-token",
-                },
+                "authorization_token": "QVdTOnBhc3N3b3Jk",
             },
         }
     )
