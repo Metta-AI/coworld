@@ -151,9 +151,46 @@ def build(
     template_path: Annotated[Path, typer.Argument(help="Path to coworld_manifest_template.json.")],
     version: Annotated[str, typer.Argument(help="Version to write into the hydrated manifest.")],
     output_path: Annotated[Path, typer.Argument(help="Output path for coworld_manifest.json.")],
+    resolve_mutable_images: Annotated[
+        bool,
+        typer.Option(
+            "--resolve-mutable-images",
+            help="Resolve mutable registry image refs such as ghcr.io/name:latest to immutable digest refs.",
+        ),
+    ] = False,
 ) -> None:
-    manifest_path = build_coworld_manifest(compose_file, template_path, version, output_path)
+    manifest_path = build_coworld_manifest(
+        compose_file,
+        template_path,
+        version,
+        output_path,
+        resolve_mutable_image_refs=resolve_mutable_images,
+    )
     typer.echo(f"Built Coworld manifest: {manifest_path}")
+
+
+@app.command("resolve-and-upload")
+def resolve_and_upload(
+    compose_file: Annotated[Path, typer.Argument(help="Path to the Coworld compose.yaml build file.")],
+    template_path: Annotated[Path, typer.Argument(help="Path to coworld_manifest_template.json.")],
+    version: Annotated[str, typer.Argument(help="Version to write into the hydrated manifest.")],
+    output_path: Annotated[Path, typer.Argument(help="Output path for the resolved coworld_manifest.json.")],
+    server: Annotated[str, typer.Option("--server", help="Observatory API server URL.")] = DEFAULT_SUBMIT_SERVER,
+    timeout_seconds: Annotated[float, typer.Option("--timeout-seconds", min=1.0)] = 60.0,
+) -> None:
+    manifest_path = build_coworld_manifest(
+        compose_file,
+        template_path,
+        version,
+        output_path,
+        resolve_mutable_image_refs=True,
+    )
+    typer.echo(f"Built Coworld manifest: {manifest_path}")
+    upload_coworld_cmd(
+        manifest_path,
+        server=server,
+        timeout_seconds=timeout_seconds,
+    )
 
 
 @app.command("play")

@@ -52,6 +52,23 @@ def test_upload_client_auth_error_mentions_server_url(monkeypatch: pytest.Monkey
     assert "uv run softmax login --server http://localhost:3102/api" in str(exc_info.value)
 
 
+def test_upload_coworld_rejects_mutable_registry_image_refs(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    manifest = _manifest()
+    cast(list[dict[str, object]], manifest["reporter"])[0]["image"] = "ghcr.io/metta-ai/reporters-default:latest"
+    manifest_path = _write_manifest(tmp_path, manifest)
+    monkeypatch.setattr("coworld.upload.certify_coworld", lambda *_args, **_kwargs: pytest.fail("certified manifest"))
+
+    with pytest.raises(RuntimeError) as exc_info:
+        upload_coworld(manifest_path)
+
+    message = str(exc_info.value)
+    assert "ghcr.io/metta-ai/reporters-default:latest" in message
+    assert "resolve-and-upload" in message
+
+
 def test_upload_coworld_posts_standalone_manifest(
     tmp_path: Path,
     httpserver: HTTPServer,
@@ -70,7 +87,7 @@ def test_upload_coworld_posts_standalone_manifest(
         manifest = json.loads(path.read_text(encoding="utf-8"))
         assert manifest["game"]["runnable"]["image"] == "unit-test-runtime:latest"
         assert manifest["player"][0]["image"] == "unit-test-runtime:latest"
-        assert manifest["grader"][0]["image"] == "ghcr.io/metta-ai/graders-default:latest"
+        assert manifest["grader"][0]["image"] == "ghcr.io/metta-ai/graders-default@sha256:graderdigest"
 
     def fake_hash(image: str) -> str:
         hashed_images.append(image)
@@ -175,7 +192,7 @@ def test_upload_coworld_posts_standalone_manifest(
     assert result.canonical is True
     assert certification_calls[0][0] == manifest_path.resolve()
     assert certification_calls[0][1] == 60.0
-    assert hashed_images == ["ghcr.io/metta-ai/graders-default:latest", "unit-test-runtime:latest"]
+    assert hashed_images == ["ghcr.io/metta-ai/graders-default@sha256:graderdigest", "unit-test-runtime:latest"]
     assert pushed_images == [
         (
             "unit-test-runtime:latest",
@@ -1200,7 +1217,7 @@ def _manifest() -> dict[str, object]:
                 "name": "Unit Test Grader",
                 "description": "Default grader stub.",
                 "type": "grader",
-                "image": "ghcr.io/metta-ai/graders-default:latest",
+                "image": "ghcr.io/metta-ai/graders-default@sha256:graderdigest",
                 "source_url": "https://github.com/Metta-AI/graders/tree/main/graders/default/default_grader",
             }
         ],

@@ -212,7 +212,9 @@ def test_build_coworld_manifest_tags_primary_role_images(tmp_path: Path, monkeyp
     assert built_manifest["optimizer"][0]["image"] == "optimizer-runtime:coworld-666666666666"
 
 
-def test_build_coworld_manifest_tags_digest_pinned_image_refs(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_build_coworld_manifest_preserves_digest_pinned_image_refs(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     template_path = _write_manifest(
         tmp_path,
         game_image="game-runtime:latest@sha256:1111",
@@ -243,13 +245,75 @@ def test_build_coworld_manifest_tags_digest_pinned_image_refs(tmp_path: Path, mo
     output_path = build_coworld_manifest(tmp_path / "compose.yaml", template_path, "0.2.0", tmp_path / "out.json")
 
     built_manifest = json.loads(output_path.read_text(encoding="utf-8"))
+    assert built_manifest["game"]["runnable"]["image"] == "game-runtime:latest@sha256:1111"
+    assert built_manifest["player"][0]["image"] == "player-runtime:latest@sha256:2222"
+    commands = [command for command, _kwargs in calls]
+    assert ["docker", "image", "inspect", "--format", "{{.Id}}", "game-runtime:latest@sha256:1111"] not in commands
+    assert ["docker", "tag", "game-runtime:latest@sha256:1111", "game-runtime:coworld-111111111111"] not in commands
+    assert ["docker", "image", "inspect", "--format", "{{.Id}}", "player-runtime:latest@sha256:2222"] not in commands
+    assert ["docker", "tag", "player-runtime:latest@sha256:2222", "player-runtime:coworld-222222222222"] not in commands
+
+
+def test_build_coworld_manifest_resolves_mutable_registry_image_refs(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    template_path = _write_manifest(
+        tmp_path,
+        game_image="{{GAME_IMAGE}}",
+        player_image="{{PLAYER_IMAGE}}",
+        include_version=False,
+        role_images={
+            "commissioner": "{{COMMISSIONER_IMAGE}}",
+            "reporter": "{{REPORTER_IMAGE}}",
+            "grader": "{{GRADER_IMAGE}}",
+        },
+    )
+    (tmp_path / "compose.yaml").write_text("services: {}\n", encoding="utf-8")
+    calls: list[tuple[list[str], dict[str, object]]] = []
+    monkeypatch.setattr(
+        "coworld.bundle.subprocess.run",
+        _fake_docker_run(
+            {
+                "game": "game-runtime:latest",
+                "player": "player-runtime:latest",
+                "commissioner": "ghcr.io/metta-ai/commissioners-baseline:latest",
+                "reporter": "ghcr.io/metta-ai/reporters-default@sha256:cccc",
+                "grader": "ghcr.io/metta-ai/graders-default@sha256:dddd",
+            },
+            {
+                "game-runtime:latest": "sha256:111111111111",
+                "player-runtime:latest": "sha256:222222222222",
+                "ghcr.io/metta-ai/commissioners-baseline:latest": "sha256:333333333333",
+            },
+            calls,
+        ),
+    )
+
+    output_path = build_coworld_manifest(
+        tmp_path / "compose.yaml",
+        template_path,
+        "0.2.0",
+        tmp_path / "out.json",
+        resolve_mutable_image_refs=True,
+    )
+
+    built_manifest = json.loads(output_path.read_text(encoding="utf-8"))
     assert built_manifest["game"]["runnable"]["image"] == "game-runtime:coworld-111111111111"
     assert built_manifest["player"][0]["image"] == "player-runtime:coworld-222222222222"
+    assert built_manifest["commissioner"][0]["image"] == "ghcr.io/metta-ai/commissioners-baseline@sha256:333333333333"
+    assert built_manifest["reporter"][0]["image"] == "ghcr.io/metta-ai/reporters-default@sha256:cccc"
+    assert built_manifest["grader"][0]["image"] == "ghcr.io/metta-ai/graders-default@sha256:dddd"
     commands = [command for command, _kwargs in calls]
-    assert ["docker", "image", "inspect", "--format", "{{.Id}}", "game-runtime:latest@sha256:1111"] in commands
-    assert ["docker", "tag", "game-runtime:latest@sha256:1111", "game-runtime:coworld-111111111111"] in commands
-    assert ["docker", "image", "inspect", "--format", "{{.Id}}", "player-runtime:latest@sha256:2222"] in commands
-    assert ["docker", "tag", "player-runtime:latest@sha256:2222", "player-runtime:coworld-222222222222"] in commands
+    assert [
+        "docker",
+        "buildx",
+        "imagetools",
+        "inspect",
+        "ghcr.io/metta-ai/commissioners-baseline:latest",
+        "--format",
+        "{{json .Manifest}}",
+    ] in commands
+    assert ["docker", "pull", "ghcr.io/metta-ai/commissioners-baseline@sha256:333333333333"] in commands
 
 
 def test_build_command_writes_hydrated_manifest(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -290,6 +354,54 @@ def test_build_command_writes_hydrated_manifest(tmp_path: Path, monkeypatch: pyt
     assert built_manifest["game"]["version"] == "0.2.0"
     assert built_manifest["game"]["runnable"]["image"] == "game-runtime:coworld-111111111111"
     assert built_manifest["player"][0]["image"] == "player-runtime:coworld-222222222222"
+
+
+def test_resolve_and_upload_command_builds_resolved_manifest_then_uploads(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    compose_path = tmp_path / "compose.yaml"
+    template_path = tmp_path / "coworld_manifest_template.json"
+    output_path = tmp_path / "dist" / "coworld_manifest.json"
+    compose_path.write_text("services: {}\n", encoding="utf-8")
+    template_path.write_text('{"game": {"name": "unit"}}\n', encoding="utf-8")
+    build_calls: list[tuple[Path, Path, str, Path, bool]] = []
+    upload_calls: list[tuple[Path, str, float]] = []
+
+    def fake_build(
+        compose_file: Path,
+        template_file: Path,
+        version: str,
+        manifest_output: Path,
+        *,
+        resolve_mutable_image_refs: bool = False,
+    ) -> Path:
+        build_calls.append((compose_file, template_file, version, manifest_output, resolve_mutable_image_refs))
+        return manifest_output.resolve()
+
+    def fake_upload(manifest_path: Path, *, server: str, timeout_seconds: float) -> None:
+        upload_calls.append((manifest_path, server, timeout_seconds))
+
+    monkeypatch.setattr("coworld.cli.build_coworld_manifest", fake_build)
+    monkeypatch.setattr("coworld.cli.upload_coworld_cmd", fake_upload)
+
+    result = CliRunner().invoke(
+        app,
+        [
+            "resolve-and-upload",
+            str(compose_path),
+            str(template_path),
+            "0.2.0",
+            str(output_path),
+            "--server",
+            "http://localhost:3102/api",
+            "--timeout-seconds",
+            "17",
+        ],
+    )
+
+    assert result.exit_code == 0, result.output
+    assert build_calls == [(compose_path, template_path, "0.2.0", output_path, True)]
+    assert upload_calls == [(output_path.resolve(), "http://localhost:3102/api", 17.0)]
 
 
 def _write_manifest(
@@ -423,6 +535,8 @@ def _fake_docker_run(
         if command[:3] == ["docker", "compose", "-f"] and command[-3:] == ["config", "--format", "json"]:
             services = {service: {"image": image} for service, image in service_images.items()}
             return subprocess.CompletedProcess(command, 0, stdout=json.dumps({"services": services}))
+        if command[:4] == ["docker", "buildx", "imagetools", "inspect"]:
+            return subprocess.CompletedProcess(command, 0, stdout=json.dumps({"digest": image_ids[command[4]]}))
         if command[:3] == ["docker", "image", "inspect"]:
             return subprocess.CompletedProcess(command, 0, stdout=f"{image_ids[command[-1]]}\n")
         return subprocess.CompletedProcess(command, 0)

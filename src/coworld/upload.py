@@ -23,6 +23,7 @@ from pydantic import BaseModel
 
 from coworld.certifier import certify_coworld, load_coworld_package
 from coworld.config import DEFAULT_SUBMIT_SERVER
+from coworld.image_refs import is_mutable_registry_image_ref
 
 _LOCAL_TAG_SEPARATOR_RE = re.compile(r"[^a-z0-9._-]+")
 DOWNLOAD_AGENTS_MD = """# AGENTS.md
@@ -395,6 +396,7 @@ def upload_coworld(
     timeout_seconds: float = 60.0,
 ) -> CoworldUploadResult:
     package = load_coworld_package(manifest_path)
+    _reject_mutable_registry_image_refs(package.manifest.model_dump(by_alias=True, exclude_none=True))
     certify_coworld(package.manifest_path, timeout_seconds=timeout_seconds)
 
     with CoworldUploadClient.from_login(server_url=server) as client:
@@ -411,6 +413,23 @@ def upload_coworld(
         manifest_hash=response.manifest_hash,
         size_bytes=response.size_bytes,
         canonical=response.canonical,
+    )
+
+
+def _reject_mutable_registry_image_refs(manifest: dict[str, object]) -> None:
+    mutable_refs = sorted(
+        {
+            image
+            for image in (runnable["image"] for runnable in _manifest_image_fields(manifest))
+            if is_mutable_registry_image_ref(image)
+        }
+    )
+    if not mutable_refs:
+        return
+    refs = ", ".join(mutable_refs)
+    raise RuntimeError(
+        "Coworld manifest contains mutable registry image refs: "
+        f"{refs}. Use `uv run coworld resolve-and-upload` to generate a digest-pinned manifest and upload that."
     )
 
 

@@ -2,9 +2,11 @@ from __future__ import annotations
 
 import json
 import subprocess
+from collections.abc import Iterable
 from pathlib import Path
 from typing import Any
 
+from coworld.image_refs import image_ref_without_tag, is_digest_pinned_image_ref, is_mutable_registry_image_ref
 from coworld.schema_validation import load_json_object
 from coworld.types import CoworldManifest
 
@@ -16,6 +18,8 @@ def build_coworld_manifest(
     template_path: Path,
     version: str,
     output_path: Path,
+    *,
+    resolve_mutable_image_refs: bool = False,
 ) -> Path:
     compose_file = compose_file.resolve()
     template_path = template_path.resolve()
@@ -36,6 +40,10 @@ def build_coworld_manifest(
         check=True,
     )
     subprocess.run(["docker", "compose", "-f", str(compose_file), "build"], cwd=compose_file.parent, check=True)
+    if resolve_mutable_image_refs:
+        resolved_image_refs = _resolved_mutable_image_refs(manifest)
+        manifest = _with_image_tags(manifest, resolved_image_refs)
+        _pull_image_refs(resolved_image_refs.values())
     manifest = _with_image_tags(manifest, _built_image_tags(manifest))
 
     output_path.parent.mkdir(parents=True, exist_ok=True)
@@ -82,6 +90,9 @@ def _compose_image_placeholders(compose_file: Path) -> dict[str, str]:
 def _built_image_tags(manifest: CoworldManifest) -> dict[str, str]:
     image_tags: dict[str, str] = {}
     for image in _manifest_images(manifest):
+        if is_digest_pinned_image_ref(image):
+            image_tags[image] = image
+            continue
         tag_image = image.split("@", 1)[0]
         image_id = subprocess.run(
             ["docker", "image", "inspect", "--format", "{{.Id}}", image],
@@ -94,6 +105,33 @@ def _built_image_tags(manifest: CoworldManifest) -> dict[str, str]:
         image_tags[image] = build_tag
 
     return image_tags
+
+
+def _resolved_mutable_image_refs(manifest: CoworldManifest) -> dict[str, str]:
+    return {
+        image: _resolve_registry_image_ref(image)
+        for image in _manifest_images(manifest)
+        if is_mutable_registry_image_ref(image)
+    }
+
+
+def _resolve_registry_image_ref(image: str) -> str:
+    completed = subprocess.run(
+        ["docker", "buildx", "imagetools", "inspect", image, "--format", "{{json .Manifest}}"],
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+    manifest = json.loads(completed.stdout)
+    digest = manifest.get("digest")
+    if not isinstance(digest, str) or not digest.startswith("sha256:"):
+        raise RuntimeError(f"Could not resolve immutable digest for image ref: {image}")
+    return f"{image_ref_without_tag(image)}@{digest}"
+
+
+def _pull_image_refs(images: Iterable[str]) -> None:
+    for image in sorted(set(images)):
+        subprocess.run(["docker", "pull", image], check=True)
 
 
 def _manifest_images(manifest: CoworldManifest) -> tuple[str, ...]:
@@ -113,12 +151,15 @@ def _sha_tag(image: str, image_id: str) -> str:
 def _with_image_tags(manifest: CoworldManifest, image_tags: dict[str, str]) -> CoworldManifest:
     game = manifest.game.model_copy(
         update={
-            "runnable": manifest.game.runnable.model_copy(update={"image": image_tags[manifest.game.runnable.image]})
+            "runnable": manifest.game.runnable.model_copy(
+                update={"image": image_tags.get(manifest.game.runnable.image, manifest.game.runnable.image)}
+            )
         }
     )
     updates: dict[str, object] = {"game": game}
     for section in ROLE_SECTIONS:
         updates[section] = [
-            runnable.model_copy(update={"image": image_tags[runnable.image]}) for runnable in getattr(manifest, section)
+            runnable.model_copy(update={"image": image_tags.get(runnable.image, runnable.image)})
+            for runnable in getattr(manifest, section)
         ]
     return manifest.model_copy(update=updates)
