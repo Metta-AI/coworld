@@ -400,15 +400,26 @@ def upload_policy(
             help="Enable AWS Bedrock access for this policy. Sets USE_BEDROCK=true in policy environment.",
         ),
     ] = False,
+    bedrock_model: Annotated[
+        str | None,
+        typer.Option(
+            "--bedrock-model",
+            help="Bedrock model ID for this policy. Requires --use-bedrock and sets BEDROCK_MODEL.",
+        ),
+    ] = None,
     server: Annotated[str, typer.Option("--server", help="Observatory API server URL.")] = DEFAULT_SUBMIT_SERVER,
 ) -> None:
+    if bedrock_model is not None and not use_bedrock:
+        raise typer.BadParameter("--bedrock-model requires --use-bedrock")
     parsed_secret_env: dict[str, str] = {}
-    if use_bedrock:
-        parsed_secret_env["USE_BEDROCK"] = "true"
     if secret_env:
         for kv in secret_env:
             key, val = _parse_secret_env(kv)
             parsed_secret_env[key] = val
+    if use_bedrock:
+        parsed_secret_env["USE_BEDROCK"] = "true"
+    if bedrock_model is not None:
+        parsed_secret_env["BEDROCK_MODEL"] = bedrock_model
 
     upload_policy_cmd(
         image,

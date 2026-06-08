@@ -75,12 +75,15 @@ For hosted league evaluation, secrets are attached to the submitted policy versi
 uv run coworld upload-policy <player-image> --name <policy-name> \
   --run python --run -m --run your_player.module \
   --secret-env API_KEY=... \
-  --use-bedrock
+  --use-bedrock \
+  --bedrock-model us.amazon.nova-micro-v1:0
 ```
 
 `upload-policy --secret-env` stores provider keys in AWS Secrets Manager and the hosted runner injects them only into
 that policy version's player pod. `upload-policy --use-bedrock` stores `USE_BEDROCK=true`; hosted tournament jobs then
 run that player pod with the Bedrock service account instead of requiring a Bedrock API key in the image or manifest.
+Use `--bedrock-model` when the player reads `BEDROCK_MODEL`; the model is stored with the policy env so uploads can
+select an account-enabled Bedrock model without rebuilding the image.
 For non-Bedrock LLM providers, use `--secret-env` for the provider key and keep model/provider selection in explicit
 environment variables that your player code reads.
 

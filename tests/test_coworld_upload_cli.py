@@ -8,6 +8,7 @@ from pathlib import Path
 from typing import BinaryIO, cast
 
 import pytest
+from click import unstyle
 from pytest_httpserver import HTTPServer
 from typer.testing import CliRunner
 
@@ -424,6 +425,7 @@ def test_upload_policy_command_sends_policy_secrets(
             "container_image_id": "img_00000000-0000-0000-0000-000000000030",
             "policy_secret_env": {
                 "USE_BEDROCK": "true",
+                "BEDROCK_MODEL": "us.amazon.nova-micro-v1:0",
                 "ANTHROPIC_API_KEY": "sk-ant-test",
             },
         },
@@ -445,6 +447,8 @@ def test_upload_policy_command_sends_policy_secrets(
             "--server",
             httpserver.url_for(""),
             "--use-bedrock",
+            "--bedrock-model",
+            "us.amazon.nova-micro-v1:0",
             "--secret-env",
             "ANTHROPIC_API_KEY=sk-ant-test",
         ],
@@ -452,6 +456,23 @@ def test_upload_policy_command_sends_policy_secrets(
 
     assert result.exit_code == 0, result.output
     assert "Upload complete: paintbot:v1" in result.output
+
+
+def test_upload_policy_command_requires_bedrock_for_bedrock_model() -> None:
+    result = CliRunner().invoke(
+        app,
+        [
+            "upload-policy",
+            "unit-test-policy:latest",
+            "--name",
+            "paintbot",
+            "--bedrock-model",
+            "us.amazon.nova-micro-v1:0",
+        ],
+    )
+
+    assert result.exit_code != 0
+    assert "--bedrock-model requires --use-bedrock" in unstyle(result.output)
 
 
 def test_coworld_list_command_prints_json(httpserver: HTTPServer, monkeypatch: pytest.MonkeyPatch) -> None:

@@ -680,7 +680,11 @@ def test_create_player_pod_injects_policy_secret_env(monkeypatch):
     player = PlayerLaunchSpec(
         image="paintbot:latest",
         run=(),
-        env={"PUBLIC_SETTING": "visible", "ANTHROPIC_API_KEY": "placeholder"},
+        env={
+            "PUBLIC_SETTING": "visible",
+            "ANTHROPIC_API_KEY": "placeholder",
+            "BEDROCK_MODEL": "us.anthropic.claude-haiku-4-5-20251001-v1:0",
+        },
     )
 
     kubernetes_runner._create_player_pod(
@@ -690,7 +694,11 @@ def test_create_player_pod_injects_policy_secret_env(monkeypatch):
         0,
         "slot-token",
         player,
-        {"ANTHROPIC_API_KEY": "sk-ant-test", "USE_BEDROCK": "true"},
+        {
+            "ANTHROPIC_API_KEY": "sk-ant-test",
+            "USE_BEDROCK": "true",
+            "BEDROCK_MODEL": "us.amazon.nova-micro-v1:0",
+        },
         "job-id",
         "game-service",
         "2",
@@ -704,6 +712,7 @@ def test_create_player_pod_injects_policy_secret_env(monkeypatch):
     assert env["PUBLIC_SETTING"] == "visible"
     assert env["ANTHROPIC_API_KEY"] == "sk-ant-test"
     assert env["USE_BEDROCK"] == "true"
+    assert env["BEDROCK_MODEL"] == "us.amazon.nova-micro-v1:0"
     assert env["AWS_REGION"] == "us-east-1"
     assert env["AWS_DEFAULT_REGION"] == "us-east-1"
     assert env["COWORLD_PLAYER_WS_URL"] == "ws://game-service:8080/player?slot=0&token=slot-token"
