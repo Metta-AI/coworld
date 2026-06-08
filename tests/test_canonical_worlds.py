@@ -15,7 +15,15 @@ from coworld.manifest_validation import (
 from coworld.schema_validation import validate_json_schema
 from coworld.types import CoworldEpisodeJobSpec, CoworldManifest
 
-COWORLD_PACKAGE_ROOT = Path(__file__).resolve().parents[1]
+# Deliberately no `.resolve()`: __file__ is the runfiles path, and
+# .resolve() would walk symlinks back into the source tree. That made
+# undeclared data files silently readable under local exec (where bazel
+# stages declared files via per-file symlinks) while failing under RBE
+# (where the executor container has no source tree to escape to). See
+# invocation 0a4e4f86-5750-4635-b597-a9aa709b3b76 for the original
+# upload.sh miss. Staying inside the runfiles tree makes missing data
+# deps fail loudly in every environment.
+COWORLD_PACKAGE_ROOT = Path(__file__).parent.parent
 REPO_ROOT = COWORLD_PACKAGE_ROOT.parents[1]
 COWORLD_SRC = COWORLD_PACKAGE_ROOT / "src" / "coworld"
 WORLDS = REPO_ROOT / "worlds"
