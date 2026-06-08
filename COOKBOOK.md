@@ -764,6 +764,22 @@ uv run coworld upload-coworld tmp/paintarena/coworld_manifest.json
 `certify` runs the manifest's certification fixture locally, then validates results and replay artifacts. `upload-coworld`
 certifies again before uploading the manifest and runnable images.
 
+To publish a small update from an already uploaded Coworld, use the hosted manifest as the base. Only new local image
+refs are uploaded; unchanged `img_...` entries stay as-is:
+
+```bash
+uv run coworld upload-coworld --from-coworld cow_... \
+  --version 0.1.1 \
+  --image commissioner=paintarena-commissioner:latest
+
+uv run coworld upload-coworld --from-coworld paintarena \
+  --version 0.1.2 \
+  --set game.owner=games@softmax.com
+```
+
+Use `--image role.id=IMAGE` or `--image role[index]=IMAGE` when a role has more than one runnable. `--set` accepts
+manifest paths such as `game.description` or `commissioner[0].description`; values are JSON-decoded when possible.
+
 Inspect uploaded Coworlds and images:
 
 ```bash

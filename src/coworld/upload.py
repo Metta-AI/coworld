@@ -11,10 +11,11 @@ import subprocess
 import tarfile
 import tempfile
 from base64 import b64encode
+from contextlib import contextmanager
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Self
+from typing import Any, Iterator, Self
 from uuid import UUID
 
 import httpx
@@ -24,8 +25,12 @@ from pydantic import BaseModel
 from coworld.certifier import certify_coworld, load_coworld_package
 from coworld.config import DEFAULT_SUBMIT_SERVER
 from coworld.image_refs import is_mutable_registry_image_ref
+from coworld.manifest_validation import validate_coworld_manifest_game_configs
+from coworld.schema_validation import validate_json_schema
+from coworld.types import MANIFEST_ROLE_SECTIONS, CoworldManifest, coworld_manifest_schema
 
 _LOCAL_TAG_SEPARATOR_RE = re.compile(r"[^a-z0-9._-]+")
+_IMAGE_ID_RE = re.compile(r"^img_[A-Za-z0-9_-]+$")
 DOWNLOAD_AGENTS_MD = """# AGENTS.md
 
 Guidance for coding agents working from this downloaded Coworld package.
@@ -394,16 +399,25 @@ def upload_coworld(
     *,
     server: str = DEFAULT_SUBMIT_SERVER,
     timeout_seconds: float = 60.0,
+    version: str | None = None,
+    set_updates: list[str] | None = None,
+    image_updates: list[str] | None = None,
 ) -> CoworldUploadResult:
     package = load_coworld_package(manifest_path)
-    _reject_mutable_registry_image_refs(package.manifest.model_dump(by_alias=True, exclude_none=True))
-    certify_coworld(package.manifest_path, timeout_seconds=timeout_seconds)
+    manifest = package.manifest.model_dump(by_alias=True, exclude_none=True)
+    has_manifest_overrides = version is not None or bool(set_updates) or bool(image_updates)
+    _apply_manifest_updates(manifest, version=version, set_updates=set_updates, image_updates=image_updates)
+    if has_manifest_overrides:
+        _validate_manifest_document(manifest)
+    _reject_mutable_registry_image_refs(manifest)
+    if has_manifest_overrides:
+        with _temporary_manifest_path(manifest) as cert_manifest_path:
+            certify_coworld(cert_manifest_path, timeout_seconds=timeout_seconds)
+    else:
+        certify_coworld(package.manifest_path, timeout_seconds=timeout_seconds)
 
     with CoworldUploadClient.from_login(server_url=server) as client:
-        upload_manifest = _manifest_with_softmax_image_ids(
-            client,
-            package.manifest.model_dump(by_alias=True, exclude_none=True),
-        )
+        upload_manifest = _manifest_with_softmax_image_ids(client, manifest)
         response = client.upload_manifest(upload_manifest)
 
     return CoworldUploadResult(
@@ -414,6 +428,193 @@ def upload_coworld(
         size_bytes=response.size_bytes,
         canonical=response.canonical,
     )
+
+
+def upload_coworld_update(
+    coworld_ref: str,
+    *,
+    server: str = DEFAULT_SUBMIT_SERVER,
+    version: str | None = None,
+    set_updates: list[str] | None = None,
+    image_updates: list[str] | None = None,
+) -> CoworldUploadResult:
+    if version is None and not set_updates and not image_updates:
+        raise ValueError("--from-coworld requires --version, --set, or --image")
+
+    coworld = download_coworld(coworld_ref, server=server)
+    manifest = copy.deepcopy(coworld.manifest)
+    _apply_manifest_updates(manifest, version=version, set_updates=set_updates, image_updates=image_updates)
+    _validate_manifest_document(manifest)
+    _reject_mutable_registry_image_refs(manifest)
+
+    with CoworldUploadClient.from_login(server_url=server) as client:
+        upload_manifest = _manifest_with_softmax_image_ids(client, manifest)
+        response = client.upload_manifest(upload_manifest)
+
+    return CoworldUploadResult(
+        id=response.id,
+        name=response.name,
+        version=response.version,
+        manifest_hash=response.manifest_hash,
+        size_bytes=response.size_bytes,
+        canonical=response.canonical,
+    )
+
+
+@contextmanager
+def _temporary_manifest_path(manifest: dict[str, object]) -> Iterator[Path]:
+    with tempfile.TemporaryDirectory(prefix="coworld-upload-manifest-") as temp_dir:
+        manifest_path = Path(temp_dir) / "coworld_manifest.json"
+        manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
+        yield manifest_path
+
+
+def _validate_manifest_document(manifest: dict[str, object]) -> None:
+    validate_json_schema(manifest, coworld_manifest_schema())
+    typed_manifest = CoworldManifest.model_validate(manifest)
+    validate_coworld_manifest_game_configs(typed_manifest)
+
+
+def _apply_manifest_updates(
+    manifest: dict[str, object],
+    *,
+    version: str | None,
+    set_updates: list[str] | None,
+    image_updates: list[str] | None,
+) -> None:
+    if version is not None:
+        _set_manifest_path_value(manifest, "game.version", version)
+    for update in set_updates or []:
+        path, value = _parse_field_update(update)
+        _set_manifest_path_value(manifest, path, value)
+    for update in image_updates or []:
+        target, image = _parse_image_update(update)
+        _set_manifest_image(manifest, target, image)
+
+
+def _parse_field_update(update: str) -> tuple[str, object]:
+    path, separator, raw_value = update.partition("=")
+    if not separator or not path:
+        raise ValueError(f"Expected PATH=VALUE for --set, got: {update}")
+    try:
+        value: object = json.loads(raw_value)
+    except json.JSONDecodeError:
+        value = raw_value
+    return path, value
+
+
+def _parse_image_update(update: str) -> tuple[str, str]:
+    target, separator, image = update.partition("=")
+    if not separator or not target or not image:
+        raise ValueError(f"Expected TARGET=IMAGE for --image, got: {update}")
+    return target, image
+
+
+def _set_manifest_image(manifest: dict[str, object], target: str, image: str) -> None:
+    if target in {"game", "game.runnable"}:
+        _set_manifest_path_value(manifest, "game.runnable.image", image)
+        return
+    if target == "game.runnable.image" or target.endswith(".image"):
+        _set_manifest_path_value(manifest, target, image)
+        return
+
+    role, selector = _split_image_target(target)
+    if role == "game":
+        if selector is not None:
+            raise ValueError("game image target does not accept a selector")
+        _set_manifest_path_value(manifest, "game.runnable.image", image)
+        return
+
+    entries = manifest.get(role)
+    if not isinstance(entries, list):
+        raise ValueError(f"Manifest role section is not a list: {role}")
+    if selector is None:
+        if len(entries) != 1:
+            raise ValueError(f"--image {role}=... is ambiguous because {role} has {len(entries)} entries")
+        entry = entries[0]
+    elif selector.isdigit():
+        index = int(selector)
+        try:
+            entry = entries[index]
+        except IndexError as exc:
+            raise ValueError(f"No {role} entry at index {index}") from exc
+    else:
+        matches = [entry for entry in entries if isinstance(entry, dict) and entry.get("id") == selector]
+        if len(matches) != 1:
+            raise ValueError(f"No unique {role} entry with id {selector!r}")
+        entry = matches[0]
+    if not isinstance(entry, dict) or "image" not in entry:
+        raise ValueError(f"Manifest target is not a runnable image field: {target}")
+    entry["image"] = image
+
+
+def _split_image_target(target: str) -> tuple[str, str | None]:
+    role_sections = {"game", *MANIFEST_ROLE_SECTIONS}
+    if "[" in target:
+        parts = _parse_manifest_path(target)
+        if len(parts) == 2 and isinstance(parts[0], str) and isinstance(parts[1], int) and parts[0] in role_sections:
+            return parts[0], str(parts[1])
+    role, separator, selector = target.partition(".")
+    if role not in role_sections:
+        raise ValueError(f"Unknown image target role: {role}")
+    return role, selector if separator else None
+
+
+def _set_manifest_path_value(manifest: dict[str, object], path: str, value: object) -> None:
+    parts = _parse_manifest_path(path)
+    if not parts:
+        raise ValueError("Manifest path must not be empty")
+    current: object = manifest
+    for part in parts[:-1]:
+        current = _get_manifest_path_part(current, part, path)
+    last = parts[-1]
+    if isinstance(last, int):
+        if not isinstance(current, list):
+            raise ValueError(f"Manifest path {path!r} expected a list before index {last}")
+        try:
+            current[last] = value
+        except IndexError as exc:
+            raise ValueError(f"Manifest path {path!r} index out of range: {last}") from exc
+        return
+    if not isinstance(current, dict):
+        raise ValueError(f"Manifest path {path!r} expected an object before {last!r}")
+    current[last] = value
+
+
+def _get_manifest_path_part(value: object, part: str | int, path: str) -> object:
+    if isinstance(part, int):
+        if not isinstance(value, list):
+            raise ValueError(f"Manifest path {path!r} expected a list before index {part}")
+        try:
+            return value[part]
+        except IndexError as exc:
+            raise ValueError(f"Manifest path {path!r} index out of range: {part}") from exc
+    if not isinstance(value, dict):
+        raise ValueError(f"Manifest path {path!r} expected an object before {part!r}")
+    if part not in value:
+        raise ValueError(f"Manifest path {path!r} is missing key {part!r}")
+    return value[part]
+
+
+def _parse_manifest_path(path: str) -> list[str | int]:
+    parts: list[str | int] = []
+    for raw_part in path.split("."):
+        if not raw_part:
+            raise ValueError(f"Invalid manifest path: {path}")
+        name, bracket, rest = raw_part.partition("[")
+        if name:
+            parts.append(name)
+        while bracket:
+            index_text, close, rest = rest.partition("]")
+            if not close or not index_text.isdigit():
+                raise ValueError(f"Invalid manifest path: {path}")
+            parts.append(int(index_text))
+            if not rest:
+                break
+            bracket, rest = rest[0], rest[1:]
+            if bracket != "[":
+                raise ValueError(f"Invalid manifest path: {path}")
+    return parts
 
 
 def _reject_mutable_registry_image_refs(manifest: dict[str, object]) -> None:
@@ -459,15 +660,36 @@ def _load_current_cogames_token(*, server_url: str) -> str | None:
 
 
 def upload_coworld_cmd(
-    manifest_path: Path,
+    manifest_path: Path | None = None,
+    *,
+    base_coworld: str | None = None,
     server: str = DEFAULT_SUBMIT_SERVER,
     timeout_seconds: float = 60.0,
+    version: str | None = None,
+    set_updates: list[str] | None = None,
+    image_updates: list[str] | None = None,
 ) -> None:
-    result = upload_coworld(
-        manifest_path,
-        server=server,
-        timeout_seconds=timeout_seconds,
-    )
+    if base_coworld is not None:
+        if manifest_path is not None:
+            raise typer.BadParameter("MANIFEST_PATH cannot be combined with --from-coworld")
+        result = upload_coworld_update(
+            base_coworld,
+            server=server,
+            version=version,
+            set_updates=set_updates,
+            image_updates=image_updates,
+        )
+    else:
+        if manifest_path is None:
+            raise typer.BadParameter("MANIFEST_PATH is required unless --from-coworld is set")
+        result = upload_coworld(
+            manifest_path,
+            server=server,
+            timeout_seconds=timeout_seconds,
+            version=version,
+            set_updates=set_updates,
+            image_updates=image_updates,
+        )
     typer.echo(f"Upload complete: {result.name}:{result.version}")
     typer.echo(f"Coworld: {result.id}")
     typer.echo(f"Manifest hash: {result.manifest_hash}")
@@ -615,10 +837,17 @@ def _manifest_with_softmax_image_ids(client: CoworldUploadClient, manifest: dict
     replacements = {
         image: _upload_container_image(client, image).id
         for image in sorted({runnable["image"] for runnable in _manifest_image_fields(upload_manifest)})
+        if not _is_uploaded_image_id(image)
     }
     for runnable in _manifest_image_fields(upload_manifest):
-        runnable["image"] = replacements[runnable["image"]]
+        image = runnable["image"]
+        if image in replacements:
+            runnable["image"] = replacements[image]
     return upload_manifest
+
+
+def _is_uploaded_image_id(image: str) -> bool:
+    return _IMAGE_ID_RE.match(image) is not None
 
 
 def _manifest_image_fields(value: object) -> list[dict[str, Any]]:
