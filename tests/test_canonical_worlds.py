@@ -140,9 +140,12 @@ def test_canonical_cogs_vs_clips_build_declares_role_contexts() -> None:
 
 def test_canonical_crewrift_build_declares_game_context() -> None:
     compose_text = (WORLDS / "crewrift" / "compose.yaml").read_text(encoding="utf-8")
+    upload_text = (WORLDS / "upload.sh").read_text(encoding="utf-8")
 
     assert "GAME_CONTEXT" in compose_text
     assert "PLAYER_CONTEXT" in compose_text
+    assert "player: &player_context ${PLAYER_CONTEXT:-../../../players}" in compose_text
+    assert 'PLAYER_CONTEXT="${PLAYER_CONTEXT:-${WORKSPACE_DIR}/players}"' in upload_text
     assert "coworld-crewrift" in compose_text
     assert "Dockerfile" in compose_text
     assert "players/crewrift/crewriftstarter/Dockerfile" in compose_text
