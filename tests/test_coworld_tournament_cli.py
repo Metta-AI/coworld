@@ -286,7 +286,7 @@ def test_memberships_accepts_status_substatus_payload(
     assert rows[0]["status"] == "competing"
     assert rows[0]["substatus"] == "champion"
     assert "is_active" not in rows[0]
-    assert "is_champion" not in rows[0]
+    assert rows[0]["is_champion"] is False
 
 
 def test_retire_membership_posts_reason_json(

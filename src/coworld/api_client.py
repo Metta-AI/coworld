@@ -86,6 +86,7 @@ class LeaguePolicyMembershipPublic(CoworldAPIModel):
     id: str
     status: str
     substatus: str | None = None
+    is_champion: bool = False
     start_time: datetime
     end_time: datetime | None = None
     league: LeaguePublic

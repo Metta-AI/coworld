@@ -50,6 +50,7 @@ def test_round_start_serializes_with_message_type() -> None:
                 player_id="player_abc",
                 status="competing",
                 substatus="champion",
+                is_champion=True,
             )
         ],
         recent_results=[],
@@ -68,6 +69,7 @@ def test_round_start_serializes_with_message_type() -> None:
     assert data["type"] == "round_start"
     assert data["league"]["id"] == str(league_id)
     assert data["memberships"][0]["policy_version_id"] == str(policy_version_id)
+    assert data["memberships"][0]["is_champion"] is True
     assert data["variants"][0]["num_agents"] == 2
 
 

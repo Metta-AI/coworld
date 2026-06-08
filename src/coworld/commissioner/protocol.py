@@ -30,6 +30,7 @@ class MembershipInfo(BaseModel):
     player_id: str | None = None
     status: str = "competing"
     substatus: str | None = None
+    is_champion: bool = False
 
 
 class RecentResult(BaseModel):

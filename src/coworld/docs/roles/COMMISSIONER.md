@@ -140,7 +140,8 @@ Sent once after the WebSocket connects, providing the full round context:
       "policy_version_id": "uuid",
       "player_id": "player_abc",
       "status": "competing",
-      "substatus": "champion"
+      "substatus": "champion",
+      "is_champion": true
     }
   ],
   "recent_results": [
@@ -170,6 +171,10 @@ Sent once after the WebSocket connects, providing the full round context:
   "state": null
 }
 ```
+
+`is_champion` is read-only commissioner context. Commissioners must not attempt
+to set champions through membership events; they may only move, activate, or
+disqualify memberships.
 
 The commissioner receives all divisions in the league and all active memberships across them. It can schedule episodes
 for any division and move policies between divisions via `graduation_changes` in `round_complete`. Each membership
