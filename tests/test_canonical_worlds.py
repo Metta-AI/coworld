@@ -150,9 +150,11 @@ def test_canonical_crewrift_build_declares_game_context() -> None:
     compose_text = (WORLDS / "crewrift" / "compose.yaml").read_text(encoding="utf-8")
     upload_text = (WORLDS / "upload.sh").read_text(encoding="utf-8")
 
+    assert not (WORLDS / "crewrift" / "coworld_manifest_template.json").exists()
     assert "GAME_CONTEXT" in compose_text
     assert "PLAYER_CONTEXT" not in compose_text
     assert 'PLAYER_CONTEXT="${PLAYER_CONTEXT:-${WORKSPACE_DIR}/players}"' not in upload_text
+    assert 'template_file="${GAME_CONTEXT}/coworld_manifest.json"' in upload_text
     assert "coworld-crewrift" in compose_text
     assert "Dockerfile" in compose_text
     assert "players/notsus/Dockerfile" in compose_text
@@ -195,7 +197,7 @@ def test_canonical_world_templates_hydrate_to_valid_manifests(tmp_path: Path) ->
         load_coworld_package(_materialized_template(tmp_path, template_path))
 
 
-@pytest.mark.parametrize("world_name", ("among_them", "crewrift"))
+@pytest.mark.parametrize("world_name", ("among_them",))
 def test_bitworld_templates_keep_default_variants_open_roster(tmp_path: Path, world_name: str) -> None:
     package = load_coworld_package(
         _materialized_template(tmp_path, WORLDS / world_name / "coworld_manifest_template.json")
@@ -362,34 +364,14 @@ def test_canonical_cogs_vs_clips_template_points_to_source_repo(tmp_path: Path) 
     )
 
 
-def test_canonical_crewrift_template_points_to_source_repo(tmp_path: Path) -> None:
-    package = load_coworld_package(
-        _materialized_template(tmp_path, WORLDS / "crewrift" / "coworld_manifest_template.json")
-    )
-    pages = {page.id: page.content.value for page in package.manifest.game.docs.pages}
+def test_canonical_crewrift_manifest_lives_with_source_repo() -> None:
+    upload_text = (WORLDS / "upload.sh").read_text(encoding="utf-8")
+    readme_text = (WORLDS / "crewrift" / "README.md").read_text(encoding="utf-8")
 
-    assert package.manifest.game.runnable.source_url == "https://github.com/Metta-AI/coworld-crewrift/tree/master"
-    assert package.manifest.game.docs.readme is not None
-    assert (
-        package.manifest.game.docs.readme.value == "https://github.com/Metta-AI/coworld-crewrift/blob/master/README.md"
-    )
-    assert (
-        package.manifest.game.protocols.player.value
-        == "https://github.com/Metta-AI/bitworld/blob/master/docs/sprite_v1.md"
-    )
-    assert (
-        package.manifest.game.protocols.global_.value
-        == "https://github.com/Metta-AI/bitworld/blob/master/docs/sprite_v1.md"
-    )
-    assert pages["notsus.md"].endswith("/players/notsus/README.md")
-    assert pages["play_crewrift.md"] == "https://softmax.com/play_crewrift.md"
-    assert (
-        package.manifest.player[0].source_url
-        == "https://github.com/Metta-AI/coworld-crewrift/tree/master/players/notsus"
-    )
-    assert package.manifest.commissioner[0].source_url == (
-        "https://github.com/Metta-AI/commissioners/tree/main/commissioners/ruleset_strategy_commissioner"
-    )
+    assert not (WORLDS / "crewrift" / "coworld_manifest_template.json").exists()
+    assert 'template_file="${GAME_CONTEXT}/coworld_manifest.json"' in upload_text
+    assert "GAME_CONTEXT=/path/to/coworld-crewrift" in readme_text
+    assert "../coworld-crewrift/coworld_manifest.json" in readme_text
 
 
 def test_canonical_tribal_village_template_points_to_source_repo(tmp_path: Path) -> None:
@@ -430,8 +412,8 @@ def test_canonical_among_them_template_declares_all_viability_role_sections() ->
     assert [role["type"] for role in template["optimizer"]] == ["optimizer"]
 
 
-def test_cogs_vs_clips_crewrift_and_paintarena_templates_declare_all_viability_role_sections() -> None:
-    for world_name in ("cogs_vs_clips", "crewrift", "paintarena"):
+def test_cogs_vs_clips_and_paintarena_templates_declare_all_viability_role_sections() -> None:
+    for world_name in ("cogs_vs_clips", "paintarena"):
         template = json.loads((WORLDS / world_name / "coworld_manifest_template.json").read_text(encoding="utf-8"))
 
         assert set(VIABILITY_ROLE_SECTIONS).issubset(template)
@@ -454,11 +436,6 @@ def test_cogs_vs_clips_crewrift_and_paintarena_templates_declare_all_viability_r
         "softmax-default-reporter",
         "cogs-vs-clips-summarizer",
     ]
-
-    crewrift = json.loads((WORLDS / "crewrift" / "coworld_manifest_template.json").read_text(encoding="utf-8"))
-    assert [role["id"] for role in crewrift["commissioner"]] == ["among-them-commissioner"]
-    for section in ("reporter", "grader", "optimizer", "diagnoser"):
-        assert crewrift[section]
 
     paintarena = json.loads((WORLDS / "paintarena" / "coworld_manifest_template.json").read_text(encoding="utf-8"))
     assert [role["id"] for role in paintarena["commissioner"]] == ["default-commissioner"]
@@ -501,7 +478,6 @@ def _world_templates() -> tuple[Path, ...]:
     return (
         WORLDS / "among_them" / "coworld_manifest_template.json",
         WORLDS / "cogs_vs_clips" / "coworld_manifest_template.json",
-        WORLDS / "crewrift" / "coworld_manifest_template.json",
         WORLDS / "paintarena" / "coworld_manifest_template.json",
         WORLDS / "tribal_village" / "coworld_manifest_template.json",
     )
@@ -529,18 +505,6 @@ def _materialized_template(base_dir: Path, template_path: Path) -> Path:
             "{{REPORTER_IMAGE}}": "coworld-default-reporter:latest",
             "{{COGS_VS_CLIPS_REPORTER_IMAGE}}": "coworld-cogs-vs-clips-summarizer:latest",
             "{{COGS_VS_CLIPS_COMMISSIONER_IMAGE}}": "coworld-cogs-vs-clips-commissioner:latest",
-        },
-        "crewrift": {
-            "{{GAME_IMAGE}}": "coworld-crewrift-game:latest",
-            "{{PLAYER_IMAGE}}": "coworld-crewrift-notsus:latest",
-            "{{REPORTER_IMAGE}}": "coworld-default-reporter:latest",
-            "{{GRADER_IMAGE}}": "coworld-crewrift-grader:latest",
-            "{{DIAGNOSER_IMAGE}}": "coworld-crewrift-diagnoser:latest",
-            "{{OPTIMIZER_IMAGE}}": "coworld-optimizer:latest",
-            "{{COMMISSIONER_IMAGE}}": (
-                "ghcr.io/metta-ai/commissioners-among-them-commissioner@sha256:"
-                "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"
-            ),
         },
         "paintarena": {
             "{{PAINTARENA_IMAGE}}": "coworld-paintarena:latest",

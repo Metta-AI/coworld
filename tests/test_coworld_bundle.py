@@ -155,11 +155,52 @@ def test_build_coworld_manifest_requires_compose_file(tmp_path: Path) -> None:
 
 
 def test_build_coworld_manifest_requires_template_without_version(tmp_path: Path) -> None:
-    template_path = _write_manifest(tmp_path, game_image="game-runtime:latest", player_image="player-runtime:latest")
+    template_path = _write_manifest(
+        tmp_path,
+        game_image="game-runtime:latest",
+        player_image="player-runtime:latest",
+        name="coworld_manifest_template.json",
+    )
     (tmp_path / "compose.yaml").write_text("services: {}\n", encoding="utf-8")
 
     with pytest.raises(RuntimeError, match="must not set game.version"):
         build_coworld_manifest(tmp_path / "compose.yaml", template_path, "0.2.0", tmp_path / "out.json")
+
+
+def test_build_coworld_manifest_overrides_source_manifest_version(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    manifest_path = _write_manifest(
+        tmp_path,
+        game_image="{{GAME_IMAGE}}",
+        player_image="{{PLAYER_IMAGE}}",
+        name="coworld_manifest.json",
+    )
+    (tmp_path / "compose.yaml").write_text("services: {}\n", encoding="utf-8")
+    monkeypatch.setattr(
+        "coworld.bundle.subprocess.run",
+        _fake_docker_run(
+            {
+                "game": "game-runtime:latest",
+                "player": "player-runtime:latest",
+                "reporter": "ghcr.io/metta-ai/reporters-default:latest",
+                "grader": "ghcr.io/metta-ai/graders-default:latest",
+            },
+            {
+                "game-runtime:latest": "sha256:111111111111",
+                "player-runtime:latest": "sha256:222222222222",
+                "ghcr.io/metta-ai/reporters-default:latest": "sha256:333333333333",
+                "ghcr.io/metta-ai/graders-default:latest": "sha256:444444444444",
+            },
+        ),
+    )
+
+    output_path = build_coworld_manifest(tmp_path / "compose.yaml", manifest_path, "0.2.0", tmp_path / "out.json")
+
+    built_manifest = json.loads(output_path.read_text(encoding="utf-8"))
+    source_manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    assert source_manifest["game"]["version"] == "0.1.0"
+    assert built_manifest["game"]["version"] == "0.2.0"
 
 
 def test_build_coworld_manifest_tags_primary_role_images(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -409,12 +450,13 @@ def _write_manifest(
     *,
     game_image: str,
     player_image: str,
+    name: str = "coworld_manifest_template.json",
     player_id: str = "unit-test-player",
     role_images: Mapping[str, str] | None = None,
     include_version: bool = True,
 ) -> Path:
     base_dir.mkdir(parents=True, exist_ok=True)
-    manifest_path = base_dir / "coworld_manifest_template.json"
+    manifest_path = base_dir / name
     declared_roles = {
         role: [
             {

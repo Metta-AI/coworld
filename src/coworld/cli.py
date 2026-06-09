@@ -148,7 +148,10 @@ def certify(
 @app.command("build")
 def build(
     compose_file: Annotated[Path, typer.Argument(help="Path to the Coworld compose.yaml build file.")],
-    template_path: Annotated[Path, typer.Argument(help="Path to coworld_manifest_template.json.")],
+    template_path: Annotated[
+        Path,
+        typer.Argument(help="Path to coworld_manifest_template.json or coworld_manifest.json."),
+    ],
     version: Annotated[str, typer.Argument(help="Version to write into the hydrated manifest.")],
     output_path: Annotated[Path, typer.Argument(help="Output path for coworld_manifest.json.")],
     resolve_mutable_images: Annotated[
@@ -172,7 +175,10 @@ def build(
 @app.command("resolve-and-upload")
 def resolve_and_upload(
     compose_file: Annotated[Path, typer.Argument(help="Path to the Coworld compose.yaml build file.")],
-    template_path: Annotated[Path, typer.Argument(help="Path to coworld_manifest_template.json.")],
+    template_path: Annotated[
+        Path,
+        typer.Argument(help="Path to coworld_manifest_template.json or coworld_manifest.json."),
+    ],
     version: Annotated[str, typer.Argument(help="Version to write into the hydrated manifest.")],
     output_path: Annotated[Path, typer.Argument(help="Output path for the resolved coworld_manifest.json.")],
     server: Annotated[str, typer.Option("--server", help="Observatory API server URL.")] = DEFAULT_SUBMIT_SERVER,
