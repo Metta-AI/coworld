@@ -11,6 +11,7 @@ consumes something; artifact pages describe the thing itself.
 | [Replay](REPLAY.md) | Game | Local `replay`, hosted `REPLAY_URI`, episode bundle `replay` token |
 | [Game logs](GAME_LOGS.md) | Game container / runner | Local `logs/game.*.log`, hosted `DEBUG_URI`, episode bundle `game_logs` token |
 | [Player logs](PLAYER_LOGS.md) | Player containers / runner | Local `logs/policy_agent_{slot}.log`, hosted `POLICY_LOG_URLS`, episode bundle `player_logs` token |
+| [Player artifact](PLAYER_ARTIFACT.md) | Player containers | Local `policy_artifact_{slot}.zip`, hosted `PLAYER_ARTIFACT_UPLOAD_URLS`, episode bundle `player_artifact` token |
 | [Debug archive](DEBUG_ARCHIVE.md) | Hosted runner | Hosted `DEBUG_URI` aggregate log zip |
 | [Error info](ERROR_INFO.md) | Hosted runner | Hosted `ERROR_INFO_URI`, episode bundle `error_info` token |
 | [Episode bundle](EPISODE_BUNDLE.md) | Bundling layer | On-demand zip assembled for post-episode consumers |

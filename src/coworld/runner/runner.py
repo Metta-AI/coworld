@@ -81,6 +81,13 @@ class EpisodeArtifacts:
     def policy_log_path(self, slot: int) -> Path:
         return self.logs_dir / f"policy_agent_{slot}.log"
 
+    def policy_artifact_path(self, slot: int) -> Path:
+        """Per-player artifact (single .zip) the player uploads at episode end.
+
+        Lives in the workspace root (not logs/) since it is a separate artifact from logs.
+        """
+        return self.workspace / f"policy_artifact_{slot}.zip"
+
 
 @dataclass(frozen=True)
 class EpisodeRunSpec:
@@ -304,6 +311,13 @@ def run_episode_containers(spec: EpisodeRunSpec, *, verify_replay: bool = True) 
                 player_containers.append(container_name)
                 player_log_path = spec.artifacts.policy_log_path(slot)
                 player_log = stack.enter_context(player_log_path.open("w"))
+                # Local parity for the hosted per-player artifact upload: mount the workspace into the
+                # player container and hand it a file:// URL for its per-slot artifact .zip. io.write_data
+                # creates parent dirs, so the player writes straight to the workspace and the runner
+                # finds it at policy_artifact_path(slot). No upload server needed locally.
+                artifact_filename = spec.artifacts.policy_artifact_path(slot).name
+                artifact_mount = f"{spec.artifacts.workspace}:/coworld-artifact:rw"
+                artifact_upload_url = f"file:///coworld-artifact/{artifact_filename}"
                 player_processes.append(
                     (
                         subprocess.Popen(
@@ -315,12 +329,16 @@ def run_episode_containers(spec: EpisodeRunSpec, *, verify_replay: bool = True) 
                                 container_name,
                                 "--network",
                                 LOCAL_DOCKER_NETWORK,
+                                "-v",
+                                artifact_mount,
                                 *_env_args(player.env),
                                 *secret_env_key_args,
                                 "-e",
                                 f"COWORLD_PLAYER_WS_URL={engine_ws_url}",
                                 "-e",
                                 f"COGAMES_ENGINE_WS_URL={engine_ws_url}",
+                                "-e",
+                                f"COWORLD_PLAYER_ARTIFACT_UPLOAD_URL={artifact_upload_url}",
                                 *_image_command(player),
                             ],
                             stdout=player_log,

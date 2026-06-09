@@ -26,6 +26,10 @@ contains:
 - `replay` — game-written replay artifact (exact bytes written by the game container)
 - `logs/game.stdout.log`, `logs/game.stderr.log` — game container stdout/stderr
 - `logs/policy_agent_{slot}.log` — combined stdout+stderr for each player container
+- `policy_artifact_{slot}.zip` — optional artifact each player uploads (max 200 MB). The runner mounts the
+  workspace into each player container and sets `COWORLD_PLAYER_ARTIFACT_UPLOAD_URL` to a `file://` URL pointing here,
+  so the player writes straight to the workspace. Absent if the player uploads nothing. See
+  [artifacts/PLAYER_ARTIFACT.md](../docs/artifacts/PLAYER_ARTIFACT.md).
 
 The runner does not bundle these into a single archive — bundling is a consumption-time concern. For the canonical
 per-URI output contract used by the hosted runner, see [KUBERNETES_RUNNER_README.md](KUBERNETES_RUNNER_README.md#output-uris).

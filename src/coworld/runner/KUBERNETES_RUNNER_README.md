@@ -123,6 +123,10 @@ The coordinator creates one pod per player:
 - env: `players[].env`
 - resource requests: 250m CPU and 256Mi memory in hosted jobs
 - `COWORLD_PLAYER_WS_URL`: points at the parent game's Kubernetes Service.
+- `COWORLD_PLAYER_ARTIFACT_UPLOAD_URL` (optional): a presigned `PUT` URL the player may upload a single artifact `.zip`
+  (max 200 MB) to. The coordinator forwards each slot's URL from `PLAYER_ARTIFACT_UPLOAD_URLS` (see Outputs). The player
+  may upload at any time but must finish before the pod is torn down after the game ends. See
+  [player artifact](../docs/artifacts/PLAYER_ARTIFACT.md).
 
 The player query string includes only the generated slot token and slot index.
 
@@ -181,6 +185,7 @@ REPLAY_URI
 DEBUG_URI
 ERROR_INFO_URI
 POLICY_LOG_URLS
+PLAYER_ARTIFACT_UPLOAD_URLS
 ```
 
 Outputs:
@@ -196,6 +201,10 @@ Outputs:
 - `POLICY_LOG_URLS`: JSON object mapping each player slot to a destination URI. Each player log is uploaded from
   `policy_agent_{slot}.log` and contains that player container's combined stdout and stderr. Player logs are
   also included in `DEBUG_URI`'s zip; `POLICY_LOG_URLS` exposes them individually for per-player consumption.
+- `PLAYER_ARTIFACT_UPLOAD_URLS`: JSON object mapping each player slot to a presigned `PUT` URL. Unlike the other
+  outputs, the coordinator does **not** upload these itself — it forwards each slot's URL into the player pod as
+  `COWORLD_PLAYER_ARTIFACT_UPLOAD_URL`, and the player uploads its own single artifact `.zip` (max 200 MB) before its pod
+  is torn down. See [player artifact](../docs/artifacts/PLAYER_ARTIFACT.md).
 
 Per-player logs are diagnostic only. After the game has produced valid results, the coordinator reads the last 10,000
 combined stdout/stderr lines from player pods whose `player` container has started and skips pods whose container is

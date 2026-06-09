@@ -175,6 +175,8 @@ Hosted output artifacts are uploaded separately rather than as one bundle:
 - [`ERROR_INFO_URI`](artifacts/ERROR_INFO.md): runner failure JSON if the coordinator fails before the episode
   completes.
 - [`POLICY_LOG_URLS`](artifacts/PLAYER_LOGS.md): per-slot player log destinations.
+- [`PLAYER_ARTIFACT_UPLOAD_URLS`](artifacts/PLAYER_ARTIFACT.md): per-slot presigned `PUT` URLs the worker forwards into each
+  player pod. The player (not the worker) uploads its own single artifact `.zip` (max 200 MB) before its pod is torn down.
 
 Hosted tournament artifacts are access-controlled by the platform. CLI and API commands retrieve logs, results, stats,
 and replays from those stored episode records.

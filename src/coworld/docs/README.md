@@ -74,7 +74,8 @@ The short version:
 3. A runner starts one game container and one player container per slot for each episode.
 4. Players connect to the game's `/player` WebSocket and exchange game-defined observations and actions.
 5. The episode produces per-episode artifacts: [results](artifacts/RESULTS.md), [replay bytes](artifacts/REPLAY.md),
-   [logs](artifacts/GAME_LOGS.md), and [failure information](artifacts/ERROR_INFO.md) when applicable.
+   [logs](artifacts/GAME_LOGS.md), an optional per-player [artifact](artifacts/PLAYER_ARTIFACT.md), and
+   [failure information](artifacts/ERROR_INFO.md) when applicable.
 6. Supporting roles consume episode artifacts through an episode bundle and produce [reports](artifacts/REPORT.md),
    [grades](artifacts/GRADE.md), [diagnoses](artifacts/DIAGNOSIS.md), or
    [optimizer outputs](artifacts/OPTIMIZER_OUTPUTS.md).
@@ -132,9 +133,10 @@ For each scheduled episode, the runner starts:
 
 Players connect to the game's `/player` WebSocket and speak the game-defined player protocol. Observations flow from the
 game, actions flow from the player, and the exchange continues until the episode ends. The game writes results and replay
-artifacts to the URIs provided by the runner; the runner captures logs and hosted failure information. Each completed
-episode's `scores` are routed back to the commissioner as an `episode_result` message; the commissioner can schedule
-more episodes or emit `round_complete` with per-division rankings and graduation changes.
+artifacts to the URIs provided by the runner; the runner captures logs and hosted failure information. A player may also
+upload an optional [artifact](artifacts/PLAYER_ARTIFACT.md) to `COWORLD_PLAYER_ARTIFACT_UPLOAD_URL` before its container
+is torn down. Each completed episode's `scores` are routed back to the commissioner as an `episode_result` message; the
+commissioner can schedule more episodes or emit `round_complete` with per-division rankings and graduation changes.
 
 For the in-flight contracts, see the [game role](roles/GAME.md), the [player role](roles/PLAYER.md), and the
 [commissioner role](roles/COMMISSIONER.md). For artifact contracts, see the
@@ -174,7 +176,8 @@ These boundaries are useful when deciding where a new feature, artifact, or debu
 - **The game owns episode truth.** The game exposes the per-episode WebSocket server, receives player actions, advances
   state, and writes the raw episode artifacts.
 - **Players are clients, not episode orchestrators.** A player connects to the game's `/player` WebSocket for one slot
-  and does not directly modify episode artifacts.
+  and does not modify the game-owned episode artifacts. It may upload its own optional
+  [artifact](artifacts/PLAYER_ARTIFACT.md), but it does not own episode truth.
 - **The bundling layer is the handoff to analysis.** Everything before bundling is game and runner output; everything
   after bundling is consumer input.
 - **Supporting runnables share one input shape.** `COGAME_EPISODE_BUNDLE_URI` is the canonical input env var for

@@ -291,6 +291,12 @@ def _create_player_pod(
         bedrock_region = os.environ["COWORLD_BEDROCK_REGION"]
         player_env = {"AWS_REGION": bedrock_region, "AWS_DEFAULT_REGION": bedrock_region} | player_env
     player_ws_url = _player_service_ws_url(service_name, slot, token)
+    player_artifact_upload_url = _player_artifact_upload_url(slot)
+    artifact_env_vars = (
+        [client.V1EnvVar(name="COWORLD_PLAYER_ARTIFACT_UPLOAD_URL", value=player_artifact_upload_url)]
+        if player_artifact_upload_url is not None
+        else []
+    )
     pod = client.V1Pod(
         metadata=client.V1ObjectMeta(
             name=name,
@@ -319,6 +325,7 @@ def _create_player_pod(
                         *_env_vars(player_env),
                         client.V1EnvVar(name="COWORLD_PLAYER_WS_URL", value=player_ws_url),
                         client.V1EnvVar(name="COGAMES_ENGINE_WS_URL", value=player_ws_url),
+                        *artifact_env_vars,
                     ],
                     resources=client.V1ResourceRequirements(
                         requests={"cpu": player_cpu_request, "memory": player_memory_request}
@@ -328,6 +335,19 @@ def _create_player_pod(
         ),
     )
     core_v1.create_namespaced_pod(namespace=namespace, body=pod)
+
+
+def _player_artifact_upload_url(slot: int) -> str | None:
+    """The presigned PUT URL this player slot may upload a single artifact .zip to.
+
+    The dispatcher passes PLAYER_ARTIFACT_UPLOAD_URLS to the worker as a JSON map slot -> url; the
+    worker forwards the matching slot's URL into the player pod. The player may upload at any time
+    but must finish before the pod is torn down after the game ends.
+    """
+    raw = os.environ.get("PLAYER_ARTIFACT_UPLOAD_URLS")
+    if raw is None:
+        return None
+    return json.loads(raw).get(str(slot))
 
 
 def _player_service_account_name(policy_secret_env: Mapping[str, str]) -> str | None:

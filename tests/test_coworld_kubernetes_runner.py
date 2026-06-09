@@ -12,6 +12,7 @@ import pytest
 from kubernetes import client
 from kubernetes.client.rest import ApiException
 
+from coworld.runner import io as runner_io
 from coworld.runner import kubernetes_runner
 from coworld.runner import runner as runner_module
 from coworld.runner.kubernetes_runner import _collect_logs, _upload_outputs, _wait_for_episode_artifacts
@@ -220,6 +221,70 @@ def test_run_episode_containers_uses_docker_dns_and_omits_policy_names_env(tmp_p
     assert "--add-host" not in player_command
     assert "host.docker.internal:host-gateway" not in player_command
     assert "COWORLD_PLAYER_WS_URL=ws://coworld-game-session-1:8080/player?slot=0&token=token-0" in player_command
+    # The player container is given a workspace mount and a file:// artifact upload URL for local parity.
+    workspace = str(EpisodeArtifacts.create(tmp_path).workspace)
+    assert f"{workspace}:/coworld-artifact:rw" in player_command
+    assert "COWORLD_PLAYER_ARTIFACT_UPLOAD_URL=file:///coworld-artifact/policy_artifact_0.zip" in player_command
+
+
+def test_run_episode_containers_player_artifact_round_trips_to_workspace(tmp_path, monkeypatch):
+    """A player that uploads to COWORLD_PLAYER_ARTIFACT_UPLOAD_URL lands a file the runner can find.
+
+    Simulates the player by having the fake player process write to the file:// URL the runner
+    injected (the local mount maps /coworld-artifact -> workspace), then asserts the bytes appear
+    at the runner's policy_artifact_path(slot). This exercises the real io.write_data file:// path
+    and confirms the runner and player agree on the artifact location.
+    """
+    artifacts = EpisodeArtifacts.create(tmp_path)
+
+    class FakeProcess:
+        def poll(self):
+            return None
+
+    async def noop_async(*_args, **_kwargs):
+        return None
+
+    monkeypatch.setattr(runner_module, "_free_local_port", lambda: 12345)
+    monkeypatch.setattr(runner_module.secrets, "token_hex", lambda _bytes: "session-1")
+    monkeypatch.setattr(runner_module, "_wait_for_health", lambda *_args, **_kwargs: None)
+    monkeypatch.setattr(runner_module, "_require_http_ok", lambda *_args, **_kwargs: None)
+    monkeypatch.setattr(runner_module, "_require_bad_player_rejected", noop_async)
+    monkeypatch.setattr(runner_module, "_require_global_message", noop_async)
+    monkeypatch.setattr(runner_module, "_wait_for_game_exit", lambda *_args, **_kwargs: None)
+    monkeypatch.setattr(runner_module, "_wait_for_player_exit", lambda *_args, **_kwargs: None)
+
+    def fake_popen(command, **_kwargs):
+        # Act as the player: write to the artifact URL the runner injected. The local mount maps
+        # /coworld-artifact onto the workspace, so rewrite that container path to the host workspace.
+        for index, token in enumerate(command):
+            if token == "-e" and command[index + 1].startswith("COWORLD_PLAYER_ARTIFACT_UPLOAD_URL="):
+                url = command[index + 1].split("=", 1)[1]
+                host_url = url.replace("file:///coworld-artifact/", f"file://{artifacts.workspace}/")
+                runner_io.write_data(host_url, b"player-artifact-zip-bytes", content_type="application/zip")
+        return FakeProcess()
+
+    monkeypatch.setattr(runner_module.subprocess, "Popen", fake_popen)
+    monkeypatch.setattr(
+        runner_module.subprocess,
+        "run",
+        lambda command, **_kwargs: subprocess.CompletedProcess(command, 0),
+    )
+
+    runner_module.run_episode_containers(
+        EpisodeRunSpec(
+            game=RunnableLaunchSpec(image="game:latest"),
+            players=[PlayerLaunchSpec(image="player:latest")],
+            tokens=["token-0"],
+            artifacts=artifacts,
+            timeout_seconds=1,
+            container_prefix="coworld-run",
+        ),
+        verify_replay=False,
+    )
+
+    artifact_path = artifacts.policy_artifact_path(0)
+    assert artifact_path.exists()
+    assert artifact_path.read_bytes() == b"player-artifact-zip-bytes"
 
 
 def test_run_episode_containers_verifies_hosted_zlib_replay_uri(tmp_path, monkeypatch):
@@ -717,10 +782,40 @@ def test_create_player_pod_injects_policy_secret_env(monkeypatch):
     assert env["AWS_DEFAULT_REGION"] == "us-east-1"
     assert env["COWORLD_PLAYER_WS_URL"] == "ws://game-service:8080/player?slot=0&token=slot-token"
     assert env["COGAMES_ENGINE_WS_URL"] == "ws://game-service:8080/player?slot=0&token=slot-token"
+    # No PLAYER_ARTIFACT_UPLOAD_URLS set, so the player gets no artifact upload URL.
+    assert "COWORLD_PLAYER_ARTIFACT_UPLOAD_URL" not in env
     assert container.resources.requests == {"cpu": "2", "memory": "2Gi"}
     assert pod.metadata.annotations == {"karpenter.sh/do-not-disrupt": "true"}
     assert pod.spec.node_selector == {"workload-type": "jobs", "karpenter.sh/capacity-type": "on-demand"}
     assert pod.spec.service_account_name == "episode-runner"
+
+
+def test_create_player_pod_forwards_artifact_upload_url_for_its_slot(monkeypatch):
+    created: dict[str, object] = {}
+    core_v1 = SimpleNamespace(create_namespaced_pod=lambda *, namespace, body: created.update({"body": body}))
+    monkeypatch.setenv(
+        "PLAYER_ARTIFACT_UPLOAD_URLS",
+        '{"0": "https://s3.example/put/policy_artifact_0.zip", "1": "https://s3.example/put/policy_artifact_1.zip"}',
+    )
+    player = PlayerLaunchSpec(image="paintbot:latest", run=(), env={})
+
+    kubernetes_runner._create_player_pod(
+        core_v1,
+        "jobs",
+        "job-player-1",
+        1,
+        "slot-token",
+        player,
+        {},
+        "job-id",
+        "game-service",
+        "2",
+        "2Gi",
+        [],
+    )
+
+    env = {env_var.name: env_var.value for env_var in created["body"].spec.containers[0].env}
+    assert env["COWORLD_PLAYER_ARTIFACT_UPLOAD_URL"] == "https://s3.example/put/policy_artifact_1.zip"
 
 
 def test_kubernetes_runner_uses_direct_player_urls_without_address():
