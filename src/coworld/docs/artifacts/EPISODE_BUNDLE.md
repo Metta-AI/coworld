@@ -21,6 +21,7 @@ A bundle is a zip containing some subset of the following entries plus a `manife
 | `error_info`  | `error_info.json` (only present if the episode failed)                 | [Error info](ERROR_INFO.md) from `ERROR_INFO_URI`     |
 | `game_logs`   | `logs/game.stdout.log`, `logs/game.stderr.log`                         | [Game logs](GAME_LOGS.md) from [debug archive](DEBUG_ARCHIVE.md) / local logs |
 | `player_logs` | `logs/policy_agent_{slot}.log` (subject to access control — see below) | [Player logs](PLAYER_LOGS.md) from `POLICY_LOG_URLS` / local logs |
+| `player_artifact` | `artifacts/policy_artifact_{slot}.zip` (subject to access control — see below) | [Player artifact](PLAYER_ARTIFACT.md) from `PLAYER_ARTIFACT_UPLOAD_URLS` / local workspace |
 
 The bundle stores `replay.json` uncompressed since the outer zip already compresses. The runner's local workspace
 contains a single `replay` file with the exact bytes the game container wrote; the hosted upload path zlib-compresses
@@ -101,6 +102,8 @@ additional rule for player logs:
 - **`results`, `replay`, `error_info`, `game_logs`**: anyone with episode access can include them.
 - **`player_logs`**: by default, the bundle includes only the logs for player slots controlled by policy versions
   the requester owns. Softmax-internal requesters may receive all player logs.
+- **`player_artifact`**: same policy-scoped rule as `player_logs` — by default only the artifacts for player slots
+  the requester owns, with Softmax-internal requesters receiving all.
 
 > **Game authors:** game container stdout and stderr are surfaced to *anyone* with episode access via the
 > `game_logs` token. Do not write secrets, private credentials, or other confidential information to those streams.
