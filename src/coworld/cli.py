@@ -72,7 +72,7 @@ def league_create(
     coworld_name: Annotated[str, typer.Argument(help="Canonical coworld name to promote into a league.")],
     template: Annotated[
         str,
-        typer.Option("--template", "-t", help="Template: default | social_deduction | cogs_vs_clips."),
+        typer.Option("--template", "-t", help="Template: default | social_deduction | cogs_vs_clips | four_score."),
     ] = "default",
     overrides: Annotated[
         list[str] | None,

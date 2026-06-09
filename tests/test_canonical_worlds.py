@@ -146,6 +146,30 @@ def test_canonical_cogs_vs_clips_build_declares_role_contexts() -> None:
     assert "games/games/cogsguard" not in compose_text
 
 
+def test_canonical_four_score_build_declares_role_contexts() -> None:
+    compose_text = (WORLDS / "four_score" / "compose.yaml").read_text(encoding="utf-8")
+
+    assert "GAME_CONTEXT" in compose_text
+    assert "PLAYER_CONTEXT" in compose_text
+    assert "REPORTER_CONTEXT" in compose_text
+    assert "METTASCOPE_CONTEXT" in compose_text
+    assert "COMMISSIONER_CONTEXT" in compose_text
+    assert "coworld-four-score" in compose_text
+    assert "reporters/reporters" in compose_text
+    assert "commissioners/Dockerfile" in compose_text
+    assert "RULESET_STRATEGY_CONFIG_NAME" in compose_text
+    assert "four_score" in compose_text
+    assert "Dockerfile.game" in compose_text
+    assert "Dockerfile.player" in compose_text
+    assert "cogs_vs_clips/cogs_vs_clips_summarizer/Dockerfile" in compose_text
+    assert "cogs_src:" in compose_text
+    assert "mettascope_src:" in compose_text
+    assert "../../packages/mettagrid/nim/mettascope" in compose_text
+    assert "coworld-cogs-vs-clips-summarizer:latest" in compose_text
+    assert "coworld-four-score-commissioner:latest" in compose_text
+    assert "games/games/cogsguard" not in compose_text
+
+
 def test_canonical_crewrift_build_declares_game_context() -> None:
     compose_text = (WORLDS / "crewrift" / "compose.yaml").read_text(encoding="utf-8")
     upload_text = (WORLDS / "upload.sh").read_text(encoding="utf-8")
@@ -364,6 +388,44 @@ def test_canonical_cogs_vs_clips_template_points_to_source_repo(tmp_path: Path) 
     )
 
 
+def test_canonical_four_score_template_points_to_source_repo(tmp_path: Path) -> None:
+    package = load_coworld_package(
+        _materialized_template(tmp_path, WORLDS / "four_score" / "coworld_manifest_template.json")
+    )
+    pages = {page.id: page.content.value for page in package.manifest.game.docs.pages}
+
+    assert package.manifest.game.name == "four_score"
+    assert package.manifest.game.runnable.source_url == "https://github.com/Metta-AI/coworld-cogs-vs-clips/tree/main"
+    assert package.manifest.game.docs.readme is not None
+    assert (
+        package.manifest.game.docs.readme.value
+        == "https://github.com/Metta-AI/coworld-cogs-vs-clips/blob/main/README.md"
+    )
+    assert package.manifest.game.protocols.player.value == (
+        "https://github.com/Metta-AI/coworld-cogs-vs-clips/blob/main/coworld/game/docs/player_protocol_spec.md"
+    )
+    assert package.manifest.game.protocols.global_.value == (
+        "https://github.com/Metta-AI/coworld-cogs-vs-clips/blob/main/coworld/game/docs/global_protocol_spec.md"
+    )
+    assert pages["play_cogsvsclips.md"] == "https://softmax.com/play_cogsvsclips.md"
+    assert pages["game-source"] == "https://github.com/Metta-AI/coworld-cogs-vs-clips/tree/main"
+    assert pages["player"] == "https://github.com/Metta-AI/coworld-cogs-vs-clips/tree/main/coworld/player"
+    assert package.manifest.variants[0].id == "four-score-daily"
+    assert package.manifest.variants[0].game_config["mission"] == "four_score"
+    assert len(package.manifest.variants[0].game_config["players"]) == 32
+    assert [role.id for role in package.manifest.commissioner] == ["four-score-commissioner"]
+    assert package.manifest.commissioner[0].source_url == (
+        "https://github.com/Metta-AI/commissioners/tree/main/commissioners/ruleset_strategy_commissioner"
+    )
+    assert package.manifest.player[0].source_url == (
+        "https://github.com/Metta-AI/coworld-cogs-vs-clips/tree/main/coworld/player"
+    )
+    assert [role.id for role in package.manifest.reporter] == [
+        "softmax-default-reporter",
+        "cogs-vs-clips-summarizer",
+    ]
+
+
 def test_canonical_crewrift_manifest_lives_with_source_repo() -> None:
     upload_text = (WORLDS / "upload.sh").read_text(encoding="utf-8")
     readme_text = (WORLDS / "crewrift" / "README.md").read_text(encoding="utf-8")
@@ -412,8 +474,8 @@ def test_canonical_among_them_template_declares_all_viability_role_sections() ->
     assert [role["type"] for role in template["optimizer"]] == ["optimizer"]
 
 
-def test_cogs_vs_clips_and_paintarena_templates_declare_all_viability_role_sections() -> None:
-    for world_name in ("cogs_vs_clips", "paintarena"):
+def test_cogs_vs_clips_four_score_and_paintarena_templates_declare_all_viability_role_sections() -> None:
+    for world_name in ("cogs_vs_clips", "four_score", "paintarena"):
         template = json.loads((WORLDS / world_name / "coworld_manifest_template.json").read_text(encoding="utf-8"))
 
         assert set(VIABILITY_ROLE_SECTIONS).issubset(template)
@@ -468,6 +530,7 @@ def _world_compose_files() -> tuple[Path, ...]:
     return (
         WORLDS / "among_them" / "compose.yaml",
         WORLDS / "cogs_vs_clips" / "compose.yaml",
+        WORLDS / "four_score" / "compose.yaml",
         WORLDS / "crewrift" / "compose.yaml",
         WORLDS / "paintarena" / "compose.yaml",
         WORLDS / "tribal_village" / "compose.yaml",
@@ -478,6 +541,7 @@ def _world_templates() -> tuple[Path, ...]:
     return (
         WORLDS / "among_them" / "coworld_manifest_template.json",
         WORLDS / "cogs_vs_clips" / "coworld_manifest_template.json",
+        WORLDS / "four_score" / "coworld_manifest_template.json",
         WORLDS / "paintarena" / "coworld_manifest_template.json",
         WORLDS / "tribal_village" / "coworld_manifest_template.json",
     )
@@ -505,6 +569,13 @@ def _materialized_template(base_dir: Path, template_path: Path) -> Path:
             "{{REPORTER_IMAGE}}": "coworld-default-reporter:latest",
             "{{COGS_VS_CLIPS_REPORTER_IMAGE}}": "coworld-cogs-vs-clips-summarizer:latest",
             "{{COGS_VS_CLIPS_COMMISSIONER_IMAGE}}": "coworld-cogs-vs-clips-commissioner:latest",
+        },
+        "four_score": {
+            "{{GAME_IMAGE}}": "coworld-four-score-game:latest",
+            "{{PLAYER_IMAGE}}": "coworld-four-score-reference-player:latest",
+            "{{REPORTER_IMAGE}}": "coworld-default-reporter:latest",
+            "{{COGS_VS_CLIPS_REPORTER_IMAGE}}": "coworld-cogs-vs-clips-summarizer:latest",
+            "{{FOUR_SCORE_COMMISSIONER_IMAGE}}": "coworld-four-score-commissioner:latest",
         },
         "paintarena": {
             "{{PAINTARENA_IMAGE}}": "coworld-paintarena:latest",
