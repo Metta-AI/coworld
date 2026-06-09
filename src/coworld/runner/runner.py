@@ -512,7 +512,7 @@ def _wait_for_game_exit(
 
 def _wait_for_player_exit(player_process: subprocess.Popen[str], stderr_path: Path) -> None:
     try:
-        return_code = player_process.wait(timeout=10)
+        return_code = player_process.wait(timeout=30)
     except subprocess.TimeoutExpired as exc:
         raise TimeoutError(f"Timed out waiting for player container to exit.\n{_tail(stderr_path)}") from exc
     if return_code != 0:
