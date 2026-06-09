@@ -1,5 +1,15 @@
 load("//bazel:pyproject.bzl", "pyproject_test")
 
+# Bare-source filegroup consumed by //:import_linter_test so grimp can
+# walk `packages.coworld.tests` (declared as a root_package in
+# .importlinter for the coworld-independence contract). Test deps live
+# in `:_tests_lib`; this only ships the .py files for parsing.
+filegroup(
+    name = "import_linter_srcs",
+    srcs = glob(["**/*.py"], exclude = ["**/fixtures/**"]),
+    visibility = ["//visibility:public"],
+)
+
 # test_types diffs the checked-in generated schema JSONs (kept in
 # `:generated_schema_files`) against coworld.types' dynamic Pydantic
 # schema output.
