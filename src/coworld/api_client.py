@@ -87,7 +87,9 @@ class LeaguePolicyMembershipPublic(CoworldAPIModel):
     status: str
     substatus: str | None = None
     is_champion: bool = False
-    start_time: datetime
+    # OpenAPI marks start_time optional (the SQLModel base sets default_factory),
+    # so mirror that here. The DB column is non-null, so reads always carry a value.
+    start_time: datetime | None = None
     end_time: datetime | None = None
     league: LeaguePublic
     division: DivisionPublic
