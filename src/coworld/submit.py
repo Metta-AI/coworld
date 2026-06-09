@@ -40,7 +40,7 @@ def submit_policy_to_league_cmd(
     server: str = DEFAULT_SUBMIT_SERVER,
     open_browser: bool = True,
 ) -> None:
-    with CoworldUploadClient.from_login(server_url=server) as client:
+    with CoworldUploadClient.from_user_login(server_url=server) as client:
         policy_version = _resolve_policy_version(client, policy_identifier)
 
         version_label = f":v{policy_version.version}"

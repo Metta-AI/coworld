@@ -42,6 +42,8 @@ app = typer.Typer(no_args_is_help=True, pretty_exceptions_enable=False)
 register_tournament_commands(app)
 hosted_game_app = typer.Typer(no_args_is_help=True, help="Create and join hosted Coworld games.")
 app.add_typer(hosted_game_app, name="hosted-game")
+player_app = typer.Typer(no_args_is_help=True, help="Choose which Coworld player your uploads use.")
+app.add_typer(player_app, name="player")
 
 
 def _parse_secret_env(value: str) -> tuple[str, str]:
@@ -346,6 +348,39 @@ def images(
         emit_json(image.model_dump(mode="json"))
         return
     _print_image_detail(image)
+
+
+@app.command("players")
+def players(
+    server: Annotated[str, typer.Option("--server", help="Observatory API server URL.")] = DEFAULT_SUBMIT_SERVER,
+    json_output: Annotated[bool, typer.Option("--json", help="Print raw JSON.")] = False,
+) -> None:
+    with CoworldUploadClient.from_user_login(server_url=server) as client:
+        rows = client.list_players()
+    if json_output:
+        emit_json([player.model_dump(mode="json") for player in rows])
+        return
+    table = Table(box=box.SIMPLE)
+    table.add_column("Default")
+    table.add_column("Name")
+    table.add_column("Player")
+    for row in rows:
+        table.add_row("yes" if row.is_default else "", row.name, row.id)
+    console.print(table)
+
+
+@player_app.command("set")
+def player_set(
+    player_id: Annotated[str, typer.Argument(help="Owned player ID to use for future uploads.")],
+    server: Annotated[str, typer.Option("--server", help="Observatory API server URL.")] = DEFAULT_SUBMIT_SERVER,
+    json_output: Annotated[bool, typer.Option("--json", help="Print raw JSON.")] = False,
+) -> None:
+    with CoworldUploadClient.from_user_login(server_url=server) as client:
+        player = client.set_default_player(player_id)
+    if json_output:
+        emit_json(player.model_dump(mode="json"))
+        return
+    typer.echo(f"Selected player: {player.name} ({player.id})")
 
 
 @app.command("upload-coworld")

@@ -147,6 +147,12 @@ class PolicyVersionRow(BaseModel):
     version: int
 
 
+class PlayerResponse(BaseModel):
+    id: str
+    name: str
+    is_default: bool
+
+
 class PolicyVersionsResponse(BaseModel):
     entries: list[PolicyVersionRow]
     total_count: int
@@ -177,6 +183,15 @@ class CoworldUploadClient:
         token = _load_current_cogames_token(server_url=server_url)
         if token is None:
             raise RuntimeError(f"Not authenticated. Run: uv run softmax login --server {server_url}")
+        return cls(server_url=server_url, token=token)
+
+    @classmethod
+    def from_user_login(cls, *, server_url: str) -> Self:
+        from softmax.auth import load_user_token  # noqa: PLC0415
+
+        token = load_user_token(server=server_url)
+        if token is None:
+            raise RuntimeError(f"Not authenticated as a user. Run: uv run softmax login --server {server_url}")
         return cls(server_url=server_url, token=token)
 
     def close(self) -> None:
@@ -339,6 +354,16 @@ class CoworldUploadClient:
         _raise_for_status(response)
         return ContainerImageResponse.model_validate(response.json())
 
+    def list_players(self) -> list[PlayerResponse]:
+        response = self._http_client.get("/players", headers=self._headers(), timeout=60.0)
+        _raise_for_status(response)
+        return [PlayerResponse.model_validate(item) for item in response.json()]
+
+    def set_default_player(self, player_id: str) -> PlayerResponse:
+        response = self._http_client.post(f"/players/{player_id}/default", headers=self._headers(), timeout=60.0)
+        _raise_for_status(response)
+        return PlayerResponse.model_validate(response.json())
+
     def request_image_upload(self, *, name: str, client_hash: str) -> ImageUploadResponse:
         response = self._http_client.post(
             "/v2/container_images/upload",
@@ -476,7 +501,7 @@ def upload_policy_cmd(
     secret_env: dict[str, str] | None = None,
     server: str = DEFAULT_SUBMIT_SERVER,
 ) -> None:
-    with CoworldUploadClient.from_login(server_url=server) as client:
+    with CoworldUploadClient.from_user_login(server_url=server) as client:
         uploaded_image = _upload_container_image(client, image)
         result = client.complete_docker_image_policy(
             name=name,

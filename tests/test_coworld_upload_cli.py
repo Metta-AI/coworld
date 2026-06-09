@@ -29,6 +29,7 @@ from coworld.upload import (
 @pytest.fixture(autouse=True)
 def _fake_softmax_token(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr("softmax.auth.load_current_token", lambda *, server: "token")
+    monkeypatch.setattr("softmax.auth.load_user_token", lambda *, server: "token")
 
 
 def test_upload_client_token_lookup_uses_server_url(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -336,12 +337,14 @@ def test_upload_policy_command_creates_docker_image_policy(
 ) -> None:
     softmax_image_uri = "123456789012.dkr.ecr.us-east-1.amazonaws.com/coworld/user/unit-test-policy@sha256:digest"
 
+    monkeypatch.setattr("softmax.auth.load_current_token", lambda *, server: "player-token")
+    monkeypatch.setattr("softmax.auth.load_user_token", lambda *, server: "user-token")
     monkeypatch.setattr("coworld.upload._local_image_client_hash", lambda image: "sha256:client-hash")
     monkeypatch.setattr("coworld.upload._push_container_image", lambda source_image, push_info: None)
     httpserver.expect_request(
         "/observatory/v2/container_images/upload",
         method="POST",
-        headers={"Authorization": "Bearer token"},
+        headers={"Authorization": "Bearer user-token"},
         json={"name": "unit-test-policy", "client_hash": "sha256:client-hash"},
     ).respond_with_json(
         {
@@ -360,7 +363,7 @@ def test_upload_policy_command_creates_docker_image_policy(
     httpserver.expect_request(
         "/observatory/stats/policies/docker-img/complete",
         method="POST",
-        headers={"Authorization": "Bearer token"},
+        headers={"Authorization": "Bearer user-token"},
         json={
             "name": "paintbot",
             "container_image_id": "img_00000000-0000-0000-0000-000000000030",
@@ -456,6 +459,54 @@ def test_upload_policy_command_sends_policy_secrets(
 
     assert result.exit_code == 0, result.output
     assert "Upload complete: paintbot:v1" in result.output
+
+
+def test_players_command_lists_owned_players(httpserver: HTTPServer) -> None:
+    httpserver.expect_request(
+        "/observatory/players",
+        method="GET",
+        headers={"Authorization": "Bearer token"},
+    ).respond_with_json(
+        [
+            {
+                "id": "ply_alpha",
+                "name": "alpha",
+                "is_default": False,
+            },
+            {
+                "id": "ply_beta",
+                "name": "beta",
+                "is_default": True,
+            },
+        ]
+    )
+
+    result = CliRunner().invoke(app, ["players", "--server", httpserver.url_for("")])
+
+    assert result.exit_code == 0, result.output
+    assert "alpha" in result.output
+    assert "beta" in result.output
+    assert "ply_beta" in result.output
+
+
+def test_player_set_command_updates_default_player(httpserver: HTTPServer) -> None:
+    player_id = "ply_beta"
+    httpserver.expect_request(
+        f"/observatory/players/{player_id}/default",
+        method="POST",
+        headers={"Authorization": "Bearer token"},
+    ).respond_with_json(
+        {
+            "id": player_id,
+            "name": "beta",
+            "is_default": True,
+        }
+    )
+
+    result = CliRunner().invoke(app, ["player", "set", player_id, "--server", httpserver.url_for("")])
+
+    assert result.exit_code == 0, result.output
+    assert f"Selected player: beta ({player_id})" in result.output
 
 
 def test_upload_policy_command_requires_bedrock_for_bedrock_model() -> None:

@@ -12,6 +12,7 @@ LEAGUE_ID = "league_00000000-0000-0000-0000-000000000041"
 @pytest.fixture(autouse=True)
 def _fake_softmax_token(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr("softmax.auth.load_current_token", lambda *, server: "token")
+    monkeypatch.setattr("softmax.auth.load_user_token", lambda *, server: "token")
 
 
 def test_submit_policy_to_league_posts_v2_submission(
@@ -19,12 +20,14 @@ def test_submit_policy_to_league_posts_v2_submission(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     opened: list[str] = []
+    monkeypatch.setattr("softmax.auth.load_current_token", lambda *, server: "player-token")
+    monkeypatch.setattr("softmax.auth.load_user_token", lambda *, server: "user-token")
     monkeypatch.setattr("coworld.submit.webbrowser.open", lambda url: opened.append(url) or True)
-    _expect_policy_versions(httpserver, [_policy_version(version=3)])
+    _expect_policy_versions(httpserver, [_policy_version(version=3)], token="user-token")
     httpserver.expect_request(
         "/observatory/v2/league-submissions",
         method="POST",
-        headers={"Authorization": "Bearer token"},
+        headers={"Authorization": "Bearer user-token"},
         json={"league_id": LEAGUE_ID, "policy_version_id": POLICY_VERSION_ID},
     ).respond_with_json(
         {
@@ -132,11 +135,16 @@ def test_submit_policy_reports_missing_policy_without_posting_submission(
     assert not any(request.path == "/observatory/v2/league-submissions" for request, _ in httpserver.log)
 
 
-def _expect_policy_versions(httpserver: HTTPServer, entries: list[dict[str, object]]) -> None:
+def _expect_policy_versions(
+    httpserver: HTTPServer,
+    entries: list[dict[str, object]],
+    *,
+    token: str = "token",
+) -> None:
     httpserver.expect_request(
         "/observatory/stats/policy-versions",
         method="GET",
-        headers={"Authorization": "Bearer token"},
+        headers={"Authorization": f"Bearer {token}"},
     ).respond_with_json({"entries": entries, "total_count": len(entries)})
 
 
