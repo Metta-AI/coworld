@@ -147,6 +147,8 @@ def test_canonical_cogs_vs_clips_build_declares_role_contexts() -> None:
 
 
 def test_canonical_four_score_build_declares_role_contexts() -> None:
+    assert (WORLDS / "four_score" / "Dockerfile.game").is_file()
+    assert (WORLDS / "four_score" / "Dockerfile.player").is_file()
     compose_text = (WORLDS / "four_score" / "compose.yaml").read_text(encoding="utf-8")
 
     assert "GAME_CONTEXT" in compose_text
