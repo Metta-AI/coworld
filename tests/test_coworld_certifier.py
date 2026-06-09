@@ -1298,64 +1298,6 @@ def test_paintarena_disconnected_player_noops_after_timeout(tmp_path: Path, monk
     assert json.loads(replay_path.read_text())["frames"][0]["started"] is True
 
 
-def test_cogs_vs_clips_coworld_manifest_validates(tmp_path: Path) -> None:
-    package = load_coworld_package(
-        _materialized_template(tmp_path, _world_root("cogs_vs_clips") / "coworld_manifest_template.json")
-    )
-    tokens = [f"token-{index}" for index in range(8)]
-    config = build_game_config(package, tokens)
-
-    assert package.manifest.game.name == "cogs_vs_clips"
-    assert package.game.image == "coworld-cogs-vs-clips-game:latest"
-    assert package.game.run == ("python", "/app/server.py")
-    assert package.manifest.game.runnable.source_url == "https://github.com/Metta-AI/coworld-cogs-vs-clips/tree/main"
-    assert package.manifest.game.protocols.player.value == (
-        "https://github.com/Metta-AI/coworld-cogs-vs-clips/blob/main/coworld/game/docs/player_protocol_spec.md"
-    )
-    assert package.manifest.game.protocols.global_.value == (
-        "https://github.com/Metta-AI/coworld-cogs-vs-clips/blob/main/coworld/game/docs/global_protocol_spec.md"
-    )
-    assert package.manifest.game.docs.readme is not None
-    assert (
-        package.manifest.game.docs.readme.value
-        == "https://github.com/Metta-AI/coworld-cogs-vs-clips/blob/main/README.md"
-    )
-    pages = {page.id: page.content.value for page in package.manifest.game.docs.pages}
-    assert "rules.md" not in pages
-    assert pages["play_cogsvsclips.md"] == "https://softmax.com/play_cogsvsclips.md"
-    assert package.manifest.player[0].id == "reference-player"
-    assert package.manifest.player[0].image == "coworld-cogs-vs-clips-reference-player:latest"
-    assert package.manifest.player[0].run == ["python", "/app/coworld_reference_player.py"]
-    assert package.manifest.player[0].source_url == (
-        "https://github.com/Metta-AI/coworld-cogs-vs-clips/tree/main/coworld/player"
-    )
-    assert package.manifest.player[0].env == {}
-    assert package.manifest.commissioner[0].id == "cogs-vs-clips-commissioner"
-    assert package.manifest.commissioner[0].image == "coworld-cogs-vs-clips-commissioner:latest"
-    assert package.manifest.commissioner[0].source_url == (
-        "https://github.com/Metta-AI/commissioners/tree/main/commissioners/cogs_vs_clips/cogs_vs_clips_commissioner"
-    )
-    daily_variant = next(variant for variant in package.manifest.variants if variant.id == "machina-1-daily")
-    assert daily_variant.game_config["max_steps"] == 10000
-    assert config == {
-        "players": [
-            {"name": "Player 1"},
-            {"name": "Player 2"},
-            {"name": "Player 3"},
-            {"name": "Player 4"},
-            {"name": "Player 5"},
-            {"name": "Player 6"},
-            {"name": "Player 7"},
-            {"name": "Player 8"},
-        ],
-        "mission": "cogsguard",
-        "max_steps": 3,
-        "seed": 0,
-        "step_seconds": 0.02,
-        "tokens": tokens,
-    }
-
-
 def _docker_available() -> bool:
     try:
         subprocess.run(["docker", "info"], capture_output=True, check=True, timeout=10)
@@ -1441,13 +1383,6 @@ def _materialized_template(tmp_path: Path, template_path: Path) -> Path:
     manifest = json.loads(template_path.read_text(encoding="utf-8"))
     manifest["game"]["version"] = "0.1.0"
     image_placeholders = {
-        "cogs_vs_clips": {
-            "{{GAME_IMAGE}}": "coworld-cogs-vs-clips-game:latest",
-            "{{PLAYER_IMAGE}}": "coworld-cogs-vs-clips-reference-player:latest",
-            "{{REPORTER_IMAGE}}": "coworld-default-reporter:latest",
-            "{{COGS_VS_CLIPS_REPORTER_IMAGE}}": "coworld-cogs-vs-clips-summarizer:latest",
-            "{{COGS_VS_CLIPS_COMMISSIONER_IMAGE}}": "coworld-cogs-vs-clips-commissioner:latest",
-        },
         "paintarena": {"{{PAINTARENA_IMAGE}}": "coworld-paintarena:latest"},
     }
     if template_path.parent.name in image_placeholders:
@@ -1581,10 +1516,6 @@ def _game_manifest(*, config_schema_required: list[str] | None = None) -> dict[s
 
 def _example_root() -> Path:
     return Path(__file__).resolve().parents[1] / "src" / "coworld" / "examples" / "paintarena"
-
-
-def _world_root(coworld_name: str) -> Path:
-    return Path(__file__).resolve().parents[3] / "worlds" / coworld_name
 
 
 def _reload_paintarena_server() -> Any:

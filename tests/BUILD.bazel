@@ -14,10 +14,8 @@ filegroup(
 # `:generated_schema_files`) against coworld.types' dynamic Pydantic
 # schema output.
 pyproject_test(
-    # //worlds:worlds_data ships the per-world manifest templates +
-    # compose/Dockerfile/README assets that several tests read off disk
-    # (test_canonical_worlds, test_coworld_certifier,
-    # test_coworld_cli_manifest_uri).  Locally these live under
+    # //worlds:worlds_data ships the per-world compose/Dockerfile/README
+    # assets that several tests read off disk. Locally these live under
     # <repo>/worlds/...; on RBE the runfiles tree only carries what bazel
     # declared, so the disk-walk in the tests would otherwise hit
     # FileNotFoundError.

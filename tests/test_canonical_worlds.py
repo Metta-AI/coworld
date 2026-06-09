@@ -7,13 +7,7 @@ import pytest
 from pydantic import ValidationError
 
 from coworld.certifier import load_coworld_package
-from coworld.manifest_validation import (
-    game_config_with_named_players,
-    game_config_with_tokens,
-    infer_fixed_token_count,
-)
-from coworld.schema_validation import validate_json_schema
-from coworld.types import CoworldEpisodeJobSpec, CoworldManifest
+from coworld.types import CoworldManifest
 
 # Deliberately no `.resolve()`: __file__ is the runfiles path, and
 # .resolve() would walk symlinks back into the source tree. That made
@@ -43,6 +37,24 @@ PLAY_GUIDE_URI_PREFIXES = (
     "https://github.com/Metta-AI/coworld/",
     "https://github.com/Metta-AI/coworld-tribal-village/blob/main/docs/play_tribal_village.md",
 )
+SOURCE_MANIFEST_REFERENCE_COUNTS = {
+    "${GAME_CONTEXT}/coworld_manifest.json": 2,
+    "${GAME_CONTEXT}/coworld_manifest_template.json": 2,
+    "${GAME_CONTEXT}/coworld_four_score_manifest_template.json": 1,
+    "${METTA_REPO}/packages/coworld/src/coworld/examples/paintarena/coworld_manifest_template.json": 1,
+}
+
+
+def test_worlds_directory_is_build_index_not_manifest_source() -> None:
+    assert sorted(WORLDS.glob("*/coworld_manifest*.json")) == []
+
+
+def test_world_upload_uses_canonical_source_manifests() -> None:
+    upload_text = (WORLDS / "upload.sh").read_text(encoding="utf-8")
+
+    for source_manifest, expected_count in SOURCE_MANIFEST_REFERENCE_COUNTS.items():
+        assert upload_text.count(f'template_file="{source_manifest}"') == expected_count
+    assert "${SCRIPT_DIR}/${WORLD}/coworld_manifest_template.json" not in upload_text
 
 
 def test_canonical_worlds_use_compose_builds() -> None:
@@ -67,7 +79,7 @@ def test_canonical_worlds_live_outside_coworld_package() -> None:
 
 
 def test_canonical_world_templates_do_not_publish_metta_repo_links() -> None:
-    for template_path in _world_templates():
+    for template_path in _repo_manifest_templates():
         template_text = template_path.read_text(encoding="utf-8")
         assert "github.com/Metta-AI/metta" not in template_text
         assert "raw.githubusercontent.com/Metta-AI/metta" not in template_text
@@ -77,7 +89,7 @@ def test_canonical_world_templates_do_not_publish_metta_repo_links() -> None:
 
 
 def test_canonical_play_pages_use_known_guidance_sources() -> None:
-    for template_path in _world_templates():
+    for template_path in _repo_manifest_templates():
         template = json.loads(template_path.read_text(encoding="utf-8"))
         play_pages = [page for page in template["game"]["docs"]["pages"] if page["id"].startswith("play_")]
         assert play_pages, template_path
@@ -189,9 +201,9 @@ def test_canonical_crewrift_build_declares_game_context() -> None:
 
 
 def test_canonical_world_compose_files_build_manifest_images() -> None:
-    for template_path in _world_templates():
+    for template_path in _repo_manifest_templates():
         template = json.loads(template_path.read_text(encoding="utf-8"))
-        compose_text = (template_path.parent / "compose.yaml").read_text(encoding="utf-8")
+        compose_text = (WORLDS / template_path.parent.name / "compose.yaml").read_text(encoding="utf-8")
         normalized_compose_text = compose_text.replace("-", "_")
 
         image_placeholders = [template["game"]["runnable"]["image"]]
@@ -210,7 +222,7 @@ def test_canonical_world_compose_files_build_manifest_images() -> None:
 
 
 def test_canonical_world_templates_expose_runnable_source_urls() -> None:
-    for template_path in (*_world_templates(), PAINTARENA_EXAMPLE / "coworld_manifest_template.json"):
+    for template_path in _repo_manifest_templates():
         template = json.loads(template_path.read_text(encoding="utf-8"))
         assert template["game"]["runnable"].get("source_url"), template_path
         for section in VIABILITY_ROLE_SECTIONS:
@@ -219,46 +231,12 @@ def test_canonical_world_templates_expose_runnable_source_urls() -> None:
 
 
 def test_canonical_world_templates_hydrate_to_valid_manifests(tmp_path: Path) -> None:
-    for template_path in (*_world_templates(), PAINTARENA_EXAMPLE / "coworld_manifest_template.json"):
+    for template_path in _repo_manifest_templates():
         load_coworld_package(_materialized_template(tmp_path, template_path))
 
 
-@pytest.mark.parametrize("world_name", ("among_them",))
-def test_bitworld_templates_keep_default_variants_open_roster(tmp_path: Path, world_name: str) -> None:
-    package = load_coworld_package(
-        _materialized_template(tmp_path, WORLDS / world_name / "coworld_manifest_template.json")
-    )
-    token_count = infer_fixed_token_count(package.manifest.game.config_schema)
-    player_names = [f"policy-{slot}:v{slot + 1}" for slot in range(token_count)]
-
-    game_config = game_config_with_named_players(
-        package.manifest.variants[0].game_config,
-        player_names,
-        package.manifest.game.config_schema,
-    )
-
-    assert "slots" not in game_config
-    assert [player["name"] for player in game_config["players"]] == player_names
-    slot_properties = package.manifest.game.config_schema["properties"]["slots"]["items"]["properties"]
-    assert "name" not in slot_properties
-    validate_json_schema(
-        game_config_with_tokens(game_config, [f"token-{slot}" for slot in range(token_count)]),
-        package.manifest.game.config_schema,
-    )
-    runner_spec = CoworldEpisodeJobSpec(
-        manifest=package.manifest,
-        game_config=game_config,
-        players=[package.manifest.player[0]] * token_count,
-    )
-    runner_payload = runner_spec.model_dump(mode="json", by_alias=True, exclude_none=True)
-
-    assert "policy_names" not in runner_payload
-    with pytest.raises(ValidationError, match="policy_names"):
-        CoworldEpisodeJobSpec.model_validate({**runner_payload, "policy_names": player_names})
-
-
 def test_canonical_world_templates_use_role_types_as_contracts() -> None:
-    for template_path in (*_world_templates(), PAINTARENA_EXAMPLE / "coworld_manifest_template.json"):
+    for template_path in _repo_manifest_templates():
         template = json.loads(template_path.read_text(encoding="utf-8"))
         assert "contracts" not in template
         assert "debugger" not in template
@@ -269,7 +247,7 @@ def test_canonical_world_templates_use_role_types_as_contracts() -> None:
 
 
 def test_canonical_world_supporting_roles_point_to_role_repos() -> None:
-    for template_path in _world_templates():
+    for template_path in _repo_manifest_templates():
         template = json.loads(template_path.read_text(encoding="utf-8"))
         for section, repo_url in SUPPORTING_ROLE_REPOS.items():
             for runnable in template[section]:
@@ -280,7 +258,7 @@ def test_canonical_world_supporting_roles_point_to_role_repos() -> None:
 
 
 def test_coworld_manifest_rejects_unknown_role_type(tmp_path: Path) -> None:
-    manifest_path = _materialized_template(tmp_path, WORLDS / "paintarena" / "coworld_manifest_template.json")
+    manifest_path = _materialized_template(tmp_path, PAINTARENA_EXAMPLE / "coworld_manifest_template.json")
     manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
     manifest["reporter"][0]["type"] = "archivist"
 
@@ -288,220 +266,43 @@ def test_coworld_manifest_rejects_unknown_role_type(tmp_path: Path) -> None:
         CoworldManifest.model_validate(manifest)
 
 
-def test_canonical_among_them_template_points_to_source_repos(tmp_path: Path) -> None:
-    package = load_coworld_package(
-        _materialized_template(tmp_path, WORLDS / "among_them" / "coworld_manifest_template.json")
-    )
-    pages = {page.id: page.content.value for page in package.manifest.game.docs.pages}
-    role_source_urls = {
-        "player": package.manifest.player[0].source_url,
-        "commissioner": package.manifest.commissioner[0].source_url,
-        "optimizer": package.manifest.optimizer[0].source_url,
-        "reporter": package.manifest.reporter[0].source_url,
-        "grader": package.manifest.grader[0].source_url,
-        "diagnoser": package.manifest.diagnoser[0].source_url,
-    }
-
-    assert [role.id for role in package.manifest.commissioner] == ["among-them-commissioner"]
-    assert [role.id for role in package.manifest.reporter] == ["among-them-summarizer"]
-    assert [role.id for role in package.manifest.grader] == ["among-them-grader"]
-    assert [role.id for role in package.manifest.diagnoser] == ["among-them-diagnoser"]
-    assert [role.id for role in package.manifest.optimizer] == ["coworld-optimizer"]
-    assert pages["rules.md"] == "https://github.com/Metta-AI/coworld-among-them/blob/master/docs/rules.md"
-    assert pages["play_amongthem.md"] == "https://softmax.com/play_amongthem.md"
-    assert pages["player"] == "https://github.com/Metta-AI/coworld-among-them/blob/master/players/how_to_make_a_bot.md"
-    assert pages["game-source"] == "https://github.com/Metta-AI/coworld-among-them/tree/master"
-    assert pages["submit"] == (
-        "https://github.com/Metta-AI/coworld-among-them/blob/master/players/how_to_submit_coworld_policy.md"
-    )
-    assert pages["optimizer"] == "https://github.com/Metta-AI/coworld-among-them/blob/master/players/SMART_BOT_GUIDE.md"
-    assert (
-        pages["optimizer-game-spec"]
-        == "https://github.com/Metta-AI/coworld-among-them/blob/master/coworld_manifest.json"
-    )
-    assert pages["optimizer-game-tutorial"] == "https://softmax.com/play_amongthem.md"
-    assert pages["optimizer-skills"] == (
-        "https://github.com/Metta-AI/coworld-among-them/blob/master/docs/supporting_roles.md#optimizer-inputs"
-    )
-    assert pages["optimizer-policy-registry"] == (
-        "https://github.com/Metta-AI/coworld-among-them/blob/master/docs/supporting_roles.md#optimizer-inputs"
-    )
-    assert "commissioner" not in pages
-    assert pages["reporter"] == (
-        "https://github.com/Metta-AI/coworld-among-them/blob/master/docs/supporting_roles.md#reporter"
-    )
-    assert (
-        pages["grader"] == "https://github.com/Metta-AI/coworld-among-them/blob/master/docs/supporting_roles.md#grader"
-    )
-    assert pages["diagnoser"] == (
-        "https://github.com/Metta-AI/coworld-among-them/blob/master/docs/supporting_roles.md#diagnoser"
-    )
-    assert role_source_urls == {
-        "player": "https://github.com/Metta-AI/coworld-among-them/tree/master/players/ivotewell",
-        "commissioner": (
-            "https://github.com/Metta-AI/commissioners/tree/main/commissioners/among_them/among_them_commissioner"
+def test_external_canonical_manifests_live_with_source_repos() -> None:
+    expected_readme_references = {
+        "among_them": (
+            "GAME_CONTEXT=/path/to/coworld-among-them",
+            "../coworld-among-them/coworld_manifest.json",
         ),
-        "optimizer": "https://github.com/Metta-AI/optimizers",
-        "reporter": "https://github.com/Metta-AI/reporters/tree/main/reporters/among_them/among_them_summarizer",
-        "grader": "https://github.com/Metta-AI/graders/tree/main/graders/among_them/among_them_grader",
-        "diagnoser": "https://github.com/Metta-AI/diagnosers/tree/main/diagnosers/among_them/among_them_diagnoser",
+        "cogs_vs_clips": (
+            "GAME_CONTEXT=/path/to/coworld-cogs-vs-clips",
+            "../coworld-cogs-vs-clips/coworld_manifest_template.json",
+        ),
+        "four_score": (
+            "GAME_CONTEXT=/path/to/coworld-cogs-vs-clips",
+            "../coworld-cogs-vs-clips/coworld_four_score_manifest_template.json",
+        ),
+        "crewrift": (
+            "GAME_CONTEXT=/path/to/coworld-crewrift",
+            "../coworld-crewrift/coworld_manifest.json",
+        ),
+        "tribal_village": (
+            "GAME_CONTEXT=/path/to/coworld-tribal-village",
+            "../coworld-tribal-village/coworld_manifest_template.json",
+        ),
     }
-    assert all("docs/bitworld/among-them" not in source for source in pages.values())
+
+    for world_name, readme_references in expected_readme_references.items():
+        readme_text = (WORLDS / world_name / "README.md").read_text(encoding="utf-8")
+        assert not (WORLDS / world_name / "coworld_manifest_template.json").exists()
+        for reference in readme_references:
+            assert reference in readme_text
 
 
-def test_canonical_cogs_vs_clips_template_points_to_source_repo(tmp_path: Path) -> None:
-    package = load_coworld_package(
-        _materialized_template(tmp_path, WORLDS / "cogs_vs_clips" / "coworld_manifest_template.json")
-    )
-    pages = {page.id: page.content.value for page in package.manifest.game.docs.pages}
+def test_paintarena_template_declares_all_viability_role_sections() -> None:
+    paintarena = json.loads((PAINTARENA_EXAMPLE / "coworld_manifest_template.json").read_text(encoding="utf-8"))
+    assert set(VIABILITY_ROLE_SECTIONS).issubset(paintarena)
+    for section in VIABILITY_ROLE_SECTIONS:
+        assert isinstance(paintarena[section], list)
 
-    assert package.manifest.game.runnable.source_url == "https://github.com/Metta-AI/coworld-cogs-vs-clips/tree/main"
-    assert package.manifest.game.docs.readme is not None
-    assert (
-        package.manifest.game.docs.readme.value
-        == "https://github.com/Metta-AI/coworld-cogs-vs-clips/blob/main/README.md"
-    )
-    assert package.manifest.game.protocols.player.value == (
-        "https://github.com/Metta-AI/coworld-cogs-vs-clips/blob/main/coworld/game/docs/player_protocol_spec.md"
-    )
-    assert package.manifest.game.protocols.global_.value == (
-        "https://github.com/Metta-AI/coworld-cogs-vs-clips/blob/main/coworld/game/docs/global_protocol_spec.md"
-    )
-    assert pages["play_cogsvsclips.md"] == "https://softmax.com/play_cogsvsclips.md"
-    assert pages["game-source"] == "https://github.com/Metta-AI/coworld-cogs-vs-clips/tree/main"
-    assert pages["player"] == "https://github.com/Metta-AI/coworld-cogs-vs-clips/tree/main/coworld/player"
-    assert "rules.md" not in pages
-    assert package.manifest.player[0].source_url == (
-        "https://github.com/Metta-AI/coworld-cogs-vs-clips/tree/main/coworld/player"
-    )
-    assert [role.id for role in package.manifest.commissioner] == ["cogs-vs-clips-commissioner"]
-    assert package.manifest.commissioner[0].source_url == (
-        "https://github.com/Metta-AI/commissioners/tree/main/commissioners/cogs_vs_clips/cogs_vs_clips_commissioner"
-    )
-    assert [role.id for role in package.manifest.reporter] == [
-        "softmax-default-reporter",
-        "cogs-vs-clips-summarizer",
-    ]
-    assert (
-        package.manifest.reporter[0].source_url == "https://github.com/Metta-AI/reporters/tree/main/reporters/default"
-    )
-    assert package.manifest.reporter[1].source_url == (
-        "https://github.com/Metta-AI/reporters/tree/main/reporters/cogs_vs_clips/cogs_vs_clips_summarizer"
-    )
-
-
-def test_canonical_four_score_template_points_to_source_repo(tmp_path: Path) -> None:
-    package = load_coworld_package(
-        _materialized_template(tmp_path, WORLDS / "four_score" / "coworld_manifest_template.json")
-    )
-    pages = {page.id: page.content.value for page in package.manifest.game.docs.pages}
-
-    assert package.manifest.game.name == "four_score"
-    assert package.manifest.game.runnable.source_url == "https://github.com/Metta-AI/coworld-cogs-vs-clips/tree/main"
-    assert package.manifest.game.docs.readme is not None
-    assert (
-        package.manifest.game.docs.readme.value
-        == "https://github.com/Metta-AI/coworld-cogs-vs-clips/blob/main/README.md"
-    )
-    assert package.manifest.game.protocols.player.value == (
-        "https://github.com/Metta-AI/coworld-cogs-vs-clips/blob/main/coworld/game/docs/player_protocol_spec.md"
-    )
-    assert package.manifest.game.protocols.global_.value == (
-        "https://github.com/Metta-AI/coworld-cogs-vs-clips/blob/main/coworld/game/docs/global_protocol_spec.md"
-    )
-    assert pages["play_cogsvsclips.md"] == "https://softmax.com/play_cogsvsclips.md"
-    assert pages["game-source"] == "https://github.com/Metta-AI/coworld-cogs-vs-clips/tree/main"
-    assert pages["player"] == "https://github.com/Metta-AI/coworld-cogs-vs-clips/tree/main/coworld/player"
-    assert package.manifest.variants[0].id == "four-score-daily"
-    assert package.manifest.variants[0].game_config["mission"] == "four_score"
-    assert len(package.manifest.variants[0].game_config["players"]) == 32
-    assert [role.id for role in package.manifest.commissioner] == ["four-score-commissioner"]
-    assert package.manifest.commissioner[0].source_url == (
-        "https://github.com/Metta-AI/commissioners/tree/main/commissioners/ruleset_strategy_commissioner"
-    )
-    assert package.manifest.player[0].source_url == (
-        "https://github.com/Metta-AI/coworld-cogs-vs-clips/tree/main/coworld/player"
-    )
-    assert [role.id for role in package.manifest.reporter] == [
-        "softmax-default-reporter",
-        "cogs-vs-clips-summarizer",
-    ]
-
-
-def test_canonical_crewrift_manifest_lives_with_source_repo() -> None:
-    upload_text = (WORLDS / "upload.sh").read_text(encoding="utf-8")
-    readme_text = (WORLDS / "crewrift" / "README.md").read_text(encoding="utf-8")
-
-    assert not (WORLDS / "crewrift" / "coworld_manifest_template.json").exists()
-    assert 'template_file="${GAME_CONTEXT}/coworld_manifest.json"' in upload_text
-    assert "GAME_CONTEXT=/path/to/coworld-crewrift" in readme_text
-    assert "../coworld-crewrift/coworld_manifest.json" in readme_text
-
-
-def test_canonical_tribal_village_template_points_to_source_repo(tmp_path: Path) -> None:
-    package = load_coworld_package(
-        _materialized_template(tmp_path, WORLDS / "tribal_village" / "coworld_manifest_template.json")
-    )
-    pages = {page.id: page.content for page in package.manifest.game.docs.pages}
-
-    assert package.manifest.game.runnable.source_url == "https://github.com/Metta-AI/coworld-tribal-village/tree/main"
-    assert package.manifest.game.docs.readme is not None
-    assert package.manifest.game.docs.readme.value == (
-        "https://github.com/Metta-AI/coworld-tribal-village/blob/main/README.md"
-    )
-    assert package.manifest.game.protocols.player.value == (
-        "https://github.com/Metta-AI/coworld-tribal-village/blob/main/tribal_village_env/coworld/docs/"
-        "player_protocol_spec.md"
-    )
-    assert package.manifest.game.protocols.global_.value == (
-        "https://github.com/Metta-AI/coworld-tribal-village/blob/main/tribal_village_env/coworld/docs/"
-        "global_protocol_spec.md"
-    )
-    assert pages["rules.md"].type == "uri"
-    assert pages["rules.md"].value == "https://github.com/Metta-AI/coworld-tribal-village/blob/main/docs/rules.md"
-    assert pages["play_tribal_village.md"].type == "uri"
-    assert pages["play_tribal_village.md"].value == (
-        "https://github.com/Metta-AI/coworld-tribal-village/blob/main/docs/play_tribal_village.md"
-    )
-
-
-def test_canonical_among_them_template_declares_all_viability_role_sections() -> None:
-    template = json.loads((WORLDS / "among_them" / "coworld_manifest_template.json").read_text(encoding="utf-8"))
-
-    assert set(VIABILITY_ROLE_SECTIONS).issubset(template)
-    assert [role["id"] for role in template["commissioner"]] == ["among-them-commissioner"]
-    assert [role["type"] for role in template["reporter"]] == ["reporter"]
-    assert [role["type"] for role in template["grader"]] == ["grader"]
-    assert [role["type"] for role in template["diagnoser"]] == ["diagnoser"]
-    assert [role["type"] for role in template["optimizer"]] == ["optimizer"]
-
-
-def test_cogs_vs_clips_four_score_and_paintarena_templates_declare_all_viability_role_sections() -> None:
-    for world_name in ("cogs_vs_clips", "four_score", "paintarena"):
-        template = json.loads((WORLDS / world_name / "coworld_manifest_template.json").read_text(encoding="utf-8"))
-
-        assert set(VIABILITY_ROLE_SECTIONS).issubset(template)
-        for section in VIABILITY_ROLE_SECTIONS:
-            assert isinstance(template[section], list)
-
-    cogs_vs_clips = json.loads(
-        (WORLDS / "cogs_vs_clips" / "coworld_manifest_template.json").read_text(encoding="utf-8")
-    )
-    cogs_vs_clips_pages = {page["id"]: page["content"]["value"] for page in cogs_vs_clips["game"]["docs"]["pages"]}
-    assert cogs_vs_clips_pages["play_cogsvsclips.md"] == "https://softmax.com/play_cogsvsclips.md"
-    assert cogs_vs_clips_pages["game-source"] == "https://github.com/Metta-AI/coworld-cogs-vs-clips/tree/main"
-    assert cogs_vs_clips_pages["player"] == "https://github.com/Metta-AI/coworld-cogs-vs-clips/tree/main/coworld/player"
-    assert "rules.md" not in cogs_vs_clips_pages
-    assert "env" not in cogs_vs_clips["player"][0]
-    assert [role["id"] for role in cogs_vs_clips["commissioner"]] == ["cogs-vs-clips-commissioner"]
-    for section in ("grader", "optimizer", "diagnoser"):
-        assert cogs_vs_clips[section] == []
-    assert [role["id"] for role in cogs_vs_clips["reporter"]] == [
-        "softmax-default-reporter",
-        "cogs-vs-clips-summarizer",
-    ]
-
-    paintarena = json.loads((WORLDS / "paintarena" / "coworld_manifest_template.json").read_text(encoding="utf-8"))
     assert [role["id"] for role in paintarena["commissioner"]] == ["default-commissioner"]
     assert paintarena["grader"] == []
     assert paintarena["diagnoser"] == []
@@ -514,12 +315,15 @@ def test_cogs_vs_clips_four_score_and_paintarena_templates_declare_all_viability
     assert [role["id"] for role in paintarena["optimizer"]] == ["paint-arena-reference-optimizer"]
 
 
-def test_paintarena_example_keeps_template_and_build_copy() -> None:
+def test_paintarena_example_keeps_template_and_worlds_build_pointer() -> None:
+    upload_text = (WORLDS / "upload.sh").read_text(encoding="utf-8")
+
     assert (PAINTARENA_EXAMPLE / "coworld_manifest_template.json").is_file()
     assert (PAINTARENA_EXAMPLE / "compose.yaml").is_file()
-    assert (PAINTARENA_EXAMPLE / "coworld_manifest_template.json").read_text(encoding="utf-8") == (
-        WORLDS / "paintarena" / "coworld_manifest_template.json"
-    ).read_text(encoding="utf-8")
+    assert not (WORLDS / "paintarena" / "coworld_manifest_template.json").exists()
+    assert (
+        'template_file="${METTA_REPO}/packages/coworld/src/coworld/examples/paintarena/coworld_manifest_template.json"'
+    ) in upload_text
     assert (PAINTARENA_EXAMPLE / "compose.yaml").read_text(encoding="utf-8") == (
         WORLDS / "paintarena" / "compose.yaml"
     ).read_text(encoding="utf-8").replace("../../packages/coworld/src/coworld/examples/paintarena", ".")
@@ -539,55 +343,20 @@ def _world_compose_files() -> tuple[Path, ...]:
     )
 
 
-def _world_templates() -> tuple[Path, ...]:
-    return (
-        WORLDS / "among_them" / "coworld_manifest_template.json",
-        WORLDS / "cogs_vs_clips" / "coworld_manifest_template.json",
-        WORLDS / "four_score" / "coworld_manifest_template.json",
-        WORLDS / "paintarena" / "coworld_manifest_template.json",
-        WORLDS / "tribal_village" / "coworld_manifest_template.json",
-    )
+def _repo_manifest_templates() -> tuple[Path, ...]:
+    return (PAINTARENA_EXAMPLE / "coworld_manifest_template.json",)
 
 
 def _materialized_template(base_dir: Path, template_path: Path) -> Path:
     manifest = json.loads(template_path.read_text(encoding="utf-8"))
     manifest["game"]["version"] = "0.1.0"
     image_placeholders = {
-        "among_them": {
-            "{{GAME_IMAGE}}": "coworld-among-them-game:latest",
-            "{{PLAYER_IMAGE}}": "coworld-among-them-ivotewell:latest",
-            "{{REPORTER_IMAGE}}": "coworld-among-them-summarizer:latest",
-            "{{GRADER_IMAGE}}": "coworld-among-them-grader:latest",
-            "{{DIAGNOSER_IMAGE}}": "coworld-among-them-diagnoser:latest",
-            "{{OPTIMIZER_IMAGE}}": "coworld-optimizer:latest",
-            "{{COMMISSIONER_IMAGE}}": (
-                "ghcr.io/metta-ai/commissioners-among-them-commissioner@sha256:"
-                "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
-            ),
-        },
-        "cogs_vs_clips": {
-            "{{GAME_IMAGE}}": "coworld-cogs-vs-clips-game:latest",
-            "{{PLAYER_IMAGE}}": "coworld-cogs-vs-clips-reference-player:latest",
-            "{{REPORTER_IMAGE}}": "coworld-default-reporter:latest",
-            "{{COGS_VS_CLIPS_REPORTER_IMAGE}}": "coworld-cogs-vs-clips-summarizer:latest",
-            "{{COGS_VS_CLIPS_COMMISSIONER_IMAGE}}": "coworld-cogs-vs-clips-commissioner:latest",
-        },
-        "four_score": {
-            "{{GAME_IMAGE}}": "coworld-four-score-game:latest",
-            "{{PLAYER_IMAGE}}": "coworld-four-score-reference-player:latest",
-            "{{REPORTER_IMAGE}}": "coworld-default-reporter:latest",
-            "{{COGS_VS_CLIPS_REPORTER_IMAGE}}": "coworld-cogs-vs-clips-summarizer:latest",
-            "{{FOUR_SCORE_COMMISSIONER_IMAGE}}": "coworld-four-score-commissioner:latest",
-        },
         "paintarena": {
             "{{PAINTARENA_IMAGE}}": "coworld-paintarena:latest",
             "{{COMMISSIONER_IMAGE}}": (
                 "ghcr.io/metta-ai/commissioners-default@sha256:"
                 "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd"
             ),
-        },
-        "tribal_village": {
-            "{{TRIBAL_VILLAGE_IMAGE}}": "coworld-tribal-village:latest",
         },
     }
     placeholders = image_placeholders[template_path.parent.name]

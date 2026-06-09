@@ -639,23 +639,97 @@ def _example_manifest(tmp_path: Path) -> Path:
 
 
 def _cogs_vs_clips_manifest(tmp_path: Path) -> Path:
-    return _materialized_template(
-        tmp_path,
-        Path(__file__).resolve().parents[3] / "worlds" / "cogs_vs_clips" / "coworld_manifest_template.json",
+    players = [{"name": f"Player {slot + 1}"} for slot in range(8)]
+    game_config = {
+        "players": players,
+        "mission": "machina_1",
+        "max_steps": 10000,
+        "seed": 0,
+        "step_seconds": 0.02,
+    }
+    manifest_path = tmp_path / "cogs_vs_clips" / "coworld_manifest.json"
+    manifest_path.parent.mkdir(parents=True, exist_ok=True)
+    manifest_path.write_text(
+        json.dumps(
+            {
+                "game": {
+                    "name": "cogs_vs_clips",
+                    "version": "0.1.0",
+                    "description": "Cogs vs Clips CLI fixture.",
+                    "owner": "cogames@softmax.com",
+                    "runnable": {"type": "game", "image": "coworld-cogs-vs-clips-game:latest"},
+                    "config_schema": {
+                        "$schema": "https://json-schema.org/draft/2020-12/schema",
+                        "type": "object",
+                        "required": ["tokens", "players"],
+                        "properties": {
+                            "tokens": {
+                                "type": "array",
+                                "minItems": 8,
+                                "maxItems": 8,
+                                "items": {"type": "string", "minLength": 1},
+                            },
+                            "players": {
+                                "type": "array",
+                                "minItems": 8,
+                                "maxItems": 8,
+                                "items": {
+                                    "type": "object",
+                                    "additionalProperties": False,
+                                    "required": ["name"],
+                                    "properties": {"name": {"type": "string", "minLength": 1}},
+                                },
+                            },
+                        },
+                    },
+                    "results_schema": {},
+                    "protocols": {
+                        "player": {"type": "uri", "value": "https://example.com/player.md"},
+                        "global": {"type": "uri", "value": "https://example.com/global.md"},
+                    },
+                    "docs": {
+                        "readme": {"type": "uri", "value": "https://example.com/README.md"},
+                        "pages": [],
+                    },
+                },
+                "player": [
+                    {
+                        "id": "reference-player",
+                        "name": "Reference Player",
+                        "type": "player",
+                        "image": "coworld-cogs-vs-clips-reference-player:latest",
+                        "run": ["python", "/app/coworld_reference_player.py"],
+                        "description": "Cogs vs Clips CLI player fixture.",
+                    }
+                ],
+                "commissioner": [],
+                "reporter": [],
+                "grader": [],
+                "diagnoser": [],
+                "optimizer": [],
+                "variants": [
+                    {
+                        "id": "machina-1-daily",
+                        "name": "Machina 1 Daily",
+                        "game_config": game_config,
+                        "description": "Cogs vs Clips CLI variant fixture.",
+                    }
+                ],
+                "certification": {
+                    "game_config": {**game_config, "mission": "cogsguard", "max_steps": 3},
+                    "players": [{"player_id": "reference-player"} for _slot in range(8)],
+                },
+            }
+        ),
+        encoding="utf-8",
     )
+    return manifest_path
 
 
 def _materialized_template(tmp_path: Path, template_path: Path) -> Path:
     manifest = json.loads(template_path.read_text(encoding="utf-8"))
     manifest["game"]["version"] = "0.1.0"
     image_placeholders = {
-        "cogs_vs_clips": {
-            "{{GAME_IMAGE}}": "coworld-cogs-vs-clips-game:latest",
-            "{{PLAYER_IMAGE}}": "coworld-cogs-vs-clips-reference-player:latest",
-            "{{REPORTER_IMAGE}}": "coworld-default-reporter:latest",
-            "{{COGS_VS_CLIPS_REPORTER_IMAGE}}": "coworld-cogs-vs-clips-summarizer:latest",
-            "{{COGS_VS_CLIPS_COMMISSIONER_IMAGE}}": "coworld-cogs-vs-clips-commissioner:latest",
-        },
         "paintarena": {"{{PAINTARENA_IMAGE}}": "coworld-paintarena:latest"},
     }
     placeholders = image_placeholders[template_path.parent.name]
