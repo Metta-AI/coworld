@@ -21,13 +21,13 @@ def test_submit_policy_to_league_posts_v2_submission(
 ) -> None:
     opened: list[str] = []
     monkeypatch.setattr("softmax.auth.load_current_token", lambda *, server: "player-token")
-    monkeypatch.setattr("softmax.auth.load_user_token", lambda *, server: "user-token")
+    monkeypatch.setattr("softmax.auth.load_user_token", lambda *, server: pytest.fail("used user token"))
     monkeypatch.setattr("coworld.submit.webbrowser.open", lambda url: opened.append(url) or True)
-    _expect_policy_versions(httpserver, [_policy_version(version=3)], token="user-token")
+    _expect_policy_versions(httpserver, [_policy_version(version=3)], token="player-token")
     httpserver.expect_request(
         "/observatory/v2/league-submissions",
         method="POST",
-        headers={"Authorization": "Bearer user-token"},
+        headers={"Authorization": "Bearer player-token"},
         json={"league_id": LEAGUE_ID, "policy_version_id": POLICY_VERSION_ID},
     ).respond_with_json(
         {

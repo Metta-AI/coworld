@@ -338,13 +338,13 @@ def test_upload_policy_command_creates_docker_image_policy(
     softmax_image_uri = "123456789012.dkr.ecr.us-east-1.amazonaws.com/coworld/user/unit-test-policy@sha256:digest"
 
     monkeypatch.setattr("softmax.auth.load_current_token", lambda *, server: "player-token")
-    monkeypatch.setattr("softmax.auth.load_user_token", lambda *, server: "user-token")
+    monkeypatch.setattr("softmax.auth.load_user_token", lambda *, server: pytest.fail("used user token"))
     monkeypatch.setattr("coworld.upload._local_image_client_hash", lambda image: "sha256:client-hash")
     monkeypatch.setattr("coworld.upload._push_container_image", lambda source_image, push_info: None)
     httpserver.expect_request(
         "/observatory/v2/container_images/upload",
         method="POST",
-        headers={"Authorization": "Bearer user-token"},
+        headers={"Authorization": "Bearer player-token"},
         json={"name": "unit-test-policy", "client_hash": "sha256:client-hash"},
     ).respond_with_json(
         {
@@ -363,7 +363,7 @@ def test_upload_policy_command_creates_docker_image_policy(
     httpserver.expect_request(
         "/observatory/stats/policies/docker-img/complete",
         method="POST",
-        headers={"Authorization": "Bearer user-token"},
+        headers={"Authorization": "Bearer player-token"},
         json={
             "name": "paintbot",
             "container_image_id": "img_00000000-0000-0000-0000-000000000030",
