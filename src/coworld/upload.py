@@ -780,7 +780,12 @@ def _push_container_image(source_image: str, push_info: EcrPushInfo) -> None:
         scheme = "http" if push_info.endpoint_url.startswith("http://") else "https"
     else:
         scheme = "https"
-    base_url = f"{scheme}://{push_info.registry}/v2/{push_info.repository}"
+    # The registry may carry a path prefix (e.g. floci's "localhost:5100/<account>/<region>"
+    # namespacing in local dev); the OCI /v2/ API root sits on the host, with the
+    # prefix prepended to the repository path.
+    host, _, prefix = push_info.registry.partition("/")
+    repository = f"{prefix}/{push_info.repository}" if prefix else push_info.repository
+    base_url = f"{scheme}://{host}/v2/{repository}"
 
     with tempfile.TemporaryFile() as archive:
         subprocess.run(["docker", "image", "save", source_image], check=True, stdout=archive)
