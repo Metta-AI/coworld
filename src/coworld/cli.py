@@ -357,14 +357,46 @@ def images(
 
 @app.command("upload-coworld")
 def upload_coworld(
-    manifest_path: Annotated[Path, typer.Argument(help="Path to coworld_manifest.json.")],
+    manifest_path: Annotated[Path | None, typer.Argument(help="Path to coworld_manifest.json.")] = None,
+    base_coworld: Annotated[
+        str | None,
+        typer.Option(
+            "--from-coworld",
+            help="Uploaded Coworld ID or canonical name to use as the base manifest for a partial update.",
+        ),
+    ] = None,
+    version: Annotated[
+        str | None,
+        typer.Option("--version", help="Override game.version before upload."),
+    ] = None,
+    patch_update: Annotated[
+        str | None,
+        typer.Option(
+            "--patch",
+            help="JSON merge-patch object, or path to one, applied before --version and --image.",
+        ),
+    ] = None,
+    image_updates: Annotated[
+        list[str] | None,
+        typer.Option(
+            "--image",
+            help=(
+                "Set a runnable image as TARGET=IMAGE. TARGET can be game, role.id, role[index], "
+                "or bare role when that role has one runnable. Repeatable."
+            ),
+        ),
+    ] = None,
     server: Annotated[str, typer.Option("--server", help="Observatory API server URL.")] = DEFAULT_SUBMIT_SERVER,
     timeout_seconds: Annotated[float, typer.Option("--timeout-seconds", min=1.0)] = 60.0,
 ) -> None:
     upload_coworld_cmd(
         manifest_path,
+        base_coworld=base_coworld,
         server=server,
         timeout_seconds=timeout_seconds,
+        version=version,
+        patch_update=patch_update,
+        image_updates=image_updates,
     )
 
 

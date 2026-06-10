@@ -14,6 +14,7 @@ from typer.testing import CliRunner
 
 from coworld.cli import app
 from coworld.upload import (
+    ContainerImageResponse,
     CoworldUploadClient,
     _docker_archive_client_hash,
     _load_current_token,
@@ -21,6 +22,7 @@ from coworld.upload import (
     _local_image_tag,
     _manifest_image_fields,
     _manifest_with_local_images,
+    _manifest_with_softmax_image_ids,
     _push_archive_to_registry,
     upload_coworld,
 )
@@ -289,6 +291,214 @@ def test_upload_coworld_command_certifies_before_uploading(
     assert "Manifest hash: sha256:manifest-hash" in result.output
     assert "Canonical: yes" in result.output
     assert certification_calls == [(manifest_path.resolve(), 60.0)]
+
+
+def test_upload_coworld_command_rejects_partial_options_without_base_manifest(tmp_path: Path) -> None:
+    result = CliRunner().invoke(
+        app,
+        ["upload-coworld", str(_write_manifest(tmp_path)), "--version", "0.2.0"],
+        color=False,
+    )
+
+    assert result.exit_code != 0
+    assert "--version, --patch, and --image require --from-coworld" in result.output
+
+
+def test_upload_coworld_from_existing_manifest_applies_patch_without_images(
+    tmp_path: Path,
+    httpserver: HTTPServer,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    coworld_id = "cow_00000000-0000-0000-0000-000000000013"
+    existing_image_id = "img_00000000-0000-0000-0000-000000000099"
+    manifest = _manifest_with_image(existing_image_id)
+    patch_path = tmp_path / "manifest_patch.json"
+    patch_path.write_text(json.dumps({"game": {"owner": "new-owner@softmax.com"}}), encoding="utf-8")
+
+    monkeypatch.setattr("coworld.upload.certify_coworld", lambda *_args, **_kwargs: pytest.fail("certified manifest"))
+    monkeypatch.setattr(
+        "coworld.upload._local_image_client_hash",
+        lambda image: pytest.fail(f"hashed unchanged image {image}"),
+    )
+    httpserver.expect_request(
+        "/observatory/v2/coworlds",
+        method="GET",
+        query_string="limit=200&offset=0",
+    ).respond_with_json(
+        [
+            {
+                "id": coworld_id,
+                "name": "unit-test-game",
+                "version": "0.1.0",
+                "manifest": manifest,
+                "manifest_hash": "sha256:old-manifest-hash",
+                "size_bytes": 1234,
+                "created_at": "2026-05-08T21:00:00Z",
+                "canonical": True,
+            }
+        ]
+    )
+    httpserver.expect_request("/observatory/v2/coworlds/upload", method="POST").respond_with_json(
+        {
+            "id": coworld_id,
+            "name": "unit-test-game",
+            "version": "0.2.0",
+            "manifest": manifest,
+            "manifest_hash": "sha256:new-manifest-hash",
+            "size_bytes": 1250,
+            "canonical": True,
+        }
+    )
+
+    result = CliRunner().invoke(
+        app,
+        [
+            "upload-coworld",
+            "--from-coworld",
+            coworld_id,
+            "--version",
+            "0.2.0",
+            "--patch",
+            str(patch_path),
+            "--server",
+            httpserver.url_for(""),
+        ],
+    )
+
+    assert result.exit_code == 0, result.output
+    upload_req = next(req for req, _ in httpserver.log if req.path == "/observatory/v2/coworlds/upload")
+    uploaded_manifest = upload_req.get_json()["manifest"]
+    assert uploaded_manifest["game"]["version"] == "0.2.0"
+    assert uploaded_manifest["game"]["owner"] == "new-owner@softmax.com"
+    assert uploaded_manifest["game"]["runnable"]["image"] == existing_image_id
+    assert uploaded_manifest["player"][0]["image"] == existing_image_id
+
+
+def test_upload_coworld_from_existing_manifest_updates_one_role_image(
+    httpserver: HTTPServer,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    coworld_id = "cow_00000000-0000-0000-0000-000000000014"
+    existing_image_id = "img_00000000-0000-0000-0000-000000000099"
+    commissioner_image_id = "img_00000000-0000-0000-0000-000000000100"
+    manifest = _manifest_with_image(existing_image_id)
+    manifest["commissioner"] = [
+        {
+            "id": "round-robin",
+            "name": "Round Robin Commissioner",
+            "description": "Default commissioner.",
+            "type": "commissioner",
+            "image": existing_image_id,
+        }
+    ]
+    hashed_images: list[str] = []
+
+    def fake_hash(image: str) -> str:
+        hashed_images.append(image)
+        return "sha256:commissioner-hash"
+
+    monkeypatch.setattr("coworld.upload.certify_coworld", lambda *_args, **_kwargs: pytest.fail("certified manifest"))
+    monkeypatch.setattr("coworld.upload._local_image_client_hash", fake_hash)
+    monkeypatch.setattr("coworld.upload._push_container_image", lambda source_image, push_info: None)
+    httpserver.expect_request(
+        "/observatory/v2/coworlds",
+        method="GET",
+        query_string="limit=200&offset=0",
+    ).respond_with_json(
+        [
+            {
+                "id": coworld_id,
+                "name": "unit-test-game",
+                "version": "0.1.0",
+                "manifest": manifest,
+                "manifest_hash": "sha256:old-manifest-hash",
+                "size_bytes": 1234,
+                "created_at": "2026-05-08T21:00:00Z",
+                "canonical": True,
+            }
+        ]
+    )
+    httpserver.expect_request(
+        "/observatory/v2/container_images/upload",
+        method="POST",
+        json={"name": "unit-test-commissioner", "client_hash": "sha256:commissioner-hash"},
+    ).respond_with_json(
+        {
+            "image": {
+                "id": commissioner_image_id,
+                "name": "unit-test-commissioner",
+                "version": 1,
+                "client_hash": "sha256:commissioner-hash",
+                "status": "ready",
+                "image_uri": (
+                    "123456789012.dkr.ecr.us-east-1.amazonaws.com/coworld/user/unit-test-commissioner@sha256:digest"
+                ),
+                "image_digest": "sha256:digest",
+            },
+            "pre_signed_info": None,
+        }
+    )
+    httpserver.expect_request("/observatory/v2/coworlds/upload", method="POST").respond_with_json(
+        {
+            "id": coworld_id,
+            "name": "unit-test-game",
+            "version": "0.2.0",
+            "manifest": manifest,
+            "manifest_hash": "sha256:new-manifest-hash",
+            "size_bytes": 1250,
+            "canonical": True,
+        }
+    )
+
+    result = CliRunner().invoke(
+        app,
+        [
+            "upload-coworld",
+            "--from-coworld",
+            coworld_id,
+            "--version",
+            "0.2.0",
+            "--image",
+            "commissioner.round-robin=unit-test-commissioner:latest",
+            "--server",
+            httpserver.url_for(""),
+        ],
+    )
+
+    assert result.exit_code == 0, result.output
+    assert hashed_images == ["unit-test-commissioner:latest"]
+    upload_req = next(req for req, _ in httpserver.log if req.path == "/observatory/v2/coworlds/upload")
+    uploaded_manifest = upload_req.get_json()["manifest"]
+    assert uploaded_manifest["game"]["runnable"]["image"] == existing_image_id
+    assert uploaded_manifest["commissioner"][0]["image"] == commissioner_image_id
+
+
+def test_manifest_with_softmax_image_ids_keeps_existing_image_ids() -> None:
+    manifest = _manifest_with_image("img_00000000-0000-0000-0000-000000000099")
+    uploaded = _manifest_with_softmax_image_ids(cast(CoworldUploadClient, object()), manifest)
+
+    assert uploaded["game"]["runnable"]["image"] == "img_00000000-0000-0000-0000-000000000099"
+
+
+def test_manifest_with_softmax_image_ids_uploads_local_img_prefixed_tags(monkeypatch: pytest.MonkeyPatch) -> None:
+    manifest = _manifest_with_image("img_game:latest")
+    uploaded_ids: list[str] = []
+
+    def fake_upload(_client: CoworldUploadClient, image: str) -> ContainerImageResponse:
+        uploaded_ids.append(image)
+        return ContainerImageResponse(
+            id="img_00000000-0000-0000-0000-000000000099",
+            name="img_game",
+            version=1,
+            status="ready",
+        )
+
+    monkeypatch.setattr("coworld.upload._upload_container_image", fake_upload)
+
+    uploaded = _manifest_with_softmax_image_ids(cast(CoworldUploadClient, object()), manifest)
+
+    assert uploaded_ids == ["img_game:latest"]
+    assert uploaded["game"]["runnable"]["image"] == "img_00000000-0000-0000-0000-000000000099"
 
 
 def test_upload_coworld_surfaces_server_error_detail(

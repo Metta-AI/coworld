@@ -24,8 +24,12 @@ from pydantic import BaseModel
 from coworld.certifier import certify_coworld, load_coworld_package
 from coworld.config import DEFAULT_SUBMIT_SERVER
 from coworld.image_refs import is_mutable_registry_image_ref
+from coworld.manifest_validation import validate_coworld_manifest_game_configs
+from coworld.schema_validation import validate_json_schema
+from coworld.types import MANIFEST_ROLE_SECTIONS, CoworldManifest, coworld_manifest_schema
 
 _LOCAL_TAG_SEPARATOR_RE = re.compile(r"[^a-z0-9._-]+")
+_IMAGE_ID_RE = re.compile(r"^img_[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$")
 DOWNLOAD_AGENTS_MD = """# AGENTS.md
 
 Guidance for coding agents working from this downloaded Coworld package.
@@ -406,14 +410,12 @@ def upload_coworld(
     timeout_seconds: float = 60.0,
 ) -> CoworldUploadResult:
     package = load_coworld_package(manifest_path)
-    _reject_mutable_registry_image_refs(package.manifest.model_dump(by_alias=True, exclude_none=True))
+    manifest = package.manifest.model_dump(by_alias=True, exclude_none=True)
+    _reject_mutable_registry_image_refs(manifest)
     certify_coworld(package.manifest_path, timeout_seconds=timeout_seconds)
 
     with CoworldUploadClient.from_login(server_url=server) as client:
-        upload_manifest = _manifest_with_softmax_image_ids(
-            client,
-            package.manifest.model_dump(by_alias=True, exclude_none=True),
-        )
+        upload_manifest = _manifest_with_softmax_image_ids(client, manifest)
         response = client.upload_manifest(upload_manifest)
 
     return CoworldUploadResult(
@@ -424,6 +426,149 @@ def upload_coworld(
         size_bytes=response.size_bytes,
         canonical=response.canonical,
     )
+
+
+def upload_coworld_update(
+    coworld_ref: str,
+    *,
+    server: str = DEFAULT_SUBMIT_SERVER,
+    version: str | None = None,
+    patch_update: str | None = None,
+    image_updates: list[str] | None = None,
+) -> CoworldUploadResult:
+    if version is None and patch_update is None and not image_updates:
+        raise ValueError("--from-coworld requires --version, --patch, or --image")
+
+    with CoworldUploadClient.from_login(server_url=server) as client:
+        coworld = _resolve_stored_coworld(client, coworld_ref)
+        manifest = copy.deepcopy(coworld.manifest)
+        _apply_manifest_updates(manifest, version=version, patch_update=patch_update, image_updates=image_updates)
+        _validate_manifest_document(manifest)
+        _reject_mutable_registry_image_refs(manifest)
+        upload_manifest = _manifest_with_softmax_image_ids(client, manifest)
+        response = client.upload_manifest(upload_manifest)
+
+    return CoworldUploadResult(
+        id=response.id,
+        name=response.name,
+        version=response.version,
+        manifest_hash=response.manifest_hash,
+        size_bytes=response.size_bytes,
+        canonical=response.canonical,
+    )
+
+
+def _resolve_stored_coworld(client: CoworldUploadClient, coworld_ref: str) -> CoworldListEntry:
+    if coworld_ref.startswith("cow_"):
+        coworld = client.find_coworld(coworld_ref)
+        if coworld is None:
+            raise RuntimeError(f"Coworld not found: {coworld_ref}")
+        return coworld
+    coworld = client.find_canonical_coworld(coworld_ref)
+    if coworld is None:
+        raise RuntimeError(f"Canonical Coworld not found: {coworld_ref}")
+    return coworld
+
+
+def _validate_manifest_document(manifest: dict[str, object]) -> None:
+    validate_json_schema(manifest, coworld_manifest_schema())
+    typed_manifest = CoworldManifest.model_validate(manifest)
+    validate_coworld_manifest_game_configs(typed_manifest)
+
+
+def _apply_manifest_updates(
+    manifest: dict[str, object],
+    *,
+    version: str | None,
+    patch_update: str | None,
+    image_updates: list[str] | None,
+) -> None:
+    if patch_update is not None:
+        _merge_json_object(manifest, _load_manifest_patch(patch_update))
+    if version is not None:
+        game = manifest.get("game")
+        if not isinstance(game, dict):
+            raise ValueError("Manifest game field must be an object")
+        game["version"] = version
+    for update in image_updates or []:
+        target, image = _parse_image_update(update)
+        _set_manifest_image(manifest, target, image)
+
+
+def _load_manifest_patch(patch_update: str) -> dict[str, object]:
+    patch_text = patch_update
+    if not patch_update.lstrip().startswith("{"):
+        patch_text = Path(patch_update).read_text(encoding="utf-8")
+    try:
+        patch = json.loads(patch_text)
+    except json.JSONDecodeError as exc:
+        raise ValueError(f"--patch must be a JSON object or path to a JSON object: {exc}") from exc
+    if not isinstance(patch, dict):
+        raise ValueError("--patch must be a JSON object")
+    return patch
+
+
+def _merge_json_object(target: dict[str, object], patch: dict[str, object]) -> None:
+    for key, value in patch.items():
+        if value is None:
+            target.pop(key, None)
+        elif isinstance(value, dict) and isinstance(target_value := target.get(key), dict):
+            _merge_json_object(target_value, value)
+        else:
+            target[key] = copy.deepcopy(value)
+
+
+def _parse_image_update(update: str) -> tuple[str, str]:
+    target, separator, image = update.partition("=")
+    if not separator or not target or not image:
+        raise ValueError(f"Expected TARGET=IMAGE for --image, got: {update}")
+    return target, image
+
+
+def _set_manifest_image(manifest: dict[str, object], target: str, image: str) -> None:
+    if target == "game":
+        game = manifest.get("game")
+        if not isinstance(game, dict):
+            raise ValueError("Manifest game field must be an object")
+        runnable = game.get("runnable")
+        if not isinstance(runnable, dict):
+            raise ValueError("Manifest game.runnable field must be an object")
+        runnable["image"] = image
+        return
+
+    role, selector = _parse_image_target(target)
+    entries = manifest.get(role)
+    if not isinstance(entries, list):
+        raise ValueError(f"Manifest role section is not a list: {role}")
+    if selector is None:
+        if len(entries) != 1:
+            raise ValueError(f"--image {role}=... is ambiguous because {role} has {len(entries)} entries")
+        entry = entries[0]
+    elif selector.isdigit():
+        index = int(selector)
+        try:
+            entry = entries[index]
+        except IndexError as exc:
+            raise ValueError(f"No {role} entry at index {index}") from exc
+    else:
+        matches = [entry for entry in entries if isinstance(entry, dict) and entry.get("id") == selector]
+        if len(matches) != 1:
+            raise ValueError(f"No unique {role} entry with id {selector!r}")
+        entry = matches[0]
+    if not isinstance(entry, dict) or "image" not in entry:
+        raise ValueError(f"Manifest target is not a runnable image field: {target}")
+    entry["image"] = image
+
+
+def _parse_image_target(target: str) -> tuple[str, str | None]:
+    if target.endswith("]"):
+        role, separator, index_text = target[:-1].partition("[")
+        if separator and role in MANIFEST_ROLE_SECTIONS and index_text.isdigit():
+            return role, index_text
+    role, separator, selector = target.partition(".")
+    if role not in MANIFEST_ROLE_SECTIONS:
+        raise ValueError(f"Unknown image target role: {role}")
+    return role, selector if separator else None
 
 
 def _reject_mutable_registry_image_refs(manifest: dict[str, object]) -> None:
@@ -469,15 +614,35 @@ def _load_current_token(*, server_url: str) -> str | None:
 
 
 def upload_coworld_cmd(
-    manifest_path: Path,
+    manifest_path: Path | None = None,
+    *,
+    base_coworld: str | None = None,
     server: str = DEFAULT_SUBMIT_SERVER,
     timeout_seconds: float = 60.0,
+    version: str | None = None,
+    patch_update: str | None = None,
+    image_updates: list[str] | None = None,
 ) -> None:
-    result = upload_coworld(
-        manifest_path,
-        server=server,
-        timeout_seconds=timeout_seconds,
-    )
+    if base_coworld is not None:
+        if manifest_path is not None:
+            raise typer.BadParameter("MANIFEST_PATH cannot be combined with --from-coworld")
+        result = upload_coworld_update(
+            base_coworld,
+            server=server,
+            version=version,
+            patch_update=patch_update,
+            image_updates=image_updates,
+        )
+    else:
+        if manifest_path is None:
+            raise typer.BadParameter("MANIFEST_PATH is required unless --from-coworld is set")
+        if version is not None or patch_update is not None or image_updates:
+            raise typer.BadParameter("--version, --patch, and --image require --from-coworld")
+        result = upload_coworld(
+            manifest_path,
+            server=server,
+            timeout_seconds=timeout_seconds,
+        )
     typer.echo(f"Upload complete: {result.name}:{result.version}")
     typer.echo(f"Coworld: {result.id}")
     typer.echo(f"Manifest hash: {result.manifest_hash}")
@@ -625,10 +790,17 @@ def _manifest_with_softmax_image_ids(client: CoworldUploadClient, manifest: dict
     replacements = {
         image: _upload_container_image(client, image).id
         for image in sorted({runnable["image"] for runnable in _manifest_image_fields(upload_manifest)})
+        if not _is_uploaded_image_id(image)
     }
     for runnable in _manifest_image_fields(upload_manifest):
-        runnable["image"] = replacements[runnable["image"]]
+        image = runnable["image"]
+        if image in replacements:
+            runnable["image"] = replacements[image]
     return upload_manifest
+
+
+def _is_uploaded_image_id(image: str) -> bool:
+    return _IMAGE_ID_RE.match(image) is not None
 
 
 def _manifest_image_fields(value: object) -> list[dict[str, Any]]:
