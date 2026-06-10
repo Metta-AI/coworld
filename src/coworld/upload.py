@@ -12,6 +12,7 @@ import tarfile
 import tempfile
 from dataclasses import dataclass
 from datetime import datetime
+from enum import Enum
 from pathlib import Path
 from typing import Any, Self
 from uuid import UUID
@@ -105,6 +106,12 @@ class LeagueSubmissionResponse(BaseModel):
     status: str
     league_policy_membership_id: str | None = None
     notes: str | None = None
+
+
+class AutoChampion(str, Enum):
+    always = "always"
+    never = "never"
+    lineage = "lineage"
 
 
 class CoworldLeagueSeedResponse(BaseModel):
@@ -250,11 +257,21 @@ class CoworldUploadClient:
         versions = PolicyVersionsResponse.model_validate(response.json()).entries
         return versions[0] if versions else None
 
-    def submit_to_league(self, league_id: str, policy_version_id: UUID) -> LeagueSubmissionResponse:
+    def submit_to_league(
+        self,
+        league_id: str,
+        policy_version_id: UUID,
+        *,
+        auto_champion: AutoChampion = AutoChampion.always,
+    ) -> LeagueSubmissionResponse:
         response = self._http_client.post(
             "/v2/league-submissions",
             headers=self._headers(),
-            json={"league_id": league_id, "policy_version_id": str(policy_version_id)},
+            json={
+                "league_id": league_id,
+                "policy_version_id": str(policy_version_id),
+                "auto_champion": auto_champion.value,
+            },
             timeout=120.0,
         )
         _raise_for_status(response)

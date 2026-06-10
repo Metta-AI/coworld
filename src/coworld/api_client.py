@@ -100,6 +100,7 @@ class LeaguePolicyMembershipPublic(CoworldAPIModel):
 
 class LeagueSubmissionPublic(CoworldAPIModel):
     id: str
+    auto_champion: str = "always"
     status: str
     league: LeaguePublic
     policy_version: PolicyVersionPublic

@@ -28,7 +28,7 @@ def test_submit_policy_to_league_posts_v2_submission(
         "/observatory/v2/league-submissions",
         method="POST",
         headers={"Authorization": "Bearer player-token"},
-        json={"league_id": LEAGUE_ID, "policy_version_id": POLICY_VERSION_ID},
+        json={"league_id": LEAGUE_ID, "policy_version_id": POLICY_VERSION_ID, "auto_champion": "always"},
     ).respond_with_json(
         {
             "id": "sub_00000000-0000-0000-0000-000000000051",
@@ -64,6 +64,72 @@ def test_submit_policy_to_league_posts_v2_submission(
     assert policy_query.args["name_exact"] == "paintbot"
     assert policy_query.args["version"] == "3"
     assert not any(request.path == "/observatory/v2/leagues" for request, _ in httpserver.log)
+
+
+def test_submit_policy_can_disable_auto_champion(
+    httpserver: HTTPServer,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr("coworld.submit.webbrowser.open", lambda url: True)
+    _expect_policy_versions(httpserver, [_policy_version(version=3)])
+    httpserver.expect_request(
+        "/observatory/v2/league-submissions",
+        method="POST",
+        headers={"Authorization": "Bearer token"},
+        json={"league_id": LEAGUE_ID, "policy_version_id": POLICY_VERSION_ID, "auto_champion": "never"},
+    ).respond_with_json({"id": "sub_1", "status": "placed"})
+
+    result = CliRunner().invoke(
+        app,
+        [
+            "submit",
+            "paintbot:v3",
+            "--league",
+            LEAGUE_ID,
+            "--server",
+            httpserver.url_for(""),
+            "--auto-champion",
+            "never",
+            "--no-open-browser",
+        ],
+    )
+
+    assert result.exit_code == 0, result.output
+    assert "Auto champion:" in result.output
+    assert "never" in result.output
+
+
+def test_submit_policy_can_request_lineage_auto_champion(
+    httpserver: HTTPServer,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr("coworld.submit.webbrowser.open", lambda url: True)
+    _expect_policy_versions(httpserver, [_policy_version(version=3)])
+    httpserver.expect_request(
+        "/observatory/v2/league-submissions",
+        method="POST",
+        headers={"Authorization": "Bearer token"},
+        json={"league_id": LEAGUE_ID, "policy_version_id": POLICY_VERSION_ID, "auto_champion": "lineage"},
+    ).respond_with_json({"id": "sub_1", "status": "placed"})
+
+    result = CliRunner().invoke(
+        app,
+        [
+            "submit",
+            "paintbot:v3",
+            "--league",
+            LEAGUE_ID,
+            "--server",
+            httpserver.url_for(""),
+            "--auto-champion",
+            "lineage",
+            "--no-open-browser",
+        ],
+    )
+
+    assert result.exit_code == 0, result.output
+    assert "Auto champion:" in result.output
+    assert "lineage" in result.output
 
 
 def test_submit_policy_no_open_browser_skips_launch(

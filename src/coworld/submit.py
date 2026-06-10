@@ -6,7 +6,7 @@ import typer
 
 from coworld.cli_support import console, observatory_web_url
 from coworld.config import DEFAULT_SUBMIT_SERVER
-from coworld.upload import CoworldUploadClient, PolicyVersionRow
+from coworld.upload import AutoChampion, CoworldUploadClient, PolicyVersionRow
 
 
 def parse_policy_identifier(identifier: str) -> tuple[str, int | None]:
@@ -39,13 +39,18 @@ def submit_policy_to_league_cmd(
     league_id: str,
     server: str = DEFAULT_SUBMIT_SERVER,
     open_browser: bool = True,
+    auto_champion: AutoChampion = AutoChampion.always,
 ) -> None:
     with CoworldUploadClient.from_login(server_url=server) as client:
         policy_version = _resolve_policy_version(client, policy_identifier)
 
         version_label = f":v{policy_version.version}"
         console.print(f"[bold]Submitting {policy_version.name}{version_label} to league {league_id}[/bold]")
-        submission = client.submit_to_league(league_id, policy_version.id)
+        submission = client.submit_to_league(
+            league_id,
+            policy_version.id,
+            auto_champion=auto_champion,
+        )
 
     policy_url = observatory_web_url(
         server,
@@ -55,6 +60,7 @@ def submit_policy_to_league_cmd(
     console.print(f"[dim]League:[/dim] {league_id}")
     console.print(f"[dim]Submission:[/dim] {submission.id}")
     console.print(f"[dim]Status:[/dim] {submission.status}")
+    console.print(f"[dim]Auto champion:[/dim] {auto_champion.value}")
     if submission.league_policy_membership_id is not None:
         console.print(f"[dim]Membership:[/dim] {submission.league_policy_membership_id}")
     elif submission.status in {"pending", "processing"}:

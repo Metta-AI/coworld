@@ -28,6 +28,7 @@ from coworld.runner.runner import EpisodeArtifacts, run_coworld_episode
 from coworld.submit import submit_policy_to_league_cmd
 from coworld.tournament_cli import register_tournament_commands
 from coworld.upload import (
+    AutoChampion,
     ContainerImageResponse,
     CoworldListEntry,
     CoworldUploadClient,
@@ -458,12 +459,20 @@ def submit(
         bool,
         typer.Option("--open-browser/--no-open-browser", help="Open the policy page in a browser after submitting."),
     ] = True,
+    auto_champion: Annotated[
+        AutoChampion,
+        typer.Option(
+            "--auto-champion",
+            help="Champion promotion mode after the policy qualifies.",
+        ),
+    ] = AutoChampion.always,
 ) -> None:
     submit_policy_to_league_cmd(
         policy,
         league_id=league,
         server=server,
         open_browser=open_browser,
+        auto_champion=auto_champion,
     )
 
 
