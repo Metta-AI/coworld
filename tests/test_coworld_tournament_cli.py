@@ -346,12 +346,22 @@ def test_episode_logs_downloads_only_my_policy_agents(
         method="GET",
         headers={"Authorization": "Bearer token"},
     ).respond_with_json(["policy_agent_0.log", "policy_agent_1.log"])
+    httpserver.expect_request(
+        f"/observatory/jobs/{JOB_ID}/policy-artifact",
+        method="GET",
+        headers={"Authorization": "Bearer token"},
+    ).respond_with_json(["policy_artifact_0.zip"])
     _expect_mine_memberships(httpserver, division_id=None)
     httpserver.expect_request(
         f"/observatory/jobs/{JOB_ID}/policy-logs/0",
         method="GET",
         headers={"Authorization": "Bearer token"},
     ).respond_with_data("mine log\n", content_type="text/plain")
+    httpserver.expect_request(
+        f"/observatory/v2/episode-requests/{EPISODE_REQUEST_ID}/{MY_POLICY_VERSION_ID}/policy-artifact/0",
+        method="GET",
+        headers={"Authorization": "Bearer token"},
+    ).respond_with_data(b"PK\x03\x04mine zip", content_type="application/zip")
 
     result = CliRunner().invoke(
         app,
@@ -369,6 +379,97 @@ def test_episode_logs_downloads_only_my_policy_agents(
     assert result.exit_code == 0, result.output
     assert (tmp_path / f"{EPISODE_REQUEST_ID}-policy_agent_0.log").read_text() == "mine log\n"
     assert not (tmp_path / f"{EPISODE_REQUEST_ID}-policy_agent_1.log").exists()
+    # Agent 0 also has an artifact, so it is downloaded alongside the log; agent 1 is not mine.
+    assert (tmp_path / f"{EPISODE_REQUEST_ID}-policy_agent_0.zip").read_bytes() == b"PK\x03\x04mine zip"
+    assert not (tmp_path / f"{EPISODE_REQUEST_ID}-policy_agent_1.zip").exists()
+
+
+def test_episode_logs_agent_download_dir_fetches_both_log_and_artifact(
+    httpserver: HTTPServer,
+    tmp_path: Path,
+) -> None:
+    episode_request = _episode_request(episode_request_id=EPISODE_REQUEST_ID, replay_url=None)
+    del episode_request["assignments"]
+    httpserver.expect_request(
+        f"/observatory/v2/episode-requests/{EPISODE_REQUEST_ID}",
+        method="GET",
+    ).respond_with_json(episode_request)
+    httpserver.expect_request(
+        f"/observatory/jobs/{JOB_ID}/policy-logs",
+        method="GET",
+    ).respond_with_json(["policy_agent_0.log", "policy_agent_1.log"])
+    httpserver.expect_request(
+        f"/observatory/jobs/{JOB_ID}/policy-artifact",
+        method="GET",
+    ).respond_with_json(["policy_artifact_0.zip"])
+    httpserver.expect_request(
+        f"/observatory/jobs/{JOB_ID}/policy-logs/0",
+        method="GET",
+    ).respond_with_data("agent0 log\n", content_type="text/plain")
+    httpserver.expect_request(
+        f"/observatory/v2/episode-requests/{EPISODE_REQUEST_ID}/{MY_POLICY_VERSION_ID}/policy-artifact/0",
+        method="GET",
+    ).respond_with_data(b"PK\x03\x04agent0 zip", content_type="application/zip")
+
+    result = CliRunner().invoke(
+        app,
+        [
+            "episode-logs",
+            EPISODE_REQUEST_ID,
+            "--agent",
+            "0",
+            "--download-dir",
+            str(tmp_path),
+            "--server",
+            httpserver.url_for(""),
+        ],
+    )
+
+    assert result.exit_code == 0, result.output
+    assert (tmp_path / f"{EPISODE_REQUEST_ID}-policy_agent_0.log").read_text() == "agent0 log\n"
+    assert (tmp_path / f"{EPISODE_REQUEST_ID}-policy_agent_0.zip").read_bytes() == b"PK\x03\x04agent0 zip"
+
+
+def test_episode_logs_agent_view_prints_artifact_hint(
+    httpserver: HTTPServer,
+) -> None:
+    episode_request = _episode_request(episode_request_id=EPISODE_REQUEST_ID, replay_url=None)
+    del episode_request["assignments"]
+    httpserver.expect_request(
+        f"/observatory/v2/episode-requests/{EPISODE_REQUEST_ID}",
+        method="GET",
+    ).respond_with_json(episode_request)
+    httpserver.expect_request(
+        f"/observatory/jobs/{JOB_ID}/policy-logs",
+        method="GET",
+    ).respond_with_json(["policy_agent_0.log"])
+    httpserver.expect_request(
+        f"/observatory/jobs/{JOB_ID}/policy-artifact",
+        method="GET",
+    ).respond_with_json(["policy_artifact_0.zip"])
+    httpserver.expect_request(
+        f"/observatory/jobs/{JOB_ID}/policy-logs/0",
+        method="GET",
+    ).respond_with_data("agent0 log\n", content_type="text/plain")
+
+    result = CliRunner().invoke(
+        app,
+        [
+            "episode-logs",
+            EPISODE_REQUEST_ID,
+            "--agent",
+            "0",
+            "--server",
+            httpserver.url_for(""),
+        ],
+    )
+
+    assert result.exit_code == 0, result.output
+    assert "agent0 log" in result.output
+    assert "uploaded a player artifact" in result.output
+    assert "--artifact" in result.output
+    # Viewing must not silently download the artifact bytes.
+    assert not any(request.path.endswith("/policy-artifact/0") for request, _ in httpserver.log)
 
 
 def test_episode_logs_downloads_game_log(
@@ -402,6 +503,300 @@ def test_episode_logs_downloads_game_log(
 
     assert result.exit_code == 0, result.output
     assert (tmp_path / f"{EPISODE_REQUEST_ID}-game.log").read_text() == "game log\n"
+
+
+def test_episode_logs_downloads_player_artifact(
+    httpserver: HTTPServer,
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    episode_request = _episode_request(episode_request_id=EPISODE_REQUEST_ID, replay_url=None)
+    del episode_request["assignments"]
+    httpserver.expect_request(
+        f"/observatory/v2/episode-requests/{EPISODE_REQUEST_ID}",
+        method="GET",
+        headers={"Authorization": "Bearer token"},
+    ).respond_with_json(episode_request)
+    httpserver.expect_request(
+        f"/observatory/jobs/{JOB_ID}/policy-artifact",
+        method="GET",
+        headers={"Authorization": "Bearer token"},
+    ).respond_with_json(["policy_artifact_0.zip"])
+    httpserver.expect_request(
+        f"/observatory/v2/episode-requests/{EPISODE_REQUEST_ID}/{MY_POLICY_VERSION_ID}/policy-artifact/0",
+        method="GET",
+        headers={"Authorization": "Bearer token"},
+    ).respond_with_data(b"PK\x03\x04artifact zip", content_type="application/zip")
+
+    result = CliRunner().invoke(
+        app,
+        [
+            "episode-logs",
+            EPISODE_REQUEST_ID,
+            "--agent",
+            "0",
+            "--artifact",
+            "--download-dir",
+            str(tmp_path),
+            "--server",
+            httpserver.url_for(""),
+        ],
+    )
+
+    assert result.exit_code == 0, result.output
+    assert (tmp_path / f"{EPISODE_REQUEST_ID}-policy_agent_0.zip").read_bytes() == b"PK\x03\x04artifact zip"
+
+
+def test_episode_logs_artifact_falls_back_to_job_level_when_v2_route_missing(
+    httpserver: HTTPServer,
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    episode_request = _episode_request(episode_request_id=EPISODE_REQUEST_ID, replay_url=None)
+    del episode_request["assignments"]
+    httpserver.expect_request(
+        f"/observatory/v2/episode-requests/{EPISODE_REQUEST_ID}",
+        method="GET",
+    ).respond_with_json(episode_request)
+    httpserver.expect_request(
+        f"/observatory/jobs/{JOB_ID}/policy-artifact",
+        method="GET",
+    ).respond_with_json(["policy_artifact_0.zip"])
+    # v2 ownership-scoped route is not deployed yet -> 404.
+    httpserver.expect_request(
+        f"/observatory/v2/episode-requests/{EPISODE_REQUEST_ID}/{MY_POLICY_VERSION_ID}/policy-artifact/0",
+        method="GET",
+    ).respond_with_data("not found", status=404)
+    # Job-level route is deployed and serves the zip.
+    httpserver.expect_request(
+        f"/observatory/jobs/{JOB_ID}/policy-artifact/0",
+        method="GET",
+    ).respond_with_data(b"PK\x03\x04job-level zip", content_type="application/zip")
+
+    result = CliRunner().invoke(
+        app,
+        [
+            "episode-logs",
+            EPISODE_REQUEST_ID,
+            "--agent",
+            "0",
+            "--artifact",
+            "--download-dir",
+            str(tmp_path),
+            "--server",
+            httpserver.url_for(""),
+        ],
+    )
+
+    assert result.exit_code == 0, result.output
+    assert (tmp_path / f"{EPISODE_REQUEST_ID}-policy_agent_0.zip").read_bytes() == b"PK\x03\x04job-level zip"
+
+
+def test_episode_logs_artifact_403_propagates_without_fallback(
+    httpserver: HTTPServer,
+    tmp_path: Path,
+) -> None:
+    episode_request = _episode_request(episode_request_id=EPISODE_REQUEST_ID, replay_url=None)
+    del episode_request["assignments"]
+    httpserver.expect_request(
+        f"/observatory/v2/episode-requests/{EPISODE_REQUEST_ID}",
+        method="GET",
+    ).respond_with_json(episode_request)
+    httpserver.expect_request(
+        f"/observatory/jobs/{JOB_ID}/policy-artifact",
+        method="GET",
+    ).respond_with_json(["policy_artifact_0.zip"])
+    httpserver.expect_request(
+        f"/observatory/v2/episode-requests/{EPISODE_REQUEST_ID}/{MY_POLICY_VERSION_ID}/policy-artifact/0",
+        method="GET",
+    ).respond_with_data("denied", status=403)
+
+    result = CliRunner().invoke(
+        app,
+        [
+            "episode-logs",
+            EPISODE_REQUEST_ID,
+            "--agent",
+            "0",
+            "--artifact",
+            "--download-dir",
+            str(tmp_path),
+            "--server",
+            httpserver.url_for(""),
+        ],
+    )
+
+    assert result.exit_code != 0
+    assert "Access denied (403)" in str(result.exception) or "403" in result.output
+    # No job-level fallback request should have been made on a genuine 403.
+    assert not any(request.path == f"/observatory/jobs/{JOB_ID}/policy-artifact/0" for request, _ in httpserver.log)
+
+
+def test_episode_logs_artifact_output_writes_named_file(
+    httpserver: HTTPServer,
+    tmp_path: Path,
+) -> None:
+    episode_request = _episode_request(episode_request_id=EPISODE_REQUEST_ID, replay_url=None)
+    del episode_request["assignments"]
+    httpserver.expect_request(
+        f"/observatory/v2/episode-requests/{EPISODE_REQUEST_ID}",
+        method="GET",
+    ).respond_with_json(episode_request)
+    httpserver.expect_request(
+        f"/observatory/jobs/{JOB_ID}/policy-artifact",
+        method="GET",
+    ).respond_with_json(["policy_artifact_0.zip"])
+    httpserver.expect_request(
+        f"/observatory/v2/episode-requests/{EPISODE_REQUEST_ID}/{MY_POLICY_VERSION_ID}/policy-artifact/0",
+        method="GET",
+    ).respond_with_data(b"PK\x03\x04named zip", content_type="application/zip")
+
+    output_path = tmp_path / "my-artifact.zip"
+    result = CliRunner().invoke(
+        app,
+        [
+            "episode-logs",
+            EPISODE_REQUEST_ID,
+            "--agent",
+            "0",
+            "--artifact",
+            "--output",
+            str(output_path),
+            "--server",
+            httpserver.url_for(""),
+        ],
+    )
+
+    assert result.exit_code == 0, result.output
+    assert output_path.read_bytes() == b"PK\x03\x04named zip"
+
+
+def test_episode_logs_artifact_defaults_to_cwd_file(
+    httpserver: HTTPServer,
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    monkeypatch.chdir(tmp_path)
+    episode_request = _episode_request(episode_request_id=EPISODE_REQUEST_ID, replay_url=None)
+    del episode_request["assignments"]
+    httpserver.expect_request(
+        f"/observatory/v2/episode-requests/{EPISODE_REQUEST_ID}",
+        method="GET",
+    ).respond_with_json(episode_request)
+    httpserver.expect_request(
+        f"/observatory/jobs/{JOB_ID}/policy-artifact",
+        method="GET",
+    ).respond_with_json(["policy_artifact_0.zip"])
+    httpserver.expect_request(
+        f"/observatory/v2/episode-requests/{EPISODE_REQUEST_ID}/{MY_POLICY_VERSION_ID}/policy-artifact/0",
+        method="GET",
+    ).respond_with_data(b"PK\x03\x04default zip", content_type="application/zip")
+
+    result = CliRunner().invoke(
+        app,
+        [
+            "episode-logs",
+            EPISODE_REQUEST_ID,
+            "--agent",
+            "0",
+            "--artifact",
+            "--server",
+            httpserver.url_for(""),
+        ],
+    )
+
+    assert result.exit_code == 0, result.output
+    default_path = tmp_path / f"{EPISODE_REQUEST_ID}-policy_agent_0.zip"
+    assert default_path.read_bytes() == b"PK\x03\x04default zip"
+
+
+def test_episode_logs_artifact_unknown_agent_lists_available(
+    httpserver: HTTPServer,
+    tmp_path: Path,
+) -> None:
+    episode_request = _episode_request(episode_request_id=EPISODE_REQUEST_ID, replay_url=None)
+    del episode_request["assignments"]
+    httpserver.expect_request(
+        f"/observatory/v2/episode-requests/{EPISODE_REQUEST_ID}",
+        method="GET",
+    ).respond_with_json(episode_request)
+    httpserver.expect_request(
+        f"/observatory/jobs/{JOB_ID}/policy-artifact",
+        method="GET",
+    ).respond_with_json(["policy_artifact_0.zip"])
+
+    result = CliRunner().invoke(
+        app,
+        [
+            "episode-logs",
+            EPISODE_REQUEST_ID,
+            "--agent",
+            "1",
+            "--artifact",
+            "--output",
+            str(tmp_path / "x.zip"),
+            "--server",
+            httpserver.url_for(""),
+        ],
+    )
+
+    assert result.exit_code != 0
+    assert "Available agent indices: 0" in result.output
+
+
+def test_replay_open_with_artifacts_downloads_zips(
+    httpserver: HTTPServer,
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    artifacts_dir = tmp_path / "artifacts"
+    episode_request = _episode_request(episode_request_id=EPISODE_REQUEST_ID, replay_url=None)
+    del episode_request["assignments"]
+    httpserver.expect_request(
+        f"/observatory/v2/episode-requests/{EPISODE_REQUEST_ID}",
+        method="GET",
+    ).respond_with_json(episode_request)
+    httpserver.expect_request(
+        f"/observatory/jobs/{JOB_ID}/policy-artifact",
+        method="GET",
+    ).respond_with_json(["policy_artifact_0.zip", "policy_artifact_1.zip"])
+    # v2 route not deployed -> both fall back to the job-level route.
+    httpserver.expect_request(
+        f"/observatory/v2/episode-requests/{EPISODE_REQUEST_ID}/{MY_POLICY_VERSION_ID}/policy-artifact/0",
+        method="GET",
+    ).respond_with_data("not found", status=404)
+    httpserver.expect_request(
+        f"/observatory/v2/episode-requests/{EPISODE_REQUEST_ID}/{OTHER_POLICY_VERSION_ID}/policy-artifact/1",
+        method="GET",
+    ).respond_with_data("not found", status=404)
+    httpserver.expect_request(
+        f"/observatory/jobs/{JOB_ID}/policy-artifact/0",
+        method="GET",
+    ).respond_with_data(b"PK\x03\x04zip0", content_type="application/zip")
+    httpserver.expect_request(
+        f"/observatory/jobs/{JOB_ID}/policy-artifact/1",
+        method="GET",
+    ).respond_with_data(b"PK\x03\x04zip1", content_type="application/zip")
+
+    result = CliRunner().invoke(
+        app,
+        [
+            "replay-open",
+            EPISODE_REQUEST_ID,
+            "--with-artifacts",
+            "--artifacts-dir",
+            str(artifacts_dir),
+            "--no-open-browser",
+            "--server",
+            httpserver.url_for(""),
+        ],
+    )
+
+    # Artifacts are downloaded before the replay step; this episode has no replay_url, so the
+    # replay step then exits, but the artifacts must already be on disk.
+    assert "No replay URL is available" in result.output
+    assert (artifacts_dir / "policy_artifact_0.zip").read_bytes() == b"PK\x03\x04zip0"
+    assert (artifacts_dir / "policy_artifact_1.zip").read_bytes() == b"PK\x03\x04zip1"
 
 
 def test_replay_open_downloads_only_game_image_for_local_replay(

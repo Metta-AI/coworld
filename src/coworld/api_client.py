@@ -635,6 +635,19 @@ class CoworldApiClient:
     def get_job_policy_log(self, job_id: UUID, agent_idx: int) -> str:
         return self.get_text(f"/jobs/{job_id}/policy-logs/{agent_idx}")
 
+    def list_job_policy_artifacts(self, job_id: UUID) -> list[str]:
+        return self._get(f"/jobs/{job_id}/policy-artifact", list[str])
+
+    def get_job_policy_artifact(self, job_id: UUID, agent_idx: int) -> bytes:
+        return self.get_bytes(f"/jobs/{job_id}/policy-artifact/{agent_idx}")
+
+    def get_episode_request_policy_artifact(
+        self, episode_request_id: str, policy_version_id: UUID, agent_idx: int
+    ) -> bytes:
+        return self.get_bytes(
+            f"/v2/episode-requests/{episode_request_id}/{policy_version_id}/policy-artifact/{agent_idx}"
+        )
+
     def create_replay_session(
         self, *, coworld_id: str, episode_id: UUID, replay_uri: str
     ) -> CoworldReplaySessionResponse:
