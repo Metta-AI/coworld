@@ -33,9 +33,18 @@ uv run coworld play <manifest.json> [image|request.json]
 uv run coworld xp-request create <body.json|-> / list / get / episodes
 uv run coworld build / certify / upload-coworld
 uv run coworld upload-policy / submit
+uv run coworld player list / use <player-id> / unset
 ```
 
 Auth-backed commands require `uv run softmax login` first. The `auth` extra pulls in `softmax-cli`.
+
+`coworld player` is softmax-cli's player subapp mounted for discoverability (player identity is a
+Softmax-platform concept; `softmax player ...` is the same thing, implemented in
+`packages/softmax-cli/src/softmax/players.py`). `player use <player-id>` mints (or reuses) a 24h player
+session and stores it as the active player in `~/.softmax/credentials.yaml` (`player_sessions`). Every
+identity-bearing command then acts as that player, because they all resolve their token through
+`softmax.auth.load_current_token`. `player unset` clears the active pointer, reverting to your main user
+credential.
 
 ## Validation
 

@@ -7,7 +7,7 @@ import pytest
 from pytest_httpserver import HTTPServer
 from typer.testing import CliRunner
 
-from coworld.api_client import CoworldApiClient, _load_current_cogames_token
+from coworld.api_client import CoworldApiClient, _load_current_token
 from coworld.cli import app
 
 NOW = "2026-05-12T12:00:00Z"
@@ -41,7 +41,7 @@ def test_api_client_token_lookup_uses_server_url(monkeypatch: pytest.MonkeyPatch
 
     monkeypatch.setattr("softmax.auth.load_current_token", fake_load_current_token)
 
-    assert _load_current_cogames_token(server_url="http://localhost:3102/api") == "token"
+    assert _load_current_token(server_url="http://localhost:3102/api") == "token"
     assert requested_servers == ["http://localhost:3102/api"]
 
 
@@ -293,7 +293,7 @@ def test_retire_membership_posts_reason_json(
     httpserver: HTTPServer,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    monkeypatch.setattr("coworld.api_client._load_current_cogames_token", lambda *, server_url: "token")
+    monkeypatch.setattr("coworld.api_client._load_current_token", lambda *, server_url: "token")
     membership_id = "lpm_00000000-0000-0000-0000-000000000051"
     reason = "Broken action names hang qualifiers."
     httpserver.expect_request(

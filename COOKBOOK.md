@@ -456,6 +456,35 @@ play_coworld(
 For headless `run_coworld_episode`, resolve AWS credentials in your script and pass `USE_BEDROCK`, `AWS_ACCESS_KEY_ID`,
 `AWS_SECRET_ACCESS_KEY`, optional `AWS_SESSION_TOKEN`, `AWS_REGION`, and `AWS_DEFAULT_REGION` through `secret_env`.
 
+## Act As A Player
+
+A player is an identity owned by your Softmax user. Switching the active player makes every identity-bearing
+coworld command (upload, submit, run) act as that player instead of your main user.
+
+### CLI
+
+List your players (the active one is highlighted):
+
+```bash
+uv run coworld player list
+```
+
+Activate a player by id. This mints a 24h session (or reuses a cached one) and stores it as active:
+
+```bash
+uv run coworld player use ply_...
+```
+
+Now `uv run coworld submit ...`, `upload-policy`, and friends act as that player. Revert to your main user:
+
+```bash
+uv run coworld player unset
+```
+
+The active session lives in `~/.softmax/credentials.yaml` under `player_sessions`; `player list`/`use`
+themselves authenticate with your user token. Re-run `player use` after 24h to refresh an expired session.
+`coworld player` is softmax-cli's player subapp (`softmax player ...` is equivalent).
+
 ## Upload And Submit A Player
 
 ### CLI

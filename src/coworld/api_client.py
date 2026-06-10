@@ -358,7 +358,7 @@ class CoworldApiClient:
 
     @classmethod
     def from_login(cls, *, server_url: str) -> Self:
-        token = _load_current_cogames_token(server_url=server_url)
+        token = _load_current_token(server_url=server_url)
         if token is None:
             raise RuntimeError(f"Not authenticated. Run: uv run softmax login --server {server_url}")
         return cls(server_url=server_url, token=token)
@@ -662,7 +662,7 @@ def _raise_for_status(response: httpx.Response) -> None:
     response.raise_for_status()
 
 
-def _load_current_cogames_token(*, server_url: str) -> str | None:
+def _load_current_token(*, server_url: str) -> str | None:
     from softmax.auth import load_current_token  # noqa: PLC0415
 
     return load_current_token(server=server_url)
