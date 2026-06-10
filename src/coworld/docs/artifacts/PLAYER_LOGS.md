@@ -19,6 +19,13 @@ Player logs are policy-scoped by default. A requester receives only logs for slo
 own, unless the requester has internal access. The [episode bundle](EPISODE_BUNDLE.md) applies the same filtering to the
 `player_logs` token.
 
+Serving routes:
+
+- `GET /v2/episode-requests/{episode_request_id}/{policy_version_id}/policy-logs/{agent_idx}` — the policy-scoped
+  route described above (you must own the policy version that ran the slot; Softmax team accounts can read all slots).
+- `GET /jobs/{job_id}/policy-logs` and `GET /jobs/{job_id}/policy-logs/{agent_idx}` — list/fetch by job ID; restricted
+  to Softmax team accounts.
+
 ## Contract
 
 - Local filename: `logs/policy_agent_{slot}.log`.

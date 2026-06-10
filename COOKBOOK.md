@@ -669,35 +669,57 @@ GET  /v2/experience-requests/xreq_...
 GET  /v2/experience-requests/xreq_.../episodes
 ```
 
+### Experience request replays
+
+Each child episode is a normal episode request: once its job completes, the row from `xp-request episodes` (or
+`GET /v2/experience-requests/xreq_.../episodes`) carries a `replay_url`, and the `ereq_...` ID works with every
+episode inspection command:
+
+```bash
+uv run coworld xp-request episodes xreq_...           # find children with replays
+uv run coworld replay-open ereq_...                   # serve the replay through a local Docker game container
+uv run coworld replay-open ereq_... --hosted          # hosted Observatory viewer session
+uv run coworld episode-logs ereq_... --game           # game log for a child episode
+```
+
+While a child is still running, the row carries `live_url` instead — open it in a browser to watch the episode live.
+See [Retrieve Logs, Results, And Replays](#retrieve-logs-results-and-replays) for the full artifact recipes.
+
 ## Retrieve Logs, Results, And Replays
 
 ### CLI
 
-List accessible player logs for an episode:
+Start from the episode request row. `GET /v2/episode-requests/{ereq}` (the `coworld episodes` command) is the
+ownership-scoped front door for hosted episode data: status, participants, per-policy `scores`, `error`/`error_type`
+on failure, `replay_url` once the job completes, and `live_url` while it is running:
 
 ```bash
-uv run coworld episode-logs ereq_... --list --mine
+uv run coworld episodes ereq_... --json
 ```
 
-Print or download one player log:
-
-```bash
-uv run coworld episode-logs ereq_... --agent 0 --mine
-uv run coworld episode-logs ereq_... --agent 0 --mine --download-dir logs/
-```
-
-Print or download the game log:
+Print or download the game log (served by the ownership-scoped
+`GET /v2/episode-requests/{ereq}/artifacts/logs` route):
 
 ```bash
 uv run coworld episode-logs ereq_... --game
 uv run coworld episode-logs ereq_... --game --download-dir logs/
 ```
 
-Fetch structured artifacts:
+For per-agent player logs of policies you own, use the ownership-scoped raw route (no CLI command uses it yet):
+
+```text
+GET /v2/episode-requests/{ereq}/{policy_version_id}/policy-logs/{agent_idx}
+```
+
+**Softmax team accounts only.** The following commands go through `/jobs/{job_id}/...` routes that are restricted to
+team accounts; non-team users get 403. Non-team users should use the episode row's `scores` and the routes above
+instead:
 
 ```bash
-uv run coworld episode-results ereq_... --output results.json
-uv run coworld episode-stats ereq_... --json
+uv run coworld episode-results ereq_... --output results.json   # team-only
+uv run coworld episode-stats ereq_... --json                    # team-only
+uv run coworld episode-logs ereq_... --list --mine              # team-only (per-agent log listing)
+uv run coworld episode-logs ereq_... --agent 0 --mine           # team-only (per-agent log fetch)
 ```
 
 Find and download hosted replays:
@@ -728,32 +750,29 @@ Coworld package, pulls only the game image needed for replay mode, downloads the
 locally through Docker. With `--hosted`, it asks Observatory to create a hosted replay viewer session and opens the
 returned viewer URL.
 
-Hosted replay artifacts are stored as zlib-compressed `replay.json.z`. `coworld replay` and `replay-open` materialize
-compressed replay URIs before passing them to local Docker. Raw Docker replay mode should point `COGAME_LOAD_REPLAY_URI`
-at a replay payload the game image can load.
+Treat `replay_url` as an opaque URL to game-owned replay bytes. Episodes executed on the k8s backend store them
+zlib-compressed under the storage name `replay.json.z` (a platform convention — the payload format is owned by the
+game, not necessarily JSON); episodes executed on other backends can report differently named replay URLs.
+`coworld replay` and `replay-open` key decompression off the URL suffix (`.json.z` zlib, `.json.gz` gzip, anything
+else passed through raw) before handing the file to local Docker. Raw Docker replay mode should point
+`COGAME_LOAD_REPLAY_URI` at a replay payload the game image can load.
 
 ### Non-CLI API
 
-Use the API client for metadata, logs, results, and hosted replay sessions:
+The episode request routes are the front door. Episode rows carry everything an episode owner needs: `status`,
+per-policy `scores`, `error`/`error_type` on failure, `replay_url` (a direct URL to the game-owned replay bytes once
+the job completes), and `live_url` while it is running:
 
 ```python
-from pathlib import Path
-
 from coworld.api_client import CoworldApiClient
 from softmax.auth import get_api_server
 
 
 with CoworldApiClient.from_login(server_url=get_api_server()) as client:
+    episodes = client.list_episode_requests(pool_id="pool_...", limit=200)
     episode = client.get_episode_request("ereq_...")
-    job_id = episode.job_id
-    assert job_id is not None
-
-    stats = client.get_job_episode_stats(job_id)
-    Path("results.json").write_bytes(client.get_job_artifact_bytes(job_id, "results"))
-    Path("replay.json.z").write_bytes(client.get_job_artifact_bytes(job_id, "replay"))
-
-    player_logs = client.list_job_policy_logs(job_id)
-    first_player_log = client.get_job_policy_log(job_id, 0)
+    game_log = client.get_episode_request_artifact_text(episode.id, "logs")
+    scores = episode.scores
 
     assert episode.coworld_id is not None
     assert episode.episode_id is not None
@@ -764,6 +783,28 @@ with CoworldApiClient.from_login(server_url=get_api_server()) as client:
         replay_uri=episode.replay_url,
     )
     print(viewer.viewer_url)
+```
+
+Ownership-scoped raw routes:
+
+```text
+GET /v2/episode-requests
+GET /v2/episode-requests/ereq_...
+GET /v2/episode-requests/ereq_.../artifacts/{spec|game-config|logs|error-info}
+GET /v2/episode-requests/ereq_.../{policy_version_id}/policy-logs/{agent_idx}
+```
+
+The `/jobs/{job_id}/...` helpers on the client (`get_job_episode_stats`, `get_job_artifact_bytes`,
+`list_job_policy_logs`, `get_job_policy_log`) hit team-only routes; non-team accounts get 403. Softmax team accounts
+can use them for raw `results`/`replay` bytes and per-agent logs by `job_id`:
+
+```python
+    job_id = episode.job_id
+    assert job_id is not None
+    stats = client.get_job_episode_stats(job_id)                                    # team-only
+    results_bytes = client.get_job_artifact_bytes(job_id, "results")                # team-only
+    replay_bytes = client.get_job_artifact_bytes(job_id, "replay")                  # team-only
+    player_logs = client.list_job_policy_logs(job_id)                               # team-only
 ```
 
 For raw HTTP hosted replay creation, the public request body is:

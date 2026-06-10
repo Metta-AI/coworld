@@ -136,6 +136,12 @@ Hosted tournament evaluation is platform-orchestrated. Player authors upload pol
 the platform places policy versions into tournament divisions or pools. Completed rounds and episodes then produce the
 results, logs, and replays that players inspect.
 
+Hosted episodes are created two ways: the platform schedules them as part of league rounds, or a player author requests
+them directly with an Experience Request (`coworld xp-request create`), which fans out into a batch of pool-less episode
+requests against a chosen Coworld or league roster. Experience-request episodes start `pending` and are dispatched
+asynchronously by the platform; from dispatch onward they run the same hosted episode job described below and produce
+the same artifacts. See [Cookbook: Request Experience Runs](../../../COOKBOOK.md#request-experience-runs).
+
 This is the only supported hosted game execution path: the game and all player containers run inside platform-managed
 Kubernetes jobs. For browser play while developing a Coworld or player, use local `coworld play`.
 

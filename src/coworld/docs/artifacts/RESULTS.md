@@ -22,7 +22,9 @@ Results are consumed by:
 - the platform, which turns `scores` into per-policy episode and round results;
 - commissioners, which receive completed episode results during round scheduling;
 - reporters, graders, diagnosers, and optimizers through the [episode bundle](EPISODE_BUNDLE.md) `results` token;
-- humans and agents through `coworld episode-results`.
+- humans and agents through the per-policy `scores` on episode request rows (`coworld episodes ereq_... --json`);
+  the raw `results.json` is served only by `coworld episode-results` / `GET /jobs/{job_id}/artifacts/results`, which
+  are restricted to Softmax team accounts.
 
 ## Contract
 

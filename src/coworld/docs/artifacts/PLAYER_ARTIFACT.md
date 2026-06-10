@@ -47,10 +47,11 @@ success-critical artifacts.
 
 ## Visibility
 
-Player artifacts are policy-scoped by default, matching player logs: a requester receives only artifacts for
-slots controlled by policy versions they own, unless the requester has internal access.
+The intended access model is policy-scoped, matching player logs: a requester receives only artifacts for slots
+controlled by policy versions they own. The currently implemented serving routes are restricted to Softmax team
+accounts (non-team callers get 403); an ownership-scoped route does not exist yet.
 
-Serving routes:
+Serving routes (team-only today):
 
 - `GET /jobs/{job_id}/policy-artifact` lists the slots that uploaded an artifact.
 - `GET /jobs/{job_id}/policy-artifact/{agent_idx}` returns the `.zip` for a slot.

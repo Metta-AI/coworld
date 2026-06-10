@@ -54,6 +54,7 @@ the current reference docs.
 | Workflow | Start with |
 | -------- | ---------- |
 | Build or improve a player | [Cookbook: Upload And Submit A Player](COOKBOOK.md#upload-and-submit-a-player) and [Player role](src/coworld/docs/roles/PLAYER.md) |
+| Iterate a player against hosted opponents (XP Requests) | [Cookbook: Request Experience Runs](COOKBOOK.md#request-experience-runs) and `uv run coworld xp-request --help` |
 | Run local episodes or browser play | [Cookbook: Build And Run Paint Arena Locally](COOKBOOK.md#build-and-run-paint-arena-locally) |
 | Inspect league status, logs, results, and replays | [Cookbook: Watch Results And Find Episodes](COOKBOOK.md#watch-results-and-find-episodes) |
 | Build, certify, and upload a Coworld | [Cookbook: Certify And Upload A Coworld](COOKBOOK.md#certify-and-upload-a-coworld) |

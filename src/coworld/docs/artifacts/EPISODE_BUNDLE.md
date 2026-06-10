@@ -85,13 +85,14 @@ The response should be a `.zip` body with `Content-Type: application/zip`. Auth 
 per-artifact endpoints (`/v2/episodes/{ereq_id}/results`, `.../logs`, etc.). The `include` query parameter should be
 comma-separated; omitting it should return every artifact the requester is permitted to see.
 
-Until those surfaces land, use the per-artifact commands in
+Until those surfaces land, use the episode-request routes and per-artifact commands in
 [COOKBOOK.md](../../../../COOKBOOK.md#retrieve-logs-results-and-replays) for interactive investigation:
 
 ```bash
-uv run coworld episode-results ereq_... --output results.json
-uv run coworld episode-logs ereq_... --mine --download-dir logs/
+uv run coworld episodes ereq_... --json                          # status, scores, replay_url
+uv run coworld episode-logs ereq_... --game --download-dir logs/ # game log
 uv run coworld replays --round round_... --mine --download-dir replays/
+uv run coworld episode-results ereq_... --output results.json    # Softmax team accounts only
 ```
 
 ## Access Control

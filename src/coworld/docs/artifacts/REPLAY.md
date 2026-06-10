@@ -38,6 +38,12 @@ Replays are consumed by:
 - humans and agents through `coworld replay` for local replay files and `coworld replays` / `coworld replay-open` for
   hosted episode artifacts.
 
+Hosted replays are discovered through the `replay_url` field on episode request rows (round episodes and Experience
+Request children alike), set once the episode job completes. `coworld replay-open ereq_...` serves that artifact through
+a local Docker game container; `coworld replay-open ereq_... --hosted` posts `{coworld_id, replay_uri}` to
+`POST /v2/coworlds/replays/session` and opens the returned hosted viewer URL. See
+[Cookbook: Retrieve Logs, Results, And Replays](../../../../COOKBOOK.md#retrieve-logs-results-and-replays).
+
 The episode bundle stores replay bytes as `replay.json` inside the outer zip. Hosted storage may use compressed
 `replay.json.z`, but bundle consumers should treat the bundled `replay` token as the uncompressed replay payload.
 
