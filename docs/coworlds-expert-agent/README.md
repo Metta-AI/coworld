@@ -47,4 +47,18 @@ coworlds-expert-agent/
     player-policy-design.md              (orientation, LLM trust, persona, memory)
     coworld-schema-current-state.md      (manifest schema, role contracts)
     working-with-people-on-design.md     (collaboration patterns)
+  skills/
+    upload-player-artifact/SKILL.md      (player artifact upload: env var, zip, Python + Nim examples)
 ```
+
+## Skills
+
+Skills are task-focused guides a player author (or agent) follows directly. Copy a skill into your
+project's `.claude/skills/` directory to use it:
+
+```bash
+cp -r skills/upload-player-artifact /path/to/your-coworld/.claude/skills/
+```
+
+- `upload-player-artifact` — how a player uploads a single debug artifact at episode end via
+  `COWORLD_PLAYER_ARTIFACT_UPLOAD_URL` (zip guidance, 200 MB cap, Python and Nim upload examples).
