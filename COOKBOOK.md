@@ -141,7 +141,7 @@ Run a browser-play session with the bundled Paint Arena player:
 uv run coworld play tmp/paintarena/coworld_manifest.json
 ```
 
-Run a headless local episode with the same default fixture:
+Run one headless local episode with the same default fixture:
 
 ```bash
 uv run coworld run-episode tmp/paintarena/coworld_manifest.json
@@ -149,7 +149,8 @@ uv run coworld run-episode tmp/paintarena/coworld_manifest.json
 
 Use `play` when you want browser links for a live local episode. Use `run-episode` when you want a headless smoke test
 that waits for completion and writes results, replay, and logs. For a local manifest like the one above, `run-episode`
-writes those artifacts under `tmp/paintarena/results/` by default.
+writes those artifacts under `tmp/paintarena/results/` by default. For repeated local runs, add `--episodes N`; the
+artifacts are written under `tmp/paintarena/results/episode-0001/`, `episode-0002/`, and so on.
 
 To show the resulting local replay, use `coworld replay` with the local replay file:
 

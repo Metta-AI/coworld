@@ -67,11 +67,14 @@ uv run coworld run-episode <manifest.json|coworld-id> [episode_request.json|play
   --timeout-seconds 120
 uv run coworld run-episode <manifest.json|coworld-id> [episode_request.json|player-image...] \
   --episodes 5 --timeout-seconds 120
+uv run coworld scrimmage <manifest.json|coworld-id> <player-image> \
+  --timeout-seconds 120
 ```
 
 Run it without `--episodes` for one completed local episode, or pass `--episodes N` (`-n N`) for repeated optimizer
 experience. With more than one episode the game seed is incremented per episode and each episode's artifacts go in an
-`episode-NNNN` subdirectory.
+`episode-NNNN` subdirectory. `scrimmage` runs one episode against the target player image passed as its required
+argument; it accepts the same `--run`, secret, Bedrock, timeout, and replay verification syntax.
 
 ### Inputs
 

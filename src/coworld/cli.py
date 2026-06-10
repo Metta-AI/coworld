@@ -467,15 +467,15 @@ def submit(
     )
 
 
-@app.command("run-episode")
+@app.command("run-episode", help="Run one or more headless local episodes.")
 def run_episode(
     manifest_uri: Annotated[str, typer.Argument(help="Path, URI, or Coworld ID for coworld_manifest.json.")],
     episode_request_or_player_images: Annotated[
         list[str] | None,
         typer.Argument(
             help=(
-                "Optional episode_request.json, or local player image override(s). One image is reused for every "
-                "player slot; otherwise provide one image per slot."
+                "Optional episode_request.json, or target policy/player container image override(s). One image is "
+                "reused for every player slot; otherwise provide one image per slot."
             )
         ),
     ] = None,
@@ -589,6 +589,62 @@ def run_episode(
         _echo_feedback_commands(manifest_uri, artifacts, server=server)
     if episodes > 1:
         typer.echo(f"Artifacts root: {artifacts_root}")
+
+
+@app.command("scrimmage", help="Run one local episode against a target policy container.")
+def scrimmage(
+    manifest_uri: Annotated[str, typer.Argument(help="Path, URI, or Coworld ID for coworld_manifest.json.")],
+    target_player_image: Annotated[
+        str,
+        typer.Argument(
+            help="Target policy/player container image. Reused for every player slot in the scrimmage episode."
+        ),
+    ],
+    run: Annotated[list[str] | None, typer.Option("--run", help="Command argv for the target player image.")] = None,
+    output_dir: Annotated[
+        Path | None,
+        typer.Option("--output-dir", "-o", help="Directory for episode artifacts."),
+    ] = None,
+    server: Annotated[str, typer.Option("--server", help="Observatory API server URL.")] = DEFAULT_SUBMIT_SERVER,
+    timeout_seconds: Annotated[float, typer.Option("--timeout-seconds", min=1.0)] = 3600.0,
+    verify_replay: Annotated[bool, typer.Option("--verify-replay/--no-verify-replay")] = False,
+    use_bedrock: Annotated[
+        bool,
+        typer.Option(
+            "--use-bedrock",
+            help="Enable AWS Bedrock access for player containers using host AWS credentials.",
+        ),
+    ] = False,
+    aws_profile: Annotated[
+        str | None,
+        typer.Option("--aws-profile", help="AWS profile to use when resolving --use-bedrock credentials."),
+    ] = None,
+    aws_region: Annotated[
+        str | None,
+        typer.Option("--aws-region", help="AWS region to use for --use-bedrock player containers."),
+    ] = None,
+    secret_env: Annotated[
+        list[str] | None,
+        typer.Option(
+            "--secret-env",
+            help="Secret environment variable for player containers (KEY=VALUE, can be repeated).",
+        ),
+    ] = None,
+) -> None:
+    run_episode(
+        manifest_uri,
+        [target_player_image],
+        run=run,
+        output_dir=output_dir,
+        episodes=1,
+        server=server,
+        timeout_seconds=timeout_seconds,
+        verify_replay=verify_replay,
+        use_bedrock=use_bedrock,
+        aws_profile=aws_profile,
+        aws_region=aws_region,
+        secret_env=secret_env,
+    )
 
 
 @contextmanager

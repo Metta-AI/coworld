@@ -76,7 +76,8 @@ because it writes artifacts directly to a local workspace and avoids hosted sche
 ### Headless Local Episodes
 
 `coworld run-episode` is the headless local execution path. Use it for smoke tests, reproducible debugging, and checking
-that a player can complete an episode against a manifest or explicit episode request.
+that a player can complete one or more episodes against a manifest or explicit episode request. It runs one episode by
+default; use `--episodes N` for repeated local runs.
 
 The local runner sequence is:
 

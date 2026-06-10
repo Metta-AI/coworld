@@ -592,6 +592,41 @@ def test_run_episode_runs_multiple_local_episodes_with_seed_variation(
     assert f"Artifacts root: {artifacts_root}" in result.output
 
 
+def test_scrimmage_runs_one_episode_for_target_player_container(
+    monkeypatch: MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    captured: list[tuple[CoworldEpisodeJobSpec, EpisodeArtifacts, dict[str, object]]] = []
+
+    def fake_run_coworld_episode(spec: CoworldEpisodeJobSpec, artifacts: object, **kwargs: object) -> None:
+        captured.append((spec, cast(EpisodeArtifacts, artifacts), kwargs))
+
+    monkeypatch.setattr("coworld.cli.run_coworld_episode", fake_run_coworld_episode)
+    manifest_path = _cogs_vs_clips_manifest(tmp_path)
+
+    result = CliRunner().invoke(
+        app,
+        [
+            "scrimmage",
+            str(manifest_path),
+            "target-policy:latest",
+            "--run",
+            "python",
+            "--run",
+            "/app/player.py",
+        ],
+    )
+
+    assert result.exit_code == 0, result.output
+    assert len(captured) == 1
+    spec, artifacts, kwargs = captured[0]
+    assert spec.game_config["seed"] == 0
+    assert artifacts.workspace == (manifest_path.parent / "results").resolve()
+    assert kwargs == {"timeout_seconds": 3600.0, "verify_replay": False, "container_prefix": "coworld-run"}
+    assert [player.image for player in spec.players] == ["target-policy:latest"] * 8
+    assert [player.run for player in spec.players] == [["python", "/app/player.py"]] * 8
+
+
 def _invoke_run_episode_artifacts(monkeypatch: MonkeyPatch, *args: str) -> EpisodeArtifacts:
     captured: dict[str, object] = {}
 
