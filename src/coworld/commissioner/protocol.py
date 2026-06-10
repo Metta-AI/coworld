@@ -384,6 +384,7 @@ class RoundCompletedResponse(BaseModel):
 
 class EpisodeCompletedResponse(BaseModel):
     episodes: list[EpisodeRequest] = Field(default_factory=list)
+    policy_membership_events: list[PolicyMembershipEventChange] = Field(default_factory=list)
 
     def to_json(self) -> dict[str, Any]:
         data = self.model_dump(mode="json")

@@ -18,6 +18,7 @@ from coworld.commissioner.protocol import (
     LeagueInfo,
     MembershipChange,
     MembershipInfo,
+    PolicyMembershipEventChange,
     RankingEntry,
     RoundComplete,
     RoundCompletedResponse,
@@ -226,6 +227,16 @@ def test_commissioner_message_parses_extended_hook_responses() -> None:
                     "policy_version_ids": [str(policy_version_id) for policy_version_id in policy_version_ids],
                 }
             ],
+            "policy_membership_events": [
+                {
+                    "league_policy_membership_id": str(membership_id),
+                    "from_division_id": str(division_id),
+                    "to_division_id": str(division_id),
+                    "status": "qualifying",
+                    "substatus": "retry_pending",
+                    "reason": "episode hook requested retry",
+                }
+            ],
         }
     )
     assert parsed_episode_completed == EpisodeCompletedResponse(
@@ -235,7 +246,17 @@ def test_commissioner_message_parses_extended_hook_responses() -> None:
                 variant_id="default",
                 policy_version_ids=policy_version_ids,
             )
-        ]
+        ],
+        policy_membership_events=[
+            PolicyMembershipEventChange(
+                league_policy_membership_id=membership_id,
+                from_division_id=division_id,
+                to_division_id=division_id,
+                status="qualifying",
+                substatus="retry_pending",
+                reason="episode hook requested retry",
+            )
+        ],
     )
 
 
