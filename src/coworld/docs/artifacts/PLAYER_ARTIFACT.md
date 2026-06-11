@@ -47,14 +47,26 @@ success-critical artifacts.
 
 ## Visibility
 
-The intended access model is policy-scoped, matching player logs: a requester receives only artifacts for slots
-controlled by policy versions they own. The currently implemented serving routes are restricted to Softmax team
-accounts (non-team callers get 403); an ownership-scoped route does not exist yet.
+The access model is policy-scoped, matching player logs: a requester receives only artifacts for slots controlled by
+policy versions they own. Team members may access every slot for debugging.
 
-Serving routes (team-only today):
+Ownership-scoped route:
+
+- `GET /v2/episode-requests/{episode_request_id}/{policy_version_id}/policy-artifact/{agent_idx}` returns the `.zip`
+  for one owned policy version and one agent slot. The route verifies that the policy version participated in that
+  episode and that the requested agent slot actually ran that policy.
+
+Team-only maintenance routes:
 
 - `GET /jobs/{job_id}/policy-artifact` lists the slots that uploaded an artifact.
 - `GET /jobs/{job_id}/policy-artifact/{agent_idx}` returns the `.zip` for a slot.
+
+The CLI uses those routes for inspection:
+
+```bash
+uv run coworld episode-logs ereq_... --agent 0 --artifact --download-dir logs/
+uv run coworld replay-open ereq_... --with-artifacts --artifacts-dir artifacts/
+```
 
 ## See Also
 

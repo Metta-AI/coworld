@@ -96,6 +96,15 @@ filegroup(
     visibility = ["//packages/coworld/tests:__pkg__"],
 )
 
+filegroup(
+    name = "docs_files",
+    srcs = [
+        "COOKBOOK.md",
+        "README.md",
+    ] + glob(["src/coworld/docs/**/*.md"]),
+    visibility = ["//packages/coworld/tests:__pkg__"],
+)
+
 py_library(
     name = "coworld_core",
     srcs = _CORE_SRCS,

@@ -57,6 +57,7 @@ the current reference docs.
 | Iterate a player against hosted opponents (XP Requests) | [Cookbook: Request Experience Runs](COOKBOOK.md#request-experience-runs) and `uv run coworld xp-request --help` |
 | Run local episodes or browser play | [Cookbook: Build And Run Paint Arena Locally](COOKBOOK.md#build-and-run-paint-arena-locally) |
 | Inspect league status, logs, results, and replays | [Cookbook: Watch Results And Find Episodes](COOKBOOK.md#watch-results-and-find-episodes) |
+| Save per-player debugging files after an episode | [Player artifact](src/coworld/docs/artifacts/PLAYER_ARTIFACT.md) and `uv run coworld episode-logs --help` |
 | Build, certify, and upload a Coworld | [Cookbook: Certify And Upload A Coworld](COOKBOOK.md#certify-and-upload-a-coworld) |
 | Improve a policy in the optimizer workbench | `uv run coworld optimize` and [Optimizer role](src/coworld/docs/roles/OPTIMIZER.md) |
 | Understand package structure and manifest fields | [Manifest reference](src/coworld/docs/COWORLD_MANIFEST.md) |
