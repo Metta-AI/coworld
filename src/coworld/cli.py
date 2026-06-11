@@ -625,6 +625,7 @@ def run_episode(
         )
         typer.echo(f"Artifacts: {artifacts.workspace}")
         typer.echo(f"Results: {artifacts.results_path}")
+        _echo_results_summary(artifacts)
         _echo_replay_paths(artifacts)
         typer.echo(f"Logs: {artifacts.logs_dir}")
         _echo_feedback_commands(manifest_uri, artifacts, server=server)
@@ -848,6 +849,21 @@ def hosted_game_join(
 
 def _echo_replay_paths(artifacts: EpisodeArtifacts) -> None:
     typer.echo(f"Replay: {artifacts.replay_path}")
+
+
+def _echo_results_summary(artifacts: EpisodeArtifacts) -> None:
+    if not artifacts.results_path.exists():
+        return
+    results = json.loads(artifacts.results_path.read_text(encoding="utf-8"))
+    if (
+        not isinstance(results, dict)
+        or "scores" not in results
+        or not isinstance(results["scores"], list)
+        or not results["scores"]
+    ):
+        return
+    score_labels = [f"{index}={score}" for index, score in enumerate(results["scores"])]
+    typer.echo("Scores: " + ", ".join(score_labels))
 
 
 def _echo_feedback_commands(manifest_uri: str, artifacts: EpisodeArtifacts, *, server: str) -> None:

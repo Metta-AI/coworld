@@ -381,8 +381,8 @@ def test_run_episode_defaults_results_next_to_manifest(monkeypatch: MonkeyPatch,
 def test_run_episode_prints_fast_feedback_commands(monkeypatch: MonkeyPatch, tmp_path: Path) -> None:
     output_dir = tmp_path / "episode"
 
-    def fake_run_coworld_episode(_spec: CoworldEpisodeJobSpec, _artifacts: object, **_kwargs: object) -> None:
-        return None
+    def fake_run_coworld_episode(_spec: CoworldEpisodeJobSpec, artifacts: object, **_kwargs: object) -> None:
+        cast(EpisodeArtifacts, artifacts).results_path.write_text('{"scores":[3,1.5]}', encoding="utf-8")
 
     monkeypatch.setattr("coworld.cli.run_coworld_episode", fake_run_coworld_episode)
     manifest_path = _example_manifest(tmp_path)
@@ -400,6 +400,7 @@ def test_run_episode_prints_fast_feedback_commands(monkeypatch: MonkeyPatch, tmp
     )
 
     assert result.exit_code == 0, result.output
+    assert "Scores: 0=3, 1=1.5" in result.output
     assert (
         f"Inspect replay: uv run coworld replay {manifest_path} {output_dir.resolve() / 'replay'} "
         "--server https://staging.example/api" in result.output
