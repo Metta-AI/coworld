@@ -1,6 +1,6 @@
 # Commissioner Role
 
-**Status:** live for container leagues
+**Status:** live
 
 ## What it does
 
@@ -20,9 +20,9 @@ streams results back.
 
 ## Where it lives in the manifest
 
-`manifest.commissioner[]`, with `type: "commissioner"` on every entry. The section is optional in the current schema,
-because some Coworlds still use legacy in-process commissioners. Container commissioner leagues require the league's
-`commissioner_config.commissioner_runnable_id`, and that value must match one `manifest.commissioner[].id`. See
+`manifest.commissioner[]`, with `type: "commissioner"` on every entry. The section is optional in the schema, but hosted
+league scheduling requires the league's `commissioner_config.commissioner_runnable_id`, and that value must match one
+`manifest.commissioner[].id`. See
 [`COWORLD_MANIFEST.md`](../COWORLD_MANIFEST.md) for the full runnable shape.
 
 Runnable `env` values are public configuration only. Secrets, credentials, private league data, and policy credentials
@@ -424,26 +424,23 @@ container commissioner path resolves the selected runnable from the canonical Co
 container as a Kubernetes Job, connects to `/round`, dispatches requested episode jobs, streams results or failures back
 to the commissioner, and persists rankings, membership changes, and the opaque state blob.
 
-Legacy in-process commissioners (notably `AmongThemCommissioner`) still exist for not-yet-migrated leagues and share
-the protocol-shaped data models. See
-[`AMONGTHEM_COMMISSIONER.md`](../../../../../../app_backend/src/metta/app_backend/v2/AMONGTHEM_COMMISSIONER.md) for the
-in-process reference.
+The hosted backend no longer runs in-process commissioners. Leagues whose `commissioner_key` is not `container` are not
+scheduled by the Coworld round runner.
 
 Per-goal status:
 
 | #   | Goal                                                                                       | Status                                                                                             |
 | --- | ------------------------------------------------------------------------------------------ | -------------------------------------------------------------------------------------------------- |
-| 1   | Commissioner containers drive rounds via WebSocket messaging                               | Done for leagues with `commissioner_key = "container"`                                             |
-| 2   | Schedule episodes incrementally and receive results as they complete                       | Done for container leagues                                                                         |
+| 1   | Commissioner containers drive rounds via WebSocket messaging                               | Done                                                                                               |
+| 2   | Schedule episodes incrementally and receive results as they complete                       | Done                                                                                               |
 | 3   | Default commissioner image covers common patterns via CLI config                           | Manifest-selected; verify the pinned image before daily-league cutover                             |
-| 4   | Deploying a Coworld with a commissioner creates a league and begins scheduling             | Done when seeding resolves a matching `manifest.commissioner[].id`; otherwise the league stays on its legacy key |
-| 5   | Commissioner containers scoped to a single round (can be swapped between rounds)           | Done for container leagues                                                                         |
-| 6   | Commissioners emit round rankings, scores, and graduation changes at the end of each round | Done for container leagues                                                                         |
-| 7   | Existing registered commissioners continue to work unchanged                               | Done                                                                                               |
+| 4   | Deploying a Coworld with a commissioner creates a league and begins scheduling             | Done when seeding resolves a matching `manifest.commissioner[].id`                                  |
+| 5   | Commissioner containers scoped to a single round (can be swapped between rounds)           | Done                                                                                               |
+| 6   | Commissioners emit round rankings, scores, and graduation changes at the end of each round | Done                                                                                               |
+| 7   | Existing registered commissioners continue to work unchanged                               | Removed; hosted scheduling is container-only                                                       |
 
-Container commissioner support is live in the backend, but a league is cut over only when its `commissioner_key` is
-`container` and `commissioner_config.commissioner_runnable_id` resolves against the canonical Coworld manifest. Leagues
-using `auto`, `manual`, `cogs_vs_clips`, or `among_them` still run through the in-process registry.
+Container commissioner support is live in the backend. A league schedules only when its `commissioner_key` is
+`container` and `commissioner_config.commissioner_runnable_id` resolves against the canonical Coworld manifest.
 
 ## Transition checklist
 
@@ -457,8 +454,7 @@ Before relying on an independent commissioner for a daily league:
    commissioner implementation.
 4. Run a read-only deployed smoke: inspect the target league, the latest commissioner-created round, episode results,
    round status, and commissioner pod/job logs for that round.
-5. Confirm failed commissioner startup or WebSocket interruption marks only the current round failed and does not route
-   the league back through the legacy in-process commissioner registry.
+5. Confirm failed commissioner startup or WebSocket interruption marks only the current round failed.
 6. Confirm `round_complete.state`, rankings, and membership changes are persisted as expected before treating the
    league as ready for unattended daily scheduling.
 
@@ -468,8 +464,7 @@ Before relying on an independent commissioner for a daily league:
   blob).
 - Custom episode execution. The platform runs the game engine; commissioners just say who plays.
 - Custom scoring logic within episodes. Scores come from the game's `results_schema`.
-- Replacing the v1 season/pool/match system. The container commissioner path lives alongside existing in-process
-  commissioners; the pipeline supports both.
+- Replacing the v1 season/pool/match system.
 - Max in-flight episode limits. Not currently part of the protocol; can be added later if needed.
 
 ## Resolved decisions
@@ -490,8 +485,6 @@ Before relying on an independent commissioner for a daily league:
 ## See Also
 
 - [`commissioner/protocol.py`](../../commissioner/protocol.py) — Pydantic models for every protocol message.
-- [`AMONGTHEM_COMMISSIONER.md`](../../../../../../app_backend/src/metta/app_backend/v2/AMONGTHEM_COMMISSIONER.md) —
-  in-process AmongThem commissioner reference (backend doc).
 - [`artifacts/EPISODE_BUNDLE.md`](../artifacts/EPISODE_BUNDLE.md) — post-episode artifact package that commissioner
   protocol messages do not directly carry.
 - [`artifacts/RESULTS.md`](../artifacts/RESULTS.md) — game-written episode results routed into `episode_result`.

@@ -31,7 +31,7 @@ This is the short lifecycle view of the roles. For details and status definition
 | ---- | ----------------- | ---------------------------- |
 | Game | Runs for `play`, `run-episode`, `certify`, and replay viewing. | Runs in the hosted Kubernetes episode job. |
 | Player | Runs one container per slot for certification, local episodes, and browser play. | Runs one child pod per player slot, using submitted policy versions. |
-| Commissioner | Not run by the local runner. | Runs as a per-round container for leagues with `commissioner_key = "container"`; legacy leagues still use in-process commissioners. |
+| Commissioner | Not run by the local runner. | Runs as a per-round container for leagues with `commissioner_key = "container"`. |
 | Reporter | Not auto-run by the local runner. | Contract defined, runtime pending; consumes bundles on demand when invoked. |
 | Grader | Not auto-run by the local runner. | Contract defined, runtime pending; consumes bundles on demand when invoked. |
 | Diagnoser | Reserved; not run by default. | Reserved; not run by default. |

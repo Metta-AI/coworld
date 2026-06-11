@@ -45,9 +45,8 @@ New documents and code in this package should use these status labels consistent
 
 - **live**: the role has a full runtime contract that the platform exercises end to end. The contract is stable enough
   to build against.
-- **live for container leagues**: the role has a containerized runtime path for leagues whose backend
-  `commissioner_key` is `container`. Other leagues may still use legacy in-process commissioners until they are cut
-  over.
+- **live for container leagues**: legacy status for the commissioner cutover; new docs should use **live** because
+  hosted commissioner scheduling is container-only.
 - **contract defined, runtime pending**: the role has a written contract and may have partial or in-process
   implementations, but the platform does not yet invoke a containerized runnable for this role automatically. The schema
   may still accept an omitted or empty section until the runtime integration lands.
