@@ -72,6 +72,7 @@ class DivisionPublic(CoworldAPIModel):
     level: int
     league: LeaguePublic
     description: str | None = None
+    archived_at: datetime | None = None
     commissioner_description: DivisionCommissionerDescriptionPublic | None = None
     created_at: datetime
 
