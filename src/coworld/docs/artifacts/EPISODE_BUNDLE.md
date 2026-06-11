@@ -17,13 +17,13 @@ A bundle is a zip containing some subset of the following entries plus a `manife
 | Token         | File(s) in zip                                                         | Source artifact                                      |
 | ------------- | ---------------------------------------------------------------------- | ---------------------------------------------------- |
 | `results`     | `results.json`                                                         | [Results](RESULTS.md) from `RESULTS_URI` / local file |
-| `replay`      | `replay.json` (uncompressed)                                           | [Replay](REPLAY.md) from `REPLAY_URI` / local file    |
+| `replay`      | `replay` (uncompressed bytes)                                          | [Replay](REPLAY.md) from `REPLAY_URI` / local file    |
 | `error_info`  | `error_info.json` (only present if the episode failed)                 | [Error info](ERROR_INFO.md) from `ERROR_INFO_URI`     |
-| `game_logs`   | `logs/game.stdout.log`, `logs/game.stderr.log`                         | [Game logs](GAME_LOGS.md) from [debug archive](DEBUG_ARCHIVE.md) / local logs |
+| `game_logs`   | `logs/game.log`                                                        | [Game logs](GAME_LOGS.md) from hosted episode logs / local logs |
 | `player_logs` | `logs/policy_agent_{slot}.log` (subject to access control — see below) | [Player logs](PLAYER_LOGS.md) from `POLICY_LOG_URLS` / local logs |
 | `player_artifact` | `artifacts/policy_artifact_{slot}.zip` (subject to access control — see below) | [Player artifact](PLAYER_ARTIFACT.md) from `PLAYER_ARTIFACT_UPLOAD_URLS` / local workspace |
 
-The bundle stores `replay.json` uncompressed since the outer zip already compresses. The runner's local workspace
+The bundle stores `replay` uncompressed since the outer zip already compresses. The runner's local workspace
 contains a single `replay` file with the exact bytes the game container wrote; the hosted upload path zlib-compresses
 those bytes in memory at the upload boundary for hosted upload and replay-viewing paths that consume the compressed
 form directly.
@@ -39,10 +39,9 @@ Every bundle contains a `manifest.json` at the zip root describing its contents:
   "include": ["results", "replay", "game_logs", "player_logs"],
   "files": {
     "results": "results.json",
-    "replay": "replay.json",
+    "replay": "replay",
     "game_logs": {
-      "stdout": "logs/game.stdout.log",
-      "stderr": "logs/game.stderr.log"
+      "combined": "logs/game.log"
     },
     "player_logs": {
       "0": "logs/policy_agent_0.log",
@@ -63,8 +62,7 @@ Every bundle contains a `manifest.json` at the zip root describing its contents:
 The current package defines the consumer-side bundle contract used by Paint Arena reporters, including
 `COGAME_EPISODE_BUNDLE_URI` and the `BundleReader` helper vendored under the Paint Arena reporter example.
 
-The public bundle-request surfaces are planned but not implemented in this checkout. Record the intended contract here
-so the CLI, API, and backend implementation converge on one shape.
+The hosted bundle-request API is implemented by the Observatory backend. The CLI surface is still planned.
 
 ### Planned CLI
 
@@ -75,17 +73,17 @@ uv run coworld bundle ereq_... --output ep.zip --include results,replay,game_log
 
 When `--include` is omitted, the CLI should request every artifact the caller is permitted to see.
 
-### Planned API
+### API
 
 ```http
-GET /v2/episodes/{ereq_id}/bundle?include=results,replay,player_logs
+GET /v2/episode-requests/{ereq_id}/bundle?include=results,replay,player_logs
 ```
 
 The response should be a `.zip` body with `Content-Type: application/zip`. Auth should follow the same model as the
-per-artifact endpoints (`/v2/episodes/{ereq_id}/results`, `.../logs`, etc.). The `include` query parameter should be
-comma-separated; omitting it should return every artifact the requester is permitted to see.
+episode-request artifact endpoints. The `include` query parameter should be comma-separated; omitting it should return
+every artifact the requester is permitted to see.
 
-Until those surfaces land, use the episode-request routes and per-artifact commands in
+Until the CLI surface lands, use the episode-request routes and per-artifact commands in
 [COOKBOOK.md](../../../../COOKBOOK.md#retrieve-logs-results-and-replays) for interactive investigation:
 
 ```bash

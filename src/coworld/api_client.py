@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from collections.abc import Iterable
 from datetime import datetime
 from typing import Any, Self
 from uuid import UUID
@@ -565,6 +566,16 @@ class CoworldApiClient:
 
     def get_episode_request_artifact_text(self, episode_request_id: str, artifact_type: str) -> str:
         return self.get_text(f"/v2/episode-requests/{episode_request_id}/artifacts/{artifact_type}")
+
+    def get_episode_request_bundle(self, episode_request_id: str, include: Iterable[str] | None = None) -> bytes:
+        params = None if include is None else {"include": ",".join(include)}
+        response = self._http_client.get(
+            f"/v2/episode-requests/{episode_request_id}/bundle",
+            headers=self._headers(),
+            params=params,
+        )
+        _raise_for_status(response)
+        return response.content
 
     def create_experience_request(self, body: dict[str, Any]) -> ExperienceRequestDetail:
         return self._post("/v2/experience-requests", ExperienceRequestDetail, json=body, timeout=120.0)

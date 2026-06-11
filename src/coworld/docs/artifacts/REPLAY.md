@@ -44,7 +44,7 @@ a local Docker game container; `coworld replay-open ereq_... --hosted` posts `{c
 `POST /v2/coworlds/replays/session` and opens the returned hosted viewer URL. See
 [Cookbook: Retrieve Logs, Results, And Replays](../../../../COOKBOOK.md#retrieve-logs-results-and-replays).
 
-The episode bundle stores replay bytes as `replay.json` inside the outer zip. Hosted storage may use compressed
+The episode bundle stores replay bytes as `replay` inside the outer zip. Hosted storage may use compressed
 `replay.json.z`, but bundle consumers should treat the bundled `replay` token as the uncompressed replay payload.
 
 ## Contract
@@ -52,7 +52,7 @@ The episode bundle stores replay bytes as `replay.json` inside the outer zip. Ho
 - Format: game-owned byte payload.
 - Local filename: `replay`.
 - Hosted artifact: `REPLAY_URI`, stored as zlib-compressed `replay.json.z`.
-- Episode bundle entry: `replay.json`.
+- Episode bundle entry: `replay`.
 - Replay server mode: same game image, with `COGAME_LOAD_REPLAY_URI` pointing at the replay bytes.
 - Replay viewer default: autoplay and loop from the recorded end back to tick 0.
 

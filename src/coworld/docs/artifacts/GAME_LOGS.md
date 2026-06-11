@@ -22,8 +22,8 @@ client pages.
 ## Contract
 
 - Local filenames: `logs/game.stdout.log`, `logs/game.stderr.log`.
-- Hosted artifact: included in the [debug archive](DEBUG_ARCHIVE.md) at `DEBUG_URI`.
-- Episode bundle entries: `logs/game.stdout.log`, `logs/game.stderr.log`.
+- Hosted artifact: exposed by Observatory as combined episode logs.
+- Episode bundle entry: `logs/game.log`.
 - Purpose: diagnostics and debugging only.
 
 Game logs are not the source of truth for episode success. Results and replay upload remain the success-critical
