@@ -212,7 +212,7 @@ See [EPISODE_BUNDLE.md](artifacts/EPISODE_BUNDLE.md) for the bundle shape and pl
 | Player runtime | Docker containers on `coworld-local`. | One Kubernetes child pod per player slot. |
 | Artifact storage | Local workspace files. | Uploaded artifact URIs recorded by the platform. |
 | Replay storage | Exact local replay bytes. | Replay bytes compressed for hosted storage and replay serving. |
-| Episode deadline | CLI `--timeout-seconds` for local runner waits. | 3 hour Kubernetes Job active deadline; coordinator waits default to `COWORLD_TIMEOUT_SECONDS=3600`. |
+| Episode deadline | CLI `--timeout-seconds` for local runner waits. | 20 minute Kubernetes Job active deadline; coordinator waits default to `COWORLD_TIMEOUT_SECONDS=3600`. |
 | Supporting roles | Not auto-run. | Commissioner is run for container leagues; reporter/grader runtime integration is pending. |
 | Cleanup | Local containers removed by the runner. | Child pods/service removed by coordinator; parent Job cleaned by TTL. |
 

@@ -28,8 +28,8 @@ to 2 CPU and 2Gi memory per player pod.
 Per-player resource requests are configurable per job via `COWORLD_PLAYER_CPU_REQUEST` and
 `COWORLD_PLAYER_MEMORY_REQUEST` (see [Optional Inputs](#optional-inputs)).
 
-Hosted episode Jobs have a 3 hour active deadline. The coordinator's per-episode wait defaults to
-`COWORLD_TIMEOUT_SECONDS=3600`; hosted dispatch currently sets the Kubernetes Job deadline to 3 hours and gives
+Hosted episode Jobs have a 20 minute active deadline. The coordinator's per-episode wait defaults to
+`COWORLD_TIMEOUT_SECONDS=3600`; hosted dispatch currently sets the Kubernetes Job deadline to 20 minutes and gives
 presigned artifact URLs one extra hour of validity.
 
 ## Parent Job Shape
@@ -170,7 +170,7 @@ backend also applies the same workload-type selector and toleration to the paren
 and child player pods.
 `COWORLD_PLAYER_CPU_REQUEST` and `COWORLD_PLAYER_MEMORY_REQUEST` override the resource requests applied to each child
 player pod. `COWORLD_TIMEOUT_SECONDS` controls coordinator waits inside the Job; the hosted parent Job also has its own
-3 hour Kubernetes active deadline.
+20 minute Kubernetes active deadline.
 
 ## Output URIs
 
