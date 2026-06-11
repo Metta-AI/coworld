@@ -77,9 +77,9 @@ def test_xp_request_help_documents_request_shapes() -> None:
     assert "Create and inspect hosted Experience Requests" in result.output
     assert "uv run coworld xp-request create xp-request-candidate.json" in result.output
     assert "target.league_id" in result.output
-    assert "requester.policy_version_id" in result.output
-    assert "rotate_seats" in result.output
-    assert "policy_version_ids" in result.output
+    assert "policy_ref/top_n/random" in result.output
+    assert "slot assignments" in result.output
+    assert "coworld_id, roster, and num_episodes" in result.output
     assert "Compare the previous best and candidate" in result.output
 
 
@@ -93,7 +93,11 @@ def test_xp_request_create_posts_body_and_prints_id(httpserver: HTTPServer) -> N
 
     httpserver.expect_request("/observatory/v2/experience-requests", method="POST").respond_with_handler(handler)
 
-    body = {"coworld_id": COWORLD_ID, "policy_version_ids": [POLICY_VERSION_ID], "num_episodes": 1}
+    body = {
+        "coworld_id": COWORLD_ID,
+        "roster": [{"player": {"policy_ref": POLICY_VERSION_ID}, "slot": 0}],
+        "num_episodes": 1,
+    }
     result = CliRunner().invoke(
         app,
         ["xp-request", "create", "-", "--server", httpserver.url_for("/")],
@@ -111,7 +115,14 @@ def test_xp_request_create_reads_file(httpserver: HTTPServer, tmp_path) -> None:
         _experience_request_detail()
     )
     body_path = tmp_path / "body.json"
-    body_path.write_text(json.dumps({"coworld_id": COWORLD_ID, "policy_version_ids": [POLICY_VERSION_ID]}))
+    body_path.write_text(
+        json.dumps(
+            {
+                "coworld_id": COWORLD_ID,
+                "roster": [{"player": {"policy_ref": POLICY_VERSION_ID}, "slot": 0}],
+            }
+        )
+    )
 
     result = CliRunner().invoke(
         app,

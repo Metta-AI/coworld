@@ -756,14 +756,15 @@ Create a request from a `V2CreateExperienceRequestRequest` JSON body (file path,
 
 ```bash
 uv run coworld xp-request create body.json
-echo '{"coworld_id": "cow_...", "policy_version_ids": ["<uuid>"], "num_episodes": 5}' | uv run coworld xp-request create -
+echo '{"coworld_id": "cow_...", "roster": [{"player": {"policy_ref": "<uuid>"}, "slot": 0}], "num_episodes": 5}' | uv run coworld xp-request create -
 uv run coworld xp-request list --mine
 uv run coworld xp-request get xreq_... --json
 uv run coworld xp-request episodes xreq_...
 ```
 
 The body is passed through to the backend unchanged, so use the request shape from the v2 API reference (direct
-`coworld_id`/`variant_id`, or a `target` with `league_name`/`division_name`, plus `requester`/`opponents`/`top_n`).
+`coworld_id`/`variant_id`, or a `target` with `league_name`/`division_name`, plus a `roster` of `policy_ref`, `top_n`,
+or `random` participants).
 Children start `pending` and are dispatched asynchronously, so a `get` right after `create` shows them as `pending`.
 
 ### Non-CLI API

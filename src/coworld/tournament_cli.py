@@ -48,10 +48,9 @@ _XP_REQUEST_HELP = (
     "uv run coworld xp-request list --mine; uv run coworld xp-request get xreq_... --json; "
     "uv run coworld xp-request episodes xreq_.... "
     "For league-targeted A/B tests, the JSON body usually includes target.league_id, "
-    "requester.policy_version_id, top_n, player_selection, rotate_seats, num_episodes, and notes. "
-    "For direct Coworld runs, use coworld_id, policy_version_ids, and num_episodes. "
-    "Compare the previous best and candidate with matching target, opponent-selection settings, rotate-seats setting, "
-    "episode count, and notes format."
+    "roster entries with policy_ref/top_n/random players, slot assignments, num_episodes, and notes. "
+    "For direct Coworld runs, use coworld_id, roster, and num_episodes. "
+    "Compare the previous best and candidate with matching target, roster, episode count, and notes format."
 )
 
 
