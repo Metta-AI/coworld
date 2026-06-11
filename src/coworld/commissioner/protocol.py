@@ -112,7 +112,6 @@ class StageConfig(BaseModel):
 
 
 class RoundConfig(BaseModel):
-    mock_scores: dict[UUID, float] | None = None
     stages: list[StageConfig] | None = None
     entrant_policy_version_ids: list[UUID] | None = None
 
@@ -145,7 +144,7 @@ class LeaderboardRoundResultInfo(RoundResultInfo):
 class RoundSpec(BaseModel):
     division_id: UUID
     round_config: RoundConfig
-    execution_backend: str = "mock"
+    execution_backend: str = "dispatch"
     notes: str | None = None
 
 
