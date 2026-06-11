@@ -25,6 +25,7 @@ pyproject_test(
         "requires-network",
     ],
     per_test = {
+        "test_coworld_cookbook": {"data": ["//packages/coworld:docs_files"]},
         "test_coworld_artifact_docs": {"data": ["//packages/coworld:docs_files"]},
         "test_types": {"data": ["//packages/coworld:generated_schema_files"]},
     },

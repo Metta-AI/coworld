@@ -26,6 +26,97 @@ variables, and writes the same artifact files.
 All examples use Paint Arena as the canonical Coworld example. Replace `cow_...`, `league_...`, `div_...`, `round_...`,
 `pool_...`, and `ereq_...` with the IDs returned by the commands in your environment.
 
+## FAQ
+
+### How do I play a game locally?
+
+Use `uv run coworld play MANIFEST` for a browser session and `uv run coworld run-episode MANIFEST` for a headless
+episode that writes `results.json`, replay bytes, and logs. Add a player image after the manifest to test your policy
+locally:
+
+```bash
+uv run coworld play tmp/paintarena/coworld_manifest.json paintarena-player:local \
+  --run python --run -m --run coworld.examples.paintarena.player.player
+uv run coworld run-episode tmp/paintarena/coworld_manifest.json paintarena-player:local \
+  --run python --run -m --run coworld.examples.paintarena.player.player
+```
+
+Pass `--variant VARIANT_ID` to `play`, `run-episode`, or `scrimmage` when you want a non-certification variant locally.
+
+### How do I run hosted non-tournament checks?
+
+Use Experience Requests when uploaded policies should play hosted episodes outside a scheduled tournament:
+
+```bash
+echo '{"coworld_id": "cow_...", "variant_id": "variant_...", "policy_version_ids": ["<uuid>"], "num_episodes": 5}' \
+  | uv run coworld xp-request create -
+uv run coworld xp-request episodes xreq_...
+```
+
+Use hosted play sessions only when humans need browser slots for an uploaded Coworld:
+
+```bash
+uv run coworld hosted-game create cow_... --variant variant_...
+uv run coworld hosted-game join cps_...
+```
+
+`xp-request` is the supported path for replayable non-tournament policy evaluation and can include multiple policy
+versions in `policy_version_ids`. `hosted-game` creates browser player slots; it does not attach uploaded policy
+versions or schedule tournament policy episodes.
+
+### How do I submit a policy to the Observatory?
+
+First run the policy locally with `coworld run-episode`. Then upload the Docker image and submit the resulting policy
+version to a league:
+
+```bash
+uv run coworld upload-policy paintarena-player:local --name paintarena-player \
+  --run python --run -m --run coworld.examples.paintarena.player.player
+uv run coworld submit paintarena-player --league league_...
+```
+
+Add `--use-bedrock` during `upload-policy` when the hosted policy should run with the tournament Bedrock IAM role. Add
+`--secret-env NAME=value` for other hosted provider credentials. For local Bedrock tests, use `run-episode --use-bedrock`
+or `play --use-bedrock` with the AWS profile and region options.
+
+### How do I know my policy passed self-play?
+
+For local self-play, `coworld run-episode` exits successfully only after the episode finishes and artifact collection
+completes. Inspect the printed score summary, `results.json`, replay, and logs:
+
+```bash
+uv run coworld run-episode tmp/paintarena/coworld_manifest.json paintarena-player:local --episodes 5
+uv run coworld replay tmp/paintarena/coworld_manifest.json tmp/paintarena/results/episode-0001/replay
+ls tmp/paintarena/results/episode-0001/logs
+```
+
+For hosted checks, upload the candidate policy, create an `xp-request`, and compare the completed child episode scores
+and replays from `coworld xp-request episodes xreq_...`.
+
+### How do I get logs, replays, and debugging files after an episode?
+
+For local episodes, use the artifact directory printed by `coworld run-episode`. For hosted episodes, start from the
+episode request ID:
+
+```bash
+uv run coworld episodes ereq_... --json
+uv run coworld episode-logs ereq_... --game
+uv run coworld episode-logs ereq_... --agent 0 --mine
+uv run coworld episode-logs ereq_... --agent 0 --artifact --download-dir logs/
+uv run coworld replay-open ereq_...
+```
+
+Per-agent hosted logs and uploaded player artifacts are scoped to policies you own, so other users' private policy logs
+are not available through ordinary credentials. Game logs, error info, the episode row, and replay URLs remain the
+front-door debugging surface for episodes you can access. If the runner crashes before normal completion, check
+`coworld episodes ereq_... --json` for `error` and `error_type`, then fetch available game logs and error info.
+
+### How do I build an agent policy?
+
+Start from the downloaded Coworld package and the game's `AGENTS.md`/README. Build a Docker image that reads
+`COWORLD_PLAYER_WS_URL`, connects to the game server, and exits when the episode ends. Keep a local loop before upload:
+build the image, run `coworld run-episode`, inspect logs and replay, then upload and request hosted experience.
+
 ## Set Up Auth
 
 ### CLI
