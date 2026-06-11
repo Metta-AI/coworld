@@ -40,6 +40,7 @@ PLAY_GUIDE_URI_PREFIXES = (
 SOURCE_MANIFEST_REFERENCE_COUNTS = {
     "${GAME_CONTEXT}/coworld_manifest.json": 2,
     "${GAME_CONTEXT}/coworld_manifest_template.json": 2,
+    "${GAME_CONTEXT}/coworld/coworld_manifest_template.json": 1,
     "${GAME_CONTEXT}/coworld_four_score_manifest_template.json": 1,
     "${METTA_REPO}/packages/coworld/src/coworld/examples/paintarena/coworld_manifest_template.json": 1,
 }
@@ -276,6 +277,11 @@ def test_external_canonical_manifests_live_with_source_repos() -> None:
             "GAME_CONTEXT=/path/to/coworld-cogs-vs-clips",
             "../coworld-cogs-vs-clips/coworld_manifest_template.json",
         ),
+        "cue_n_woo": (
+            "GAME_CONTEXT=/path/to/cue-n-woo/v2",
+            "../cue-n-woo/v2/coworld/coworld_manifest_template.json",
+            "worlds/cue_n_woo/upload.sh",
+        ),
         "four_score": (
             "GAME_CONTEXT=/path/to/coworld-cogs-vs-clips",
             "../coworld-cogs-vs-clips/coworld_four_score_manifest_template.json",
@@ -336,6 +342,7 @@ def _world_compose_files() -> tuple[Path, ...]:
     return (
         WORLDS / "among_them" / "compose.yaml",
         WORLDS / "cogs_vs_clips" / "compose.yaml",
+        WORLDS / "cue_n_woo" / "compose.yaml",
         WORLDS / "four_score" / "compose.yaml",
         WORLDS / "crewrift" / "compose.yaml",
         WORLDS / "paintarena" / "compose.yaml",
