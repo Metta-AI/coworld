@@ -387,12 +387,15 @@ class CoworldUploadClient:
         container_image_id: str,
         run: list[str] | None,
         secret_env: dict[str, str] | None,
+        tags: dict[str, str] | None = None,
     ) -> PolicyVersionResponse:
         payload: dict[str, Any] = {"name": name, "container_image_id": container_image_id}
         if run:
             payload["run"] = run
         if secret_env:
             payload["policy_secret_env"] = secret_env
+        if tags:
+            payload["tags"] = tags
         response = self._http_client.post(
             "/stats/policies/docker-img/complete",
             headers=self._headers(),
@@ -656,6 +659,7 @@ def upload_policy_cmd(
     *,
     run: list[str] | None = None,
     secret_env: dict[str, str] | None = None,
+    tags: dict[str, str] | None = None,
     server: str = DEFAULT_SUBMIT_SERVER,
 ) -> None:
     with CoworldUploadClient.from_login(server_url=server) as client:
@@ -665,6 +669,7 @@ def upload_policy_cmd(
             container_image_id=uploaded_image.id,
             run=run,
             secret_env=secret_env,
+            tags=tags,
         )
     typer.echo(f"Upload complete: {result.name}:v{result.version}")
 

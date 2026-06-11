@@ -438,6 +438,13 @@ def upload_policy(
             help="Secret environment variable for policy execution (can be repeated). Stored in AWS Secrets Manager.",
         ),
     ] = None,
+    tag: Annotated[
+        list[str] | None,
+        typer.Option(
+            "--tag",
+            help="Private tag for your own bookkeeping (KEY=VALUE, can be repeated), e.g. --tag purpose=test.",
+        ),
+    ] = None,
     use_bedrock: Annotated[
         bool,
         typer.Option(
@@ -465,12 +472,18 @@ def upload_policy(
         parsed_secret_env["USE_BEDROCK"] = "true"
     if bedrock_model is not None:
         parsed_secret_env["BEDROCK_MODEL"] = bedrock_model
+    parsed_tags: dict[str, str] = {}
+    if tag:
+        for kv in tag:
+            key, val = _parse_secret_env(kv)
+            parsed_tags[key] = val
 
     upload_policy_cmd(
         image,
         name,
         run=run,
         secret_env=parsed_secret_env if parsed_secret_env else None,
+        tags=parsed_tags if parsed_tags else None,
         server=server,
     )
 
