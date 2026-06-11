@@ -361,9 +361,9 @@ def run_episode_containers(spec: EpisodeRunSpec, *, verify_replay: bool = True) 
 
             replay_port = _free_local_port()
             replay_load_dir = Path(stack.enter_context(tempfile.TemporaryDirectory(prefix="coworld-replay-load-")))
-            replay_load_path = replay_load_dir / "replay.json.z"
+            replay_load_path = replay_load_dir / "replay.z"
             replay_load_path.write_bytes(zlib.compress(spec.artifacts.replay_path.read_bytes()))
-            replay_uri = "file:///coworld-replay/replay.json.z"
+            replay_uri = "file:///coworld-replay/replay.z"
             replay_process = subprocess.Popen(
                 [
                     "docker",

@@ -11,7 +11,7 @@ The [game role](../roles/GAME.md) writes replay bytes during rollout mode:
 - game container input: `COGAME_SAVE_REPLAY_URI`.
 
 The local workspace stores the exact bytes the game wrote. The hosted runner zlib-compresses those bytes in memory at
-the upload boundary and stores the hosted object as `replay.json.z`.
+the upload boundary and stores the hosted object as `replay.z`.
 
 ## Format
 
@@ -24,7 +24,7 @@ COGAME_LOAD_REPLAY_URI=file:///coworld/replay
 
 The replay viewer enters through `/client/replay`, and the replay WebSocket uses `/replay`. The runner supplies the
 replay artifact location through `COGAME_LOAD_REPLAY_URI` when it starts the replay container. Hosted Observatory replay
-sessions pass the hosted `replay.json.z` artifact URI directly through `COGAME_LOAD_REPLAY_URI`.
+sessions pass the hosted `replay.z` artifact URI directly through `COGAME_LOAD_REPLAY_URI`.
 
 `GET /client/replay` starts playback automatically by default. When playback reaches the recorded end, the viewer loops
 back to tick 0 and continues until a user pauses or seeks.
@@ -44,14 +44,14 @@ a local Docker game container; `coworld replay-open ereq_... --hosted` posts `{c
 `POST /v2/coworlds/replays/session` and opens the returned hosted viewer URL. See
 [Cookbook: Retrieve Logs, Results, And Replays](../../../../COOKBOOK.md#retrieve-logs-results-and-replays).
 
-The episode bundle stores replay bytes as `replay` inside the outer zip. Hosted storage may use compressed
-`replay.json.z`, but bundle consumers should treat the bundled `replay` token as the uncompressed replay payload.
+The episode bundle stores replay bytes as `replay` inside the outer zip. Hosted storage uses compressed `replay.z`, but
+bundle consumers should treat the bundled `replay` token as the uncompressed replay payload.
 
 ## Contract
 
 - Format: game-owned byte payload.
 - Local filename: `replay`.
-- Hosted artifact: `REPLAY_URI`, stored as zlib-compressed `replay.json.z`.
+- Hosted artifact: `REPLAY_URI`, stored as zlib-compressed `replay.z`.
 - Episode bundle entry: `replay`.
 - Replay server mode: same game image, with `COGAME_LOAD_REPLAY_URI` pointing at the replay bytes.
 - Replay viewer default: autoplay and loop from the recorded end back to tick 0.

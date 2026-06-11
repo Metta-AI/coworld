@@ -80,9 +80,9 @@ def write_data(
 
 def load_replay_data(replay_uri: str) -> dict[str, Any]:
     replay_data = read_data(replay_uri)
-    if replay_uri.endswith(".json.z"):
+    if replay_uri.endswith(".z"):
         replay_data = zlib.decompress(replay_data)
-    elif replay_uri.endswith(".json.gz"):
+    elif replay_uri.endswith(".gz"):
         replay_data = gzip.decompress(replay_data)
     return json.loads(replay_data)
 

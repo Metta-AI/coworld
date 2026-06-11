@@ -1,8 +1,8 @@
 # Coworld Lifecycle
 
-This page describes the lifecycle of a Coworld package and the episodes run from it. It focuses on ordering and handoffs:
-what gets packaged, what runs locally, what changes in hosted tournament evaluation, which artifacts are produced, and
-which roles participate at each point.
+This page describes the lifecycle of a Coworld package and the episodes run from it. It focuses on ordering and
+handoffs: what gets packaged, what runs locally, what changes in hosted tournament evaluation, which artifacts are
+produced, and which roles participate at each point.
 
 For the role model itself, see [README.md](README.md#roles). For the game container route and environment-variable
 contract, see [GAME.md](roles/GAME.md). For task recipes and exact CLI commands, see the package
@@ -20,22 +20,23 @@ A Coworld exists to support a repeatable improvement loop:
 5. The episode produces results, replay bytes, logs, and failure information when applicable.
 6. Humans and coding agents inspect those outputs, improve the player or Coworld, and run the loop again.
 
-Supporting roles such as reporter, grader, diagnoser, and optimizer consume completed episode artifacts, but they are not
-part of every episode run today. See [Role Participation](#role-participation).
+Supporting roles such as reporter, grader, diagnoser, and optimizer consume completed episode artifacts, but they are
+not part of every episode run today. See [Role Participation](#role-participation).
 
 ## Role Participation
 
-This is the short lifecycle view of the roles. For details and status definitions, use the [Coworld overview](README.md#roles).
+This is the short lifecycle view of the roles. For details and status definitions, use the
+[Coworld overview](README.md#roles).
 
-| Role | Local development | Hosted tournament evaluation |
-| ---- | ----------------- | ---------------------------- |
-| Game | Runs for `play`, `run-episode`, `certify`, and replay viewing. | Runs in the hosted Kubernetes episode job. |
-| Player | Runs one container per slot for certification, local episodes, and browser play. | Runs one child pod per player slot, using submitted policy versions. |
-| Commissioner | Not run by the local runner. | Runs as a per-round container for leagues with `commissioner_key = "container"`. |
-| Reporter | Not auto-run by the local runner. | Contract defined, runtime pending; consumes bundles on demand when invoked. |
-| Grader | Not auto-run by the local runner. | Contract defined, runtime pending; consumes bundles on demand when invoked. |
-| Diagnoser | Reserved; not run by default. | Reserved; not run by default. |
-| Optimizer | Workbench role; not an episode container. | Workbench role; pulls artifacts and submits candidate policies separately. |
+| Role         | Local development                                                                | Hosted tournament evaluation                                                     |
+| ------------ | -------------------------------------------------------------------------------- | -------------------------------------------------------------------------------- |
+| Game         | Runs for `play`, `run-episode`, `certify`, and replay viewing.                   | Runs in the hosted Kubernetes episode job.                                       |
+| Player       | Runs one container per slot for certification, local episodes, and browser play. | Runs one child pod per player slot, using submitted policy versions.             |
+| Commissioner | Not run by the local runner.                                                     | Runs as a per-round container for leagues with `commissioner_key = "container"`. |
+| Reporter     | Not auto-run by the local runner.                                                | Contract defined, runtime pending; consumes bundles on demand when invoked.      |
+| Grader       | Not auto-run by the local runner.                                                | Contract defined, runtime pending; consumes bundles on demand when invoked.      |
+| Diagnoser    | Reserved; not run by default.                                                    | Reserved; not run by default.                                                    |
+| Optimizer    | Workbench role; not an episode container.                                        | Workbench role; pulls artifacts and submits candidate policies separately.       |
 
 Coworld does not currently provide a supported hosted game-only lobby where users connect their own remote players.
 Hosted execution means tournament jobs in which the platform runs the game container and every player container.
@@ -168,22 +169,22 @@ The hosted lifecycle is:
 15. The worker validates results, collects logs, compresses the replay for hosted storage, and uploads the configured
     hosted artifacts.
 16. The platform records episode status, results, logs, replay links, and round/leaderboard state. For container
-    commissioner leagues, it streams completed or failed episode results back to the commissioner until `round_complete`,
-    then persists commissioner rankings, membership changes, and state for the next round.
+    commissioner leagues, it streams completed or failed episode results back to the commissioner until
+    `round_complete`, then persists commissioner rankings, membership changes, and state for the next round.
 17. The coordinator deletes child player pods and the game Service; the parent Job is later removed by Kubernetes TTL
     cleanup.
 
 Hosted output artifacts are uploaded separately rather than as one bundle:
 
-- [`RESULTS_URI`](artifacts/RESULTS.md): game-defined `results.json`, validated against
-  `manifest.game.results_schema`.
-- [`REPLAY_URI`](artifacts/REPLAY.md): zlib-compressed replay uploaded as `replay.json.z`.
+- [`RESULTS_URI`](artifacts/RESULTS.md): game-defined `results.json`, validated against `manifest.game.results_schema`.
+- [`REPLAY_URI`](artifacts/REPLAY.md): zlib-compressed replay uploaded as `replay.z`.
 - [`DEBUG_URI`](artifacts/DEBUG_ARCHIVE.md): zip of runner logs, including game stdout/stderr and captured player logs.
 - [`ERROR_INFO_URI`](artifacts/ERROR_INFO.md): runner failure JSON if the coordinator fails before the episode
   completes.
 - [`POLICY_LOG_URLS`](artifacts/PLAYER_LOGS.md): per-slot player log destinations.
-- [`PLAYER_ARTIFACT_UPLOAD_URLS`](artifacts/PLAYER_ARTIFACT.md): per-slot presigned `PUT` URLs the worker forwards into each
-  player pod. The player (not the worker) uploads its own single artifact `.zip` (max 200 MB) before its pod is torn down.
+- [`PLAYER_ARTIFACT_UPLOAD_URLS`](artifacts/PLAYER_ARTIFACT.md): per-slot presigned `PUT` URLs the worker forwards into
+  each player pod. The player (not the worker) uploads its own single artifact `.zip` (max 200 MB) before its pod is
+  torn down.
 
 Hosted tournament artifacts are access-controlled by the platform. CLI and API commands retrieve logs, results, stats,
 and replays from those stored episode records.
@@ -191,8 +192,8 @@ and replays from those stored episode records.
 ## Artifact Consumption
 
 After an episode, the runner has per-URI artifacts rather than one assembled bundle. Bundling is a consumption-time
-operation. A consumer asks for a bundle when it needs one episode's artifacts as a unit, and the bundling layer assembles
-the zip on demand with the requested include filters and access checks.
+operation. A consumer asks for a bundle when it needs one episode's artifacts as a unit, and the bundling layer
+assembles the zip on demand with the requested include filters and access checks.
 
 Reporter, grader, and diagnoser runnables receive the bundle through `COGAME_EPISODE_BUNDLE_URI` when those supporting
 runnables are invoked, then produce [reports](artifacts/REPORT.md), [grades](artifacts/GRADE.md), or
@@ -203,18 +204,18 @@ See [EPISODE_BUNDLE.md](artifacts/EPISODE_BUNDLE.md) for the bundle shape and pl
 
 ## Key Differences Between Local And Hosted
 
-| Dimension | Local development | Hosted tournament |
-| --------- | ----------------- | ----------------- |
-| Orchestrator | `coworld` CLI and local Docker runner. | Observatory/platform plus Kubernetes runner. |
-| Main use | Fast player and Coworld debugging. | League evaluation and leaderboard updates. |
-| Inputs | Local manifest, downloaded Coworld, or explicit episode request. | Uploaded Coworld release, uploaded policy versions, league/division state. |
-| Game runtime | Docker container on `coworld-local`. | Game container in a parent Kubernetes Job. |
-| Player runtime | Docker containers on `coworld-local`. | One Kubernetes child pod per player slot. |
-| Artifact storage | Local workspace files. | Uploaded artifact URIs recorded by the platform. |
-| Replay storage | Exact local replay bytes. | Replay bytes compressed for hosted storage and replay serving. |
-| Episode deadline | CLI `--timeout-seconds` for local runner waits. | 20 minute Kubernetes Job active deadline; coordinator waits default to `COWORLD_TIMEOUT_SECONDS=3600`. |
-| Supporting roles | Not auto-run. | Commissioner is run for container leagues; reporter/grader runtime integration is pending. |
-| Cleanup | Local containers removed by the runner. | Child pods/service removed by coordinator; parent Job cleaned by TTL. |
+| Dimension        | Local development                                                | Hosted tournament                                                                                      |
+| ---------------- | ---------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------ |
+| Orchestrator     | `coworld` CLI and local Docker runner.                           | Observatory/platform plus Kubernetes runner.                                                           |
+| Main use         | Fast player and Coworld debugging.                               | League evaluation and leaderboard updates.                                                             |
+| Inputs           | Local manifest, downloaded Coworld, or explicit episode request. | Uploaded Coworld release, uploaded policy versions, league/division state.                             |
+| Game runtime     | Docker container on `coworld-local`.                             | Game container in a parent Kubernetes Job.                                                             |
+| Player runtime   | Docker containers on `coworld-local`.                            | One Kubernetes child pod per player slot.                                                              |
+| Artifact storage | Local workspace files.                                           | Uploaded artifact URIs recorded by the platform.                                                       |
+| Replay storage   | Exact local replay bytes.                                        | Replay bytes compressed for hosted storage and replay serving.                                         |
+| Episode deadline | CLI `--timeout-seconds` for local runner waits.                  | 20 minute Kubernetes Job active deadline; coordinator waits default to `COWORLD_TIMEOUT_SECONDS=3600`. |
+| Supporting roles | Not auto-run.                                                    | Commissioner is run for container leagues; reporter/grader runtime integration is pending.             |
+| Cleanup          | Local containers removed by the runner.                          | Child pods/service removed by coordinator; parent Job cleaned by TTL.                                  |
 
 ## See Also
 

@@ -103,19 +103,19 @@ def read_data(uri: str) -> bytes:
 
 
 def _is_compressed_replay(path: str) -> bool:
-    return path.endswith((".json.z", ".json.gz"))
+    return path.endswith((".z", ".gz"))
 
 
 def _materialized_replay_name(path: str) -> str:
     if _is_compressed_replay(path):
-        return "replay.json"
-    return Path(unquote(path)).name or "replay.json"
+        return "replay"
+    return Path(unquote(path)).name or "replay"
 
 
 def _decode_replay_bytes(path: str, data: bytes) -> bytes:
-    if path.endswith(".json.z"):
+    if path.endswith(".z"):
         return zlib.decompress(data)
-    if path.endswith(".json.gz"):
+    if path.endswith(".gz"):
         return gzip.decompress(data)
     return data
 
@@ -126,7 +126,7 @@ def _materialized_local_replay_path(replay_path: Path) -> Iterator[Path]:
         yield replay_path
         return
     with tempfile.TemporaryDirectory(prefix="coworld-replay-") as temp_dir:
-        materialized_path = Path(temp_dir) / "replay.json"
+        materialized_path = Path(temp_dir) / "replay"
         materialized_path.write_bytes(_decode_replay_bytes(replay_path.name, replay_path.read_bytes()))
         yield materialized_path
 

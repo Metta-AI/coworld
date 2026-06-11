@@ -94,13 +94,13 @@ def _make_bundle_bytes(
         "ereq_id": ereq_id,
         "status": status,
         "include": ["results", "replay"],
-        "files": {"results": "results.json", "replay": "replay.json"},
+        "files": {"results": "results.json", "replay": "replay"},
     }
     buf = io.BytesIO()
     with zipfile.ZipFile(buf, mode="w", compression=zipfile.ZIP_DEFLATED) as zf:
         zf.writestr("manifest.json", json.dumps(manifest))
         zf.writestr("results.json", json.dumps(results_payload))
-        zf.writestr("replay.json", json.dumps(replay_payload))
+        zf.writestr("replay", json.dumps(replay_payload))
     return buf.getvalue()
 
 

@@ -1291,12 +1291,12 @@ def _download_replays(
     metadata: list[dict[str, Any]] = []
     for row in rows:
         assert row.replay_url is not None, "replay download rows must have replay_url"
-        local_name = f"{row.id}.json"
+        local_name = f"{row.id}.replay"
         local_path = output_dir / local_name
         with materialized_replay_path(row.replay_url) as replay_path:
             shutil.copyfile(replay_path, local_path)
         if not local_path.exists() and row.job_id is not None:
-            local_path = output_dir / f"{row.id}.json.z"
+            local_path = output_dir / f"{row.id}.z"
             local_path.write_bytes(client.get_job_artifact_bytes(row.job_id, "replay"))
         metadata.append(
             {

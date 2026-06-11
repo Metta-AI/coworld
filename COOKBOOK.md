@@ -16,7 +16,8 @@ For API reference, use the OpenAPI docs at `https://softmax.com/api/observatory/
 Every recipe below has two paths:
 
 - **CLI**: the supported public command shape.
-- **Non-CLI**: use Python/API for hosted Observatory work, and Docker-backed Python helpers or raw Docker for local work.
+- **Non-CLI**: use Python/API for hosted Observatory work, and Docker-backed Python helpers or raw Docker for local
+  work.
 
 For remote recipes, prefer the public clients in `coworld.api_client` and `coworld.upload`. For local recipes, the
 non-CLI path is Docker-backed: it starts the same game and player containers the CLI starts, passes the same environment
@@ -355,8 +356,8 @@ uv run coworld run-episode tmp/paintarena/coworld_manifest.json episode_request.
 uv run coworld play tmp/paintarena/coworld_manifest.json episode_request.json
 ```
 
-The request file must match `coworld/runner/episode_request_schema.json`. Request files cannot be combined with
-`--run`; put per-player commands in the request instead.
+The request file must match `coworld/runner/episode_request_schema.json`. Request files cannot be combined with `--run`;
+put per-player commands in the request instead.
 
 ### Non-CLI Docker-Backed Python
 
@@ -459,8 +460,8 @@ For headless `run_coworld_episode`, resolve AWS credentials in your script and p
 
 ## Act As A Player
 
-A player is an identity owned by your Softmax user. Switching the active player makes every identity-bearing
-coworld command (upload, submit, run) act as that player instead of your main user.
+A player is an identity owned by your Softmax user. Switching the active player makes every identity-bearing coworld
+command (upload, submit, run) act as that player instead of your main user.
 
 ### CLI
 
@@ -482,9 +483,9 @@ Now `uv run coworld submit ...`, `upload-policy`, and friends act as that player
 uv run coworld player unset
 ```
 
-The active session lives in `~/.softmax/credentials.yaml` under `player_sessions`; `player list`/`use`
-themselves authenticate with your user token. Re-run `player use` after 24h to refresh an expired session.
-`coworld player` is softmax-cli's player subapp (`softmax player ...` is equivalent).
+The active session lives in `~/.softmax/credentials.yaml` under `player_sessions`; `player list`/`use` themselves
+authenticate with your user token. Re-run `player use` after 24h to refresh an expired session. `coworld player` is
+softmax-cli's player subapp (`softmax player ...` is equivalent).
 
 ## Upload And Submit A Player
 
@@ -523,11 +524,11 @@ uv run coworld upload-policy paintarena-player:local --name paintarena-player \
 ```
 
 `upload-policy` requires Docker because it hashes the local Docker image, obtains a scoped registry token from the
-backend, pushes the image, and registers the policy version. No AWS CLI or AWS credentials are needed locally. `--use-bedrock` stores `USE_BEDROCK=true` with the
-policy version. Hosted Coworld tournaments run on AWS; when a policy opts into Bedrock, the player pod runs with the
-tournament Bedrock IAM role, so the player does not need to bring its own Bedrock API key. For other LLM providers,
-pass API keys with `--secret-env`; those secrets are stored in AWS Secrets Manager and injected only into that policy
-version's player pod.
+backend, pushes the image, and registers the policy version. No AWS CLI or AWS credentials are needed locally.
+`--use-bedrock` stores `USE_BEDROCK=true` with the policy version. Hosted Coworld tournaments run on AWS; when a policy
+opts into Bedrock, the player pod runs with the tournament Bedrock IAM role, so the player does not need to bring its
+own Bedrock API key. For other LLM providers, pass API keys with `--secret-env`; those secrets are stored in AWS Secrets
+Manager and injected only into that policy version's player pod.
 
 ### Non-CLI API
 
@@ -702,8 +703,8 @@ GET  /v2/experience-requests/xreq_.../episodes
 ### Experience request replays
 
 Each child episode is a normal episode request: once its job completes, the row from `xp-request episodes` (or
-`GET /v2/experience-requests/xreq_.../episodes`) carries a `replay_url`, and the `ereq_...` ID works with every
-episode inspection command:
+`GET /v2/experience-requests/xreq_.../episodes`) carries a `replay_url`, and the `ereq_...` ID works with every episode
+inspection command:
 
 ```bash
 uv run coworld xp-request episodes xreq_...           # find children with replays
@@ -712,23 +713,22 @@ uv run coworld replay-open ereq_... --hosted          # hosted Observatory viewe
 uv run coworld episode-logs ereq_... --game           # game log for a child episode
 ```
 
-While a child is still running, the row carries `live_url` instead — open it in a browser to watch the episode live.
-See [Retrieve Logs, Results, And Replays](#retrieve-logs-results-and-replays) for the full artifact recipes.
+While a child is still running, the row carries `live_url` instead — open it in a browser to watch the episode live. See
+[Retrieve Logs, Results, And Replays](#retrieve-logs-results-and-replays) for the full artifact recipes.
 
 ## Retrieve Logs, Results, And Replays
 
 ### CLI
 
 Start from the episode request row. `GET /v2/episode-requests/{ereq}` (the `coworld episodes` command) is the
-ownership-scoped front door for hosted episode data: status, participants, per-policy `scores`, `error`/`error_type`
-on failure, `replay_url` once the job completes, and `live_url` while it is running:
+ownership-scoped front door for hosted episode data: status, participants, per-policy `scores`, `error`/`error_type` on
+failure, `replay_url` once the job completes, and `live_url` while it is running:
 
 ```bash
 uv run coworld episodes ereq_... --json
 ```
 
-Print or download the game log (served by the ownership-scoped
-`GET /v2/episode-requests/{ereq}/artifacts/logs` route):
+Print or download the game log (served by the ownership-scoped `GET /v2/episode-requests/{ereq}/artifacts/logs` route):
 
 ```bash
 uv run coworld episode-logs ereq_... --game
@@ -775,23 +775,23 @@ Use `coworld replay` when you already have a replay file and a manifest. It star
 `COGAME_LOAD_REPLAY_URI`, opens and prints a `http://127.0.0.1:<port>/client/replay` URL, and waits for the replay
 container to exit. Pass `--no-open-browser` to leave browser opening to your terminal or script.
 
-Use `coworld replay-open` when you have an Observatory episode request ID. Without `--hosted`, it downloads or reuses the
-Coworld package, pulls only the game image needed for replay mode, downloads the hosted replay artifact, and serves it
-locally through Docker. With `--hosted`, it asks Observatory to create a hosted replay viewer session and opens the
+Use `coworld replay-open` when you have an Observatory episode request ID. Without `--hosted`, it downloads or reuses
+the Coworld package, pulls only the game image needed for replay mode, downloads the hosted replay artifact, and serves
+it locally through Docker. With `--hosted`, it asks Observatory to create a hosted replay viewer session and opens the
 returned viewer URL.
 
 Treat `replay_url` as an opaque URL to game-owned replay bytes. Episodes executed on the k8s backend store them
-zlib-compressed under the storage name `replay.json.z` (a platform convention — the payload format is owned by the
-game, not necessarily JSON); episodes executed on other backends can report differently named replay URLs.
-`coworld replay` and `replay-open` key decompression off the URL suffix (`.json.z` zlib, `.json.gz` gzip, anything
+zlib-compressed under the storage name `replay.z` (a platform convention — the payload format is owned by the game);
+episodes executed on other backends are copied into the same hosted storage envelope when the platform publishes a
+replay URL. `coworld replay` and `replay-open` key decompression off the URL suffix (`.z` zlib, `.gz` gzip, anything
 else passed through raw) before handing the file to local Docker. Raw Docker replay mode should point
 `COGAME_LOAD_REPLAY_URI` at a replay payload the game image can load.
 
 ### Non-CLI API
 
 The episode request routes are the front door. Episode rows carry everything an episode owner needs: `status`,
-per-policy `scores`, `error`/`error_type` on failure, `replay_url` (a direct URL to the game-owned replay bytes once
-the job completes), and `live_url` while it is running:
+per-policy `scores`, `error`/`error_type` on failure, `replay_url` (a direct URL to the game-owned replay bytes once the
+job completes), and `live_url` while it is running:
 
 ```python
 from coworld.api_client import CoworldApiClient
@@ -825,8 +825,8 @@ GET /v2/episode-requests/ereq_.../{policy_version_id}/policy-logs/{agent_idx}
 ```
 
 The `/jobs/{job_id}/...` helpers on the client (`get_job_episode_stats`, `get_job_artifact_bytes`,
-`list_job_policy_logs`, `get_job_policy_log`) hit team-only routes; non-team accounts get 403. Softmax team accounts
-can use them for raw `results`/`replay` bytes and per-agent logs by `job_id`:
+`list_job_policy_logs`, `get_job_policy_log`) hit team-only routes; non-team accounts get 403. Softmax team accounts can
+use them for raw `results`/`replay` bytes and per-agent logs by `job_id`:
 
 ```python
     job_id = episode.job_id
@@ -844,7 +844,7 @@ curl -X POST \
   -H "Authorization: Bearer ${TOKEN}" \
   -H "Content-Type: application/json" \
   "${API_BASE}/v2/coworlds/replays/session" \
-  -d '{"coworld_id":"cow_...","replay_uri":"https://.../replay.json.z"}'
+  -d '{"coworld_id":"cow_...","replay_uri":"https://.../replay.z"}'
 ```
 
 For a local replay file without the CLI, use `replay_coworld`:
@@ -878,8 +878,8 @@ uv run coworld certify tmp/paintarena/coworld_manifest.json
 uv run coworld upload-coworld tmp/paintarena/coworld_manifest.json
 ```
 
-`certify` runs the manifest's certification fixture locally, then validates results and replay artifacts. `upload-coworld`
-certifies again before uploading the manifest and runnable images.
+`certify` runs the manifest's certification fixture locally, then validates results and replay artifacts.
+`upload-coworld` certifies again before uploading the manifest and runnable images.
 
 To publish a small update from an already uploaded Coworld, use the hosted manifest as the base. Only new local image
 refs are uploaded; unchanged `img_...` entries stay as-is:
@@ -894,8 +894,8 @@ uv run coworld upload-coworld --from-coworld paintarena \
   --patch '{"game":{"owner":"games@softmax.com"}}'
 ```
 
-Use `--image role.id=IMAGE` or `--image role[index]=IMAGE` when a role has more than one runnable. `--patch` accepts
-a JSON merge-patch object inline, or a path to a JSON file.
+Use `--image role.id=IMAGE` or `--image role[index]=IMAGE` when a role has more than one runnable. `--patch` accepts a
+JSON merge-patch object inline, or a path to a JSON file.
 
 Inspect uploaded Coworlds and images:
 

@@ -130,7 +130,7 @@ def make_bundle_bytes(
     replay_payload = replay if replay is not None else make_replay()
 
     include = ["results", "replay"]
-    files: dict[str, str] = {"results": "results.json", "replay": "replay.json"}
+    files: dict[str, str] = {"results": "results.json", "replay": "replay"}
     if include_metadata:
         include.append("metadata")
         files["metadata"] = "metadata.json"
@@ -146,7 +146,7 @@ def make_bundle_bytes(
     with zipfile.ZipFile(buf, mode="w", compression=zipfile.ZIP_DEFLATED) as zf:
         zf.writestr("manifest.json", json.dumps(manifest))
         zf.writestr("results.json", json.dumps(results_payload))
-        zf.writestr("replay.json", json.dumps(replay_payload))
+        zf.writestr("replay", json.dumps(replay_payload))
         if include_metadata:
             zf.writestr("metadata.json", json.dumps(metadata_payload))
     return buf.getvalue()

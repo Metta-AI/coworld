@@ -9,21 +9,21 @@ finish, gathers artifacts, then uploads them to the URIs provided in environment
 
 ## Hosted resource baseline
 
-Hosted Kubernetes runners schedule each episode component with explicit resource requests so the scheduler
-reserves real capacity:
+Hosted Kubernetes runners schedule each episode component with explicit resource requests so the scheduler reserves real
+capacity:
 
-| Component                   | Resource request    |
-| --------------------------- | ------------------- |
-| Game container              | 1 CPU and 512Mi memory |
-| Runner worker container      | 250m CPU and 256Mi memory |
-| Each player container        | 250m CPU and 256Mi memory |
-| Replay container             | 2 CPU and 2Gi memory |
+| Component               | Resource request          |
+| ----------------------- | ------------------------- |
+| Game container          | 1 CPU and 512Mi memory    |
+| Runner worker container | 250m CPU and 256Mi memory |
+| Each player container   | 250m CPU and 256Mi memory |
+| Replay container        | 2 CPU and 2Gi memory      |
 
-These are scheduling **requests**, not CPU or memory limits. A container may use more if the node has spare
-capacity, but game and player authors should treat the requested capacity as the portable baseline available in
-hosted runs. Hosted deployments pass player requests through `COWORLD_PLAYER_CPU_REQUEST` and
-`COWORLD_PLAYER_MEMORY_REQUEST`; if those env vars are omitted in a direct runner invocation, the coordinator falls back
-to 2 CPU and 2Gi memory per player pod.
+These are scheduling **requests**, not CPU or memory limits. A container may use more if the node has spare capacity,
+but game and player authors should treat the requested capacity as the portable baseline available in hosted runs.
+Hosted deployments pass player requests through `COWORLD_PLAYER_CPU_REQUEST` and `COWORLD_PLAYER_MEMORY_REQUEST`; if
+those env vars are omitted in a direct runner invocation, the coordinator falls back to 2 CPU and 2Gi memory per player
+pod.
 
 Per-player resource requests are configurable per job via `COWORLD_PLAYER_CPU_REQUEST` and
 `COWORLD_PLAYER_MEMORY_REQUEST` (see [Optional Inputs](#optional-inputs)).
@@ -47,10 +47,11 @@ The game receives URI-based artifact environment variables. Today the app backen
 `COWORLD_WORKDIR` so the worker can validate results and upload hosted artifacts, but the game contract is URI-based
 rather than path-based. The worker reaches the game locally for health checks and creates a ClusterIP Service so player
 pods can connect back to the game. On exit — success or failure — the worker writes runner error info, collects logs,
-and deletes its child player pods and Service. Because the worker holds a TCP health port open for its whole lifetime and
-the game container liveness-probes that port, the kubelet stops the non-restarting game container whenever the worker
-exits (timeout, crash, or OOM); the app backend deletes the parent Job. This couples the game's lifetime to the worker
-without restarting the game on its own crash or exposing worker environment variables through a shared process namespace.
+and deletes its child player pods and Service. Because the worker holds a TCP health port open for its whole lifetime
+and the game container liveness-probes that port, the kubelet stops the non-restarting game container whenever the
+worker exits (timeout, crash, or OOM); the app backend deletes the parent Job. This couples the game's lifetime to the
+worker without restarting the game on its own crash or exposing worker environment variables through a shared process
+namespace.
 
 ## Commands
 
@@ -110,8 +111,8 @@ POD_UID
 ```
 
 This is the only payload shape consumed by the coordinator. Backend bookkeeping such as the uploaded Coworld ID or
-manifest hash lives in the backend's stored job payload and is converted out before `spec.json` is uploaded.
-Runner specs do not carry backend-owned display-name metadata. Hosted dispatch injects resolved player names only into
+manifest hash lives in the backend's stored job payload and is converted out before `spec.json` is uploaded. Runner
+specs do not carry backend-owned display-name metadata. Hosted dispatch injects resolved player names only into
 `game_config.players[].name`, and only when the game declares that field.
 
 ## Player Pods
@@ -147,11 +148,11 @@ COGAME_SAVE_REPLAY_URI=file:///coworld/replay
 ```
 
 The game binds its HTTP and websocket server to `COGAME_HOST:COGAME_PORT`. `coworld-init-config` writes
-`COGAME_CONFIG_URI` before the game starts. The game writes results and the replay to the
-supplied URIs; the pod's `/coworld/replay` file holds the exact bytes the game wrote, with no runner-added extension.
-The worker validates `COGAME_RESULTS_URI`, reads `/coworld/replay`, zlib-compresses those bytes in memory, and uploads
-the hosted output artifacts listed below. The hosted upload artifact contract (key, content type) is unchanged; only the
-in-pod workspace filename is shorter and extensionless.
+`COGAME_CONFIG_URI` before the game starts. The game writes results and the replay to the supplied URIs; the pod's
+`/coworld/replay` file holds the exact bytes the game wrote, with no runner-added extension. The worker validates
+`COGAME_RESULTS_URI`, reads `/coworld/replay`, zlib-compresses those bytes in memory, and uploads the hosted output
+artifacts listed below. The hosted upload artifact contract (key, content type) is unchanged; only the in-pod workspace
+filename is shorter and extensionless.
 
 ## Optional Inputs
 
@@ -165,9 +166,8 @@ LOG_LEVEL=...
 ```
 
 `COWORLD_WORKLOAD_TYPE` controls the node selector and toleration applied to child player pods. In production the app
-backend also applies the same workload-type selector and toleration to the parent Job.
-`COWORLD_CAPACITY_TYPE` optionally adds a Karpenter capacity-type node selector, such as `on-demand`, to the parent Job
-and child player pods.
+backend also applies the same workload-type selector and toleration to the parent Job. `COWORLD_CAPACITY_TYPE`
+optionally adds a Karpenter capacity-type node selector, such as `on-demand`, to the parent Job and child player pods.
 `COWORLD_PLAYER_CPU_REQUEST` and `COWORLD_PLAYER_MEMORY_REQUEST` override the resource requests applied to each child
 player pod. `COWORLD_TIMEOUT_SECONDS` controls coordinator waits inside the Job; the hosted parent Job also has its own
 20 minute Kubernetes active deadline.
@@ -175,7 +175,8 @@ player pod. `COWORLD_TIMEOUT_SECONDS` controls coordinator waits inside the Job;
 ## Output URIs
 
 The runner uploads each episode artifact to a separate URI. There is no single bundled output URI — bundling is a
-consumption-time concern handled by the bundling layer; see [artifacts/EPISODE_BUNDLE.md](../docs/artifacts/EPISODE_BUNDLE.md).
+consumption-time concern handled by the bundling layer; see
+[artifacts/EPISODE_BUNDLE.md](../docs/artifacts/EPISODE_BUNDLE.md).
 
 All output environment variables are optional, but hosted jobs normally provide them:
 
@@ -191,29 +192,29 @@ PLAYER_ARTIFACT_UPLOAD_URLS
 Outputs:
 
 - `RESULTS_URI`: game-defined `results.json`, validated against `manifest.game.results_schema`.
-- `REPLAY_URI`: zlib-compressed replay uploaded as `replay.json.z`. Hosted upload and the hosted replay viewer both
-  consume the compressed form directly.
+- `REPLAY_URI`: zlib-compressed replay uploaded as `replay.z`. Hosted upload and the hosted replay viewer both consume
+  the compressed form directly.
 - `DEBUG_URI`: zip of the runner's `logs/` directory, containing game container stdout/stderr (`game.stdout.log`,
-  `game.stderr.log`) plus any per-player log files (`policy_agent_{slot}.log`) the coordinator captured. Game
-  container stdout/stderr is **public** to anyone with episode access — game authors must not write secrets or
-  private information to those streams.
+  `game.stderr.log`) plus any per-player log files (`policy_agent_{slot}.log`) the coordinator captured. Game container
+  stdout/stderr is **public** to anyone with episode access — game authors must not write secrets or private information
+  to those streams.
 - `ERROR_INFO_URI`: crash JSON if the coordinator fails before the episode completes.
 - `POLICY_LOG_URLS`: JSON object mapping each player slot to a destination URI. Each player log is uploaded from
-  `policy_agent_{slot}.log` and contains that player container's combined stdout and stderr. Player logs are
-  also included in `DEBUG_URI`'s zip; `POLICY_LOG_URLS` exposes them individually for per-player consumption.
+  `policy_agent_{slot}.log` and contains that player container's combined stdout and stderr. Player logs are also
+  included in `DEBUG_URI`'s zip; `POLICY_LOG_URLS` exposes them individually for per-player consumption.
 - `PLAYER_ARTIFACT_UPLOAD_URLS`: JSON object mapping each player slot to a presigned `PUT` URL. Unlike the other
   outputs, the coordinator does **not** upload these itself — it forwards each slot's URL into the player pod as
-  `COWORLD_PLAYER_ARTIFACT_UPLOAD_URL`, and the player uploads its own single artifact `.zip` (max 200 MB) before its pod
-  is torn down. See [player artifact](../docs/artifacts/PLAYER_ARTIFACT.md).
+  `COWORLD_PLAYER_ARTIFACT_UPLOAD_URL`, and the player uploads its own single artifact `.zip` (max 200 MB) before its
+  pod is torn down. See [player artifact](../docs/artifacts/PLAYER_ARTIFACT.md).
 
 Per-player logs are diagnostic only. After the game has produced valid results, the coordinator reads the last 10,000
 combined stdout/stderr lines from player pods whose `player` container has started and skips pods whose container is
 still waiting, such as `ContainerCreating`. Missing player logs do not fail an otherwise successful episode; result and
 replay upload remain the source of truth for episode success.
 
-There is no separate hosted media artifact for videos, screenshots, or rich human-readable reports in the episode
-runner path. Put compact, replay-critical bytes in the replay artifact, keep `results.json` small and schema-valid, and
-use reporter/support-role artifacts for larger watchability outputs when those runtimes are invoked.
+There is no separate hosted media artifact for videos, screenshots, or rich human-readable reports in the episode runner
+path. Put compact, replay-critical bytes in the replay artifact, keep `results.json` small and schema-valid, and use
+reporter/support-role artifacts for larger watchability outputs when those runtimes are invoked.
 
 ## Kubernetes Requirements
 

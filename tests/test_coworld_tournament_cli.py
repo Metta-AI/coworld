@@ -59,8 +59,8 @@ def test_replays_downloads_mine_division_replays(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
 ) -> None:
-    replay_payload = b'{"frames":[]}\n'
-    replay_url = httpserver.url_for("/replay.json")
+    replay_payload = b"\x00crewrift-replay-bytes\xff"
+    replay_url = httpserver.url_for("/replay")
     httpserver.expect_request(
         "/observatory/v2/episode-requests",
         method="GET",
@@ -74,7 +74,7 @@ def test_replays_downloads_mine_division_replays(
                     policy_version_id=OTHER_POLICY_VERSION_ID,
                     policy_id=OTHER_POLICY_ID,
                     policy_name="otherbot",
-                    replay_url=httpserver.url_for("/other-replay.json"),
+                    replay_url=httpserver.url_for("/other-replay"),
                 ),
             ],
             "total_count": 2,
@@ -83,7 +83,7 @@ def test_replays_downloads_mine_division_replays(
         }
     )
     _expect_mine_memberships(httpserver)
-    httpserver.expect_request("/replay.json", method="GET").respond_with_data(replay_payload)
+    httpserver.expect_request("/replay", method="GET").respond_with_data(replay_payload)
 
     result = CliRunner().invoke(
         app,
@@ -103,7 +103,7 @@ def test_replays_downloads_mine_division_replays(
     assert result.exit_code == 0, result.output
     metadata = json.loads(result.output)
     assert [row["episode_request_id"] for row in metadata] == [EPISODE_REQUEST_ID]
-    replay_path = tmp_path / f"{EPISODE_REQUEST_ID}.json"
+    replay_path = tmp_path / f"{EPISODE_REQUEST_ID}.replay"
     assert replay_path.read_bytes() == replay_payload
     index = json.loads((tmp_path / "index.json").read_text())
     assert index == metadata
@@ -805,7 +805,7 @@ def test_replay_open_downloads_only_game_image_for_local_replay(
     tmp_path: Path,
 ) -> None:
     monkeypatch.chdir(tmp_path)
-    replay_path = tmp_path / "replay.json"
+    replay_path = tmp_path / "replay"
     replay_path.write_text('{"frames":[]}\n')
     opened_urls: list[str] = []
     httpserver.expect_request(
@@ -886,7 +886,7 @@ def test_replay_open_downloads_only_game_image_for_local_replay(
 
 def test_replay_open_hosted_opens_viewer_url(httpserver: HTTPServer, monkeypatch: pytest.MonkeyPatch) -> None:
     opened_urls: list[str] = []
-    replay_url = "https://storage.example/replay.json.z"
+    replay_url = "https://storage.example/replay.z"
     viewer_url = "https://softmax.example/observatory/coworld-replays/session"
     httpserver.expect_request(
         f"/observatory/v2/episode-requests/{EPISODE_REQUEST_ID}",

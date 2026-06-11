@@ -76,17 +76,19 @@ def test_materialized_manifest_path_resolves_bare_coworld_id_against_site_api_se
 
 
 def test_materialized_replay_path_downloads_replay_uri(httpserver: HTTPServer) -> None:
-    replay_bytes = zlib.compress(b'{"events":[]}')
-    httpserver.expect_request("/replay.json.z").respond_with_data(replay_bytes)
+    replay_payload = b"\x00crewrift-replay-bytes\xff"
+    replay_bytes = zlib.compress(replay_payload)
+    httpserver.expect_request("/replay.z").respond_with_data(replay_bytes)
 
-    with materialized_replay_path(httpserver.url_for("/replay.json.z")) as resolved:
-        assert resolved.name == "replay.json"
-        assert resolved.read_bytes() == b'{"events":[]}'
+    with materialized_replay_path(httpserver.url_for("/replay.z")) as resolved:
+        assert resolved.name == "replay"
+        assert resolved.read_bytes() == replay_payload
 
 
 def test_materialized_replay_path_downloads_s3_uri(monkeypatch: MonkeyPatch) -> None:
-    replay_uri = "s3://softmax-public/replays/episode.json.z"
-    replay_bytes = zlib.compress(b'{"events":[]}')
+    replay_uri = "s3://softmax-public/replays/episode.z"
+    replay_payload = b"\x00crewrift-replay-bytes\xff"
+    replay_bytes = zlib.compress(replay_payload)
 
     def read_data(uri: str) -> bytes:
         assert uri == replay_uri
@@ -95,23 +97,25 @@ def test_materialized_replay_path_downloads_s3_uri(monkeypatch: MonkeyPatch) -> 
     monkeypatch.setattr(manifest_uri, "read_data", read_data)
 
     with materialized_replay_path(replay_uri) as resolved:
-        assert resolved.name == "replay.json"
-        assert resolved.read_bytes() == b'{"events":[]}'
+        assert resolved.name == "replay"
+        assert resolved.read_bytes() == replay_payload
 
 
 def test_materialized_replay_path_decompresses_local_replay(tmp_path: Path) -> None:
-    replay_path = tmp_path / "episode.json.z"
-    replay_path.write_bytes(zlib.compress(b'{"events":[]}'))
+    replay_path = tmp_path / "episode.z"
+    replay_payload = b"\x00crewrift-replay-bytes\xff"
+    replay_path.write_bytes(zlib.compress(replay_payload))
 
     with materialized_replay_path(str(replay_path)) as resolved:
-        assert resolved.name == "replay.json"
-        assert resolved.read_bytes() == b'{"events":[]}'
+        assert resolved.name == "replay"
+        assert resolved.read_bytes() == replay_payload
 
 
 def test_materialized_replay_path_decompresses_gzip_replay(tmp_path: Path) -> None:
-    replay_path = tmp_path / "episode.json.gz"
-    replay_path.write_bytes(gzip.compress(b'{"events":[]}'))
+    replay_path = tmp_path / "episode.gz"
+    replay_payload = b"\x00crewrift-replay-bytes\xff"
+    replay_path.write_bytes(gzip.compress(replay_payload))
 
     with materialized_replay_path(str(replay_path)) as resolved:
-        assert resolved.name == "replay.json"
-        assert resolved.read_bytes() == b'{"events":[]}'
+        assert resolved.name == "replay"
+        assert resolved.read_bytes() == replay_payload
