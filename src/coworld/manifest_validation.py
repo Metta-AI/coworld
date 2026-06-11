@@ -3,11 +3,21 @@ from __future__ import annotations
 import copy
 from typing import Any, cast
 
+from pydantic import BaseModel, Field
+
 from coworld.schema_validation import JsonObject, JsonSchema, validate_json_schema
 from coworld.types import CoworldManifest
 
 
-def infer_fixed_token_count(config_schema: JsonSchema) -> int:
+class CoworldManifestGameConfigCounts(BaseModel):
+    variant_player_counts: dict[str, int] = Field(min_length=1)
+
+    @property
+    def default_player_count(self) -> int:
+        return next(iter(self.variant_player_counts.values()))
+
+
+def _token_array_schema(config_schema: JsonSchema) -> dict[str, Any]:
     required = config_schema.get("required")
     if not isinstance(required, list) or "tokens" not in required:
         raise ValueError("game.config_schema must require tokens")
@@ -25,12 +35,38 @@ def infer_fixed_token_count(config_schema: JsonSchema) -> int:
     items = tokens.get("items")
     if not isinstance(items, dict) or items.get("type") != "string":
         raise ValueError("game.config_schema.properties.tokens.items.type must be string")
+    return tokens
 
+
+def infer_fixed_token_count(config_schema: JsonSchema) -> int:
+    tokens = _token_array_schema(config_schema)
     min_items = tokens.get("minItems")
     max_items = tokens.get("maxItems")
     if not isinstance(min_items, int) or not isinstance(max_items, int) or min_items != max_items:
         raise ValueError("game.config_schema.properties.tokens must declare equal minItems and maxItems")
     return min_items
+
+
+def infer_token_count_for_game_config(config_schema: JsonSchema, game_config: dict[str, Any]) -> int:
+    tokens = _token_array_schema(config_schema)
+    min_items = tokens.get("minItems")
+    max_items = tokens.get("maxItems")
+    if not isinstance(min_items, int) or not isinstance(max_items, int):
+        raise ValueError("game.config_schema.properties.tokens must declare minItems and maxItems")
+    if min_items == max_items:
+        return min_items
+
+    properties = config_schema.get("properties")
+    players_schema = properties.get("players") if isinstance(properties, dict) else None
+    if not isinstance(players_schema, dict) or players_schema.get("type") != "array":
+        raise ValueError(
+            "game_config.players must define the seat count when game.config_schema.properties.tokens is not fixed"
+        )
+    players = _player_config_objects(game_config.get("players"), "game_config.players")
+    player_count = len(players)
+    if player_count < min_items or player_count > max_items:
+        raise ValueError("game_config.players length must fit game.config_schema.properties.tokens bounds")
+    return player_count
 
 
 def game_config_with_tokens(game_config: dict[str, Any], tokens: list[str]) -> JsonObject:
@@ -94,27 +130,44 @@ def _player_config_objects(value: Any, field_name: str) -> list[dict[str, Any]]:
     return cast(list[dict[str, Any]], value)
 
 
-def validate_coworld_manifest_game_configs(manifest: CoworldManifest) -> int:
+def validate_coworld_manifest_game_configs(manifest: CoworldManifest) -> CoworldManifestGameConfigCounts:
     _reject_legacy_name_config_schema(manifest.game.config_schema)
-    token_count = infer_fixed_token_count(manifest.game.config_schema)
+    fixed_token_count: int | None
+    try:
+        fixed_token_count = infer_fixed_token_count(manifest.game.config_schema)
+    except ValueError:
+        fixed_token_count = None
     player_count = _infer_fixed_named_player_count(manifest.game.config_schema)
-    if player_count is not None and player_count != token_count:
+    if fixed_token_count is not None and player_count is not None and player_count != fixed_token_count:
         raise ValueError("game.config_schema.properties.players must declare the same fixed length as tokens")
-    if len(manifest.certification.players) != token_count:
-        raise ValueError("certification.players must match game.config_schema token count")
-
-    tokens = [f"token-{slot}" for slot in range(token_count)]
+    variant_player_counts: dict[str, int] = {}
     for variant in manifest.variants:
+        variant_token_count = infer_token_count_for_game_config(manifest.game.config_schema, variant.game_config)
+        if variant.id in variant_player_counts:
+            raise ValueError(f"duplicate variant id: {variant.id!r}")
+        variant_player_counts[variant.id] = variant_token_count
         validate_json_schema(
-            game_config_with_tokens(variant.game_config, tokens),
+            game_config_with_tokens(variant.game_config, [f"token-{slot}" for slot in range(variant_token_count)]),
             manifest.game.config_schema,
         )
 
+    certification_token_count = infer_token_count_for_game_config(
+        manifest.game.config_schema,
+        manifest.certification.game_config,
+    )
+    if len(manifest.certification.players) != certification_token_count:
+        raise ValueError("certification.players must match certification game_config token count")
+
     validate_json_schema(
-        game_config_with_tokens(manifest.certification.game_config, tokens),
+        game_config_with_tokens(
+            manifest.certification.game_config,
+            [f"token-{slot}" for slot in range(certification_token_count)],
+        ),
         manifest.game.config_schema,
     )
-    return token_count
+    return CoworldManifestGameConfigCounts(
+        variant_player_counts=variant_player_counts,
+    )
 
 
 def _reject_legacy_name_config_schema(config_schema: JsonSchema) -> None:
@@ -143,14 +196,17 @@ def _infer_fixed_named_player_count(config_schema: JsonSchema) -> int | None:
     players = properties.get("players")
     if not _declares_named_players(players):
         return None
+    players_schema = cast(dict[str, Any], players)
     required = config_schema.get("required")
     if not isinstance(required, list) or "players" not in required:
         raise ValueError("game.config_schema must require players when declaring players[].name")
-    min_items = players.get("minItems")
-    max_items = players.get("maxItems")
-    if not isinstance(min_items, int) or not isinstance(max_items, int) or min_items != max_items:
-        raise ValueError("game.config_schema.properties.players must declare equal minItems and maxItems")
-    items = cast(dict[str, Any], players["items"])
+    min_items = players_schema.get("minItems")
+    max_items = players_schema.get("maxItems")
+    if not isinstance(min_items, int) or not isinstance(max_items, int):
+        raise ValueError("game.config_schema.properties.players must declare minItems and maxItems")
+    if min_items != max_items:
+        return None
+    items = cast(dict[str, Any], players_schema["items"])
     item_required = items.get("required")
     if not isinstance(item_required, list) or "name" not in item_required:
         raise ValueError("game.config_schema.properties.players.items must require name")

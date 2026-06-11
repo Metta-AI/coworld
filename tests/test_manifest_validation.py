@@ -2,6 +2,7 @@ import pytest
 
 from coworld.manifest_validation import (
     game_config_with_named_players,
+    infer_token_count_for_game_config,
     validate_coworld_manifest_game_configs,
 )
 from coworld.types import CoworldCertificationFixture, CoworldGameManifest, CoworldManifest, CoworldVariant
@@ -55,7 +56,7 @@ def test_game_config_with_named_players_disambiguates_duplicate_player_names() -
 
 
 def test_game_config_with_named_players_leaves_open_schema_unchanged() -> None:
-    schema = {"type": "object"}
+    schema: dict[str, object] = {"type": "object"}
 
     config = game_config_with_named_players({"width": 12}, ["alpha:v1", "beta:v2"], schema)
 
@@ -93,6 +94,64 @@ def test_validate_manifest_requires_players_to_match_token_count() -> None:
         validate_coworld_manifest_game_configs(_manifest(schema))
 
 
+def test_validate_manifest_allows_variant_specific_player_counts() -> None:
+    schema = FIXED_NAMED_PLAYERS_SCHEMA | {
+        "properties": FIXED_NAMED_PLAYERS_SCHEMA["properties"]
+        | {
+            "tokens": FIXED_NAMED_PLAYERS_SCHEMA["properties"]["tokens"] | {"maxItems": 4},
+            "players": FIXED_NAMED_PLAYERS_SCHEMA["properties"]["players"] | {"maxItems": 4},
+        }
+    }
+    manifest = CoworldManifest.model_construct(
+        game=CoworldGameManifest.model_construct(config_schema=schema),
+        variants=[
+            CoworldVariant.model_construct(
+                id="two-player",
+                game_config={"players": [{"name": "A"}, {"name": "B"}]},
+            ),
+            CoworldVariant.model_construct(
+                id="four-player", game_config={"players": [{"name": "A"}, {"name": "B"}, {"name": "C"}, {"name": "D"}]}
+            ),
+        ],
+        certification=CoworldCertificationFixture.model_construct(
+            game_config={"players": [{"name": "A"}, {"name": "B"}]},
+            players=[object(), object()],
+        ),
+    )
+
+    counts = validate_coworld_manifest_game_configs(manifest)
+    assert counts.variant_player_counts == {"two-player": 2, "four-player": 4}
+    assert counts.default_player_count == 2
+    assert infer_token_count_for_game_config(schema, manifest.variants[1].game_config) == 4
+
+
+def test_validate_manifest_rejects_open_tokens_without_game_config_player_count() -> None:
+    schema = {
+        "type": "object",
+        "additionalProperties": False,
+        "required": ["tokens"],
+        "properties": {
+            "tokens": {"type": "array", "minItems": 2, "maxItems": 4, "items": {"type": "string"}},
+        },
+    }
+
+    with pytest.raises(ValueError, match="game_config.players must define the seat count"):
+        validate_coworld_manifest_game_configs(_manifest(schema))
+
+
+def test_validate_manifest_rejects_duplicate_variant_ids() -> None:
+    manifest = _manifest(FIXED_NAMED_PLAYERS_SCHEMA)
+    manifest.variants.append(
+        CoworldVariant.model_construct(
+            id="two-player",
+            game_config={"players": [{"name": "A"}, {"name": "B"}]},
+        )
+    )
+
+    with pytest.raises(ValueError, match="duplicate variant id"):
+        validate_coworld_manifest_game_configs(manifest)
+
+
 def test_validate_manifest_rejects_legacy_player_name_schema() -> None:
     schema = FIXED_NAMED_PLAYERS_SCHEMA | {
         "properties": FIXED_NAMED_PLAYERS_SCHEMA["properties"]
@@ -106,7 +165,12 @@ def test_validate_manifest_rejects_legacy_player_name_schema() -> None:
 def _manifest(config_schema: dict) -> CoworldManifest:
     return CoworldManifest.model_construct(
         game=CoworldGameManifest.model_construct(config_schema=config_schema),
-        variants=[CoworldVariant.model_construct(game_config={"players": [{"name": "A"}, {"name": "B"}]})],
+        variants=[
+            CoworldVariant.model_construct(
+                id="two-player",
+                game_config={"players": [{"name": "A"}, {"name": "B"}]},
+            )
+        ],
         certification=CoworldCertificationFixture.model_construct(
             game_config={"players": [{"name": "A"}, {"name": "B"}]},
             players=[object(), object()],

@@ -44,8 +44,9 @@ same game image must be able to load them in replay mode.
 
 ## Player slots
 
-`game.config_schema` must require a fixed-length string-array `tokens` field. That fixed length defines the number of
-player slots for variants, certification, local play, and hosted runs.
+`game.config_schema` must require a string-array `tokens` field with `minItems` and `maxItems` bounds. Equal bounds define
+a fixed player slot count. Variable bounds are allowed when each variant and certification `game_config.players` array
+selects the concrete player slot count for that config.
 
 Coworld-authored configs are token-free:
 
@@ -55,10 +56,10 @@ Coworld-authored configs are token-free:
 The runner injects fresh tokens into the concrete per-episode config, then starts one player runnable per slot with a
 fully formed `COWORLD_PLAYER_WS_URL`.
 
-If the game shows policy or player display names in its UI, replay, results, or logs, it should declare a fixed-length
-`players` array in `game.config_schema`. Each `players[]` item has a required string `name`. Hosted dispatch overwrites
+If the game shows policy or player display names in its UI, replay, results, or logs, it should declare a `players` array
+in `game.config_schema`. Each `players[]` item has a required string `name`. Hosted dispatch overwrites
 `game_config.players[].name` with resolved names for declared schemas. Local raw configs may set `players[].name`
-directly.
+directly. The same `players` array is also the concrete seat-count source for variable-size games.
 
 Coworld-wide display names use `game_config.players[].name`; game-specific per-slot mechanics remain in the game's own
 config fields.

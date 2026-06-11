@@ -140,7 +140,7 @@
         },
         "config_schema": {
           "additionalProperties": true,
-          "description": "JSON Schema for runtime game configs. It must require a fixed-length string-array `tokens` field; variants and certification configs omit tokens because the runner injects them.",
+          "description": "JSON Schema for runtime game configs. It must require a string-array `tokens` field with minItems and maxItems bounds; variants and certification configs omit tokens because the runner injects them.",
           "title": "Config Schema",
           "type": "object"
         },

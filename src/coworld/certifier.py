@@ -11,7 +11,11 @@ from urllib.parse import quote, unquote, urlparse
 
 import httpx
 
-from coworld.manifest_validation import game_config_with_tokens, validate_coworld_manifest_game_configs
+from coworld.manifest_validation import (
+    game_config_with_tokens,
+    infer_token_count_for_game_config,
+    validate_coworld_manifest_game_configs,
+)
 from coworld.runner.runner import (
     EpisodeArtifacts,
     PlayerLaunchSpec,
@@ -137,12 +141,22 @@ def build_manifest_episode_job_spec(
     player_images: list[str] | None = None,
     player_run: list[str] | None = None,
 ) -> CoworldEpisodeJobSpec:
+    if variant_id is None:
+        game_config = copy.deepcopy(package.manifest.certification.game_config)
+    else:
+        variants = {variant.id: variant for variant in package.manifest.variants}
+        if variant_id not in variants:
+            raise ValueError(f"unknown Coworld variant_id: {variant_id!r}")
+        game_config = copy.deepcopy(variants[variant_id].game_config)
+
+    slot_count = infer_token_count_for_game_config(package.config_schema, game_config)
     players = _certification_player_specs(package)
+    if len(players) != slot_count:
+        players = [players[index % len(players)].model_copy(deep=True) for index in range(slot_count)]
     if not player_images:
         if player_run:
             raise ValueError("player_run requires at least one player image")
     else:
-        slot_count = len(players)
         if len(player_images) == 1:
             slot_images = player_images * slot_count
         elif len(player_images) == slot_count:
@@ -156,14 +170,6 @@ def build_manifest_episode_job_spec(
             players[slot].model_copy(deep=True, update={"image": image, **player_update})
             for slot, image in enumerate(slot_images)
         ]
-
-    if variant_id is None:
-        game_config = copy.deepcopy(package.manifest.certification.game_config)
-    else:
-        variants = {variant.id: variant for variant in package.manifest.variants}
-        if variant_id not in variants:
-            raise ValueError(f"unknown Coworld variant_id: {variant_id!r}")
-        game_config = copy.deepcopy(variants[variant_id].game_config)
 
     return CoworldEpisodeJobSpec(
         manifest=package.manifest.model_copy(deep=True),

@@ -377,13 +377,13 @@ def test_build_game_config_rejects_wrong_token_count(tmp_path: Path) -> None:
         build_game_config(package, [])
 
 
-def test_load_coworld_package_requires_fixed_token_count(tmp_path: Path) -> None:
+def test_load_coworld_package_requires_bounded_token_count(tmp_path: Path) -> None:
     coworld_manifest_path = _write_package_files(tmp_path)
     manifest = json.loads(coworld_manifest_path.read_text())
     del manifest["game"]["config_schema"]["properties"]["tokens"]["maxItems"]
     coworld_manifest_path.write_text(json.dumps(manifest))
 
-    with pytest.raises(ValueError, match="equal minItems and maxItems"):
+    with pytest.raises(ValueError, match="minItems and maxItems"):
         load_coworld_package(coworld_manifest_path)
 
 
@@ -453,6 +453,41 @@ def test_build_manifest_episode_job_spec_can_use_variant_config(tmp_path: Path) 
     spec = build_manifest_episode_job_spec(package, variant_id="default")
 
     assert spec.game_config == {"difficulty": "watch"}
+
+
+def test_build_manifest_episode_job_spec_uses_variant_player_count(tmp_path: Path) -> None:
+    coworld_manifest_path = _write_package_files(tmp_path)
+    manifest = json.loads(coworld_manifest_path.read_text(encoding="utf-8"))
+    schema = cast(dict[str, Any], cast(dict[str, Any], manifest["game"])["config_schema"])
+    schema["required"] = ["tokens", "players"]
+    tokens = cast(dict[str, Any], cast(dict[str, Any], schema["properties"])["tokens"])
+    tokens["minItems"] = 2
+    tokens["maxItems"] = 4
+    manifest["variants"] = [
+        {
+            "id": "two-player",
+            "name": "Two Player",
+            "game_config": {"players": [{"name": "A"}, {"name": "B"}]},
+            "description": "Two-player test variant.",
+        },
+        {
+            "id": "four-player",
+            "name": "Four Player",
+            "game_config": {"players": [{"name": "A"}, {"name": "B"}, {"name": "C"}, {"name": "D"}]},
+            "description": "Four-player test variant.",
+        },
+    ]
+    manifest["certification"] = {
+        "game_config": {"players": [{"name": "A"}, {"name": "B"}]},
+        "players": [{"player_id": "unit-test-player"}, {"player_id": "unit-test-player"}],
+    }
+    coworld_manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
+    package = load_coworld_package(coworld_manifest_path)
+
+    spec = build_manifest_episode_job_spec(package, variant_id="four-player")
+
+    assert len(spec.players) == 4
+    assert spec.game_config == {"players": [{"name": "A"}, {"name": "B"}, {"name": "C"}, {"name": "D"}]}
 
 
 def test_build_manifest_episode_job_spec_defaults_to_certification_config(tmp_path: Path) -> None:

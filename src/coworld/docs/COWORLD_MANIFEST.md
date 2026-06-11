@@ -81,8 +81,10 @@ this workflow level.
 ## Game Configs, Tokens, And Player Names
 
 `game.config_schema` is a JSON Schema for the runtime config the game reads from `COGAME_CONFIG_URI`. It has one
-cross-Coworld requirement that is easier to explain here than in a field table: it must require a fixed-length
-string-array `tokens` field. The fixed length defines the player slot count.
+cross-Coworld requirement that is easier to explain here than in a field table: it must require a string-array `tokens`
+field with `minItems` and `maxItems` bounds. When the bounds are equal, that fixed length defines the player slot count.
+When the bounds differ, each variant and certification `game_config.players` array defines the concrete player slot
+count for that config.
 
 Coworld-authored configs do **not** include `tokens`:
 
@@ -95,8 +97,9 @@ manifest.
 
 Games that need policy or player display names use `game_config.players[].name`, matching the Paint Arena example.
 
-- Declare `game.config_schema.properties.players` as a fixed-length array with the same slot count as `tokens`.
-- Each `players[]` item must be an object with required string field `name`.
+- Declare `game.config_schema.properties.players` as an array when the Coworld supports variable player counts or display
+  names.
+- If the game shows display names, each `players[]` item must be an object with required string field `name`.
 - Hosted dispatch overwrites `game_config.players[].name` with resolved, per-slot display names when the schema declares
   the field.
 - Local raw configs may set `players[].name` directly when a developer wants readable names without hosted dispatch.

@@ -147,8 +147,8 @@ class CoworldGameManifest(BaseModel):
     owner: str = Field(min_length=1, description="Maintainer email or handle.")
     config_schema: JsonSchema = Field(
         description=(
-            "JSON Schema for runtime game configs. It must require a fixed-length string-array `tokens` field; "
-            "variants and certification configs omit tokens because the runner injects them."
+            "JSON Schema for runtime game configs. It must require a string-array `tokens` field with minItems and "
+            "maxItems bounds; variants and certification configs omit tokens because the runner injects them."
         )
     )
     results_schema: JsonSchema = Field(
