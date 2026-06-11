@@ -534,6 +534,24 @@ def test_run_episode_player_image_override_does_not_invent_manifest_env(
     assert [player.env for player in spec.players] == [{}] * 8
 
 
+def test_run_episode_accepts_variant_with_player_override(
+    monkeypatch: MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    spec, _kwargs = _invoke_run_episode(
+        monkeypatch,
+        tmp_path,
+        str(_cogs_vs_clips_manifest(tmp_path)),
+        "custom-policy-player:latest",
+        "--variant",
+        "machina-1-daily",
+    )
+
+    assert spec.game_config["mission"] == "machina_1"
+    assert spec.game_config["max_steps"] == 10000
+    assert [player.image for player in spec.players] == ["custom-policy-player:latest"] * 8
+
+
 def test_run_episode_accepts_episode_request_file_with_per_slot_env(
     monkeypatch: MonkeyPatch,
     tmp_path: Path,
@@ -549,6 +567,18 @@ def test_run_episode_accepts_episode_request_file_with_per_slot_env(
     assert [player.env for player in spec.players] == [{"PLAYER_SLOT": "0"}, {"PLAYER_SLOT": "1"}]
     assert spec.game_config["players"] == [{"name": "slot-zero:v1"}, {"name": "slot-one:v1"}]
     assert kwargs == {"timeout_seconds": 3600.0, "verify_replay": False, "container_prefix": "coworld-run"}
+
+
+def test_run_episode_rejects_episode_request_file_with_variant(monkeypatch: MonkeyPatch, tmp_path: Path) -> None:
+    manifest_path = _example_manifest(tmp_path)
+    request_path = _write_episode_request(tmp_path, manifest_path)
+
+    result = CliRunner().invoke(app, ["run-episode", str(manifest_path), str(request_path), "--variant", "default"])
+
+    assert result.exit_code != 0
+    assert "episode request files cannot be combined" in result.output
+    assert "--variant" in result.output
+    assert "--run" in result.output
 
 
 def test_run_episode_runs_multiple_local_episodes_with_seed_variation(
@@ -626,6 +656,36 @@ def test_scrimmage_runs_one_episode_for_target_player_container(
     assert kwargs == {"timeout_seconds": 3600.0, "verify_replay": False, "container_prefix": "coworld-run"}
     assert [player.image for player in spec.players] == ["target-policy:latest"] * 8
     assert [player.run for player in spec.players] == [["python", "/app/player.py"]] * 8
+
+
+def test_scrimmage_accepts_variant_for_target_player_container(
+    monkeypatch: MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    captured: list[tuple[CoworldEpisodeJobSpec, EpisodeArtifacts, dict[str, object]]] = []
+
+    def fake_run_coworld_episode(spec: CoworldEpisodeJobSpec, artifacts: object, **kwargs: object) -> None:
+        captured.append((spec, cast(EpisodeArtifacts, artifacts), kwargs))
+
+    monkeypatch.setattr("coworld.cli.run_coworld_episode", fake_run_coworld_episode)
+    manifest_path = _cogs_vs_clips_manifest(tmp_path)
+
+    result = CliRunner().invoke(
+        app,
+        [
+            "scrimmage",
+            str(manifest_path),
+            "target-policy:latest",
+            "--variant",
+            "machina-1-daily",
+        ],
+    )
+
+    assert result.exit_code == 0, result.output
+    assert len(captured) == 1
+    spec, _artifacts, _kwargs = captured[0]
+    assert spec.game_config["mission"] == "machina_1"
+    assert [player.image for player in spec.players] == ["target-policy:latest"] * 8
 
 
 def _invoke_run_episode_artifacts(monkeypatch: MonkeyPatch, *args: str) -> EpisodeArtifacts:

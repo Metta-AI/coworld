@@ -548,6 +548,13 @@ def run_episode(
         ),
     ] = 1,
     server: Annotated[str, typer.Option("--server", help="Observatory API server URL.")] = DEFAULT_SUBMIT_SERVER,
+    variant_id: Annotated[
+        str | None,
+        typer.Option(
+            "--variant",
+            help="Coworld variant ID to run. Defaults to the certification fixture.",
+        ),
+    ] = None,
     timeout_seconds: Annotated[float, typer.Option("--timeout-seconds", min=1.0)] = 3600.0,
     verify_replay: Annotated[bool, typer.Option("--verify-replay/--no-verify-replay")] = False,
     use_bedrock: Annotated[
@@ -583,12 +590,17 @@ def run_episode(
             key, val = _parse_secret_env(kv)
             parsed_secret_env[key] = val
     episode_request_path, player_images = _split_episode_request_and_player_images(episode_request_or_player_images)
-    if episode_request_path is not None and run:
-        raise typer.BadParameter("episode request files cannot be combined with --run")
+    if episode_request_path is not None and (variant_id is not None or run):
+        raise typer.BadParameter("episode request files cannot be combined with --variant or --run")
     with _materialized_manifest_path(manifest_uri, server=server) as manifest_path:
         package = load_coworld_package(manifest_path)
         if episode_request_path is None:
-            spec = build_manifest_episode_job_spec(package, player_images=player_images, player_run=run)
+            spec = build_manifest_episode_job_spec(
+                package,
+                variant_id=variant_id,
+                player_images=player_images,
+                player_run=run,
+            )
         else:
             spec = load_manifest_episode_job_spec(package, episode_request_path)
         parsed_manifest_uri = urlparse(manifest_uri)
@@ -648,6 +660,13 @@ def scrimmage(
         typer.Option("--output-dir", "-o", help="Directory for episode artifacts."),
     ] = None,
     server: Annotated[str, typer.Option("--server", help="Observatory API server URL.")] = DEFAULT_SUBMIT_SERVER,
+    variant_id: Annotated[
+        str | None,
+        typer.Option(
+            "--variant",
+            help="Coworld variant ID to scrimmage. Defaults to the certification fixture.",
+        ),
+    ] = None,
     timeout_seconds: Annotated[float, typer.Option("--timeout-seconds", min=1.0)] = 3600.0,
     verify_replay: Annotated[bool, typer.Option("--verify-replay/--no-verify-replay")] = False,
     use_bedrock: Annotated[
@@ -680,6 +699,7 @@ def scrimmage(
         output_dir=output_dir,
         episodes=1,
         server=server,
+        variant_id=variant_id,
         timeout_seconds=timeout_seconds,
         verify_replay=verify_replay,
         use_bedrock=use_bedrock,
