@@ -97,8 +97,8 @@ that WebSocket connection as JSON messages with a `"type"` field.
 7. As episodes complete, platform sends `episode_result` or `episode_failed`.
 8. Platform calls the commissioner's episode-completed hook for the result or failure; the commissioner may schedule
    more episodes, including retries or replacements after failures, or declare the round done.
-9. Commissioner sends `round_complete` (per-division rankings, graduation changes, optional state blob) and exits.
-10. Platform records results, applies graduation changes, stores commissioner state for the next round.
+9. Commissioner sends `round_complete` (per-division rankings, policy membership events, optional state blob) and exits.
+10. Platform records results, applies policy membership events, stores commissioner state for the next round.
 11. Container is terminated.
 
 If the platform needs to cancel the round mid-stream, it sends `round_abort`. The commissioner is expected to exit
@@ -172,7 +172,7 @@ Sent once after the WebSocket connects, providing the full round context:
 events; they may only move, activate, or disqualify memberships.
 
 The commissioner receives all divisions in the league and all active memberships across them. It can schedule episodes
-for any division and move policies between divisions via `graduation_changes` in `round_complete`. Each membership
+for any division and move policies between divisions via `policy_membership_events` in `round_complete`. Each membership
 includes its `division_id` so the commissioner knows where each policy currently sits.
 
 The `variants` array comes from the Coworld manifest's declared variants, plus platform-derived `num_agents` metadata.
@@ -312,10 +312,12 @@ Signal that the round is done:
       ]
     }
   ],
-  "graduation_changes": [
+  "policy_membership_events": [
     {
-      "membership_id": "uuid",
+      "league_policy_membership_id": "uuid",
+      "from_division_id": "uuid_open",
       "to_division_id": "uuid_pro",
+      "status": "competing",
       "reason": "promoted: won playoff"
     }
   ],
@@ -325,7 +327,9 @@ Signal that the round is done:
 
 Results are grouped per division. The commissioner can produce rankings for multiple divisions in a single round.
 
-`graduation_changes` moves policies between divisions. These are applied after the round results are recorded.
+`policy_membership_events` moves, activates, disqualifies, or annotates memberships. These are applied after the round
+results are recorded. Legacy `membership_changes` responses are still accepted for older commissioners, but new
+commissioners should emit `policy_membership_events`.
 
 The complete output shape is documented as the [round decisions artifact](../artifacts/ROUND_DECISIONS.md). It is not an
 episode artifact and is not part of the episode bundle.
@@ -357,7 +361,7 @@ The platform monitors commissioner health via:
 - If the WebSocket disconnects without `round_complete`, the round is marked failed.
 - If WebSocket pings go unacknowledged for 30s, the container is terminated and the round fails.
 - On `round_abort`, the commissioner exits cleanly; the round is marked cancelled (not failed).
-- Failed and cancelled rounds do not produce rankings or graduation changes.
+- Failed and cancelled rounds do not produce rankings or policy membership events.
 
 ## Variant resolution
 
@@ -440,7 +444,7 @@ Per-goal status:
 | 3   | Commissioner image and optional command/env come from the Coworld manifest                 | Done; verify the pinned image and `run`/`env` before daily-league cutover |
 | 4   | Deploying a Coworld with a commissioner creates a league and begins scheduling             | Done when seeding resolves a matching `manifest.commissioner[].id`        |
 | 5   | Commissioner containers scoped to a single round (can be swapped between rounds)           | Done                                                                      |
-| 6   | Commissioners emit round rankings, scores, and graduation changes at the end of each round | Done                                                                      |
+| 6   | Commissioners emit round rankings, scores, and policy membership events at the end of each round | Done                                                                 |
 | 7   | Existing registered commissioners continue to work unchanged                               | Removed; hosted scheduling is container-only                              |
 
 Container commissioner support is live in the backend. A league schedules only when its `commissioner_key` is

@@ -76,12 +76,6 @@ class DivisionRanking(BaseModel):
     rankings: list[RankingEntry]
 
 
-class GraduationChange(BaseModel):
-    membership_id: UUID
-    to_division_id: UUID
-    reason: str
-
-
 class MembershipChange(BaseModel):
     membership_id: UUID
     from_division_id: UUID
@@ -250,7 +244,6 @@ class ScheduleEpisodes(BaseModel):
 class RoundComplete(BaseModel):
     results: list[DivisionRanking] = Field(default_factory=list)
     policy_membership_events: list[PolicyMembershipEventChange] = Field(default_factory=list)
-    graduation_changes: list[GraduationChange] = Field(default_factory=list)
     membership_changes: list[MembershipChange] = Field(default_factory=list)
     round_display: dict[str, Any] | None = None
     state: Any = None

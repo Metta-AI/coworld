@@ -12,11 +12,11 @@ not an episode artifact and is not part of the [episode bundle](EPISODE_BUNDLE.m
 A `round_complete` message contains:
 
 - `results`: per-division rankings, with each ranking naming a policy version, optional player id, rank, and score;
-- `graduation_changes`: membership moves between divisions or membership deactivations;
+- `policy_membership_events`: membership moves, status changes, or membership annotations;
 - `state`: optional opaque commissioner state for the next round.
 
-The platform records round results, applies graduation changes, and stores commissioner state for the next round. The
-state blob is opaque to the platform and limited to 10 MB.
+The platform records round results, applies policy membership events, and stores commissioner state for the next round.
+The state blob is opaque to the platform and limited to 10 MB.
 
 ## Relationship To Episode Artifacts
 

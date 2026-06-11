@@ -135,7 +135,7 @@ game, actions flow from the player, and the exchange continues until the episode
 artifacts to the URIs provided by the runner; the runner captures logs and hosted failure information. A player may also
 upload an optional [artifact](artifacts/PLAYER_ARTIFACT.md) to `COWORLD_PLAYER_ARTIFACT_UPLOAD_URL` before its container
 is torn down. Each completed episode's `scores` are routed back to the commissioner as an `episode_result` message; the
-commissioner can schedule more episodes or emit `round_complete` with per-division rankings and graduation changes.
+commissioner can schedule more episodes or emit `round_complete` with per-division rankings and policy membership events.
 
 For the in-flight contracts, see the [game role](roles/GAME.md), the [player role](roles/PLAYER.md), and the
 [commissioner role](roles/COMMISSIONER.md). For artifact contracts, see the

@@ -123,7 +123,6 @@ def test_commissioner_message_parses_round_complete_with_backend_metadata() -> N
                     ],
                 }
             ],
-            "graduation_changes": [],
             "membership_changes": [
                 {
                     "membership_id": str(uuid4()),
