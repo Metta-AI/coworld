@@ -12,7 +12,9 @@ one round, not one episode and not the whole league.
 A commissioner is a long-lived container scoped to one round that communicates with the platform via WebSocket,
 consistent with how games and policies communicate. It schedules episodes incrementally, receives results and failures
 as they complete, can schedule additional episodes in response to those episode outcomes, and signals when the round is
-done. Authors who don't need custom logic can use the platform-provided default commissioner configured via CLI flags.
+done. Commissioner behavior comes from the runnable selected by the league's
+`commissioner_config.commissioner_runnable_id`; the runnable may rely on its image entrypoint, or may provide optional
+`run` and public-only `env` overrides in the manifest.
 
 The commissioner is a black box from the platform's perspective — the platform doesn't know or care whether it's doing
 round-robin, elimination, Swiss, or something exotic. It just executes the episodes the commissioner asks for and
@@ -22,8 +24,7 @@ streams results back.
 
 `manifest.commissioner[]`, with `type: "commissioner"` on every entry. The section is optional in the schema, but hosted
 league scheduling requires the league's `commissioner_config.commissioner_runnable_id`, and that value must match one
-`manifest.commissioner[].id`. See
-[`COWORLD_MANIFEST.md`](../COWORLD_MANIFEST.md) for the full runnable shape.
+`manifest.commissioner[].id`. See [`COWORLD_MANIFEST.md`](../COWORLD_MANIFEST.md) for the full runnable shape.
 
 Runnable `env` values are public configuration only. Secrets, credentials, private league data, and policy credentials
 do not belong in the manifest or container environment; the platform sends scoped round context over the WebSocket
@@ -48,29 +49,24 @@ Custom commissioner:
 }
 ```
 
-Future default commissioner with CLI configuration:
+Current image-entrypoint commissioner shape, used by Among Them:
 
 ```json
 {
   "commissioner": [
     {
       "type": "commissioner",
-      "id": "default",
-      "name": "Standard League Commissioner",
-      "description": "Round-robin with percentile graduation",
-      "image": "<default-commissioner-image>",
-      "run": [
-        "default-commissioner",
-        "--round-robin",
-        "--episodes-per-pair=3",
-        "--graduation=percentile",
-        "--promote-top-pct=10",
-        "--relegate-bottom-pct=10"
-      ]
+      "id": "among-them-commissioner",
+      "name": "Among Them Commissioner",
+      "description": "Among Them container commissioner. It schedules episodes, computes rankings, moves players between divisions, and handles initial placement.",
+      "image": "ghcr.io/metta-ai/commissioners-among-them-commissioner@sha256:<digest>"
     }
   ]
 }
 ```
+
+When `run` is omitted, the platform starts the image with its Docker entrypoint/default command. When `env` is omitted,
+the public environment is empty. This is the current shape of the canonical Among Them commissioner manifest.
 
 ## Contract
 
@@ -172,18 +168,17 @@ Sent once after the WebSocket connects, providing the full round context:
 }
 ```
 
-`is_champion` is read-only commissioner context. Commissioners must not attempt
-to set champions through membership events; they may only move, activate, or
-disqualify memberships.
+`is_champion` is read-only commissioner context. Commissioners must not attempt to set champions through membership
+events; they may only move, activate, or disqualify memberships.
 
 The commissioner receives all divisions in the league and all active memberships across them. It can schedule episodes
 for any division and move policies between divisions via `graduation_changes` in `round_complete`. Each membership
 includes its `division_id` so the commissioner knows where each policy currently sits.
 
 The `variants` array comes from the Coworld manifest's declared variants, plus platform-derived `num_agents` metadata.
-The number of agents is inferred from the Coworld `config_schema` token count and is included explicitly so
-commissioner containers do not need to duplicate schema inspection. The commissioner selects a variant by ID when
-scheduling episodes.
+The number of agents is inferred from the Coworld `config_schema` token count and is included explicitly so commissioner
+containers do not need to duplicate schema inspection. The commissioner selects a variant by ID when scheduling
+episodes.
 
 The `state` field contains the opaque blob returned by the commissioner's previous `round_complete` message (or `null`
 for the first round). State is stored as a JSON column and limited to 10 MB.
@@ -232,8 +227,8 @@ Sent each time a scheduled episode completes:
 ```
 
 The `game_results` field contains the full results object conforming to the Coworld's `game.results_schema`. The
-`scores` array is a convenience extraction from the game-written [results artifact](../artifacts/RESULTS.md),
-decomposed per policy.
+`scores` array is a convenience extraction from the game-written [results artifact](../artifacts/RESULTS.md), decomposed
+per policy.
 
 The commissioner does not receive or create episode bundles. It consumes round-level `episode_result` and
 `episode_failed` messages; detailed per-episode artifacts are available through the
@@ -395,12 +390,21 @@ When a Coworld with a commissioner is deployed:
 3. The round runner begins scheduling rounds per `commissioner_config`.
 4. Each round, the platform starts the commissioner container and drives the WebSocket protocol.
 
-## Default commissioner
+## Manifest-selected commissioner
 
-The default commissioner runnable uses `id: "default-commissioner"` in the manifest. It is selected the same way as any
-other container commissioner: set `commissioner_config.commissioner_runnable_id` to that manifest id. Its image and
-command still come from the uploaded Coworld manifest, so a league cutover must verify that the canonical manifest points
-at the intended pinned commissioner image.
+Commissioners are selected the same way regardless of whether they are game-specific or reusable: set
+`commissioner_config.commissioner_runnable_id` to a `manifest.commissioner[].id`. The image, optional command, and
+public environment all come from the uploaded Coworld manifest, so a league cutover must verify that the canonical
+manifest points at the intended pinned commissioner image and any required `run`/`env` values.
+
+Current examples include:
+
+- Among Them: `id: "among-them-commissioner"` with image
+  `ghcr.io/metta-ai/commissioners-among-them-commissioner@sha256:<digest>`.
+- Reusable default commissioner: `id: "default-commissioner"` with image
+  `ghcr.io/metta-ai/commissioners-default:latest`.
+
+Resolve mutable tags such as `:latest` to the intended pinned digest before relying on them for a league.
 
 ## How it fits with other roles
 
@@ -429,15 +433,15 @@ scheduled by the Coworld round runner.
 
 Per-goal status:
 
-| #   | Goal                                                                                       | Status                                                                                             |
-| --- | ------------------------------------------------------------------------------------------ | -------------------------------------------------------------------------------------------------- |
-| 1   | Commissioner containers drive rounds via WebSocket messaging                               | Done                                                                                               |
-| 2   | Schedule episodes incrementally and receive results as they complete                       | Done                                                                                               |
-| 3   | Default commissioner image covers common patterns via CLI config                           | Manifest-selected; verify the pinned image before daily-league cutover                             |
-| 4   | Deploying a Coworld with a commissioner creates a league and begins scheduling             | Done when seeding resolves a matching `manifest.commissioner[].id`                                  |
-| 5   | Commissioner containers scoped to a single round (can be swapped between rounds)           | Done                                                                                               |
-| 6   | Commissioners emit round rankings, scores, and graduation changes at the end of each round | Done                                                                                               |
-| 7   | Existing registered commissioners continue to work unchanged                               | Removed; hosted scheduling is container-only                                                       |
+| #   | Goal                                                                                       | Status                                                                    |
+| --- | ------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------- |
+| 1   | Commissioner containers drive rounds via WebSocket messaging                               | Done                                                                      |
+| 2   | Schedule episodes incrementally and receive results as they complete                       | Done                                                                      |
+| 3   | Commissioner image and optional command/env come from the Coworld manifest                 | Done; verify the pinned image and `run`/`env` before daily-league cutover |
+| 4   | Deploying a Coworld with a commissioner creates a league and begins scheduling             | Done when seeding resolves a matching `manifest.commissioner[].id`        |
+| 5   | Commissioner containers scoped to a single round (can be swapped between rounds)           | Done                                                                      |
+| 6   | Commissioners emit round rankings, scores, and graduation changes at the end of each round | Done                                                                      |
+| 7   | Existing registered commissioners continue to work unchanged                               | Removed; hosted scheduling is container-only                              |
 
 Container commissioner support is live in the backend. A league schedules only when its `commissioner_key` is
 `container` and `commissioner_config.commissioner_runnable_id` resolves against the canonical Coworld manifest.
@@ -448,15 +452,15 @@ Before relying on an independent commissioner for a daily league:
 
 1. Verify the canonical Coworld manifest has the intended `manifest.commissioner[].id`, pinned `image`, optional `run`,
    and public-only `env` values.
-2. Verify the league row has `commissioner_key = "container"` and
-   `commissioner_config.commissioner_runnable_id` equal to that manifest id.
+2. Verify the league row has `commissioner_key = "container"` and `commissioner_config.commissioner_runnable_id` equal
+   to that manifest id.
 3. Run or confirm the local cutover smoke that exercises the real `/round` WebSocket driver with the extracted
    commissioner implementation.
 4. Run a read-only deployed smoke: inspect the target league, the latest commissioner-created round, episode results,
    round status, and commissioner pod/job logs for that round.
 5. Confirm failed commissioner startup or WebSocket interruption marks only the current round failed.
-6. Confirm `round_complete.state`, rankings, and membership changes are persisted as expected before treating the
-   league as ready for unattended daily scheduling.
+6. Confirm `round_complete.state`, rankings, and membership changes are persisted as expected before treating the league
+   as ready for unattended daily scheduling.
 
 ## Non-goals
 
