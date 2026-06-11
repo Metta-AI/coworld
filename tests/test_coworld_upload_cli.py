@@ -14,6 +14,7 @@ from typer.testing import CliRunner
 
 from coworld.cli import app
 from coworld.upload import (
+    _REGISTRY_UPLOAD_TIMEOUT,
     ContainerImageResponse,
     CoworldUploadClient,
     _docker_archive_client_hash,
@@ -1270,6 +1271,13 @@ def test_push_archive_to_registry_uploads_layers_config_and_manifest(httpserver:
     assert manifest_body["config"]["digest"] == config_digest
     assert len(manifest_body["layers"]) == 1
     assert manifest_body["layers"][0]["digest"] == layer_digest
+
+
+def test_registry_upload_timeout_allows_slow_large_layer_writes() -> None:
+    assert _REGISTRY_UPLOAD_TIMEOUT.connect == 600.0
+    assert _REGISTRY_UPLOAD_TIMEOUT.read == 600.0
+    assert _REGISTRY_UPLOAD_TIMEOUT.write == 3600.0
+    assert _REGISTRY_UPLOAD_TIMEOUT.pool == 600.0
 
 
 def test_manifest_image_helpers_substitute_role_images() -> None:

@@ -944,6 +944,7 @@ _logger = logging.getLogger(__name__)
 _DOCKER_MANIFEST_MEDIA_TYPE = "application/vnd.docker.distribution.manifest.v2+json"
 _DOCKER_CONFIG_MEDIA_TYPE = "application/vnd.docker.container.image.v1+json"
 _DOCKER_LAYER_MEDIA_TYPE = "application/vnd.docker.image.rootfs.diff.tar.gzip"
+_REGISTRY_UPLOAD_TIMEOUT = httpx.Timeout(connect=600.0, read=600.0, write=3600.0, pool=600.0)
 
 
 def _push_container_image(source_image: str, push_info: EcrPushInfo) -> None:
@@ -989,7 +990,7 @@ def _push_archive_to_registry(archive: Any, base_url: str, tag: str, auth_header
     layer_names = entry["Layers"]
     config_bytes = members[config_name]
 
-    with httpx.Client(timeout=600.0) as client:
+    with httpx.Client(timeout=_REGISTRY_UPLOAD_TIMEOUT) as client:
         layer_descriptors = []
         for layer_name in layer_names:
             layer_bytes = members[layer_name]
