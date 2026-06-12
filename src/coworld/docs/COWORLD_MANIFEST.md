@@ -80,6 +80,9 @@ For a new Coworld, start from the Paint Arena manifest template and keep the gen
 The exact field names, required fields, and nested object shapes belong to the schema. The manifest guide should stay at
 this workflow level.
 
+The first authenticated user upload for a Coworld `game.name` establishes that user as the name owner. Future uploads
+for the same name must come from that original uploader or a Softmax team member.
+
 ## Game Configs, Tokens, And Player Names
 
 `game.config_schema` is a JSON Schema for the runtime config the game reads from `COGAME_CONFIG_URI`. It has one
