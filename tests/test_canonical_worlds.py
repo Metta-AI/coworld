@@ -201,6 +201,21 @@ def test_canonical_crewrift_build_declares_game_context() -> None:
     assert "coworld-crewrift-notsus:latest" in compose_text
 
 
+def test_canonical_cue_n_woo_upload_adds_default_commissioner() -> None:
+    compose_text = (WORLDS / "cue_n_woo" / "compose.yaml").read_text(encoding="utf-8")
+    upload_text = (WORLDS / "upload.sh").read_text(encoding="utf-8")
+
+    assert "  commissioner:" in compose_text
+    assert "COMMISSIONER_IMAGE" in compose_text
+    assert "ghcr.io/metta-ai/commissioners-baseline:latest" in compose_text
+    assert 'if [[ "${WORLD}" == "cue_n_woo" ]]' in upload_text
+    assert "materialize_cue_n_woo_template" in upload_text
+    assert '"id": "default-commissioner"' in upload_text
+    assert '"type": "commissioner"' in upload_text
+    assert '"image": "{{COMMISSIONER_IMAGE}}"' in upload_text
+    assert 'COMMISSIONER_IMAGE="ghcr.io/metta-ai/commissioners-baseline:latest"' in upload_text
+
+
 def test_canonical_world_compose_files_build_manifest_images() -> None:
     for template_path in _repo_manifest_templates():
         template = json.loads(template_path.read_text(encoding="utf-8"))
