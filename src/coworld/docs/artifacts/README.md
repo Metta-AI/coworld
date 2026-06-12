@@ -20,7 +20,7 @@ consumes something; artifact pages describe the thing itself.
 
 | Artifact | Producer | Where it appears |
 | --- | --- | --- |
-| [Report](REPORT.md) | Reporter | `COGAME_REPORT_URI` zip |
+| [Report](REPORT.md) | Reporter | Target `/reporter` service writes a zip to `report_uri`; one-shot reporters write to `COGAME_REPORT_URI` |
 | [Event log](EVENT_LOG.md) | Reporter | Optional Parquet entry inside a report zip |
 | [Trace](TRACE.md) | Reporter | Optional JSON/JSONL entry inside a report zip |
 | [Grade](GRADE.md) | Grader | `COGAME_GRADE_URI` JSON |

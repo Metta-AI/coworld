@@ -1,5 +1,9 @@
 # Trace Artifact
 
+> **Reporter integration note.** This page describes the optional trace entry inside the current one-shot report zip.
+> Target reporter services also write report zips; if their declared output format is a machine-readable timeline, the
+> corresponding zip entry must match that declared MIME/schema. See the [Reporter role](../roles/REPORTER.md).
+
 A **trace** is an optional machine-readable timeline inside a [report](REPORT.md) zip. It lets a reporter expose the
 facts it derived from replay, results, or logs without forcing consumers to parse the human render target.
 

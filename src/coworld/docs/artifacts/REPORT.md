@@ -1,17 +1,23 @@
 # Report Artifact
 
+> **Reporter integration note.** This zip is the reporter artifact envelope. Current one-shot reporters write it to
+> `COGAME_REPORT_URI`; the hosted reporter service writes it to the `report_uri` supplied over
+> `WEBSOCKET /reporter`. The platform MVP only requires a valid zip upload; the zip contents are reporter-defined and
+> should match the reporter's declared purpose/output format. See the [Reporter role](../roles/REPORTER.md).
+
 The **report artifact** is a reporter-written zip that explains or summarizes one completed episode.
 
 ## Producer
 
-The [reporter role](../roles/REPORTER.md) writes one zip to `COGAME_REPORT_URI`. Reporters consume an
-[episode bundle](EPISODE_BUNDLE.md), decide which episode evidence matters, and write a report for humans, UIs, agents,
-or downstream supporting roles.
+The [reporter role](../roles/REPORTER.md) writes one zip per report request. Current one-shot reporters write to
+`COGAME_REPORT_URI`. Hosted reporter services receive `report_uri` over `/reporter`, consume the requested
+[episode bundle](EPISODE_BUNDLE.md) URI(s), decide which episode evidence matters, and write a report for humans, UIs,
+agents, or downstream supporting roles.
 
 ## Zip Contents
 
-A report zip may contain Markdown, HTML, JSON, Parquet, images, or other reporter-owned files. It should include a
-top-level `manifest.json` that describes the important entries:
+A report zip may contain Markdown, HTML, JSON, Parquet, images, or other reporter-owned files. It may include a
+top-level `manifest.json` that describes important entries:
 
 ```json
 {
@@ -22,7 +28,7 @@ top-level `manifest.json` that describes the important entries:
 }
 ```
 
-Fields:
+Suggested fields when a reporter chooses to include `manifest.json`:
 
 | Field | Required? | Purpose |
 | --- | --- | --- |
@@ -31,8 +37,9 @@ Fields:
 | `event_log` | optional | Path inside the zip to one `.parquet` file following the [event log](EVENT_LOG.md) schema. |
 | `trace` | optional | Path inside the zip to one `.jsonl` or `.json` machine-readable trace artifact. |
 
-All other files in the zip are reporter-defined. Consumers should use `manifest.json` to find renderable, trace, and
-structured entries instead of assuming fixed filenames.
+All files in the zip are reporter-defined. Consumers may use reporter-provided metadata such as `manifest.json` to find
+renderable, trace, and structured entries, but should not assume the platform has enforced a particular in-zip metadata
+schema yet.
 
 ## Determinism
 

@@ -70,9 +70,9 @@ the public environment is empty. This is the current shape of the canonical Amon
 
 ## Contract
 
-Unlike reporter, grader, diagnoser, and optimizer (all per-episode), the commissioner is a **per-round** runnable that
-exposes a WebSocket server. Once a round begins, the platform starts the commissioner container, connects to its
-`/round` WebSocket, exchanges JSON protocol messages, and lets the container exit when the round completes.
+Unlike post-episode analysis roles, the commissioner is a **per-round** runnable that exposes a WebSocket server. Once a
+round begins, the platform starts the commissioner container, connects to its `/round` WebSocket, exchanges JSON protocol
+messages, and lets the container exit when the round completes.
 
 ### Runtime contract
 
@@ -418,10 +418,11 @@ produces episode results; the platform routes those results back to the commissi
 `episode_failed` messages; the commissioner may respond by scheduling more episodes through its `on_episode_completed`
 hook; and the commissioner eventually closes the round with [round decisions](../artifacts/ROUND_DECISIONS.md).
 
-Unlike reporter, grader, diagnoser, and optimizer — all of which consume _individual_ episode evidence on demand after
-episodes finish — the commissioner consumes a stream of episode results in aggregate during a round and emits
-round-level decisions. It is the only supporting role besides game that holds a long-lived WebSocket contract with the
-platform.
+Unlike grader, diagnoser, and optimizer — all of which consume _individual_ episode evidence after episodes finish — the
+commissioner consumes a stream of episode results in aggregate during a round and emits round-level decisions. The target
+[reporter](REPORTER.md) runtime is the other supporting role with a long-lived WebSocket service contract, but it is
+driven through one `/reporter` request per report, receives bundle URI(s) plus an output URI, and writes per-report zip
+artifacts rather than round decisions.
 
 See [`README.md`](../README.md) for the full artifact and control-flow diagram.
 

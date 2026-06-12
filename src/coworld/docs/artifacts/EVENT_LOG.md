@@ -1,5 +1,10 @@
 # Event Log Artifact
 
+> **Reporter integration note.** This page describes the optional Parquet event-log entry inside the current one-shot
+> report zip. Target reporter services also write report zips; if their declared output format is time-series or
+> categorical-event data, the corresponding zip entry must match that declared MIME/schema. See the
+> [Reporter role](../roles/REPORTER.md).
+
 An **event log** is an optional structured Parquet file inside a [report](REPORT.md) zip. It lets reporters expose
 tick-aligned facts in a game-agnostic table shape.
 

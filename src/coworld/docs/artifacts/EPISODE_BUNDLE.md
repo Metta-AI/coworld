@@ -57,8 +57,10 @@ Every bundle contains a `manifest.json` at the zip root describing its contents:
 
 ## Requesting a Bundle
 
-The current package defines the consumer-side bundle contract used by Paint Arena reporters, including
-`COGAME_EPISODE_BUNDLE_URI` and the `BundleReader` helper vendored under the Paint Arena reporter example.
+The current package defines the consumer-side bundle contract used by graders, diagnosers, and current one-shot Paint
+Arena reporters, including `COGAME_EPISODE_BUNDLE_URI` and the `BundleReader` helper vendored under the Paint Arena
+reporter example. The target hosted reporter service also consumes episode bundles, but receives their URI(s) in a
+`/reporter` WebSocket `report_request` alongside a `report_uri` output destination rather than through an env var.
 
 The hosted bundle-request API is implemented by the Observatory backend. The CLI surface is still planned.
 
@@ -112,8 +114,8 @@ delivered.
 
 ## Consumption by Supporting Runnables
 
-When an orchestrator invokes a supporting runnable — reporter, grader, diagnoser, or optimizer — it first assembles a
-bundle and then hands it to the runnable via:
+When an orchestrator invokes a one-shot supporting runnable — current reporter examples, graders, or diagnosers — it
+first assembles a bundle and then hands it to the runnable via:
 
 ```bash
 COGAME_EPISODE_BUNDLE_URI=file:///path/to/bundle.zip
@@ -123,9 +125,16 @@ COGAME_EPISODE_BUNDLE_URI=https://.../ep.zip
 The runnable reads the zip, inspects its `manifest.json` to discover what's inside, and processes the files. The
 runnable does not need to know whether the bundle came from a local workspace or a hosted artifact store.
 
+The target reporter integration is different from the env-var container shape: a persisted reporter service receives
+bundle URI(s) and an output `report_uri` in a `/reporter` WebSocket request, writes a report zip to that URI, and sends a
+completion or failure message over the socket. The optimizer pulls artifacts through Coworld tooling rather than
+receiving a fixed bundle env var.
+
 Supporting-role outputs are separate artifacts, not entries in the episode bundle today:
 
-- [Report](REPORT.md), optionally including an [event log](EVENT_LOG.md) or [trace](TRACE.md).
+- [Report](REPORT.md), optionally including an [event log](EVENT_LOG.md) or [trace](TRACE.md), for current one-shot
+  reporters and target reporter services. Target reporter-service zips are written to `report_uri`, and their contents
+  must match the reporter's declared output format.
 - [Grade](GRADE.md).
 - [Diagnosis](DIAGNOSIS.md).
 - [Optimizer outputs](OPTIMIZER_OUTPUTS.md).
