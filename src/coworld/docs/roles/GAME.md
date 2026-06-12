@@ -71,6 +71,11 @@ slot-specific player UI. Viewer flows expect `GET /client/global` for live viewi
 mode. Replay viewers may expose pause, seek, speed, and loop controls, but the default browser replay surface should
 begin playing and wrap back to tick 0 when it reaches the recorded end.
 
+`coworld certify` validates replay liveness for game authors: after the certification episode writes replay bytes, it
+starts the same game image in replay mode with `COGAME_LOAD_REPLAY_URI`, verifies `GET /client/replay`, and waits for a
+message from `/replay`. Authors should still open the printed replay command and inspect the browser replay before
+uploading, because only the game author can confirm that the viewer shows the right game state and controls.
+
 The example Paint Arena protocol docs link here because the exact in-game messages are game-specific, while the route
 families and token semantics are Coworld-wide.
 

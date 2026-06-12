@@ -970,8 +970,13 @@ uv run coworld certify tmp/paintarena/coworld_manifest.json
 uv run coworld upload-coworld tmp/paintarena/coworld_manifest.json
 ```
 
-`certify` runs the manifest's certification fixture locally, then validates results and replay artifacts.
-`upload-coworld` certifies again before uploading the manifest and runnable images.
+`certify` runs the manifest's certification fixture locally, then validates results and replay artifacts. It also starts
+the game image in replay mode with `COGAME_LOAD_REPLAY_URI`, verifies `GET /client/replay`, and waits for a frame from
+the `/replay` WebSocket. `upload-coworld` certifies again before uploading the manifest and runnable images.
+
+After certification, open the printed replay command and watch the replay once before upload. The automated probe proves
+the replay route is alive; the visual check proves the game-specific viewer shows the expected state, controls, and
+looping behavior.
 
 To publish a small update from an already uploaded Coworld, use the hosted manifest as the base. Only new local image
 refs are uploaded; unchanged `img_...` entries stay as-is:

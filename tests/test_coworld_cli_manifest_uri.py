@@ -128,6 +128,31 @@ def test_coworld_replay_respects_no_open_browser(monkeypatch: MonkeyPatch, tmp_p
     assert opened_urls == []
 
 
+def test_coworld_certify_prints_replay_liveness_and_inspection_command(
+    monkeypatch: MonkeyPatch, tmp_path: Path
+) -> None:
+    manifest_path = tmp_path / "coworld_manifest.json"
+    manifest_path.write_text('{"game": {"name": "unit"}}\n', encoding="utf-8")
+    artifacts = SimpleNamespace(
+        workspace=Path("/tmp/workspace"),
+        results_path=Path("/tmp/results.json"),
+        replay_path=Path("/tmp/replay.json"),
+        logs_dir=Path("/tmp/logs"),
+    )
+
+    def fake_certify_coworld(_manifest_path: Path, **_kwargs: object) -> SimpleNamespace:
+        return SimpleNamespace(artifacts=artifacts)
+
+    monkeypatch.setattr("coworld.cli.certify_coworld", fake_certify_coworld)
+
+    result = CliRunner().invoke(app, ["certify", str(manifest_path)])
+
+    assert result.exit_code == 0, result.output
+    assert "Replay liveness: verified /client/replay and /replay" in result.output
+    assert f"Inspect replay: uv run coworld replay {manifest_path} /tmp/replay.json" in result.output
+    assert "Inspect logs: ls /tmp/logs" in result.output
+
+
 def test_coworld_play_prefers_cached_coworld_id_manifest(tmp_path: Path, monkeypatch: MonkeyPatch) -> None:
     manifest = {"game": {"name": "cached"}}
     manifest_path = tmp_path / "coworld" / COWORLD_ID / "coworld_manifest.json"

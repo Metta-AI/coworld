@@ -149,7 +149,9 @@ def certify(
     typer.echo(f"Artifacts: {result.artifacts.workspace}")
     typer.echo(f"Results: {result.artifacts.results_path}")
     _echo_replay_paths(result.artifacts)
+    typer.echo("Replay liveness: verified /client/replay and /replay")
     typer.echo(f"Logs: {result.artifacts.logs_dir}")
+    _echo_feedback_commands(manifest_uri, result.artifacts, server=server)
 
 
 @app.command("build")
