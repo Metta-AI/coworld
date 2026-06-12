@@ -222,6 +222,16 @@ class EpisodeFailed(BaseModel):
         return data
 
 
+class EpisodeCancel(BaseModel):
+    request_id: str
+    reason: str
+
+    def to_json(self) -> dict[str, Any]:
+        data = self.model_dump(mode="json")
+        data["type"] = "episode_cancel"
+        return data
+
+
 class RoundAbort(BaseModel):
     reason: str
 
@@ -400,6 +410,7 @@ PlatformMessage = (
 
 CommissionerMessageType = (
     ScheduleEpisodes
+    | EpisodeCancel
     | RoundComplete
     | ScheduleRoundsResponse
     | RankDivisionResponse
@@ -410,6 +421,7 @@ CommissionerMessageType = (
 
 _COMMISSIONER_MESSAGE_TYPES: dict[str, type[CommissionerMessageType]] = {
     "schedule_episodes": ScheduleEpisodes,
+    "episode_cancel": EpisodeCancel,
     "round_complete": RoundComplete,
     "schedule_rounds_response": ScheduleRoundsResponse,
     "rank_division_response": RankDivisionResponse,
