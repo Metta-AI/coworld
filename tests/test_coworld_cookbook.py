@@ -20,7 +20,7 @@ def test_cookbook_answers_cli_faqs() -> None:
         "### How do I run hosted non-tournament checks?",
         "uv run coworld hosted-game create",
         "uv run coworld xp-request create",
-        "policy_version_ids",
+        "roster",
         "### How do I submit a policy to the Observatory?",
         "uv run coworld upload-policy",
         "uv run coworld submit",

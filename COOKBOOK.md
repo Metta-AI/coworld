@@ -48,7 +48,7 @@ Pass `--variant VARIANT_ID` to `play`, `run-episode`, or `scrimmage` when you wa
 Use Experience Requests when uploaded policies should play hosted episodes outside a scheduled tournament:
 
 ```bash
-echo '{"coworld_id": "cow_...", "variant_id": "variant_...", "policy_version_ids": ["<uuid>"], "num_episodes": 5}' \
+echo '{"coworld_id": "cow_...", "variant_id": "variant_...", "roster": [{"player": {"policy_ref": "<uuid>"}, "slot": 0}], "num_episodes": 5}' \
   | uv run coworld xp-request create -
 uv run coworld xp-request episodes xreq_...
 ```
@@ -60,9 +60,9 @@ uv run coworld hosted-game create cow_... --variant variant_...
 uv run coworld hosted-game join cps_...
 ```
 
-`xp-request` is the supported path for replayable non-tournament policy evaluation and can include multiple policy
-versions in `policy_version_ids`. `hosted-game` creates browser player slots; it does not attach uploaded policy
-versions or schedule tournament policy episodes.
+`xp-request` is the supported path for replayable non-tournament policy evaluation and fills a full `roster` — each
+seat is a specific policy (`policy_ref`) or a `top_n`/`random` champion from a target league. `hosted-game` creates
+browser player slots; it does not attach uploaded policy versions or schedule tournament policy episodes.
 
 ### How do I submit a policy to the Observatory?
 
