@@ -15,6 +15,7 @@ from datetime import datetime
 from enum import Enum
 from pathlib import Path
 from typing import Any, Self
+from urllib.parse import quote
 from uuid import UUID
 
 import httpx
@@ -127,6 +128,15 @@ class CoworldLeagueSeedResponse(BaseModel):
     created_by: str
     created_at: str
     league_id: str | None = None
+
+
+class CoworldSecretResponse(BaseModel):
+    coworld_id: str
+    coworld_name: str
+    owner_user_id: str
+    secret_name: str
+    size_bytes: int
+    updated_at: datetime | None = None
 
 
 class HostedGameCreateResponse(BaseModel):
@@ -311,6 +321,40 @@ class CoworldUploadClient:
         )
         _raise_for_status(response)
         return [CoworldLeagueSeedResponse.model_validate(item) for item in response.json()]
+
+    def put_coworld_secret(
+        self,
+        *,
+        coworld_name: str,
+        secret_name: str,
+        body: bytes,
+    ) -> CoworldSecretResponse:
+        response = self._http_client.put(
+            f"/v2/coworlds/secrets/{quote(coworld_name, safe='')}/{quote(secret_name, safe='')}",
+            headers={**self._headers(), "Content-Type": "application/octet-stream"},
+            content=body,
+            timeout=120.0,
+        )
+        _raise_for_status(response)
+        return CoworldSecretResponse.model_validate(response.json())
+
+    def list_coworld_secrets(self, *, coworld_name: str) -> list[CoworldSecretResponse]:
+        response = self._http_client.get(
+            f"/v2/coworlds/secrets/{quote(coworld_name, safe='')}",
+            headers=self._headers(),
+            timeout=60.0,
+        )
+        _raise_for_status(response)
+        return [CoworldSecretResponse.model_validate(item) for item in response.json()]
+
+    def delete_coworld_secret(self, *, coworld_name: str, secret_name: str) -> CoworldSecretResponse:
+        response = self._http_client.delete(
+            f"/v2/coworlds/secrets/{quote(coworld_name, safe='')}/{quote(secret_name, safe='')}",
+            headers=self._headers(),
+            timeout=120.0,
+        )
+        _raise_for_status(response)
+        return CoworldSecretResponse.model_validate(response.json())
 
     def create_hosted_game(
         self,

@@ -68,6 +68,9 @@ def _parse_override(value: str) -> tuple[str, object]:
 league_app = typer.Typer(no_args_is_help=True, help="Create and inspect Coworld league seeds (team only).")
 app.add_typer(league_app, name="league")
 
+secret_app = typer.Typer(no_args_is_help=True, help="Manage hosted Coworld secrets.")
+app.add_typer(secret_app, name="secret")
+
 
 @league_app.command("create")
 def league_create(
@@ -125,6 +128,67 @@ def league_list(
             seed.league_id or "-",
         )
     console.print(table)
+
+
+@secret_app.command("put")
+def secret_put(
+    coworld_name: Annotated[str, typer.Argument(help="Coworld game name or cow_... id.")],
+    secret_name: Annotated[str, typer.Argument(help="Secret name referenced as secret://coworld/<coworld>/<secret>.")],
+    secret_path: Annotated[Path, typer.Argument(help="Local file containing the secret bytes.")],
+    server: Annotated[str, typer.Option("--server", help="Observatory API server URL.")] = DEFAULT_SUBMIT_SERVER,
+    json_output: Annotated[bool, typer.Option("--json", help="Print raw JSON.")] = False,
+) -> None:
+    body = secret_path.read_bytes()
+    with CoworldUploadClient.from_login(server_url=server) as client:
+        secret = client.put_coworld_secret(coworld_name=coworld_name, secret_name=secret_name, body=body)
+    if json_output:
+        emit_json(secret.model_dump(mode="json"))
+        return
+    console.print(
+        f"[green]Uploaded secret[/green] [bold]{secret.secret_name}[/bold] for "
+        f"[bold]{secret.coworld_name}[/bold] owned by [bold]{secret.owner_user_id}[/bold] "
+        f"({secret.size_bytes} bytes)"
+    )
+
+
+@secret_app.command("list")
+def secret_list(
+    coworld_name: Annotated[str, typer.Argument(help="Coworld game name or cow_... id.")],
+    server: Annotated[str, typer.Option("--server", help="Observatory API server URL.")] = DEFAULT_SUBMIT_SERVER,
+    json_output: Annotated[bool, typer.Option("--json", help="Print raw JSON.")] = False,
+) -> None:
+    with CoworldUploadClient.from_login(server_url=server) as client:
+        secrets = client.list_coworld_secrets(coworld_name=coworld_name)
+    if json_output:
+        emit_json([secret.model_dump(mode="json") for secret in secrets])
+        return
+    table = Table(box=box.SIMPLE)
+    table.add_column("Secret")
+    table.add_column("Owner")
+    table.add_column("Size")
+    table.add_column("Updated")
+    for secret in secrets:
+        updated_at = secret.updated_at.isoformat() if secret.updated_at else "-"
+        table.add_row(secret.secret_name, secret.owner_user_id, str(secret.size_bytes), updated_at)
+    console.print(table)
+
+
+@secret_app.command("delete")
+def secret_delete(
+    coworld_name: Annotated[str, typer.Argument(help="Coworld game name or cow_... id.")],
+    secret_name: Annotated[str, typer.Argument(help="Secret name to delete.")],
+    server: Annotated[str, typer.Option("--server", help="Observatory API server URL.")] = DEFAULT_SUBMIT_SERVER,
+    json_output: Annotated[bool, typer.Option("--json", help="Print raw JSON.")] = False,
+) -> None:
+    with CoworldUploadClient.from_login(server_url=server) as client:
+        secret = client.delete_coworld_secret(coworld_name=coworld_name, secret_name=secret_name)
+    if json_output:
+        emit_json(secret.model_dump(mode="json"))
+        return
+    console.print(
+        f"[green]Deleted secret[/green] [bold]{secret.secret_name}[/bold] for "
+        f"[bold]{secret.coworld_name}[/bold] owned by [bold]{secret.owner_user_id}[/bold]"
+    )
 
 
 # Player identity is a Softmax-platform concept; the commands live in

@@ -621,6 +621,29 @@ opts into Bedrock, the player pod runs with the tournament Bedrock IAM role, so 
 own Bedrock API key. For other LLM providers, pass API keys with `--secret-env`; those secrets are stored in AWS Secrets
 Manager and injected only into that policy version's player pod.
 
+Game containers sometimes need hosted tournament/episode-only secrets, such as a signing key for a private worker.
+Upload those as Coworld secrets and reference them from the manifest with `secret://`:
+
+```bash
+uv run coworld secret put cue_n_woo worker_signing_key ./tournament_signing_key.secret
+uv run coworld secret list cue_n_woo
+```
+
+```json
+"env": {
+  "WORKER_SIGNING_KEY_URI": "secret://coworld/cue_n_woo/worker_signing_key"
+}
+```
+
+Hosted tournament and episode dispatch replaces the `secret://` value with a short-lived presigned HTTPS URL for the
+matching Coworld. Hosted play and hosted replay sessions do not resolve Coworld secrets. Local runs also do not resolve
+hosted secrets; override the env var locally, for example with `WORKER_SIGNING_KEY_URI=file:///path/to/dev_key`.
+Antfarm dispatch does not resolve Coworld secrets, so secret-bearing Coworlds should run on the k8s hosted episode
+backend.
+
+Secrets are stored in the original uploader's Coworld-name namespace. Passing a Coworld name targets your canonical owned
+Coworld when there is one; pass a `cow_...` id when uploading a secret for a non-canonical candidate version.
+
 ### Non-CLI API
 
 The non-CLI flow is an API sequence with a Docker registry step:

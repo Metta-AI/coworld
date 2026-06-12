@@ -114,6 +114,39 @@ or other per-slot fields. Cross-Coworld player identity names flow through `game
 
 See [Game Role](roles/GAME.md#player-slots) and [Lifecycle](LIFECYCLE.md) for the runtime path.
 
+## Hosted Episode Game Secrets
+
+Manifest runnable `env` is public by default: uploaded manifests are visible to users, and downloaded Coworld packages
+include the env values. Do not put raw API keys, signing keys, or cloud credentials directly in manifest env.
+
+For hosted tournament and episode game-container secrets, upload the secret through the Coworld CLI and reference it
+symbolically:
+
+```bash
+uv run coworld secret put cue_n_woo worker_signing_key ./tournament_signing_key.secret
+```
+
+```json
+"env": {
+  "WORKER_SIGNING_KEY_URI": "secret://coworld/cue_n_woo/worker_signing_key"
+}
+```
+
+During hosted episode dispatch, the backend resolves `secret://coworld/<coworld_name>/<secret_name>` only for the
+matching Coworld and injects a short-lived presigned HTTPS URL into the game container env. Hosted play and hosted replay
+sessions do not resolve Coworld secrets. Antfarm dispatch also does not resolve Coworld secrets; use the k8s hosted
+episode backend for Coworlds whose game env contains `secret://` values.
+
+Secrets are stored in the Coworld uploader's Coworld-name namespace. Passing a name to `coworld secret put` targets your
+canonical Coworld for that name when you own it; pass the `cow_...` id to target a non-canonical candidate version
+explicitly. Softmax team members must pass a `cow_...` id when a Coworld name maps to multiple owner namespaces.
+
+Local users who run the downloaded game image see only the symbolic `secret://` URI and must override the env var with
+their own local `file://`, HTTP(S), or other game-supported URI when they need a development secret.
+
+Coworld secret uploads are capped at 1 MiB. Use them for credentials such as signing keys and tokens, not for
+large datasets or model artifacts.
+
 ## Results Schema
 
 `game.results_schema` validates the JSON object the game writes to `COGAME_RESULTS_URI`. Cross-game tooling expects the
