@@ -39,7 +39,7 @@ PLAY_GUIDE_URI_PREFIXES = (
 )
 SOURCE_MANIFEST_REFERENCE_COUNTS = {
     "${GAME_CONTEXT}/coworld_manifest.json": 2,
-    "${GAME_CONTEXT}/coworld_manifest_template.json": 2,
+    "${GAME_CONTEXT}/coworld_manifest_template.json": 3,
     "${GAME_CONTEXT}/coworld/coworld_manifest_template.json": 1,
     "${GAME_CONTEXT}/coworld_four_score_manifest_template.json": 1,
     "${METTA_REPO}/packages/coworld/src/coworld/examples/paintarena/coworld_manifest_template.json": 1,
