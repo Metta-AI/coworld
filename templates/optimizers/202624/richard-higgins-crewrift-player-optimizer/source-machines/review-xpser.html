@@ -1,0 +1,514 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>CrewRift Player Optimizer Learning Package Review</title>
+  <style>
+    :root {
+      color-scheme: light;
+      --ink: #17202a;
+      --muted: #607080;
+      --line: #d9e0e8;
+      --soft: #f5f7fa;
+      --panel: #ffffff;
+      --accent: #0b6bcb;
+      --accent-soft: #e8f2ff;
+      --warn: #8a5700;
+      --warn-soft: #fff4db;
+      --ok: #157347;
+      --ok-soft: #e6f4ed;
+      --code: #26323f;
+      --shadow: 0 8px 24px rgba(17, 31, 48, 0.08);
+      font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    }
+
+    * { box-sizing: border-box; }
+
+    body {
+      margin: 0;
+      color: var(--ink);
+      background: #eef2f6;
+      line-height: 1.5;
+    }
+
+    header {
+      position: sticky;
+      top: 0;
+      z-index: 5;
+      background: rgba(255, 255, 255, 0.96);
+      border-bottom: 1px solid var(--line);
+      backdrop-filter: blur(10px);
+    }
+
+    .bar {
+      max-width: 1180px;
+      margin: 0 auto;
+      padding: 16px 24px;
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) auto;
+      gap: 16px;
+      align-items: center;
+    }
+
+    h1, h2, h3 {
+      margin: 0;
+      line-height: 1.15;
+      letter-spacing: 0;
+    }
+
+    h1 { font-size: 22px; }
+    h2 { font-size: 20px; margin-bottom: 10px; }
+    h3 { font-size: 16px; margin-bottom: 8px; }
+    p { margin: 0 0 10px; }
+
+    .subtitle {
+      color: var(--muted);
+      font-size: 13px;
+      margin-top: 4px;
+    }
+
+    .actions {
+      display: flex;
+      gap: 8px;
+      flex-wrap: wrap;
+      justify-content: flex-end;
+    }
+
+    button, input[type="search"] {
+      font: inherit;
+      border: 1px solid var(--line);
+      border-radius: 6px;
+      background: var(--panel);
+      color: var(--ink);
+    }
+
+    button {
+      padding: 8px 11px;
+      cursor: pointer;
+    }
+
+    button.primary {
+      color: #fff;
+      border-color: var(--accent);
+      background: var(--accent);
+    }
+
+    input[type="search"] {
+      width: min(420px, 100%);
+      padding: 8px 10px;
+    }
+
+    main {
+      max-width: 1180px;
+      margin: 0 auto;
+      padding: 22px 24px 48px;
+      display: grid;
+      gap: 16px;
+    }
+
+    section, .chunk {
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      box-shadow: var(--shadow);
+    }
+
+    section {
+      padding: 18px;
+      display: grid;
+      gap: 12px;
+    }
+
+    .grid {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 12px;
+    }
+
+    .chunk {
+      padding: 14px;
+      box-shadow: none;
+    }
+
+    .wide { grid-column: 1 / -1; }
+
+    .badge-row {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 6px;
+      margin-bottom: 8px;
+    }
+
+    .badge {
+      display: inline-flex;
+      align-items: center;
+      min-height: 22px;
+      padding: 2px 7px;
+      border-radius: 999px;
+      background: var(--accent-soft);
+      color: #164b7c;
+      font-size: 12px;
+      font-weight: 650;
+    }
+
+    .badge.warn {
+      background: var(--warn-soft);
+      color: var(--warn);
+    }
+
+    .badge.ok {
+      background: var(--ok-soft);
+      color: var(--ok);
+    }
+
+    ul {
+      margin: 8px 0 0;
+      padding-left: 19px;
+    }
+
+    li + li { margin-top: 5px; }
+
+    code {
+      color: var(--code);
+      background: var(--soft);
+      border: 1px solid var(--line);
+      border-radius: 4px;
+      padding: 1px 4px;
+      font-family: "SFMono-Regular", Consolas, "Liberation Mono", monospace;
+      font-size: 0.92em;
+    }
+
+    textarea {
+      width: 100%;
+      min-height: 78px;
+      resize: vertical;
+      margin-top: 10px;
+      padding: 9px;
+      border: 1px solid var(--line);
+      border-radius: 6px;
+      font: inherit;
+      color: var(--ink);
+      background: #fbfcfe;
+    }
+
+    .comment-label {
+      display: block;
+      color: var(--muted);
+      font-size: 12px;
+      margin-top: 10px;
+    }
+
+    .path {
+      overflow-wrap: anywhere;
+      color: var(--muted);
+      font-size: 13px;
+    }
+
+    details {
+      border-top: 1px solid var(--line);
+      padding-top: 10px;
+    }
+
+    summary {
+      cursor: pointer;
+      color: var(--accent);
+      font-weight: 650;
+    }
+
+    .hidden { display: none !important; }
+
+    @media (max-width: 820px) {
+      .bar { grid-template-columns: 1fr; }
+      .actions { justify-content: flex-start; }
+      .grid { grid-template-columns: 1fr; }
+      main { padding-inline: 14px; }
+    }
+  </style>
+</head>
+<body>
+  <header>
+    <div class="bar">
+      <div>
+        <h1>CrewRift Player Optimizer Learning Package Review</h1>
+      <div class="subtitle">Branch review for extraction from co-gas sessions, files, candidate ledgers, and tooling.</div>
+      </div>
+      <div class="actions">
+        <input id="search" type="search" placeholder="Filter sections and chunks">
+        <button id="expand">Expand Details</button>
+        <button class="primary" id="copy">Copy All Feedback</button>
+      </div>
+    </div>
+  </header>
+
+  <main>
+    <section data-search="summary metadata destination signoff">
+      <h2>Review Scope</h2>
+      <div class="grid">
+        <div class="chunk" data-chunk="scope-output" data-search="output directory package files">
+          <div class="badge-row">
+            <span class="badge ok">Generated package</span>
+            <span class="badge">Metta branch review</span>
+          </div>
+          <h3>Output</h3>
+          <p>The bundle is staged in this branch at:</p>
+          <p class="path">packages/coworld/templates/optimizers/242026/xpser-co-gas-crewrift-player-optimizer</p>
+          <p>Review branch: <code>relh/xpser-crewrift-learning-package</code>. Review machine: <code>xpser</code>.</p>
+          <label class="comment-label" for="comment-scope-output">Reviewer notes</label>
+          <textarea id="comment-scope-output" data-comment="scope-output" placeholder="Accept, reject, or request changes for this chunk"></textarea>
+        </div>
+
+        <div class="chunk" data-chunk="scope-source" data-search="metta pr 15623 workflow source branch main">
+          <div class="badge-row">
+            <span class="badge warn">Workflow from PR branch</span>
+          </div>
+          <h3>Workflow Source</h3>
+          <p>The requested skill was not present on local Metta main after fetch. I read it from PR 15623 head:</p>
+          <p><code>origin/pr-15623-extract-learning-package</code></p>
+          <p>Requested file:</p>
+          <p class="path">docs/ai/onboarding/workflows/extract-learning-package/SKILL.md</p>
+          <label class="comment-label" for="comment-scope-source">Reviewer notes</label>
+          <textarea id="comment-scope-source" data-comment="scope-source" placeholder="Accept, reject, or request changes for this chunk"></textarea>
+        </div>
+
+        <div class="chunk" data-chunk="scope-destination" data-search="destination week package metta optimizers">
+          <div class="badge-row">
+            <span class="badge">Prepared for Phase 5</span>
+          </div>
+          <h3>Likely Destination</h3>
+          <p>This package is already in the current-week optimizer package area for branch review:</p>
+          <p class="path">packages/coworld/templates/optimizers/242026/xpser-co-gas-crewrift-player-optimizer</p>
+          <p>This review page is the sign-off boundary before opening PR work.</p>
+          <label class="comment-label" for="comment-scope-destination">Reviewer notes</label>
+          <textarea id="comment-scope-destination" data-comment="scope-destination" placeholder="Accept, reject, or request changes for this chunk"></textarea>
+        </div>
+      </div>
+    </section>
+
+    <section data-search="phase 1 session mining transcript stats">
+      <h2>Phase 1: Session Mining</h2>
+      <div class="grid">
+        <div class="chunk" data-chunk="phase1-stats" data-search="3782 290 22 codex sessions claude parse warning">
+          <div class="badge-row">
+            <span class="badge ok">Session mining performed</span>
+            <span class="badge warn">Partial parse warnings</span>
+          </div>
+          <h3>Mining Stats</h3>
+          <ul>
+            <li>3,782 session or history files were enumerated by the workflow helper.</li>
+            <li>290 files matched broad CrewRift, co-gas, Coworld, XP, tournament, or Observatory terms.</li>
+            <li>22 current Codex sessions in this repo were narrowed and read for user/final-turn signal.</li>
+            <li>One older Claude exploration under <code>/home/relh/gt/co_gas</code> contributed historical context.</li>
+            <li>Some JSONL session files were invalid or truncated, producing parse warnings. Those files were not silently treated as complete.</li>
+          </ul>
+          <label class="comment-label" for="comment-phase1-stats">Reviewer notes</label>
+          <textarea id="comment-phase1-stats" data-comment="phase1-stats" placeholder="Accept, reject, or request changes for this chunk"></textarea>
+        </div>
+
+        <div class="chunk" data-chunk="phase1-learnings" data-search="session learnings remote xp slot source local hosted gate">
+          <div class="badge-row">
+            <span class="badge">4 session-derived learnings</span>
+          </div>
+          <h3>Recovered Session Lessons</h3>
+          <ul>
+            <li>The optimization loop matured from local scrimmage-based promotion into remote Observatory XP evidence gates.</li>
+            <li>Slot-conditioned CrewRift strategy was corrected: slots are runner and protocol metadata, not role, identity, or strategy.</li>
+            <li>Source custody became a release requirement: tournament policies must be buildable from repo-local source.</li>
+            <li>Local runs are diagnosis and smoke checks; completed hosted XP artifacts are the replacement evidence.</li>
+          </ul>
+          <label class="comment-label" for="comment-phase1-learnings">Reviewer notes</label>
+          <textarea id="comment-phase1-learnings" data-comment="phase1-learnings" placeholder="Accept, reject, or request changes for this chunk"></textarea>
+        </div>
+
+        <div class="chunk" data-chunk="phase1-transcript-policy" data-search="raw transcripts excluded privacy copyright token">
+          <div class="badge-row">
+            <span class="badge ok">No raw transcripts included</span>
+          </div>
+          <h3>Transcript Handling</h3>
+          <p>The package preserves distilled lessons, not raw transcripts. Session-derived material is labeled as reconstructed and should be reviewed against the source-backed files before promotion into shared docs.</p>
+          <label class="comment-label" for="comment-phase1-transcript-policy">Reviewer notes</label>
+          <textarea id="comment-phase1-transcript-policy" data-comment="phase1-transcript-policy" placeholder="Accept, reject, or request changes for this chunk"></textarea>
+        </div>
+      </div>
+
+      <details>
+        <summary>Draft Loop Summary</summary>
+        <div class="chunk wide" data-chunk="phase1-loop" data-search="loop diagnose edit candidate local_passed submit-source xp inspect promote hold">
+          <p>The reconstructed loop is: refresh mandate, select the lower owned lane and highest-impact failing game, inspect concrete bad episodes, name a behavior failure, edit source-backed policy code, run short local smoke checks, mark the candidate <code>local_passed</code>, create a no-submit hosted version for the lower lane, request XP against leaders, lower champion, and bad matchups, inspect replay/log/artifact evidence, then promote only when completed evidence supports replacing the lower champion.</p>
+          <label class="comment-label" for="comment-phase1-loop">Reviewer notes</label>
+          <textarea id="comment-phase1-loop" data-comment="phase1-loop" placeholder="Accept, reject, or request changes for this chunk"></textarea>
+        </div>
+      </details>
+    </section>
+
+    <section data-search="phase 2 haul files inventory">
+      <h2>Phase 2: Swept Files And Haul</h2>
+      <div class="grid">
+        <div class="chunk" data-chunk="phase2-inventory" data-search="inventory haul files agents readme playbook candidates tooling">
+          <div class="badge-row">
+            <span class="badge ok">Haul inventory created</span>
+          </div>
+          <h3>Haul Files</h3>
+          <ul>
+            <li><code>haul/file-agents.md</code>: active mandate, CrewRift slot rule, submission gates.</li>
+            <li><code>haul/file-readme.md</code>: canonical commands, lanes, source entrypoints.</li>
+            <li><code>haul/file-playbook.md</code>: workflow doctrine and durable tournament practice.</li>
+            <li><code>haul/file-crewrift-suspectra.md</code>: CrewRift social memory and Suspectra behavior model.</li>
+            <li><code>haul/file-crewrift-candidates.md</code>: candidate evidence from v98, v99-v102, v108, and split-hold records.</li>
+            <li><code>haul/file-tooling.md</code>: co-gas CLI, XP request helpers, source upload, frontier analysis, and local diagnostic scripts.</li>
+          </ul>
+          <label class="comment-label" for="comment-phase2-inventory">Reviewer notes</label>
+          <textarea id="comment-phase2-inventory" data-comment="phase2-inventory" placeholder="Accept, reject, or request changes for this chunk"></textarea>
+        </div>
+
+        <div class="chunk" data-chunk="phase2-performance" data-search="performance log v98 v99 v102 v108 rowdaboat leaderboard">
+          <div class="badge-row">
+            <span class="badge warn">Evidence status matters</span>
+          </div>
+          <h3>Performance Record</h3>
+          <p><code>performance/LOG.md</code> records that <code>crewrift-suspectra-richard:v98</code> is the strongest completed-XP-supported replacement found in the swept evidence. Later v99-v102 pressure variants were rejected by XP evidence, and v108 remained a no-submit hosted candidate without completed XP replacement evidence.</p>
+          <p>The latest mandate snapshot still shows CrewRift unmet: public leader RowDaBoat rank 1, RelhAlpha rank 13, Richard rank 14, with only Richard tracked as champion.</p>
+          <label class="comment-label" for="comment-phase2-performance">Reviewer notes</label>
+          <textarea id="comment-phase2-performance" data-comment="phase2-performance" placeholder="Accept, reject, or request changes for this chunk"></textarea>
+        </div>
+
+        <div class="chunk" data-chunk="phase2-null" data-search="null tier excluded transcripts slot conditioned stale wrappers pending">
+          <div class="badge-row">
+            <span class="badge">Null tier created</span>
+          </div>
+          <h3>Cut Material</h3>
+          <p><code>null-tier.md</code> excludes raw transcripts, stale local-only promotion habits, slot-conditioned strategy, pending or running XP rows, stale wrappers, and full historical ledgers that would bloat a teaching package.</p>
+          <label class="comment-label" for="comment-phase2-null">Reviewer notes</label>
+          <textarea id="comment-phase2-null" data-comment="phase2-null" placeholder="Accept, reject, or request changes for this chunk"></textarea>
+        </div>
+      </div>
+    </section>
+
+    <section data-search="phase 3 universal package">
+      <h2>Phase 3: Universal Package</h2>
+      <div class="grid">
+        <div class="chunk" data-chunk="phase3-manifest" data-search="universal manifest agnostic evidence gated iteration">
+          <div class="badge-row">
+            <span class="badge ok">Universal tier</span>
+          </div>
+          <h3>Scope</h3>
+          <p>The universal tier keeps principles that should transfer to many tournament optimizers: evidence-gated iteration, failure-led edits, artifact inspection, source custody, local smoke limits, and explicit hold decisions.</p>
+          <p>Files: <code>universal/AGENTS.md</code>, <code>universal/LOOP.md</code>, <code>universal/MANIFEST.md</code>, <code>universal/performance/LOG.md</code>.</p>
+          <label class="comment-label" for="comment-phase3-manifest">Reviewer notes</label>
+          <textarea id="comment-phase3-manifest" data-comment="phase3-manifest" placeholder="Accept, reject, or request changes for this chunk"></textarea>
+        </div>
+
+        <div class="chunk" data-chunk="phase3-skill" data-search="evidence gated iteration skill">
+          <div class="badge-row">
+            <span class="badge">Skill included</span>
+          </div>
+          <h3>Reusable Skill</h3>
+          <p><code>universal/skills/evidence-gated-iteration/SKILL.md</code> teaches the general loop without co-gas-specific commands. It emphasizes connecting one observed failure to one correction and one measured outcome.</p>
+          <label class="comment-label" for="comment-phase3-skill">Reviewer notes</label>
+          <textarea id="comment-phase3-skill" data-comment="phase3-skill" placeholder="Accept, reject, or request changes for this chunk"></textarea>
+        </div>
+
+        <div class="chunk" data-chunk="phase3-guides" data-search="general guide social lessons">
+          <div class="badge-row">
+            <span class="badge">Guides included</span>
+          </div>
+          <h3>Guides</h3>
+          <p>The universal guide covers evidence-led optimization. A second guide preserves transferable social-game lessons while avoiding CrewRift-only mechanics claims.</p>
+          <label class="comment-label" for="comment-phase3-guides">Reviewer notes</label>
+          <textarea id="comment-phase3-guides" data-comment="phase3-guides" placeholder="Accept, reject, or request changes for this chunk"></textarea>
+        </div>
+      </div>
+    </section>
+
+    <section data-search="phase 4 tier split fully general crewrift co-gas optimizer loop">
+      <h2>Phase 4: Tiered Packages</h2>
+      <div class="grid">
+        <div class="chunk" data-chunk="phase4-fully-general" data-search="fully general tier">
+          <div class="badge-row">
+            <span class="badge ok">Fully general</span>
+          </div>
+          <h3>Fully General</h3>
+          <p><code>fully-general/</code> contains lessons that should apply outside Coworlds: causal diagnosis, benchmark hygiene, source custody, artifact inspection, local versus remote evidence boundaries, and null-tier pruning.</p>
+          <label class="comment-label" for="comment-phase4-fully-general">Reviewer notes</label>
+          <textarea id="comment-phase4-fully-general" data-comment="phase4-fully-general" placeholder="Accept, reject, or request changes for this chunk"></textarea>
+        </div>
+
+        <div class="chunk" data-chunk="phase4-crewrift" data-search="crewrift specific social diagnosis slots roles sim">
+          <div class="badge-row">
+            <span class="badge ok">CrewRift-specific</span>
+          </div>
+          <h3>CrewRift-Specific</h3>
+          <p><code>crewrift-specific/</code> focuses on role-aware social play, suspicion and vote analysis, alibi quality, kill conversion, task/fake-task behavior, and the canonical slot rule. It states that mechanics claims must be checked against <code>cogas-agents/coworlds/crewrift/vendor/coworld-crewrift/src/crewrift/sim.nim</code>.</p>
+          <label class="comment-label" for="comment-phase4-crewrift">Reviewer notes</label>
+          <textarea id="comment-phase4-crewrift" data-comment="phase4-crewrift" placeholder="Accept, reject, or request changes for this chunk"></textarea>
+        </div>
+
+        <div class="chunk" data-chunk="phase4-cogas" data-search="co-gas remote xp loop commands candidates source upload">
+          <div class="badge-row">
+            <span class="badge ok">Loop-specific</span>
+          </div>
+          <h3>Co-Gas Remote XP Loop</h3>
+          <p><code>co-gas-remote-xp-loop-specific/</code> keeps exact command patterns, lane discipline, candidate ledger practice, source upload expectations, and Tournament Observatory XP request workflow.</p>
+          <label class="comment-label" for="comment-phase4-cogas">Reviewer notes</label>
+          <textarea id="comment-phase4-cogas" data-comment="phase4-cogas" placeholder="Accept, reject, or request changes for this chunk"></textarea>
+        </div>
+      </div>
+    </section>
+
+    <section data-search="phase 5 signoff next steps upload pr">
+      <h2>Phase 5: Sign-Off Boundary</h2>
+      <div class="chunk wide" data-chunk="phase5-boundary" data-search="sign off upload metta pr not opened">
+        <div class="badge-row">
+          <span class="badge warn">Human sign-off required</span>
+        </div>
+        <h3>Not Yet Uploaded</h3>
+        <p>The workflow's PR phase is intentionally not complete. Review this page and the package files first. After sign-off, the next mechanical step is to open the PR requested by the workflow from <code>relh/xpser-crewrift-learning-package</code>.</p>
+        <label class="comment-label" for="comment-phase5-boundary">Reviewer notes</label>
+        <textarea id="comment-phase5-boundary" data-comment="phase5-boundary" placeholder="Accept, reject, or request changes for this chunk"></textarea>
+      </div>
+    </section>
+  </main>
+
+  <script>
+    const storagePrefix = "elp-review:";
+    const textareas = Array.from(document.querySelectorAll("textarea[data-comment]"));
+    const chunks = Array.from(document.querySelectorAll("[data-search]"));
+
+    for (const area of textareas) {
+      const key = storagePrefix + area.dataset.comment;
+      area.value = localStorage.getItem(key) || "";
+      area.addEventListener("input", () => localStorage.setItem(key, area.value));
+    }
+
+    document.getElementById("copy").addEventListener("click", async () => {
+      const lines = ["# Learning Package Review Feedback", ""];
+      for (const area of textareas) {
+        const value = area.value.trim();
+        if (!value) continue;
+        lines.push("## " + area.dataset.comment, "", value, "");
+      }
+      const body = lines.join("\n").trim() || "No feedback entered.";
+      await navigator.clipboard.writeText(body);
+      const button = document.getElementById("copy");
+      const old = button.textContent;
+      button.textContent = "Copied";
+      setTimeout(() => { button.textContent = old; }, 1200);
+    });
+
+    document.getElementById("expand").addEventListener("click", () => {
+      const details = Array.from(document.querySelectorAll("details"));
+      const shouldOpen = details.some((item) => !item.open);
+      for (const item of details) item.open = shouldOpen;
+      document.getElementById("expand").textContent = shouldOpen ? "Collapse Details" : "Expand Details";
+    });
+
+    document.getElementById("search").addEventListener("input", (event) => {
+      const query = event.target.value.trim().toLowerCase();
+      for (const item of chunks) {
+        const text = (item.textContent + " " + (item.dataset.search || "")).toLowerCase();
+        item.classList.toggle("hidden", query && !text.includes(query));
+      }
+    });
+  </script>
+</body>
+</html>

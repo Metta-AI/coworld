@@ -1,0 +1,291 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Crewrift Player Optimizer Learning Package Review</title>
+  <style>
+    :root {
+      color-scheme: light;
+      --bg: #f7f8fa;
+      --panel: #ffffff;
+      --text: #17202a;
+      --muted: #5d6673;
+      --line: #d8dde5;
+      --accent: #166b5f;
+      --accent-soft: #e8f4f2;
+      --warn: #9b5a00;
+      --warn-soft: #fff4df;
+      --code: #f1f3f5;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font: 15px/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      background: var(--bg);
+      color: var(--text);
+    }
+    header {
+      padding: 24px clamp(16px, 4vw, 44px);
+      background: var(--panel);
+      border-bottom: 1px solid var(--line);
+      position: sticky;
+      top: 0;
+      z-index: 10;
+    }
+    h1, h2, h3 { margin: 0 0 10px; line-height: 1.2; }
+    h1 { font-size: 24px; }
+    h2 { font-size: 20px; margin-top: 28px; }
+    h3 { font-size: 16px; }
+    main {
+      max-width: 1180px;
+      margin: 0 auto;
+      padding: 24px clamp(16px, 4vw, 44px) 64px;
+    }
+    .meta, .stats {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      margin-top: 12px;
+    }
+    .pill {
+      border: 1px solid var(--line);
+      border-radius: 999px;
+      padding: 4px 10px;
+      background: var(--panel);
+      color: var(--muted);
+      font-size: 13px;
+    }
+    .pill.warn {
+      border-color: #e6bd7a;
+      color: var(--warn);
+      background: var(--warn-soft);
+    }
+    .grid {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) 320px;
+      gap: 16px;
+      align-items: start;
+    }
+    section, article, aside {
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      padding: 18px;
+    }
+    article { margin: 14px 0; }
+    .chunk { scroll-margin-top: 140px; }
+    .chunk-title {
+      display: flex;
+      gap: 10px;
+      justify-content: space-between;
+      align-items: flex-start;
+      margin-bottom: 10px;
+    }
+    .badge {
+      display: inline-block;
+      border-radius: 5px;
+      padding: 2px 6px;
+      background: var(--warn-soft);
+      color: var(--warn);
+      font-size: 12px;
+      white-space: nowrap;
+    }
+    pre {
+      white-space: pre-wrap;
+      overflow-wrap: anywhere;
+      background: var(--code);
+      border-radius: 6px;
+      padding: 12px;
+      border: 1px solid var(--line);
+      max-height: 420px;
+      overflow: auto;
+    }
+    code { background: var(--code); padding: 1px 4px; border-radius: 4px; }
+    textarea {
+      width: 100%;
+      min-height: 84px;
+      resize: vertical;
+      border: 1px solid var(--line);
+      border-radius: 6px;
+      padding: 8px;
+      font: inherit;
+      margin-top: 10px;
+    }
+    button {
+      border: 1px solid var(--accent);
+      background: var(--accent);
+      color: #fff;
+      border-radius: 6px;
+      padding: 8px 12px;
+      font: inherit;
+      cursor: pointer;
+    }
+    button.secondary {
+      background: var(--panel);
+      color: var(--accent);
+    }
+    .toolbar {
+      display: flex;
+      gap: 8px;
+      flex-wrap: wrap;
+      margin-top: 12px;
+    }
+    .muted { color: var(--muted); }
+    details { margin-top: 10px; }
+    summary { cursor: pointer; color: var(--accent); }
+    ul { padding-left: 20px; }
+    @media (max-width: 850px) {
+      header { position: static; }
+      .grid { grid-template-columns: 1fr; }
+    }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>Crewrift Player Optimizer Learning Package Review</h1>
+    <div class="meta">
+      <span class="pill">Phase 1: Sessions and loop</span>
+      <span class="pill warn">Session-derived, unverified</span>
+      <span class="pill">Author handle: RelhAlpha</span>
+      <span class="pill">Tiers: crewrift-specific, optimizer-loop-specific, fully-general</span>
+    </div>
+    <div class="toolbar">
+      <button id="copy-feedback">Copy all feedback</button>
+      <button class="secondary" id="clear-empty">Ignore empty boxes</button>
+      <span class="muted" id="copy-status"></span>
+    </div>
+  </header>
+  <main>
+    <section>
+      <h2>Phase 1 Summary</h2>
+      <div class="stats">
+        <span class="pill">Sessions enumerated: 4,078</span>
+        <span class="pill">Approximate transcript scale: 7.7 GB</span>
+        <span class="pill">Broad keyword hits reviewed/scoped: 200 shown, narrowed from larger set</span>
+        <span class="pill">Primary sessions read: 2</span>
+        <span class="pill">Candidate session lessons: 7</span>
+        <span class="pill">Dropped before haul: noisy adjacent Crewrift ops, non-player-lab incidents, unrelated old hits</span>
+      </div>
+      <p>
+        The exact workflow skill is still on PR #15623, not on <code>main</code>. This checkpoint follows that PR's instructions from the fetched branch and keeps all output outside the repo until upload sign-off.
+      </p>
+    </section>
+
+    <div class="grid">
+      <div>
+        <h2>Draft LOOP.md</h2>
+        <article class="chunk" data-id="loop">
+          <div class="chunk-title">
+            <h3>RelhAlpha Crewrift Optimization Loop</h3>
+            <span class="badge">session-derived, unverified</span>
+          </div>
+          <p class="muted">Source file: haul/LOOP.md</p>
+          <details open>
+            <summary>Show content</summary>
+            <pre>1. Start from AGENTS.md and the player_labs guide.
+2. Confirm RelhAlpha and resume on crewborg if already recorded.
+3. Run uv sync and the crewborg tests before changing behavior.
+4. Build and upload a baseline, then append version details to version_log.md.
+5. Query live Crewrift state before choosing evaluation opponents.
+6. Create a schema-checked hosted experience request, using enough episodes to observe behavior.
+7. Fetch all artifacts with an explicit count.
+8. Inspect artifacts, make one focused policy change, rebuild, and upload.
+9. Verify the submitted policy belongs to the intended player; use the player login route if the CLI defaults to the wrong identity.
+10. Report live standings side by side for RelhAlpha and the Richard Higgins policy lane.
+11. Repeat the experience -> inspect -> change -> measure loop.</pre>
+          </details>
+          <textarea data-comment-for="loop" placeholder="Comment on this loop reconstruction"></textarea>
+        </article>
+
+        <h2>Session Lesson Candidates</h2>
+        <article class="chunk" data-id="lesson-human-loop">
+          <div class="chunk-title"><h3>Human-in-the-loop guide style</h3><span class="badge">session-derived, unverified</span></div>
+          <p>Do the mechanical work, narrate plainly, and pause only for real human choices, login, or sign-off.</p>
+          <textarea data-comment-for="lesson-human-loop" placeholder="Comment on this candidate"></textarea>
+        </article>
+        <article class="chunk" data-id="lesson-record-policy">
+          <div class="chunk-title"><h3>Record the active policy</h3><span class="badge">session-derived, unverified</span></div>
+          <p>Persist <code>crewborg</code> and <code>RelhAlpha</code> in the lab preferences so later sessions do not restart the starter-choice interview.</p>
+          <textarea data-comment-for="lesson-record-policy" placeholder="Comment on this candidate"></textarea>
+        </article>
+        <article class="chunk" data-id="lesson-live-roster">
+          <div class="chunk-title"><h3>Build eval rosters from current live state</h3><span class="badge">session-derived, unverified</span></div>
+          <p>Query current league, divisions, leaderboard, and active memberships before creating hosted experience requests.</p>
+          <textarea data-comment-for="lesson-live-roster" placeholder="Comment on this candidate"></textarea>
+        </article>
+        <article class="chunk" data-id="lesson-artifacts">
+          <div class="chunk-title"><h3>Fetch the full experience batch</h3><span class="badge">session-derived, unverified</span></div>
+          <p>Verify completed episode count and pass an explicit <code>-n</code>; the downloader default fetched only 10 of 32 episodes.</p>
+          <textarea data-comment-for="lesson-artifacts" placeholder="Comment on this candidate"></textarea>
+        </article>
+        <article class="chunk" data-id="lesson-identity">
+          <div class="chunk-title"><h3>Verify player identity before submission</h3><span class="badge">session-derived, unverified</span></div>
+          <p>If the CLI assigns policy versions to the wrong player, inspect OpenAPI and use the player login route without logging tokens.</p>
+          <textarea data-comment-for="lesson-identity" placeholder="Comment on this candidate"></textarea>
+        </article>
+        <article class="chunk" data-id="lesson-lanes">
+          <div class="chunk-title"><h3>Keep policy lanes distinct</h3><span class="badge">session-derived, unverified</span></div>
+          <p>Report RelhAlpha and Richard Higgins policies side by side using current leaderboard plus active membership data.</p>
+          <textarea data-comment-for="lesson-lanes" placeholder="Comment on this candidate"></textarea>
+        </article>
+        <article class="chunk" data-id="lesson-schema">
+          <div class="chunk-title"><h3>Validate experience request shapes before posting</h3><span class="badge">session-derived, unverified</span></div>
+          <p>Write scratch request bodies, run local schema checks, and catch bad Crewrift config shapes before creating hosted work.</p>
+          <textarea data-comment-for="lesson-schema" placeholder="Comment on this candidate"></textarea>
+        </article>
+
+        <h2>Performance Log Draft</h2>
+        <article class="chunk" data-id="performance">
+          <div class="chunk-title"><h3>2026-06-09 onboarding period</h3><span class="badge">session-derived, unverified</span></div>
+          <p>
+            The run started with <code>RelhAlpha:v1</code>, completed a 32/32 hosted baseline request, produced <code>RelhAlpha:v2</code>, and ultimately submitted <code>RelhAlpha:v4</code> under the correct player identity. The session's final live snapshot had RelhAlpha rank 1 and Richard Higgins rank 4, with the round still moving.
+          </p>
+          <textarea data-comment-for="performance" placeholder="Comment on the performance entry"></textarea>
+        </article>
+      </div>
+      <aside>
+        <h2>Review Notes</h2>
+        <p class="muted">Comments are saved in this browser using localStorage. Use "Copy all feedback" and paste it back to the agent.</p>
+        <h3>Sources Used</h3>
+        <ul>
+          <li><code>~/.codex/sessions/...019ea969...</code>: onboarding style prompt</li>
+          <li><code>~/.codex/sessions/...019eae00...</code>: actual RelhAlpha/crewborg run</li>
+          <li><code>~/.codex/memories/MEMORY.md</code>: routing to relevant summaries</li>
+          <li><code>~/.codex/memories/rollout_summaries/*player_labs*</code>: concise evidence index</li>
+        </ul>
+        <h3>Next Phase After Approval</h3>
+        <p>Phase 2 sweeps files from <code>player_labs</code>, nearby Metta checkouts, memories, skills, docs, scripts, and prompts. The loop above becomes the must-capture checklist.</p>
+      </aside>
+    </div>
+  </main>
+  <script>
+    const key = (id) => `crewrift-learning-review:${id}`;
+    document.querySelectorAll("textarea[data-comment-for]").forEach((box) => {
+      const id = box.dataset.commentFor;
+      box.value = localStorage.getItem(key(id)) || "";
+      box.addEventListener("input", () => localStorage.setItem(key(id), box.value));
+    });
+    document.getElementById("copy-feedback").addEventListener("click", async () => {
+      const chunks = [...document.querySelectorAll(".chunk")];
+      const lines = [];
+      for (const chunk of chunks) {
+        const id = chunk.dataset.id;
+        const title = chunk.querySelector("h3")?.textContent || id;
+        const value = localStorage.getItem(key(id)) || "";
+        if (value.trim()) {
+          lines.push(`## ${id} - ${title}\n\n${value.trim()}`);
+        }
+      }
+      const text = lines.length ? lines.join("\n\n") : "No feedback entered.";
+      await navigator.clipboard.writeText(text);
+      document.getElementById("copy-status").textContent = "Feedback copied.";
+      setTimeout(() => document.getElementById("copy-status").textContent = "", 2000);
+    });
+    document.getElementById("clear-empty").addEventListener("click", () => {
+      document.getElementById("copy-status").textContent = "Empty boxes are ignored when copying.";
+      setTimeout(() => document.getElementById("copy-status").textContent = "", 2000);
+    });
+  </script>
+</body>
+</html>

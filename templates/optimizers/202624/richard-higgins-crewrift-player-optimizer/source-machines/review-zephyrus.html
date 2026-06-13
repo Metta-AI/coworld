@@ -1,0 +1,206 @@
+<!doctype html>
+<html lang="en">
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>CrewRift Learning Package Review</title>
+<style>
+:root { color-scheme: light; --ink:#202124; --muted:#5f6368; --line:#d7dce2; --bg:#f6f8fb; --card:#fff; --accent:#0b57d0; }
+body { margin:0; font-family: Arial, sans-serif; color:var(--ink); background:var(--bg); }
+header { position:sticky; top:0; z-index:2; background:#fff; border-bottom:1px solid var(--line); padding:16px 24px; display:flex; gap:16px; align-items:center; justify-content:space-between; }
+h1 { margin:0; font-size:22px; }
+.meta { color:var(--muted); font-size:13px; }
+main { max-width:1180px; margin:0 auto; padding:20px; }
+.controls { display:flex; gap:8px; margin:0 0 16px; }
+input { flex:1; padding:10px; border:1px solid var(--line); border-radius:6px; font-size:14px; }
+button { padding:10px 12px; border:1px solid var(--accent); border-radius:6px; background:var(--accent); color:#fff; font-weight:700; cursor:pointer; }
+.card { background:var(--card); border:1px solid var(--line); border-radius:8px; margin:14px 0; overflow:hidden; }
+.card-head { display:flex; justify-content:space-between; gap:16px; align-items:center; border-bottom:1px solid var(--line); padding:12px 14px; }
+h2 { margin:0; font-size:17px; }
+.card-head span { color:var(--muted); font-size:12px; font-family:monospace; }
+pre { white-space:pre-wrap; font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size:12px; line-height:1.45; max-height:560px; overflow:auto; margin:0; padding:14px; background:#fbfcfe; }
+label { display:block; padding:12px 14px; color:var(--muted); font-size:13px; border-top:1px solid var(--line); }
+textarea { display:block; box-sizing:border-box; width:100%; min-height:72px; margin-top:6px; resize:vertical; border:1px solid var(--line); border-radius:6px; padding:8px; font:14px Arial, sans-serif; color:var(--ink); }
+.badge { display:inline-block; margin-left:8px; color:#8a4b00; background:#fff4e5; border:1px solid #ffd29a; border-radius:999px; padding:2px 8px; font-size:12px; }
+</style></head>
+<body><header><div><h1>CrewRift Learning Package Review <span class="badge">session-derived unverified</span></h1><div class="meta">Generated 2026-06-12T16:23:12-07:00. Output: /home/relh/packages/crewrift-player-optimizer</div></div><button id="copy">Copy all feedback</button></header>
+<main><div class="controls"><input id="search" placeholder="Filter review chunks"><button id="clear">Clear</button></div><section class="card" id="phase1-loop"><div class="card-head"><h2>Phase 1 - Sessions and loop</h2><span>phase1-loop</span></div><pre>Sessions enumerated: 1825 (3,465,159,985 bytes). Sessions read: 1. Reason: Capped to the clearly on-topic June 8 CrewRift Suspectra optimization transcript because the full local transcript corpus is about 3.5 GB and subagent fan-out was not permitted in this harness.
+
+Candidates nominated: 18. Dropped: Raw transcript snippets that only repeated already-written co-gas docs.; Specific secrets, credentials, and private runtime payload details: none copied.; Large raw replay/log artifacts under .runtime: summarized by artifact class instead of bundled.
+
+# LOOP.md - CrewRift Remote XP Player Optimization
+
+Follow this loop when improving a CrewRift player policy under the co-gas style of work.
+
+1. Refresh live state before choosing work.
+
+   Run `uv run --no-sync --project . co-gas mandate refresh-report` and `uv run --no-sync --project . co-gas mandate check` from the co-gas repo. Pick the failing public league and the lower-ranked owned champion lane. For CrewRift on June 12, 2026, Richard&#x27;s `crewrift-suspectra-richard:v98` was the protected known champion evidence and later v108 was only a no-submit candidate because no completed v108 XP request had run.
+
+2. Treat completed hosted XP as the decision surface.
+
+   Local episodes are for reproduction, instrumentation, and smoke checks. A build, image upload, policy version, pending XP request, running round, or local-only win is not replacement evidence. Replacement decisions require completed XP rows plus inspected artifacts: scores, logs, replay, and policy logs.
+
+3. Diagnose one concrete behavior failure.
+
+   Inspect low-score XP artifacts or local reproductions until the failure can be named as behavior: missed body, weak vote, bad fake-tasking, visible kill, poor alibi, timeout, low task progress, bad kill conversion, or protocol parsing. Do not start by tuning constants or creating a slot-specific branch.
+
+4. Check CrewRift mechanics from source before asserting them.
+
+   Read `cogas-agents/coworlds/crewrift/vendor/coworld-crewrift/src/crewrift/sim.nim` for mechanics. In particular, hosted CrewRift slots are runner metadata; roles are assigned from the actual episode state unless a fixture explicitly fixes them.
+
+5. Make one source-backed correction.
+
+   Change the committed policy source under `players/users/relh/co-gas/crewrift*` or another source-custody path. Keep the diff tied to the diagnosis. Example from v108: return to the v98 lineage, and make imposters remember visible targets while kill cooldown is unavailable but prowl instead of hard-chasing until the kill icon is ready.
+
+6. Add narrow source tests or validation that guard the behavior.
+
+   Use source assertions when the policy is a large generated/scripted file and behavior is not easily unit-invoked. The v108 loop added tests for cooldown prowl behavior and for rejecting previous vote-pileon/protocol experiment paths.
+
+7. Run the cheapest local validations that cover the edit.
+
+   Run focused source tests, lint, candidate validation, source validation, and diff checks before upload. For the v108 pass, the validations were `pytest tests/test_crewrift_suspectra_source.py -q`, `ruff check tests/test_crewrift_suspectra_source.py`, `co-gas candidates validate`, `co-gas sources validate`, and `git diff --cached --check`.
+
+8. Record candidate evidence before and after hosted actions.
+
+   Update `experiments/candidates/*.yaml` with artifact paths, policy version IDs, image IDs, scores, failure classes, and the current decision. Record negative outcomes and incomplete loops explicitly; v108 was written as no-submit uploaded with no XP request created, so v98 remained champion evidence.
+
+9. Upload no-submit for hosted testing.
+
+   Use `uv run --no-sync --project . co-gas submit-source --game crewrift --candidate &lt;candidate-id&gt; --lane &lt;richard-or-relhalpha&gt; --no-submit`. Aim at the lower owned lane and do not change tournament membership yet.
+
+10. Request XP against the live comparison set.
+
+    Use `co-gas xp create` with the candidate policy version, the lower owned champion, public leaders, recent bad matchups, and `--rotate-seats`. Poll with `co-gas xp status` until terminal. Save outputs under `.runtime/&lt;candidate-id&gt;/`.
+
+11. Promote only from completed XP.
+
+    If completed XP and inspected artifacts show the candidate is meaningfully better than the lower owned champion and public leaders, submit that exact policy version. If not, record a hold and use the low artifacts to start the next diagnosis. Do not rebuild a different current source version when XP selected an already uploaded version.
+
+
+# Performance Log
+
+## 2026-06-12 - CrewRift Suspectra Richard v98 to v108 optimization window
+
+The extracted evidence covers the June 2026 CrewRift Suspectra loop in co-gas. Richard&#x27;s `crewrift-suspectra-richard:v98` became the live champion evidence after completed XP showed a clear improvement over the prior v97 champion, with the candidate record noting Richard averaged about 41.14 and had zero vote timeouts in the downloaded low artifacts.
+
+Subsequent hosted tests tried v99 through v107 variants against the top field and current surface. Completed current-surface XP compared v103, v98, v104, and v107. The raw average for v104 was slightly higher than owned variants, but artifact inspection attributed that edge to a better imposter-role draw, while v104 and v107 carried rejected crew vote-pileon and protocol experiment changes. The loop therefore retained v98 as champion evidence.
+
+The final session-mined change produced v108 as a no-submit Richard policy version (`688b73ad-41c5-425b-93c9-9821b6812af6`) and image (`img_09f6f855-36ce-4e6c-ad52-96ae8d936025`). Its source-backed change was narrow: imposters prowl while kill cooldown is unavailable, remember visible targets, and resume hunting only when the kill icon is ready. No completed v108 XP request was created before the loop stopped, so v108 was not promotion evidence and v98 remained the champion baseline.
+</pre><label>Comment on Phase 1 - Sessions and loop<textarea data-chunk="phase1-loop" placeholder="Type feedback for this chunk"></textarea></label></section><section class="card" id="phase2-haul"><div class="card-head"><h2>Phase 2 - Haul inventory</h2><span>phase2-haul</span></div><pre># INVENTORY
+
+- `haul/files/co-gas-agents.md` - co-gas AGENTS: Remote XP loop, slot discipline, evidence gates, source custody.
+- `haul/files/co-gas-readme.md` - co-gas README: Canonical commands and remote XP-first debug loop.
+- `haul/files/coworld-tournament-playbook.md` - Tournament playbook: Durable optimizer loop and evidence rules.
+- `haul/files/crewrift-source-readme.md` - CrewRift source README: CrewRift source authority and slot metadata rule.
+- `haul/files/failed-experiments.md` - Failed experiments: Negative results and anti-patterns.
+- `haul/files/mandate-report-summary.md` - Mandate report: Current live state and completed-vs-running evidence rules.
+- `haul/files/standalone-crewrift-agents.md` - CrewRift starter AGENTS: Standalone player project working agreement.
+- `haul/from-sessions/session-candidates.md` - Primary Codex session: Session-derived loop corrections and candidate lessons.
+- `haul/LOOP.md` - reconstructed working loop from session and file evidence.
+- `haul/performance/LOG.md` - appendable performance trajectory summary.
+</pre><label>Comment on Phase 2 - Haul inventory<textarea data-chunk="phase2-haul" placeholder="Type feedback for this chunk"></textarea></label></section><section class="card" id="phase3-universal"><div class="card-head"><h2>Phase 3 - Universal package</h2><span>phase3-universal</span></div><pre># MANIFEST
+
+Run date: 2026-06-12T16:23:12-07:00
+
+- AGENTS.md - always-on guidance distilled from co-gas AGENTS, co-gas README, Tournament playbook, CrewRift source README, Failed experiments, Mandate report, CrewRift starter AGENTS, CrewRift starter README, Primary Codex session.
+- LOOP.md - reconstructed optimizer loop; session-derived portions remain unverified until human review.
+- performance/LOG.md - concrete trajectory only where applicable.
+- skills/remote-xp-candidate-loop/SKILL.md - on-demand recipe for hosted XP candidate work.
+- guides/guide.md - longer reference notes where present.
+
+
+# AGENTS.md - CrewRift Player Optimizer Learnings
+
+Use completed evidence, not intent. A policy version, image upload, pending XP request, running round, or local-only win is not a replacement signal. Promotion requires completed XP artifacts that were inspected for scores and behavior.
+
+Optimize one diagnosed behavior at a time. The useful unit is observed failure -&gt; source-backed correction -&gt; validation -&gt; no-submit upload -&gt; completed XP -&gt; promote or hold. Do not stack social experiments until the previous candidate&#x27;s evidence is understood.
+
+For social Coworlds, treat position or slot as protocol metadata. Use it to connect, parse UI, reproduce an episode, or index a result row. Do not use it as identity, role, route, target priority, personality, upload lane, or policy family.
+
+For CrewRift, read the game source before making mechanics claims. Role assignment and vote/kill/button behavior must be checked in `cogas-agents/coworlds/crewrift/vendor/coworld-crewrift`, especially `src/crewrift/sim.nim`.
+
+Record negative and incomplete evidence explicitly. If a candidate is uploaded no-submit but XP was not run, say that in the candidate record and keep the previous champion evidence.
+
+Keep bulky artifacts out of durable docs. Runtime captures, replay payloads, logs, and generated reports stay under `.runtime/`; committed docs and candidate YAML hold compact source paths, ids, metrics, and decisions.
+
+Session-derived notes in this package are marked unverified until a human confirms them.
+</pre><label>Comment on Phase 3 - Universal package<textarea data-chunk="phase3-universal" placeholder="Type feedback for this chunk"></textarea></label></section><section class="card" id="phase4-crewrift"><div class="card-head"><h2>Phase 4 - Tier: CrewRift-specific</h2><span>phase4-crewrift</span></div><pre># MANIFEST
+
+Run date: 2026-06-12T16:23:12-07:00
+
+- AGENTS.md - always-on guidance distilled from co-gas AGENTS, co-gas README, Tournament playbook, CrewRift source README, Failed experiments, Mandate report, CrewRift starter AGENTS, CrewRift starter README, Primary Codex session.
+- LOOP.md - reconstructed optimizer loop; session-derived portions remain unverified until human review.
+- performance/LOG.md - concrete trajectory only where applicable.
+- skills/remote-xp-candidate-loop/SKILL.md - on-demand recipe for hosted XP candidate work.
+- guides/guide.md - longer reference notes where present.
+
+
+# AGENTS.md - CrewRift-Specific Optimizer Learnings
+
+CrewRift slots are runner metadata, not role or strategy identity. Hosted roles are learned from observations/results; fixture-fixed slots only apply to explicit source tests or reproductions.
+
+Use `cogas-agents/coworlds/crewrift/vendor/coworld-crewrift/src/crewrift/sim.nim` as the mechanics authority. Check button calls, body reports, vote phases, kill cooldown, and role assignment there before editing policy behavior.
+
+CrewRift candidate hypotheses should improve shared social behavior: task routing, body reporting, suspicion evidence, vote timing, kill isolation, fake-task credibility, alibi movement, or pressure response.
+
+Do not revive p4/p7 or slot-specific variants as strategy. Historical slot-labeled artifacts can reproduce evidence, but new work should fix aggregate role-aware behavior.
+
+The v108 lesson is narrow: for imposters, remembering a visible target during cooldown is useful, but hard-chasing before kill readiness can expose the policy. Prowl until the kill icon is ready, then hunt.
+</pre><label>Comment on Phase 4 - Tier: CrewRift-specific<textarea data-chunk="phase4-crewrift" placeholder="Type feedback for this chunk"></textarea></label></section><section class="card" id="phase4-loop"><div class="card-head"><h2>Phase 4 - Tier: Remote XP optimizer loop</h2><span>phase4-loop</span></div><pre># MANIFEST
+
+Run date: 2026-06-12T16:23:12-07:00
+
+- AGENTS.md - always-on guidance distilled from co-gas AGENTS, co-gas README, Tournament playbook, CrewRift source README, Failed experiments, Mandate report, CrewRift starter AGENTS, CrewRift starter README, Primary Codex session.
+- LOOP.md - reconstructed optimizer loop; session-derived portions remain unverified until human review.
+- performance/LOG.md - concrete trajectory only where applicable.
+- skills/remote-xp-candidate-loop/SKILL.md - on-demand recipe for hosted XP candidate work.
+- guides/guide.md - longer reference notes where present.
+
+
+# AGENTS.md - Remote XP Optimizer Loop
+
+Decision evidence is completed remote XP, not local score chasing. Local runs exist to diagnose behavior and smoke-test the upload candidate.
+
+Every candidate needs a named failure cause, a source-backed correction, targeted validation, and an explicit promote/hold decision. A different parameter set is not a hypothesis unless it maps to a behavior and metric.
+
+Use blue/green lane discipline: test on the lower owned lane, protect the higher lane, and submit only when completed XP supports replacement.
+
+When XP results look contradictory, inspect artifacts before averaging. Role mix, assignment randomness, runtime failures, and incomplete requests can explain apparent score edges.
+</pre><label>Comment on Phase 4 - Tier: Remote XP optimizer loop<textarea data-chunk="phase4-loop" placeholder="Type feedback for this chunk"></textarea></label></section><section class="card" id="phase4-generic"><div class="card-head"><h2>Phase 4 - Tier: Fully general</h2><span>phase4-generic</span></div><pre># MANIFEST
+
+Run date: 2026-06-12T16:23:12-07:00
+
+- AGENTS.md - always-on guidance distilled from co-gas AGENTS, co-gas README, Tournament playbook, CrewRift source README, Failed experiments, Mandate report, CrewRift starter AGENTS, CrewRift starter README, Primary Codex session.
+- LOOP.md - reconstructed optimizer loop; session-derived portions remain unverified until human review.
+- performance/LOG.md - concrete trajectory only where applicable.
+- skills/remote-xp-candidate-loop/SKILL.md - on-demand recipe for hosted XP candidate work.
+- guides/guide.md - longer reference notes where present.
+
+
+# AGENTS.md - General Optimization Learnings
+
+Tie every change to evidence. State the observed failure, make the smallest correction that addresses it, and verify the same surface that exposed the failure.
+
+Separate diagnostic evidence from release evidence. A local reproduction can justify a change; production-like completed evaluation decides whether it ships.
+
+Do not let identity-shaped metadata become strategy. If a label exists for routing, protocol, or logging, prove it is semantically stable before using it for behavior.
+
+Record the state of an interrupted loop. The next agent should know whether a candidate was built, uploaded, tested, rejected, promoted, or merely prepared.
+
+Prefer durable source custody over opaque artifacts. If an artifact cannot be rebuilt from committed source, treat it as evidence to inspect, not as a sustainable champion.
+</pre><label>Comment on Phase 4 - Tier: Fully general<textarea data-chunk="phase4-generic" placeholder="Type feedback for this chunk"></textarea></label></section><section class="card" id="phase4-null"><div class="card-head"><h2>Phase 4 - Null tier cuts</h2><span>phase4-null</span></div><pre># Null Tier
+
+Cut or downgraded items:
+
+- Raw transcript excerpts: cut for privacy and size; paraphrased session-derived lessons were retained with unverified markings.
+- Large `.runtime` replay/log payloads: cut because they are evidence sources, not portable learning-package content. The package keeps artifact classes and decision rules instead.
+- CVC-specific Slanky tuning metrics: mostly cut from CrewRift tiers because they concern a different game family. The generic lesson retained is to watch metrics tied to the objective and distrust single-seed wins.
+- Standalone `coworld-crewrift-player` starter setup commands: cut from tiers because the active optimization loop moved to co-gas remote XP; retained in haul inventory as provenance.
+- Slot-labeled historical artifact paths: cut as package guidance except where used as an anti-pattern. The retained lesson is to treat slots as metadata.
+</pre><label>Comment on Phase 4 - Null tier cuts<textarea data-chunk="phase4-null" placeholder="Type feedback for this chunk"></textarea></label></section></main>
+<script>
+const key='crewrift-learning-review-comments-v1';
+const saved=JSON.parse(localStorage.getItem(key)||'{}');
+for (const t of document.querySelectorAll('textarea[data-chunk]')) { t.value=saved[t.dataset.chunk]||''; t.addEventListener('input',()=>{ saved[t.dataset.chunk]=t.value; localStorage.setItem(key, JSON.stringify(saved)); }); }
+document.getElementById('copy').onclick=async()=>{ const lines=[]; for (const t of document.querySelectorAll('textarea[data-chunk]')) { if (t.value.trim()) lines.push(`## ${t.dataset.chunk}
+${t.value.trim()}`); } await navigator.clipboard.writeText(lines.join('\n\n')); };
+document.getElementById('search').oninput=(e)=>{ const q=e.target.value.toLowerCase(); for (const s of document.querySelectorAll('section.card')) { s.style.display=s.innerText.toLowerCase().includes(q)?'':'none'; } };
+document.getElementById('clear').onclick=()=>{ document.getElementById('search').value=''; for (const s of document.querySelectorAll('section.card')) s.style.display=''; };
+</script></body></html>
