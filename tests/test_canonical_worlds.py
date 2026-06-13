@@ -207,13 +207,13 @@ def test_canonical_cue_n_woo_upload_adds_default_commissioner() -> None:
 
     assert "  commissioner:" in compose_text
     assert "COMMISSIONER_IMAGE" in compose_text
-    assert "ghcr.io/metta-ai/commissioners-baseline:latest" in compose_text
+    assert "ghcr.io/metta-ai/commissioners-default:latest" in compose_text
     assert 'if [[ "${WORLD}" == "cue_n_woo" ]]' in upload_text
     assert "materialize_cue_n_woo_template" in upload_text
     assert '"id": "default-commissioner"' in upload_text
     assert '"type": "commissioner"' in upload_text
     assert '"image": "{{COMMISSIONER_IMAGE}}"' in upload_text
-    assert 'COMMISSIONER_IMAGE="ghcr.io/metta-ai/commissioners-baseline:latest"' in upload_text
+    assert 'COMMISSIONER_IMAGE="ghcr.io/metta-ai/commissioners-default:latest"' in upload_text
 
 
 def test_canonical_world_compose_files_build_manifest_images() -> None:

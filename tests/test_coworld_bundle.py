@@ -317,14 +317,14 @@ def test_build_coworld_manifest_resolves_mutable_registry_image_refs(
             {
                 "game": "game-runtime:latest",
                 "player": "player-runtime:latest",
-                "commissioner": "ghcr.io/metta-ai/commissioners-baseline:latest",
+                "commissioner": "ghcr.io/metta-ai/commissioners-default:latest",
                 "reporter": "ghcr.io/metta-ai/reporters-default@sha256:cccc",
                 "grader": "ghcr.io/metta-ai/graders-default@sha256:dddd",
             },
             {
                 "game-runtime:latest": "sha256:111111111111",
                 "player-runtime:latest": "sha256:222222222222",
-                "ghcr.io/metta-ai/commissioners-baseline:latest": "sha256:333333333333",
+                "ghcr.io/metta-ai/commissioners-default:latest": "sha256:333333333333",
             },
             calls,
         ),
@@ -341,7 +341,7 @@ def test_build_coworld_manifest_resolves_mutable_registry_image_refs(
     built_manifest = json.loads(output_path.read_text(encoding="utf-8"))
     assert built_manifest["game"]["runnable"]["image"] == "game-runtime:coworld-111111111111"
     assert built_manifest["player"][0]["image"] == "player-runtime:coworld-222222222222"
-    assert built_manifest["commissioner"][0]["image"] == "ghcr.io/metta-ai/commissioners-baseline@sha256:333333333333"
+    assert built_manifest["commissioner"][0]["image"] == "ghcr.io/metta-ai/commissioners-default@sha256:333333333333"
     assert built_manifest["reporter"][0]["image"] == "ghcr.io/metta-ai/reporters-default@sha256:cccc"
     assert built_manifest["grader"][0]["image"] == "ghcr.io/metta-ai/graders-default@sha256:dddd"
     commands = [command for command, _kwargs in calls]
@@ -350,11 +350,11 @@ def test_build_coworld_manifest_resolves_mutable_registry_image_refs(
         "buildx",
         "imagetools",
         "inspect",
-        "ghcr.io/metta-ai/commissioners-baseline:latest",
+        "ghcr.io/metta-ai/commissioners-default:latest",
         "--format",
         "{{json .Manifest}}",
     ] in commands
-    assert ["docker", "pull", "ghcr.io/metta-ai/commissioners-baseline@sha256:333333333333"] in commands
+    assert ["docker", "pull", "ghcr.io/metta-ai/commissioners-default@sha256:333333333333"] in commands
 
 
 def test_build_command_writes_hydrated_manifest(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:

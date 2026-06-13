@@ -5,5 +5,5 @@ services:
     build:
       context: .
   commissioner:
-    image: ghcr.io/metta-ai/commissioners-baseline:latest
+    image: ghcr.io/metta-ai/commissioners-default:latest
     platform: linux/amd64
