@@ -205,6 +205,14 @@ def test_canonical_cue_n_woo_upload_adds_default_commissioner() -> None:
     compose_text = (WORLDS / "cue_n_woo" / "compose.yaml").read_text(encoding="utf-8")
     upload_text = (WORLDS / "upload.sh").read_text(encoding="utf-8")
 
+    assert "REPORTER_CONTEXT" in compose_text
+    assert "OPTIMIZER_CONTEXT" in compose_text
+    assert "reporters/reporters" in compose_text
+    assert "optimizers" in compose_text
+    assert "coworld-default-reporter:latest" in compose_text
+    assert "coworld-optimizer:latest" in compose_text
+    assert '"REPORTER_CONTEXT=${REPORTER_CONTEXT}"' in upload_text
+    assert '"OPTIMIZER_CONTEXT=${OPTIMIZER_CONTEXT}"' in upload_text
     assert "  commissioner:" in compose_text
     assert "COMMISSIONER_IMAGE" in compose_text
     assert "ghcr.io/metta-ai/commissioners-default:latest" in compose_text
