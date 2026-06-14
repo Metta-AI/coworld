@@ -326,6 +326,14 @@ def test_external_canonical_manifests_live_with_source_repos() -> None:
             assert reference in readme_text
 
 
+def test_cue_n_woo_upload_defaults_to_cue_n_woo_commissioner() -> None:
+    upload_text = (WORLDS / "upload.sh").read_text(encoding="utf-8")
+    readme_text = (WORLDS / "cue_n_woo" / "README.md").read_text(encoding="utf-8")
+
+    assert 'COMMISSIONER_IMAGE="${COMMISSIONER_IMAGE:-ghcr.io/metta-ai/commissioners-cue-n-woo:latest}"' in upload_text
+    assert "ghcr.io/metta-ai/commissioners-cue-n-woo:latest" in readme_text
+
+
 def test_paintarena_template_declares_all_viability_role_sections() -> None:
     paintarena = json.loads((PAINTARENA_EXAMPLE / "coworld_manifest_template.json").read_text(encoding="utf-8"))
     assert set(VIABILITY_ROLE_SECTIONS).issubset(paintarena)
