@@ -8,7 +8,7 @@ SEED_RESPONSE = {
     "id": "lseed_00000000-0000-0000-0000-000000000071",
     "coworld_name": "newworld",
     "template": "default",
-    "overrides": {"is_game_of_week": True},
+    "overrides": {"is_game_of_week": True, "commissioner_runnable_id": "cue-n-woo-commissioner"},
     "enabled": True,
     "created_by": "debug_user_id",
     "notes": None,
@@ -30,7 +30,7 @@ def test_create_coworld_league_seed_posts_request(httpserver: HTTPServer) -> Non
         json={
             "coworld_name": "newworld",
             "template": "default",
-            "overrides": {"is_game_of_week": True},
+            "overrides": {"is_game_of_week": True, "commissioner_runnable_id": "cue-n-woo-commissioner"},
             "enabled": True,
         },
     ).respond_with_json(SEED_RESPONSE)
@@ -45,6 +45,8 @@ def test_create_coworld_league_seed_posts_request(httpserver: HTTPServer) -> Non
             "default",
             "--set",
             "is_game_of_week=true",
+            "--set",
+            "commissioner_runnable_id=cue-n-woo-commissioner",
             "--server",
             httpserver.url_for(""),
         ],
