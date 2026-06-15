@@ -22,13 +22,13 @@ dependencies = [
   "referencing>=0.36.2",
   "requests>=2.32",
   "rich>=13.7.0",
-  "softmax-cli==0.26.21",
+  "softmax-cli==0.26.22",
   "typer>=0.19.2",
   "websockets>=15.0.1",
 ]
 
 [project.optional-dependencies]
-auth = ["softmax-cli==0.26.21"]
+auth = ["softmax-cli==0.26.22"]
 examples = ["fastapi>=0.115.0", "pyarrow>=16.1.0", "uvicorn>=0.34.0"]
 test = [
   "fastapi>=0.115.0",
