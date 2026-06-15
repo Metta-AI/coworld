@@ -33,7 +33,7 @@ Suggested fields when a reporter chooses to include `manifest.json`:
 | Field | Required? | Purpose |
 | --- | --- | --- |
 | `reporter_id` | recommended | Reporter self-identification, conventionally matching the runnable id in `manifest.reporter[]`. |
-| `render` | optional | Path inside the zip to one `.md` or `.html` file that UIs should render. |
+| `render` | optional | Path inside the zip to one `.md` or `.html` file that platform UI surfaces can embed. Must follow the safe [render profile](RENDER.md); `coworld certify` rejects unsafe HTML. |
 | `event_log` | optional | Path inside the zip to one `.parquet` file following the [event log](EVENT_LOG.md) schema. |
 | `trace` | optional | Path inside the zip to one `.jsonl` or `.json` machine-readable trace artifact. |
 
@@ -55,5 +55,6 @@ bundle inclusion of prior supporting-role outputs are future work.
 ## See Also
 
 - [Reporter role](../roles/REPORTER.md) for invocation.
+- [Render artifact](RENDER.md) for the safe embeddable `render` entry contract.
 - [Event log](EVENT_LOG.md) for structured report entries.
 - [Episode bundle](EPISODE_BUNDLE.md) for reporter input.

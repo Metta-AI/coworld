@@ -11,17 +11,20 @@ from urllib.parse import quote, unquote, urlparse
 
 import httpx
 
+from coworld.episode_bundle import assemble_episode_bundle
 from coworld.manifest_validation import (
     game_config_with_tokens,
     infer_token_count_for_game_config,
     validate_coworld_manifest_game_configs,
 )
+from coworld.report import ReportManifest, validate_report_zip
 from coworld.runner.runner import (
     EpisodeArtifacts,
     PlayerLaunchSpec,
     RunnableLaunchSpec,
     assert_docker_image_reachable,
     run_coworld_episode,
+    run_reporter,
 )
 from coworld.schema_validation import (
     JsonObject,
@@ -64,11 +67,19 @@ class CoworldPackage:
 
 
 @dataclass(frozen=True)
+class ReportCertification:
+    reporter_id: str
+    manifest: ReportManifest
+    report_path: Path
+
+
+@dataclass(frozen=True)
 class CertificationResult:
     package: CoworldPackage
     artifacts: EpisodeArtifacts
     episode_request: JsonObject
     results: JsonObject
+    reports: list[ReportCertification]
 
 
 def load_coworld_package(manifest_path: Path) -> CoworldPackage:
@@ -228,12 +239,50 @@ def certify_coworld(
     if not artifacts.replay_path.exists():
         raise FileNotFoundError(f"Replay file was not produced: {artifacts.replay_path}")
 
+    reports = run_certification_reporters(package, artifacts, timeout_seconds=timeout_seconds)
+
     return CertificationResult(
         package=package,
         artifacts=artifacts,
         episode_request=episode_request,
         results=results,
+        reports=reports,
     )
+
+
+def run_certification_reporters(
+    package: CoworldPackage,
+    artifacts: EpisodeArtifacts,
+    *,
+    timeout_seconds: float,
+) -> list[ReportCertification]:
+    """Run every declared reporter against the certification episode and certify its report.
+
+    Assembles one episode bundle from the certification artifacts, runs each
+    ``manifest.reporter`` container against it, and validates the report zip —
+    including the safe render profile for any HTML ``render`` entry (see
+    ``docs/artifacts/RENDER.md``). Reporters are optional, so a Coworld without
+    them certifies with an empty report list.
+    """
+    reporters = package.manifest.reporter
+    if not reporters:
+        return []
+
+    bundle_bytes = assemble_episode_bundle(artifacts, ereq_id=f"cert-{artifacts.workspace.name}")
+    certifications: list[ReportCertification] = []
+    for reporter in reporters:
+        workspace = artifacts.workspace / "reports" / reporter.id
+        report_bytes = run_reporter(
+            RunnableLaunchSpec.from_model(reporter.as_runnable_spec()),
+            workspace=workspace,
+            bundle_bytes=bundle_bytes,
+            timeout_seconds=timeout_seconds,
+        )
+        manifest = validate_report_zip(report_bytes)
+        certifications.append(
+            ReportCertification(reporter_id=reporter.id, manifest=manifest, report_path=workspace / "report.zip")
+        )
+    return certifications
 
 
 def _image_references(package: CoworldPackage) -> list[tuple[str, str]]:

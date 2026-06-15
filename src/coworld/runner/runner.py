@@ -31,6 +31,8 @@ REPLAY_SAVE_ENV_VAR = "COGAME_SAVE_REPLAY_URI"
 REPLAY_LOAD_ENV_VAR = "COGAME_LOAD_REPLAY_URI"
 GAME_HOST_ENV_VAR = "COGAME_HOST"
 GAME_PORT_ENV_VAR = "COGAME_PORT"
+EPISODE_BUNDLE_ENV_VAR = "COGAME_EPISODE_BUNDLE_URI"
+REPORT_ENV_VAR = "COGAME_REPORT_URI"
 GAME_HOST = "0.0.0.0"
 GAME_PORT = 8080
 LOCAL_DOCKER_NETWORK = "coworld-local"
@@ -406,6 +408,58 @@ def run_episode_containers(spec: EpisodeRunSpec, *, verify_replay: bool = True) 
             subprocess.run(["docker", "rm", "-f", container_name], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
         subprocess.run(["docker", "rm", "-f", game_container], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
         subprocess.run(["docker", "rm", "-f", replay_container], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+
+
+def run_reporter(
+    reporter: RunnableLaunchSpec,
+    *,
+    workspace: Path,
+    bundle_bytes: bytes,
+    timeout_seconds: float,
+    container_prefix: str = LOCAL_EPISODE_CONTAINER_PREFIX,
+) -> bytes:
+    """Run one reporter container against ``bundle_bytes`` and return its report zip.
+
+    Writes the bundle into ``workspace``, mounts that directory into the
+    container, points ``COGAME_EPISODE_BUNDLE_URI`` / ``COGAME_REPORT_URI`` at
+    in-workspace files, runs the reporter to completion, and returns the bytes
+    it wrote. A reporter is a short-lived process-style container that only does
+    file I/O, so it needs neither the local network nor a published port.
+    """
+    workspace.mkdir(parents=True, exist_ok=True)
+    bundle_path = workspace / "bundle.zip"
+    bundle_path.write_bytes(bundle_bytes)
+    report_path = workspace / "report.zip"
+    report_path.unlink(missing_ok=True)
+
+    container_name = f"{container_prefix}-reporter-{secrets.token_hex(8)}"
+    completed = subprocess.run(
+        [
+            "docker",
+            "run",
+            "--rm",
+            "--name",
+            container_name,
+            *_env_args(reporter.env),
+            "-e",
+            f"{EPISODE_BUNDLE_ENV_VAR}=file://{CONTAINER_WORKDIR}/bundle.zip",
+            "-e",
+            f"{REPORT_ENV_VAR}=file://{CONTAINER_WORKDIR}/report.zip",
+            "-v",
+            f"{workspace.resolve()}:{CONTAINER_WORKDIR}:rw",
+            *_image_command(reporter),
+        ],
+        capture_output=True,
+        text=True,
+        timeout=timeout_seconds,
+    )
+    if completed.returncode != 0:
+        raise RuntimeError(f"Reporter container exited with status {completed.returncode}.\n{completed.stderr[-4000:]}")
+    if not report_path.exists():
+        raise FileNotFoundError(
+            f"Reporter container did not write a report to {REPORT_ENV_VAR}.\n{completed.stderr[-4000:]}"
+        )
+    return report_path.read_bytes()
 
 
 def _player_container_ws_url(host: str, slot: int, token: str) -> str:

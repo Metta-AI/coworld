@@ -215,6 +215,9 @@ def certify(
     _echo_replay_paths(result.artifacts)
     typer.echo("Replay liveness: verified /client/replay and /replay")
     typer.echo(f"Logs: {result.artifacts.logs_dir}")
+    for report in result.reports:
+        render = report.manifest.render or "(no render entry)"
+        typer.echo(f"Reporter {report.reporter_id}: render={render} -> {report.report_path}")
     _echo_feedback_commands(manifest_uri, result.artifacts, server=server)
 
 

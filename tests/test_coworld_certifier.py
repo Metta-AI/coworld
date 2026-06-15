@@ -2,9 +2,11 @@ from __future__ import annotations
 
 import asyncio
 import importlib
+import io
 import json
 import subprocess
 import time
+import zipfile
 from pathlib import Path
 from types import SimpleNamespace
 from typing import Any, cast
@@ -25,9 +27,11 @@ from coworld.certifier import (
     load_coworld_package,
     load_manifest_episode_job_spec,
     load_results,
+    run_certification_reporters,
     validate_source_references,
 )
 from coworld.play import BedrockAwsEnv, ReplaySession, build_play_links, play_coworld, replay_coworld
+from coworld.report import ReportRenderError
 from coworld.runner.runner import (
     CONFIG_ENV_VAR,
     LOCAL_DOCKER_NETWORK,
@@ -363,6 +367,70 @@ def test_certify_coworld_checks_source_references_before_images(
         certify_coworld(coworld_manifest_path)
 
     assert calls == ["source"]
+
+
+def _report_zip(manifest: dict[str, object], entries: dict[str, bytes]) -> bytes:
+    buffer = io.BytesIO()
+    with zipfile.ZipFile(buffer, mode="w") as archive:
+        archive.writestr("manifest.json", json.dumps(manifest))
+        for name, payload in entries.items():
+            archive.writestr(name, payload)
+    return buffer.getvalue()
+
+
+def _seed_certification_artifacts(tmp_path: Path) -> EpisodeArtifacts:
+    artifacts = EpisodeArtifacts.create(tmp_path / "cert")
+    artifacts.results_path.write_text(json.dumps({"scores": [1.0]}), encoding="utf-8")
+    artifacts.replay_path.write_bytes(b"{}")
+    artifacts.game_stdout_path.write_text("", encoding="utf-8")
+    artifacts.game_stderr_path.write_text("", encoding="utf-8")
+    return artifacts
+
+
+def test_run_certification_reporters_validates_each_report(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    package = _write_package(tmp_path)
+    artifacts = _seed_certification_artifacts(tmp_path)
+    bundles: list[bytes] = []
+
+    def fake_run_reporter(reporter, *, workspace, bundle_bytes, timeout_seconds):
+        bundles.append(bundle_bytes)
+        return _report_zip({"reporter_id": "unit-test-reporter", "render": "summary.md"}, {"summary.md": b"# ok\n"})
+
+    monkeypatch.setattr("coworld.certifier.run_reporter", fake_run_reporter)
+
+    reports = run_certification_reporters(package, artifacts, timeout_seconds=5.0)
+
+    assert [report.reporter_id for report in reports] == ["unit-test-reporter"]
+    assert reports[0].manifest.render == "summary.md"
+    # The reporter was handed a real assembled bundle built from the episode artifacts.
+    assert bundles and b"manifest.json" in bundles[0]
+
+
+def test_run_certification_reporters_rejects_unsafe_render(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    package = _write_package(tmp_path)
+    artifacts = _seed_certification_artifacts(tmp_path)
+
+    def fake_run_reporter(reporter, *, workspace, bundle_bytes, timeout_seconds):
+        return _report_zip(
+            {"reporter_id": "unit-test-reporter", "render": "summary.html"},
+            {"summary.html": b"<script>alert(1)</script>"},
+        )
+
+    monkeypatch.setattr("coworld.certifier.run_reporter", fake_run_reporter)
+
+    with pytest.raises(ReportRenderError, match="<script>"):
+        run_certification_reporters(package, artifacts, timeout_seconds=5.0)
+
+
+def test_run_certification_reporters_noops_without_reporters(tmp_path: Path) -> None:
+    coworld_manifest_path = _write_package_files(tmp_path)
+    manifest = json.loads(coworld_manifest_path.read_text(encoding="utf-8"))
+    manifest["reporter"] = []
+    coworld_manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
+    package = load_coworld_package(coworld_manifest_path)
+    artifacts = _seed_certification_artifacts(tmp_path)
+
+    assert run_certification_reporters(package, artifacts, timeout_seconds=5.0) == []
 
 
 def test_build_game_config_validates_after_tokens_are_injected_via_json_schema(tmp_path: Path) -> None:

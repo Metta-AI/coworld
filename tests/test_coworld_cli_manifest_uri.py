@@ -141,7 +141,7 @@ def test_coworld_certify_prints_replay_liveness_and_inspection_command(
     )
 
     def fake_certify_coworld(_manifest_path: Path, **_kwargs: object) -> SimpleNamespace:
-        return SimpleNamespace(artifacts=artifacts)
+        return SimpleNamespace(artifacts=artifacts, reports=[])
 
     monkeypatch.setattr("coworld.cli.certify_coworld", fake_certify_coworld)
 

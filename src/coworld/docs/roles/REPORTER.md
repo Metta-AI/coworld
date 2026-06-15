@@ -75,6 +75,11 @@ waits for completion or failure, and then the reporter closes the connection.
 Hosted reporters must finish before the platform deadline. The current hosted runner defaults to a six-hour maximum
 reporter lifetime and issues input/output presigned URLs with an eight-hour TTL.
 
+Reports may include an [event log](../artifacts/EVENT_LOG.md) for structured tick-aligned events and a
+[trace](../artifacts/TRACE.md) for richer reporter-defined machine timelines. A report's optional `render` entry — the
+file platform UI surfaces can embed — must follow the safe [render profile](../artifacts/RENDER.md) so it is safe to
+embed even though the reporter is author-supplied.
+
 ### Wake Lifecycle
 
 1. The platform decides a report is due for an entity: an episode completed, a round closed, or a manual refresh was
@@ -211,6 +216,16 @@ The currently shipped Paint Arena reporters are short-lived process containers:
 
 This contract is useful for local examples and one-shot tooling, but it is not the hosted reporter integration.
 New platform reporter orchestration should use the persisted `/reporter` service contract above.
+
+### Certification
+
+`coworld certify` exercises the local bundle-runner contract end-to-end. After the certification episode produces
+results and a replay, it assembles an [episode bundle](../artifacts/EPISODE_BUNDLE.md) from those artifacts and runs
+**every** runnable in `manifest.reporter[]` against it on `COGAME_EPISODE_BUNDLE_URI` / `COGAME_REPORT_URI`. Each report
+zip is then validated: its `manifest.json` must parse, every declared `render` / `event_log` / `trace` entry must exist
+with an accepted extension, and an HTML `render` entry must satisfy the safe [render profile](../artifacts/RENDER.md). A
+reporter that crashes, writes no report, or emits an unsafe render entry fails certification. A Coworld with no reporters
+certifies unchanged.
 
 ### Determinism
 
