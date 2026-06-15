@@ -172,3 +172,19 @@ py_binary(
     visibility = ["//visibility:public"],
     deps = [":coworld"],
 )
+
+# coworld's own source tree + pyproject.toml, staged into
+# //packages/coworld/tests' ruff check target as isort first-party
+# detection context. `coworld` isn't in .ruff.toml's known-first-party
+# (it's third-party when imported from app_backend), so the per-target test
+# ruff would otherwise mis-sort the tests' own `coworld.*` imports. ruff
+# needs both the `src/coworld/` layout and the pyproject project root to
+# classify `coworld` first-party. pyproject_library auto-emits an
+# equivalent `<name>_lint_srcs`; this package hand-rolls its py_library, so
+# it hand-rolls this too. See //bazel:ruff.bzl.
+filegroup(
+    name = "coworld_lint_srcs",
+    srcs = glob(["src/**/*.py"]) + ["pyproject.toml"],
+    visibility = ["//visibility:public"],
+    tags = ["manual"],
+)

@@ -30,5 +30,9 @@ pyproject_test(
         "test_coworld_certify_docs": {"data": ["//packages/coworld:docs_files"]},
         "test_types": {"data": ["//packages/coworld:generated_schema_files"]},
     },
+    # `coworld` isn't in .ruff.toml's known-first-party (third-party from
+    # app_backend); ship its src tree so the ruff lint sorts the tests'
+    # `coworld.*` imports first-party.
+    ruff_context = ["//packages/coworld:coworld_lint_srcs"],
     typecheck = False,
 )
