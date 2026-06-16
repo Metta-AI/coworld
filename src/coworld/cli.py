@@ -454,6 +454,17 @@ def upload_coworld(
     ] = None,
     server: Annotated[str, typer.Option("--server", help="Observatory API server URL.")] = DEFAULT_SUBMIT_SERVER,
     timeout_seconds: Annotated[float, typer.Option("--timeout-seconds", min=1.0)] = 60.0,
+    wait_hosted_smoke: Annotated[
+        bool,
+        typer.Option(
+            "--wait-hosted-smoke/--no-wait-hosted-smoke",
+            help="Wait for hosted smoke certification after upload and fail if it fails.",
+        ),
+    ] = True,
+    hosted_smoke_timeout_seconds: Annotated[
+        float,
+        typer.Option("--hosted-smoke-timeout-seconds", min=1.0, help="Maximum time to wait for hosted smoke."),
+    ] = 1800.0,
 ) -> None:
     upload_coworld_cmd(
         manifest_path,
@@ -463,6 +474,8 @@ def upload_coworld(
         version=version,
         patch_update=patch_update,
         image_updates=image_updates,
+        wait_for_hosted_smoke=wait_hosted_smoke,
+        hosted_smoke_timeout_seconds=hosted_smoke_timeout_seconds,
     )
 
 
