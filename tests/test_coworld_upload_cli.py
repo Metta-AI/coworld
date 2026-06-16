@@ -284,6 +284,7 @@ def test_upload_coworld_command_certifies_before_uploading(
             str(manifest_path),
             "--server",
             httpserver.url_for(""),
+            "--no-wait-hosted-smoke",
         ],
     )
 
@@ -304,6 +305,184 @@ def test_upload_coworld_command_rejects_partial_options_without_base_manifest(tm
 
     assert result.exit_code != 0
     assert "--version, --patch, and --image require --from-coworld" in result.output
+
+
+def test_upload_coworld_command_waits_for_hosted_smoke_success(httpserver: HTTPServer) -> None:
+    old_coworld_id = "cow_00000000-0000-0000-0000-000000000013"
+    new_coworld_id = "cow_00000000-0000-0000-0000-000000000014"
+    image_id = "img_00000000-0000-0000-0000-000000000099"
+    manifest = _manifest_with_image(image_id)
+
+    httpserver.expect_request(
+        "/observatory/v2/coworlds",
+        method="GET",
+        query_string="limit=200&offset=0",
+    ).respond_with_json([_coworld_entry(old_coworld_id, manifest, version="0.1.0", canonical=True)])
+    httpserver.expect_request("/observatory/v2/coworlds/upload", method="POST").respond_with_json(
+        _coworld_entry(new_coworld_id, manifest, version="0.2.0", canonical=False)
+    )
+    httpserver.expect_request(
+        "/observatory/v2/episode-requests",
+        method="GET",
+        query_string="limit=1000&offset=0",
+    ).respond_with_json(
+        {
+            "entries": [
+                _episode_request("ereq_00000000-0000-0000-0000-000000000001", new_coworld_id, "completed"),
+                _episode_request("ereq_00000000-0000-0000-0000-000000000002", new_coworld_id, "completed"),
+            ]
+        }
+    )
+    httpserver.expect_request(
+        f"/observatory/v2/coworlds/{new_coworld_id}",
+        method="GET",
+    ).respond_with_json(_coworld_entry(new_coworld_id, manifest, version="0.2.0", canonical=True))
+
+    result = CliRunner().invoke(
+        app,
+        [
+            "upload-coworld",
+            "--from-coworld",
+            old_coworld_id,
+            "--version",
+            "0.2.0",
+            "--server",
+            httpserver.url_for(""),
+            "--hosted-smoke-timeout-seconds",
+            "1",
+        ],
+    )
+
+    assert result.exit_code == 0, result.output
+    assert "Hosted smoke certification: passed" in result.output
+    assert "ereq_00000000-0000-0000-0000-000000000001" in result.output
+    assert "Canonical: yes" in result.output
+
+
+def test_upload_coworld_command_fails_on_hosted_smoke_failure(httpserver: HTTPServer) -> None:
+    old_coworld_id = "cow_00000000-0000-0000-0000-000000000013"
+    new_coworld_id = "cow_00000000-0000-0000-0000-000000000014"
+    image_id = "img_00000000-0000-0000-0000-000000000099"
+    manifest = _manifest_with_image(image_id)
+
+    httpserver.expect_request(
+        "/observatory/v2/coworlds",
+        method="GET",
+        query_string="limit=200&offset=0",
+    ).respond_with_json([_coworld_entry(old_coworld_id, manifest, version="0.1.0", canonical=True)])
+    httpserver.expect_request("/observatory/v2/coworlds/upload", method="POST").respond_with_json(
+        _coworld_entry(new_coworld_id, manifest, version="0.2.0", canonical=False)
+    )
+    httpserver.expect_request(
+        "/observatory/v2/episode-requests",
+        method="GET",
+        query_string="limit=1000&offset=0",
+    ).respond_with_json(
+        {
+            "entries": [
+                _episode_request(
+                    "ereq_00000000-0000-0000-0000-000000000003",
+                    new_coworld_id,
+                    "failed",
+                    error="image pull failed",
+                )
+            ]
+        }
+    )
+
+    result = CliRunner().invoke(
+        app,
+        [
+            "upload-coworld",
+            "--from-coworld",
+            old_coworld_id,
+            "--version",
+            "0.2.0",
+            "--server",
+            httpserver.url_for(""),
+            "--hosted-smoke-timeout-seconds",
+            "1",
+        ],
+    )
+
+    assert result.exit_code != 0
+    assert "Hosted smoke certification failed" in str(result.exception)
+    assert "image pull failed" in str(result.exception)
+
+
+def test_coworld_status_command_waits_for_hosted_smoke_success(httpserver: HTTPServer) -> None:
+    coworld_id = "cow_00000000-0000-0000-0000-000000000014"
+    image_id = "img_00000000-0000-0000-0000-000000000099"
+    manifest = _manifest_with_image(image_id)
+
+    httpserver.expect_request(
+        "/observatory/v2/episode-requests",
+        method="GET",
+        query_string="limit=1000&offset=0",
+    ).respond_with_json(
+        {
+            "entries": [
+                _episode_request("ereq_00000000-0000-0000-0000-000000000001", coworld_id, "completed"),
+                _episode_request("ereq_00000000-0000-0000-0000-000000000002", coworld_id, "completed"),
+            ]
+        }
+    )
+    httpserver.expect_request(
+        f"/observatory/v2/coworlds/{coworld_id}",
+        method="GET",
+    ).respond_with_json(_coworld_entry(coworld_id, manifest, version="0.2.0", canonical=True))
+
+    result = CliRunner().invoke(
+        app,
+        [
+            "status",
+            coworld_id,
+            "--server",
+            httpserver.url_for(""),
+            "--wait-hosted-smoke",
+            "--hosted-smoke-timeout-seconds",
+            "1",
+        ],
+    )
+
+    assert result.exit_code == 0, result.output
+    assert "Coworld: cow_00000000-0000-0000-0000-000000000014" in result.output
+    assert "Hosted smoke certification: passed" in result.output
+    assert "ereq_00000000-0000-0000-0000-000000000001" in result.output
+    assert "Canonical: yes" in result.output
+
+
+def test_coworld_status_command_prints_pending_hosted_smoke(httpserver: HTTPServer) -> None:
+    coworld_id = "cow_00000000-0000-0000-0000-000000000014"
+    image_id = "img_00000000-0000-0000-0000-000000000099"
+    manifest = _manifest_with_image(image_id)
+
+    httpserver.expect_request(
+        "/observatory/v2/episode-requests",
+        method="GET",
+        query_string="limit=1000&offset=0",
+    ).respond_with_json(
+        {"entries": [_episode_request("ereq_00000000-0000-0000-0000-000000000001", coworld_id, "running")]}
+    )
+    httpserver.expect_request(
+        f"/observatory/v2/coworlds/{coworld_id}",
+        method="GET",
+    ).respond_with_json(_coworld_entry(coworld_id, manifest, version="0.2.0", canonical=False))
+
+    result = CliRunner().invoke(
+        app,
+        [
+            "status",
+            coworld_id,
+            "--server",
+            httpserver.url_for(""),
+        ],
+    )
+
+    assert result.exit_code == 0, result.output
+    assert "Hosted smoke certification: pending" in result.output
+    assert "running" in result.output
+    assert "Canonical: no" in result.output
 
 
 def test_upload_coworld_from_existing_manifest_applies_patch_without_images(
@@ -364,6 +543,7 @@ def test_upload_coworld_from_existing_manifest_applies_patch_without_images(
             str(patch_path),
             "--server",
             httpserver.url_for(""),
+            "--no-wait-hosted-smoke",
         ],
     )
 
@@ -464,6 +644,7 @@ def test_upload_coworld_from_existing_manifest_updates_one_role_image(
             "commissioner.round-robin=unit-test-commissioner:latest",
             "--server",
             httpserver.url_for(""),
+            "--no-wait-hosted-smoke",
         ],
     )
 
@@ -1461,6 +1642,42 @@ def _write_manifest(tmp_path: Path, manifest: dict[str, object] | None = None) -
     manifest_path = world_dir / "coworld_manifest.json"
     manifest_path.write_text(json.dumps(_manifest() if manifest is None else manifest))
     return manifest_path
+
+
+def _coworld_entry(
+    coworld_id: str,
+    manifest: dict[str, object],
+    *,
+    version: str,
+    canonical: bool,
+) -> dict[str, object]:
+    return {
+        "id": coworld_id,
+        "name": "unit-test-game",
+        "version": version,
+        "manifest": manifest,
+        "manifest_hash": "sha256:manifest-hash",
+        "size_bytes": 1234,
+        "created_at": "2026-05-08T21:00:00Z",
+        "canonical": canonical,
+    }
+
+
+def _episode_request(
+    episode_request_id: str,
+    coworld_id: str,
+    status: str,
+    *,
+    error: str | None = None,
+) -> dict[str, object]:
+    return {
+        "id": episode_request_id,
+        "coworld_id": coworld_id,
+        "coworld_name": "unit-test-game",
+        "coworld_version": "0.2.0",
+        "status": status,
+        "error": error,
+    }
 
 
 def _manifest() -> dict[str, object]:

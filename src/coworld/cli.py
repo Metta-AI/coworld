@@ -31,8 +31,10 @@ from coworld.upload import (
     AutoChampion,
     ContainerImageResponse,
     CoworldListEntry,
+    CoworldStatusResult,
     CoworldUploadClient,
     CoworldUploadResponse,
+    coworld_status,
     download_coworld_cmd,
     downloaded_coworld_manifest_path,
     upload_coworld_cmd,
@@ -402,6 +404,40 @@ def show_coworld(
     _print_coworld_detail(coworld)
 
 
+@app.command("status")
+def status_coworld(
+    coworld_id: Annotated[str, typer.Argument(help="Coworld ID to inspect.")],
+    server: Annotated[str, typer.Option("--server", help="Observatory API server URL.")] = DEFAULT_SUBMIT_SERVER,
+    wait_hosted_smoke: Annotated[
+        bool,
+        typer.Option(
+            "--wait-hosted-smoke/--no-wait-hosted-smoke",
+            help="Wait for hosted smoke certification to finish before printing status.",
+        ),
+    ] = False,
+    hosted_smoke_timeout_seconds: Annotated[
+        float,
+        typer.Option("--hosted-smoke-timeout-seconds", min=1.0, help="Maximum time to wait for hosted smoke."),
+    ] = 1800.0,
+    json_output: Annotated[bool, typer.Option("--json", help="Print raw JSON.")] = False,
+) -> None:
+    result = coworld_status(
+        coworld_id,
+        server=server,
+        wait_for_hosted_smoke=wait_hosted_smoke,
+        timeout_seconds=hosted_smoke_timeout_seconds,
+    )
+    if json_output:
+        emit_json(
+            {
+                "coworld": result.coworld.model_dump(mode="json"),
+                "hosted_smoke_episodes": [episode.model_dump() for episode in result.hosted_smoke_episodes],
+            }
+        )
+        return
+    _print_coworld_status(result)
+
+
 @app.command("images")
 def images(
     image_id: Annotated[str | None, typer.Argument(help="Image ID to inspect. Lists images when omitted.")] = None,
@@ -458,6 +494,17 @@ def upload_coworld(
     ] = None,
     server: Annotated[str, typer.Option("--server", help="Observatory API server URL.")] = DEFAULT_SUBMIT_SERVER,
     timeout_seconds: Annotated[float, typer.Option("--timeout-seconds", min=1.0)] = 60.0,
+    wait_hosted_smoke: Annotated[
+        bool,
+        typer.Option(
+            "--wait-hosted-smoke/--no-wait-hosted-smoke",
+            help="Wait for hosted smoke certification after upload and fail if it fails.",
+        ),
+    ] = True,
+    hosted_smoke_timeout_seconds: Annotated[
+        float,
+        typer.Option("--hosted-smoke-timeout-seconds", min=1.0, help="Maximum time to wait for hosted smoke."),
+    ] = 1800.0,
 ) -> None:
     upload_coworld_cmd(
         manifest_path,
@@ -467,6 +514,8 @@ def upload_coworld(
         version=version,
         patch_update=patch_update,
         image_updates=image_updates,
+        wait_for_hosted_smoke=wait_hosted_smoke,
+        hosted_smoke_timeout_seconds=hosted_smoke_timeout_seconds,
     )
 
 
@@ -1034,6 +1083,26 @@ def _print_coworld_detail(coworld: CoworldListEntry | CoworldUploadResponse) -> 
     console.print(f"Canonical: {'yes' if coworld.canonical else 'no'}")
     console.print(f"Manifest hash: {coworld.manifest_hash}")
     console.print(f"Size: {coworld.size_bytes} bytes")
+
+
+def _print_coworld_status(result: CoworldStatusResult) -> None:
+    _print_coworld_detail(result.coworld)
+    if not result.hosted_smoke_episodes:
+        console.print("Hosted smoke episodes: none")
+        return
+    if result.hosted_smoke_passed:
+        console.print("Hosted smoke certification: passed")
+    elif result.hosted_smoke_failed:
+        console.print("[red]Hosted smoke certification: failed[/red]")
+    else:
+        console.print("[yellow]Hosted smoke certification: pending[/yellow]")
+    table = Table(box=box.SIMPLE)
+    table.add_column("Episode request")
+    table.add_column("Status")
+    table.add_column("Error")
+    for episode in result.hosted_smoke_episodes:
+        table.add_row(episode.id, episode.status, episode.error or "-")
+    console.print(table)
 
 
 def _print_image_table(images: list[ContainerImageResponse]) -> None:

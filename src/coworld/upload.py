@@ -10,6 +10,7 @@ import shlex
 import subprocess
 import tarfile
 import tempfile
+import time
 from dataclasses import dataclass
 from datetime import datetime
 from enum import Enum
@@ -32,6 +33,8 @@ from coworld.types import MANIFEST_ROLE_SECTIONS, CoworldManifest, coworld_manif
 
 _LOCAL_TAG_SEPARATOR_RE = re.compile(r"[^a-z0-9._-]+")
 _IMAGE_ID_RE = re.compile(r"^img_[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$")
+_HOSTED_SMOKE_TERMINAL_STATUSES = {"completed", "failed", "canceled", "cancelled"}
+_HOSTED_SMOKE_SUCCESS_STATUSES = {"completed"}
 DOWNLOAD_AGENTS_MD = """# AGENTS.md
 
 Guidance for coding agents working from this downloaded Coworld package.
@@ -187,6 +190,42 @@ class CoworldUploadResult:
     manifest_hash: str
     size_bytes: int
     canonical: bool
+    hosted_smoke_episode_ids: tuple[str, ...] = ()
+
+
+@dataclass(frozen=True)
+class HostedSmokeEpisodeStatus:
+    id: str
+    status: str
+    error: str | None = None
+
+    def model_dump(self) -> dict[str, str | None]:
+        return {"id": self.id, "status": self.status, "error": self.error}
+
+
+@dataclass(frozen=True)
+class CoworldStatusResult:
+    coworld: CoworldUploadResponse
+    hosted_smoke_episodes: tuple[HostedSmokeEpisodeStatus, ...]
+
+    @property
+    def hosted_smoke_episode_ids(self) -> tuple[str, ...]:
+        return tuple(episode.id for episode in self.hosted_smoke_episodes)
+
+    @property
+    def hosted_smoke_failed(self) -> bool:
+        return any(
+            episode.status in _HOSTED_SMOKE_TERMINAL_STATUSES - _HOSTED_SMOKE_SUCCESS_STATUSES
+            for episode in self.hosted_smoke_episodes
+        )
+
+    @property
+    def hosted_smoke_pending(self) -> bool:
+        return any(episode.status not in _HOSTED_SMOKE_TERMINAL_STATUSES for episode in self.hosted_smoke_episodes)
+
+    @property
+    def hosted_smoke_passed(self) -> bool:
+        return bool(self.hosted_smoke_episodes) and not self.hosted_smoke_failed and not self.hosted_smoke_pending
 
 
 class CoworldUploadClient:
@@ -223,6 +262,21 @@ class CoworldUploadClient:
         _raise_for_status(response)
         return CoworldUploadResponse.model_validate(response.json())
 
+    def list_episode_requests(self, *, limit: int = 1000, offset: int = 0) -> list[dict[str, Any]]:
+        response = self._http_client.get(
+            "/v2/episode-requests",
+            headers=self._headers(),
+            params={"limit": limit, "offset": offset},
+            timeout=60.0,
+        )
+        _raise_for_status(response)
+        page = response.json()
+        if isinstance(page, dict) and isinstance(page.get("entries"), list):
+            return page["entries"]
+        if isinstance(page, list):
+            return page
+        raise RuntimeError("Unexpected episode request list response from server.")
+
     def list_coworlds(self, *, limit: int = 200, offset: int = 0) -> list[CoworldListEntry]:
         response = self._http_client.get(
             "/v2/coworlds",
@@ -244,6 +298,15 @@ class CoworldUploadClient:
             if len(coworlds) < limit:
                 return None
             offset += limit
+
+    def get_coworld(self, coworld_id: str) -> CoworldUploadResponse:
+        response = self._http_client.get(
+            f"/v2/coworlds/{coworld_id}",
+            headers=self._headers(),
+            timeout=120.0,
+        )
+        _raise_for_status(response)
+        return CoworldUploadResponse.model_validate(response.json())
 
     def find_canonical_coworld(self, name: str) -> CoworldListEntry | None:
         target_name = _coworld_name_key(name)
@@ -456,6 +519,9 @@ def upload_coworld(
     *,
     server: str = DEFAULT_SUBMIT_SERVER,
     timeout_seconds: float = 60.0,
+    wait_for_hosted_smoke: bool = False,
+    hosted_smoke_timeout_seconds: float = 1800.0,
+    hosted_smoke_poll_seconds: float = 5.0,
 ) -> CoworldUploadResult:
     package = load_coworld_package(manifest_path)
     manifest = package.manifest.model_dump(by_alias=True, exclude_none=True)
@@ -465,6 +531,18 @@ def upload_coworld(
     with CoworldUploadClient.from_login(server_url=server) as client:
         upload_manifest = _manifest_with_softmax_image_ids(client, manifest)
         response = client.upload_manifest(upload_manifest)
+        if wait_for_hosted_smoke:
+            status = get_coworld_status(
+                client,
+                coworld_id=response.id,
+                wait_for_hosted_smoke=True,
+                timeout_seconds=hosted_smoke_timeout_seconds,
+                poll_seconds=hosted_smoke_poll_seconds,
+            )
+            response = status.coworld
+            hosted_smoke_episode_ids = status.hosted_smoke_episode_ids
+        else:
+            hosted_smoke_episode_ids = ()
 
     return CoworldUploadResult(
         id=response.id,
@@ -473,6 +551,7 @@ def upload_coworld(
         manifest_hash=response.manifest_hash,
         size_bytes=response.size_bytes,
         canonical=response.canonical,
+        hosted_smoke_episode_ids=hosted_smoke_episode_ids,
     )
 
 
@@ -483,6 +562,9 @@ def upload_coworld_update(
     version: str | None = None,
     patch_update: str | None = None,
     image_updates: list[str] | None = None,
+    wait_for_hosted_smoke: bool = False,
+    hosted_smoke_timeout_seconds: float = 1800.0,
+    hosted_smoke_poll_seconds: float = 5.0,
 ) -> CoworldUploadResult:
     if version is None and patch_update is None and not image_updates:
         raise ValueError("--from-coworld requires --version, --patch, or --image")
@@ -495,6 +577,18 @@ def upload_coworld_update(
         _reject_mutable_registry_image_refs(manifest)
         upload_manifest = _manifest_with_softmax_image_ids(client, manifest)
         response = client.upload_manifest(upload_manifest)
+        if wait_for_hosted_smoke:
+            status = get_coworld_status(
+                client,
+                coworld_id=response.id,
+                wait_for_hosted_smoke=True,
+                timeout_seconds=hosted_smoke_timeout_seconds,
+                poll_seconds=hosted_smoke_poll_seconds,
+            )
+            response = status.coworld
+            hosted_smoke_episode_ids = status.hosted_smoke_episode_ids
+        else:
+            hosted_smoke_episode_ids = ()
 
     return CoworldUploadResult(
         id=response.id,
@@ -503,7 +597,125 @@ def upload_coworld_update(
         manifest_hash=response.manifest_hash,
         size_bytes=response.size_bytes,
         canonical=response.canonical,
+        hosted_smoke_episode_ids=hosted_smoke_episode_ids,
     )
+
+
+def coworld_status(
+    coworld_id: str,
+    *,
+    server: str = DEFAULT_SUBMIT_SERVER,
+    wait_for_hosted_smoke: bool = False,
+    timeout_seconds: float = 1800.0,
+    poll_seconds: float = 5.0,
+) -> CoworldStatusResult:
+    with CoworldUploadClient.from_login(server_url=server) as client:
+        return get_coworld_status(
+            client,
+            coworld_id=coworld_id,
+            wait_for_hosted_smoke=wait_for_hosted_smoke,
+            timeout_seconds=timeout_seconds,
+            poll_seconds=poll_seconds,
+        )
+
+
+def get_coworld_status(
+    client: CoworldUploadClient,
+    *,
+    coworld_id: str,
+    wait_for_hosted_smoke: bool = False,
+    timeout_seconds: float = 1800.0,
+    poll_seconds: float = 5.0,
+) -> CoworldStatusResult:
+    if wait_for_hosted_smoke:
+        hosted_smoke_episodes = wait_for_hosted_smoke_certification(
+            client,
+            coworld_id=coworld_id,
+            timeout_seconds=timeout_seconds,
+            poll_seconds=poll_seconds,
+        )
+    else:
+        hosted_smoke_episodes = get_hosted_smoke_episode_statuses(client, coworld_id=coworld_id)
+    return CoworldStatusResult(
+        coworld=client.get_coworld(coworld_id),
+        hosted_smoke_episodes=hosted_smoke_episodes,
+    )
+
+
+def get_hosted_smoke_episode_statuses(
+    client: CoworldUploadClient,
+    *,
+    coworld_id: str,
+) -> tuple[HostedSmokeEpisodeStatus, ...]:
+    return _hosted_smoke_episode_statuses_from_rows(client.list_episode_requests(limit=1000), coworld_id=coworld_id)
+
+
+def wait_for_hosted_smoke_certification(
+    client: CoworldUploadClient,
+    *,
+    coworld_id: str,
+    timeout_seconds: float,
+    poll_seconds: float,
+) -> tuple[HostedSmokeEpisodeStatus, ...]:
+    deadline = time.monotonic() + timeout_seconds
+    seen: dict[str, HostedSmokeEpisodeStatus] = {}
+
+    while True:
+        for episode in get_hosted_smoke_episode_statuses(client, coworld_id=coworld_id):
+            seen[episode.id] = episode
+
+        if seen:
+            pending = [episode for episode in seen.values() if episode.status not in _HOSTED_SMOKE_TERMINAL_STATUSES]
+            failures = [
+                episode
+                for episode in seen.values()
+                if episode.status in _HOSTED_SMOKE_TERMINAL_STATUSES - _HOSTED_SMOKE_SUCCESS_STATUSES
+            ]
+            if failures:
+                raise RuntimeError(_hosted_smoke_failure_message(coworld_id, failures))
+            if not pending:
+                return tuple(seen[episode_id] for episode_id in sorted(seen))
+
+        if time.monotonic() >= deadline:
+            if not seen:
+                raise RuntimeError(
+                    f"Timed out waiting for hosted smoke certification episodes to be created for Coworld {coworld_id}."
+                )
+            raise RuntimeError(_hosted_smoke_timeout_message(coworld_id, seen.values()))
+        time.sleep(poll_seconds)
+
+
+def _hosted_smoke_episode_statuses_from_rows(
+    rows: list[dict[str, Any]],
+    *,
+    coworld_id: str,
+) -> tuple[HostedSmokeEpisodeStatus, ...]:
+    episodes: dict[str, HostedSmokeEpisodeStatus] = {}
+    for row in rows:
+        if row.get("coworld_id") != coworld_id:
+            continue
+        episode_id = row.get("id")
+        if not isinstance(episode_id, str):
+            continue
+        error = row.get("error") or row.get("error_type")
+        episodes[episode_id] = HostedSmokeEpisodeStatus(
+            id=episode_id,
+            status=str(row.get("status")),
+            error=str(error) if error else None,
+        )
+    return tuple(episodes[episode_id] for episode_id in sorted(episodes))
+
+
+def _hosted_smoke_failure_message(coworld_id: str, failures: list[HostedSmokeEpisodeStatus]) -> str:
+    details = []
+    for episode in failures:
+        details.append(f"{episode.id} status={episode.status} error={episode.error or 'unknown error'}")
+    return f"Hosted smoke certification failed for Coworld {coworld_id}:\n- " + "\n- ".join(details)
+
+
+def _hosted_smoke_timeout_message(coworld_id: str, rows: Any) -> str:
+    details = [f"{episode.id} status={episode.status}" for episode in rows]
+    return f"Timed out waiting for hosted smoke certification for Coworld {coworld_id}:\n- " + "\n- ".join(details)
 
 
 def _resolve_stored_coworld(client: CoworldUploadClient, coworld_ref: str) -> CoworldListEntry:
@@ -670,6 +882,9 @@ def upload_coworld_cmd(
     version: str | None = None,
     patch_update: str | None = None,
     image_updates: list[str] | None = None,
+    wait_for_hosted_smoke: bool = True,
+    hosted_smoke_timeout_seconds: float = 1800.0,
+    hosted_smoke_poll_seconds: float = 5.0,
 ) -> None:
     if base_coworld is not None:
         if manifest_path is not None:
@@ -680,6 +895,9 @@ def upload_coworld_cmd(
             version=version,
             patch_update=patch_update,
             image_updates=image_updates,
+            wait_for_hosted_smoke=wait_for_hosted_smoke,
+            hosted_smoke_timeout_seconds=hosted_smoke_timeout_seconds,
+            hosted_smoke_poll_seconds=hosted_smoke_poll_seconds,
         )
     else:
         if manifest_path is None:
@@ -690,7 +908,14 @@ def upload_coworld_cmd(
             manifest_path,
             server=server,
             timeout_seconds=timeout_seconds,
+            wait_for_hosted_smoke=wait_for_hosted_smoke,
+            hosted_smoke_timeout_seconds=hosted_smoke_timeout_seconds,
+            hosted_smoke_poll_seconds=hosted_smoke_poll_seconds,
         )
+    if wait_for_hosted_smoke:
+        typer.echo("Hosted smoke certification: passed")
+        if result.hosted_smoke_episode_ids:
+            typer.echo("Hosted smoke episodes: " + ", ".join(result.hosted_smoke_episode_ids))
     typer.echo(f"Upload complete: {result.name}:{result.version}")
     typer.echo(f"Coworld: {result.id}")
     typer.echo(f"Manifest hash: {result.manifest_hash}")
