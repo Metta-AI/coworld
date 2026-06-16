@@ -63,7 +63,8 @@ including `COGAME_EPISODE_BUNDLE_URI` for supporting runnables that still consum
 episode bundles; they receive a `report_request` containing per-episode manifests, direct artifact refs, inline
 `error_info`, and a `report_uri` output destination.
 
-The hosted bundle-request API is implemented by the Observatory backend. The CLI surface is still planned.
+The hosted bundle-request API is implemented by the Observatory backend. A dedicated `coworld bundle` CLI command is
+still planned; until it lands, use the API directly or the per-artifact `coworld` commands below.
 
 ### Planned CLI
 
@@ -80,9 +81,9 @@ When `--include` is omitted, the CLI should request every artifact the caller is
 GET /v2/episode-requests/{ereq_id}/bundle?include=results,replay,player_logs
 ```
 
-The response should be a `.zip` body with `Content-Type: application/zip`. Auth should follow the same model as the
-episode-request artifact endpoints. The `include` query parameter should be comma-separated; omitting it should return
-every artifact the requester is permitted to see.
+Returns a `.zip` body with `Content-Type: application/zip`. Auth follows the same model as the episode-request artifact
+endpoints. The `include` query parameter is comma-separated; omitting it returns every artifact the requester is
+permitted to see.
 
 Until the CLI surface lands, use the episode-request routes and per-artifact commands in
 [COOKBOOK.md](../../../../COOKBOOK.md#retrieve-logs-results-and-replays) for interactive investigation:
