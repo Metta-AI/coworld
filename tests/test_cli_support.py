@@ -1,4 +1,42 @@
-from coworld.cli_support import observatory_web_url
+import pytest
+import typer
+
+from coworld.cli_support import observatory_web_url, validate_run_argv
+
+
+def test_validate_run_argv_rejects_single_token_with_spaces() -> None:
+    with pytest.raises(typer.BadParameter) as exc_info:
+        validate_run_argv(["node dist-server/foo.js"])
+
+    message = str(exc_info.value)
+    assert "--run node --run dist-server/foo.js" in message
+    assert "node dist-server/foo.js" in message
+
+
+def test_validate_run_argv_rejects_spaces_in_executable_with_extra_args() -> None:
+    with pytest.raises(typer.BadParameter) as exc_info:
+        validate_run_argv(["node dist-server/foo.js", "config.json"])
+
+    message = str(exc_info.value)
+    assert "--run node --run dist-server/foo.js --run config.json" in message
+    assert "node dist-server/foo.js" in message
+
+
+def test_validate_run_argv_allows_properly_split_argv() -> None:
+    validate_run_argv(["node", "dist-server/foo.js"])
+
+
+def test_validate_run_argv_allows_spaces_in_arguments() -> None:
+    # Only the executable (argv[0]) must be a single token; arguments may contain spaces.
+    validate_run_argv(["python", "-c", "print('a b')"])
+
+
+def test_validate_run_argv_allows_single_token_without_spaces() -> None:
+    validate_run_argv(["serve"])
+
+
+def test_validate_run_argv_allows_none() -> None:
+    validate_run_argv(None)
 
 
 def test_observatory_web_url_strips_api_prefix_for_default_server() -> None:

@@ -23,6 +23,7 @@ import typer
 from pydantic import BaseModel
 
 from coworld.certifier import certify_coworld, load_coworld_package
+from coworld.cli_support import validate_run_argv
 from coworld.config import DEFAULT_SUBMIT_SERVER
 from coworld.image_refs import is_mutable_registry_image_ref
 from coworld.manifest_validation import validate_coworld_manifest_game_configs
@@ -706,6 +707,7 @@ def upload_policy_cmd(
     tags: dict[str, str] | None = None,
     server: str = DEFAULT_SUBMIT_SERVER,
 ) -> None:
+    validate_run_argv(run)
     with CoworldUploadClient.from_login(server_url=server) as client:
         uploaded_image = _upload_container_image(client, image)
         result = client.complete_docker_image_policy(

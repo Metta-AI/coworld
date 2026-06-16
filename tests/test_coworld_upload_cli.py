@@ -2,6 +2,7 @@ import hashlib
 import io
 import json
 import os
+import re
 import subprocess
 import tarfile
 from pathlib import Path
@@ -751,6 +752,26 @@ def test_upload_policy_command_requires_bedrock_for_bedrock_model() -> None:
 
     assert result.exit_code != 0
     assert "--bedrock-model requires --use-bedrock" in unstyle(result.output)
+
+
+def test_upload_policy_command_rejects_run_as_single_quoted_string() -> None:
+    result = CliRunner().invoke(
+        app,
+        [
+            "upload-policy",
+            "unit-test-policy:latest",
+            "--name",
+            "paintbot",
+            "--run",
+            "node dist-server/foo.js",
+        ],
+    )
+
+    assert result.exit_code != 0
+    # Rich renders the error inside a bordered box and wraps long lines; flatten the borders and
+    # whitespace before asserting on the suggested per-token form.
+    flattened = " ".join(re.sub(r"[│╭╮╰╯─]", " ", unstyle(result.output)).split())
+    assert "--run node --run dist-server/foo.js" in flattened
 
 
 def test_coworld_list_command_prints_json(httpserver: HTTPServer, monkeypatch: pytest.MonkeyPatch) -> None:

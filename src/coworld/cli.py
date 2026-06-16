@@ -19,7 +19,7 @@ from coworld.certifier import (
     load_coworld_package,
     load_manifest_episode_job_spec,
 )
-from coworld.cli_support import console, emit_json, observatory_web_url
+from coworld.cli_support import console, emit_json, observatory_web_url, validate_run_argv
 from coworld.config import DEFAULT_OPTIMIZER_PORT, DEFAULT_SUBMIT_SERVER
 from coworld.manifest_uri import materialized_manifest_path, materialized_replay_path
 from coworld.optimizer.runtime import OptimizerSetupError, run_optimizer_session
@@ -333,6 +333,7 @@ def play(
 ) -> None:
     if not use_bedrock and (aws_profile is not None or aws_region is not None):
         raise typer.BadParameter("--aws-profile and --aws-region require --use-bedrock")
+    validate_run_argv(run)
     parsed_secret_env: dict[str, str] = {}
     if secret_env:
         for kv in secret_env:
@@ -664,6 +665,7 @@ def run_episode(
 ) -> None:
     if not use_bedrock and (aws_profile is not None or aws_region is not None):
         raise typer.BadParameter("--aws-profile and --aws-region require --use-bedrock")
+    validate_run_argv(run)
     parsed_secret_env: dict[str, str] = {}
     if use_bedrock:
         parsed_secret_env.update(_resolve_bedrock_aws_env(aws_profile=aws_profile, aws_region=aws_region).container_env)
