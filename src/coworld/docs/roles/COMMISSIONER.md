@@ -410,6 +410,98 @@ Current examples include:
 
 Resolve mutable tags such as `:latest` to the intended pinned digest before relying on them for a league.
 
+## The reusable config-driven commissioner (`ruleset_strategy`)
+
+Most Coworlds do not write their own commissioner. They reuse the **config-driven `ruleset_strategy` commissioner**
+(images `ghcr.io/metta-ai/commissioners-*`, source [`Metta-AI/commissioners`](https://github.com/Metta-AI/commissioners)).
+Its entire behavior — how many episodes a round runs, how entrants fill slots, how policies are promoted/disqualified —
+comes from a **YAML config file baked into the image**.
+
+The config is selected by a runtime environment variable the commissioner reads at startup:
+
+- **`RULESET_STRATEGY_CONFIG_NAME`** — the name of a config **bundled in the image** (`default`, `among_them`,
+  `cogs_vs_clips`, `four_score`, `cue_n_woo`, `proxywar`). Must be a bundled name; the per-config images are built with
+  this baked to a build-arg default.
+- **`RULESET_STRATEGY_CONFIG_PATH`** — an absolute path to **any** YAML file in the image. If set, it overrides
+  `_CONFIG_NAME`. This is the hook for a game-specific config.
+
+> **The config-driven commissioner does not read `league.commissioner_config` for scheduling.** That backend field is a
+> platform wire artifact and may hold legacy data. The schedule comes entirely from the baked YAML — so you cannot change
+> round behavior by editing the league row / backend seed; you change the **image's config**.
+
+### What the config controls (rounds, seating, coverage)
+
+`defaults.stage` sets the per-round episode budget. The number of episodes a Competition round runs is:
+
+```
+episode_count = stage.episodes                                              # when min_episodes_per_entrant is unset
+              = max(stage.episodes,
+                    ceil(num_entrants * min_episodes_per_entrant / num_agents))   # when it is set
+```
+
+where `num_agents` is the game's player count per episode (from the variant's `tokens` length).
+
+`defaults.seating` decides which entrants fill the slots in each episode `job_index` of the round:
+
+- **`baseline_window`** (the `default` config's choice): a sliding window with
+  `offset = job_index * num_agents (mod num_entrants)`. It rotates every episode, so across enough episodes every entrant
+  is seated.
+- **`rolling_window`**: window `[(job_index + seat) % num_entrants]` — rotates by one entrant per episode.
+- **`team_blocks`** / **`leaderboard_neighbors`**: team-structured and skill-adjacent pairings.
+
+#### Gotcha: low-player-count games starve entrants at `episodes: 1`
+
+This bit cognames. A round with `episodes: 1` runs exactly one episode, which seats only `num_agents` entrants. For a
+**multi-player** game that seats everyone (e.g. 4 entrants in one 4-player episode), so `episodes: 1` is fine. But for a
+**low-player-count** game (e.g. 2-player) with **more than `num_agents` entrants**, one episode seats only the first
+window; with `baseline_window` the same top-ranked entrants play every round and the rest are **never scheduled** — 0
+episodes, 0 score, indefinitely.
+
+Fix it by raising coverage so every entrant is seated each round:
+
+- **`min_episodes_per_entrant`** is the scaling knob — it forces `ceil(num_entrants * k / num_agents)` episodes, so each
+  entrant is seated ~`k` times and coverage grows automatically as the field grows. This is what the low-player-count
+  leagues use: `cogs_vs_clips` = 8, `four_score` = 20, `among_them` = 100.
+- Or a flat **`episodes: N`** large enough to rotate through all entrants (simpler, but fixed — it does not scale as
+  champions join).
+
+## Customizing round scheduling for your game
+
+Three options, cheapest first:
+
+1. **Reuse a bundled config** — point your manifest commissioner at the matching prebuilt image (e.g.
+   `commissioners-cogs-vs-clips`). Only works if that config's rules already fit your game.
+2. **Bundled config via manifest `env`** — set `RULESET_STRATEGY_CONFIG_NAME` to a bundled config name in the
+   commissioner runnable's `env`. The platform `CoworldRunnableSpec` (`types.py`) supports a public `env` map on every
+   runnable for exactly this. (Limitation: the **cogweb** manifest mirror's `CommissionerRunnable` does not yet expose
+   `env` — only `image` and `run` — so cogweb games can't use this path until the mirror adds it. Use option 3.)
+3. **Your own config, no shared-repo change** (recommended for custom scheduling) — bake your config into a downstream
+   image and have your own Coworld build it:
+
+   ```dockerfile
+   # my-game/coworld/commissioner.Dockerfile
+   FROM ghcr.io/metta-ai/commissioners-default@sha256:<pinned-amd64-digest>
+   COPY my-commissioner.yaml /config/my-commissioner.yaml
+   ENV RULESET_STRATEGY_CONFIG_PATH=/config/my-commissioner.yaml
+   ```
+
+   ```yaml
+   # my-game/coworld/compose.yaml — the build maps service `commissioner` to {{COMMISSIONER_IMAGE}};
+   # `coworld build` builds it and upload pushes it to the registry like the game image.
+   services:
+     commissioner:
+       image: coworld-my-game-commissioner:latest
+       platform: linux/amd64
+       build:
+         context: .
+         dockerfile: commissioner.Dockerfile
+   ```
+
+   This keeps your scheduling config in your own repo instead of editing the shared `Metta-AI/commissioners` configs.
+   **Pin a specific amd64 _digest_ as the base** — the `:latest` tag is an amd64-only manifest list that `coworld build`
+   cannot `docker pull` on an arm64 host (building `FROM` a digest works). cognames is the in-tree reference for this:
+   `games/cognames/coworld/{cognames-commissioner.yaml,commissioner.Dockerfile,compose.yaml}`.
+
 ## How it fits with other roles
 
 The commissioner sits at the top of the league control loop. It tells the platform which episodes to run; the platform's
@@ -493,6 +585,9 @@ Before relying on an independent commissioner for a daily league:
 
 ## See Also
 
+- [`Metta-AI/commissioners`](https://github.com/Metta-AI/commissioners) — the reusable config-driven (`ruleset_strategy`)
+  commissioner: per-game configs under `configs/`, the `episodes`/`min_episodes_per_entrant`/`seating` schema, and the
+  image build matrix.
 - [`commissioner/protocol.py`](../../commissioner/protocol.py) — Pydantic models for every protocol message.
 - [`artifacts/EPISODE_BUNDLE.md`](../artifacts/EPISODE_BUNDLE.md) — post-episode artifact package that commissioner
   protocol messages do not directly carry.
