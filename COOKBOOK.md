@@ -813,7 +813,16 @@ POST /v2/experience-requests
 GET  /v2/experience-requests?mine=true
 GET  /v2/experience-requests/xreq_...
 GET  /v2/experience-requests/xreq_.../episodes
+POST /v2/experience-requests/xreq_.../cancel
 ```
+
+### Cancelling a request
+
+To stop a request you no longer need, `POST /v2/experience-requests/xreq_.../cancel` (or use the **Cancel request**
+button on the Observatory Experience Request detail page). Cancellation is a soft stop: pending children are never
+dispatched and failed children are never retried, but episodes already running finish on their own. The call is
+idempotent, returns the updated detail with `status: "cancelled"`, and 409s if the request already completed or failed.
+There is no `coworld xp-request cancel` subcommand yet — cancel through the REST route or the UI.
 
 ### Experience request replays
 
