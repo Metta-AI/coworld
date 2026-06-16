@@ -43,6 +43,7 @@ import X``.
 from .bundle import BundleInnerManifest, BundleReader
 from .event_log import EVENT_LOG_SCHEMA, write_events_parquet
 from .io import (
+    REPORT_REQUEST_ENV_VAR,
     ReporterInputs,
     load_reporter_inputs,
     read_json,
@@ -56,6 +57,15 @@ from .output_manifest import (
     OutputManifest,
     build_report_zip,
 )
+from .protocol import (
+    ReporterArtifactRef,
+    ReporterEpisodeArtifacts,
+    ReporterEpisodeInlineJson,
+    ReporterEpisodeInput,
+    ReporterEpisodeManifest,
+    ReporterErrorInfo,
+    ReportRequest,
+)
 from .zip_writer import MTIME_SENTINEL, stable_json, write_deterministic_zip
 
 __all__ = [
@@ -63,10 +73,18 @@ __all__ = [
     "EVENT_LOG_SCHEMA",
     "MTIME_SENTINEL",
     "RENDERABLE_EXTENSIONS",
+    "REPORT_REQUEST_ENV_VAR",
     "TRACE_EXTENSIONS",
     "BundleInnerManifest",
     "BundleReader",
     "OutputManifest",
+    "ReportRequest",
+    "ReporterArtifactRef",
+    "ReporterEpisodeArtifacts",
+    "ReporterEpisodeInlineJson",
+    "ReporterEpisodeInput",
+    "ReporterEpisodeManifest",
+    "ReporterErrorInfo",
     "ReporterInputs",
     "build_report_zip",
     "load_reporter_inputs",

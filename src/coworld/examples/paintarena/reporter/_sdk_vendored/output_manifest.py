@@ -1,6 +1,6 @@
 """Output ``manifest.json`` model and validated report-zip builder.
 
-Every reporter writes a zip to ``COGAME_REPORT_URI``. The zip's
+Every reporter writes a zip to the request's ``report_uri``. The zip's
 top-level ``manifest.json`` self-describes the report for downstream
 consumers (Observatory, the platform's report viewer, future
 aggregators):

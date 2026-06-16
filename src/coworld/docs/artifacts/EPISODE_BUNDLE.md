@@ -1,8 +1,9 @@
 # Episode Bundle
 
 An **episode bundle** is a single `.zip` containing one Coworld episode's artifacts, assembled on demand for a consumer
-that needs them as a unit. Bundles are the intended standard input format for supporting runnables — reporters, graders,
-diagnosers, and optimizers — and for future tools that need to operate on a full episode rather than a single artifact.
+that needs them as a unit. Bundles are the input format for current graders, diagnosers, direct user downloads, and
+future tools that need to operate on a full episode rather than a single artifact. Hosted reporters use direct artifact
+refs instead of zip bundles.
 
 Bundling is deliberately a **consumption-time** concern, not a production-time one. The runner writes individual
 artifacts to separate URIs (see [KUBERNETES_RUNNER_README.md](../../runner/KUBERNETES_RUNNER_README.md) for hosted
@@ -57,10 +58,10 @@ Every bundle contains a `manifest.json` at the zip root describing its contents:
 
 ## Requesting a Bundle
 
-The current package defines the consumer-side bundle contract used by graders, diagnosers, and current one-shot Paint
-Arena reporters, including `COGAME_EPISODE_BUNDLE_URI` and the `BundleReader` helper vendored under the Paint Arena
-reporter example. The target hosted reporter service also consumes episode bundles, but receives their URI(s) in a
-`/reporter` WebSocket `report_request` alongside a `report_uri` output destination rather than through an env var.
+The current package defines the consumer-side bundle contract used by graders, diagnosers, and user-facing downloads,
+including `COGAME_EPISODE_BUNDLE_URI` for supporting runnables that still consume a zip. Reporters no longer receive
+episode bundles; they receive a `report_request` containing per-episode manifests, direct artifact refs, inline
+`error_info`, and a `report_uri` output destination.
 
 The hosted bundle-request API is implemented by the Observatory backend. The CLI surface is still planned.
 
@@ -114,8 +115,8 @@ delivered.
 
 ## Consumption by Supporting Runnables
 
-When an orchestrator invokes a one-shot supporting runnable — current reporter examples, graders, or diagnosers — it
-first assembles a bundle and then hands it to the runnable via:
+When an orchestrator invokes a one-shot grader or diagnoser, it first assembles a bundle and then hands it to the
+runnable via:
 
 ```bash
 COGAME_EPISODE_BUNDLE_URI=file:///path/to/bundle.zip
@@ -125,16 +126,15 @@ COGAME_EPISODE_BUNDLE_URI=https://.../ep.zip
 The runnable reads the zip, inspects its `manifest.json` to discover what's inside, and processes the files. The
 runnable does not need to know whether the bundle came from a local workspace or a hosted artifact store.
 
-The target reporter integration is different from the env-var container shape: a persisted reporter service receives
-bundle URI(s) and an output `report_uri` in a `/reporter` WebSocket request, writes a report zip to that URI, and sends a
-completion or failure message over the socket. The optimizer pulls artifacts through Coworld tooling rather than
-receiving a fixed bundle env var.
+Reporter integration is different: a persisted reporter service receives direct artifact refs and an output `report_uri`
+in a `/reporter` WebSocket request, writes a report zip to that URI, and sends a completion or failure message over the
+socket. Local process-style reporters receive the same request shape via `COGAME_REPORT_REQUEST`. The optimizer pulls
+artifacts through Coworld tooling rather than receiving a fixed bundle env var.
 
 Supporting-role outputs are separate artifacts, not entries in the episode bundle today:
 
-- [Report](REPORT.md), optionally including an [event log](EVENT_LOG.md) or [trace](TRACE.md), for current one-shot
-  reporters and target reporter services. Target reporter-service zips are written to `report_uri`, and their contents
-  must match the reporter's declared output format.
+- [Report](REPORT.md), optionally including an [event log](EVENT_LOG.md) or [trace](TRACE.md), for reporters. Report
+  zips are written to `report_uri`, and their contents must match the reporter's declared output format.
 - [Grade](GRADE.md).
 - [Diagnosis](DIAGNOSIS.md).
 - [Optimizer outputs](OPTIMIZER_OUTPUTS.md).

@@ -1,10 +1,10 @@
 """PaintArena parquet stats reporter (reference / canonical contract).
 
-Reads an episode bundle pointed at by ``COGAME_EPISODE_BUNDLE_URI``,
+Reads episode inputs carried by ``COGAME_REPORT_REQUEST``,
 projects PaintArena replay frames plus final results into the canonical
 ``(ts, player, key, value)`` event-log Parquet schema (see
-``docs/roles/REPORTER.md``), and writes a single ``.zip`` to
-``COGAME_REPORT_URI`` containing the Parquet plus a top-level
+``docs/roles/REPORTER.md``), and writes a single ``.zip`` to the request's
+``report_uri`` containing the Parquet plus a top-level
 ``manifest.json`` flagging the Parquet via the ``event_log`` field.
 
 This is the "rich data" sibling of ``paint_arena_summarizer``: where the
@@ -123,13 +123,25 @@ def build_zip_bytes(replay: PaintArenaReplay, results: PaintArenaResults) -> byt
 
 
 def run(inputs: ReporterInputs) -> None:
-    with BundleReader(inputs.episode_bundle_uri) as bundle:
-        inner = bundle.inner_manifest()
-        if inner.status != "success":
-            raise RuntimeError(f"bundle status={inner.status!r}; reporter cannot operate on a failed episode")
-        replay = PaintArenaReplay.model_validate(bundle.read_json("replay"))
-        results = PaintArenaResults.model_validate(bundle.read_json("results"))
-    payload = build_zip_bytes(replay, results)
+    rows: list[ParquetRow] = []
+    for episode in inputs.episodes:
+        with BundleReader(episode) as bundle:
+            inner = bundle.inner_manifest()
+            if inner.status != "success":
+                raise RuntimeError(f"bundle status={inner.status!r}; reporter cannot operate on a failed episode")
+            replay = PaintArenaReplay.model_validate(bundle.read_json("replay"))
+            results = PaintArenaResults.model_validate(bundle.read_json("results"))
+        rows.extend(rows_from_episode(replay, results))
+    parquet_bytes = write_events_parquet(
+        [{"ts": r.ts, "player": r.player, "key": r.key, "value": r.value} for r in rows]
+    )
+    payload = build_report_zip(
+        OutputManifest(
+            reporter_id=REPORTER_ID,
+            event_log="stats.parquet",
+        ),
+        [("stats.parquet", parquet_bytes)],
+    )
     write_uri(inputs.report_uri, payload, content_type="application/zip")
     print(
         f"[{REPORTER_ID}] wrote zip to {inputs.report_uri}",

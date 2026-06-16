@@ -101,16 +101,15 @@ The full lifecycle page is under construction: [Coworld lifecycle](LIFECYCLE.md)
 +----------------------------------------------------------------------------------+
 | ARTIFACT HANDOFF                                                                 |
 |                                                                                  |
-|  Per-episode artifacts  -->  Bundling layer  -->  COGAME_EPISODE_BUNDLE_URI      |
-|  results, replay, logs, errors                 assembled on demand               |
+|  Per-episode artifacts  -->  Bundle/download API + direct reporter request refs  |
+|  results, replay, logs, errors                 assembled or presigned on demand  |
 +-------------------------------------------|--------------------------------------+
                                             v
 +----------------------------------------------------------------------------------+
 | AFTER AN EPISODE                                                                 |
 |                                                                                  |
-|  bundle (COGAME_EPISODE_BUNDLE_URI) feeds graders/diagnosers and current        |
-|  one-shot reporters; hosted reporter service receives bundle URI(s) over        |
-|  /reporter and writes a zip to report_uri. Optimizer pulls via tooling.          |
+|  bundles feed graders/diagnosers and user downloads; reporters receive direct    |
+|  artifact refs over /reporter or COGAME_REPORT_REQUEST and write report zips.    |
 |  +-------------+   +------------+   +----------------+   +------------------+    |
 |  |  Reporter   |   |   Grader   |   |   Diagnoser    |   |    Optimizer     |    |
 |  |   output    |   |   grade    |   |   diagnosis    |   |    workbench     |    |
@@ -156,13 +155,13 @@ zip to the consumer.
 See the [episode bundle reference](artifacts/EPISODE_BUNDLE.md) for the bundle shape, include tokens, inner
 `manifest.json` schema, access-control rules, hosted API, and planned CLI surface.
 
-Current grader, diagnoser, and one-shot reporter runnables receive an episode bundle via `COGAME_EPISODE_BUNDLE_URI`,
-inspect its `manifest.json`, run their logic, and write or create their own artifact. The hosted reporter service
-receives bundle URI(s) over its WebSocket request instead of through an env var:
+Current grader and diagnoser runnables receive an episode bundle via `COGAME_EPISODE_BUNDLE_URI`, inspect its
+`manifest.json`, run their logic, and write or create their own artifact. Reporters receive a report request containing
+direct refs to the requested episode artifacts:
 
-- a **reporter** hosted service accepts a `report_request` over `/reporter`, reads the requested episode bundles, writes
-  a valid [report zip](artifacts/REPORT.md) to `report_uri`, and sends `report_finished` or `report_failed`. Current
-  in-tree reporter examples still write a report zip to `COGAME_REPORT_URI`, optionally including an
+- a **reporter** hosted service accepts a `report_request` over `/reporter`, reads the requested source artifact refs,
+  writes a valid [report zip](artifacts/REPORT.md) to `report_uri`, and sends `report_finished` or `report_failed`.
+  Current in-tree reporter examples consume the same request shape from `COGAME_REPORT_REQUEST`, optionally including an
   [event log](artifacts/EVENT_LOG.md) or [trace](artifacts/TRACE.md);
 - a **grader** writes a [grade](artifacts/GRADE.md) to `COGAME_GRADE_URI`;
 - a **diagnoser** writes a [diagnosis](artifacts/DIAGNOSIS.md) to `COGAME_DIAGNOSIS_URI` and also receives
@@ -186,11 +185,12 @@ These boundaries are useful when deciding where a new feature, artifact, or debu
 - **Players are clients, not episode orchestrators.** A player connects to the game's `/player` WebSocket for one slot
   and does not modify the game-owned episode artifacts. It may upload its own optional
   [artifact](artifacts/PLAYER_ARTIFACT.md), but it does not own episode truth.
-- **The bundling layer is the handoff to analysis.** Everything before bundling is game and runner output; everything
-  after bundling is consumer input.
-- **Container supporting runnables share one input shape.** `COGAME_EPISODE_BUNDLE_URI` is the canonical input env var
-  for current one-shot reporter, grader, and diagnoser runnables. The hosted reporter service is the exception: it
-  receives episode bundle URI(s) and a `report_uri` in a `/reporter` WebSocket request.
+- **Bundle and reporter handoffs are consumption-time views.** Everything before handoff is game and runner output.
+  User downloads, graders, and diagnosers use bundle zips; reporters use direct artifact refs with the same token
+  filtering and access-control rules.
+- **Container supporting runnables do not all share one input shape.** Graders and diagnosers currently consume
+  `COGAME_EPISODE_BUNDLE_URI`. Reporters consume `COGAME_REPORT_REQUEST`, either over `/reporter` for hosted services or
+  as an env var for local process-style examples.
 - **The optimizer is a workbench, not a one-shot artifact writer.** Final candidate policies leave an optimizer through
   the standard `coworld upload-policy` path.
 

@@ -1,11 +1,11 @@
 """Test suite for paint_arena_summarizer (canonical contract).
 
 Covers pure-function zip construction (build_zip_bytes, build_stats) plus
-end-to-end run() invocations against file:// bundle URIs.
+end-to-end run() invocations against file:// artifact refs in COGAME_REPORT_REQUEST.
 
 Output contract (canonical Coworld reporter contract,
 ``docs/roles/REPORTER.md``):
-- A single zip is written to COGAME_REPORT_URI.
+- A single zip is written to request report_uri.
 - Top-level entries: manifest.json, summary.md, stats.json.
 - The in-zip manifest.json flags ``render: "summary.md"`` and carries
   ``reporter_id: "paint-arena-summarizer"``. No event_log (markdown-only
@@ -27,6 +27,13 @@ import pytest
 from pydantic import ValidationError
 
 from coworld.examples.paintarena.reporter import paint_arena_summarizer as par
+from coworld.examples.paintarena.reporter._sdk_vendored.protocol import (
+    ReporterArtifactRef,
+    ReporterEpisodeArtifacts,
+    ReporterEpisodeInput,
+    ReporterEpisodeManifest,
+    ReportRequest,
+)
 
 # ---------- synthetic PaintArena episode fixtures ----------
 
@@ -110,46 +117,44 @@ def make_results_missing_field() -> dict[str, Any]:
     }
 
 
-def make_bundle_bytes(
+def make_report_request_env(
+    tmp_path: Path,
     *,
     results: dict[str, Any] | None = None,
-    metadata: dict[str, Any] | None = None,
     replay: dict[str, Any] | None = None,
-    include_metadata: bool = True,
     ereq_id: str = "ereq_test_001",
     status: str = "success",
-) -> bytes:
-    """Pack the loose JSON fixtures into a canonical episode bundle zip.
-
-    Layout follows ``artifacts/EPISODE_BUNDLE.md``: a root ``manifest.json``
-    mapping tokens to entries inside the zip, plus the JSON files those
-    tokens point at.
-    """
+) -> tuple[dict[str, str], Path]:
+    """Write loose JSON fixtures and return the report-request env var."""
     results_payload = results if results is not None else make_results_happy()
-    metadata_payload = metadata if metadata is not None else make_metadata()
     replay_payload = replay if replay is not None else make_replay()
+    results_path = tmp_path / "results.json"
+    replay_path = tmp_path / "replay"
+    out_path = tmp_path / "report.zip"
+    results_path.write_text(json.dumps(results_payload), encoding="utf-8")
+    replay_path.write_text(json.dumps(replay_payload), encoding="utf-8")
 
-    include = ["results", "replay"]
-    files: dict[str, str] = {"results": "results.json", "replay": "replay"}
-    if include_metadata:
-        include.append("metadata")
-        files["metadata"] = "metadata.json"
-
-    manifest = {
-        "ereq_id": ereq_id,
-        "status": status,
-        "include": include,
-        "files": files,
-    }
-
-    buf = io.BytesIO()
-    with zipfile.ZipFile(buf, mode="w", compression=zipfile.ZIP_DEFLATED) as zf:
-        zf.writestr("manifest.json", json.dumps(manifest))
-        zf.writestr("results.json", json.dumps(results_payload))
-        zf.writestr("replay", json.dumps(replay_payload))
-        if include_metadata:
-            zf.writestr("metadata.json", json.dumps(metadata_payload))
-    return buf.getvalue()
+    request = ReportRequest(
+        request_id="rrun_test",
+        episodes=[
+            ReporterEpisodeInput(
+                episode_request_id=ereq_id,
+                status=status,
+                manifest=ReporterEpisodeManifest(
+                    ereq_id=ereq_id,
+                    status=status,
+                    include=["results", "replay"],
+                    files={"results": "results.json", "replay": "replay"},
+                ),
+                artifacts=ReporterEpisodeArtifacts(
+                    results=ReporterArtifactRef(uri=results_path.as_uri(), media_type="application/json"),
+                    replay=ReporterArtifactRef(uri=replay_path.as_uri(), media_type="application/json"),
+                ),
+            )
+        ],
+        report_uri=out_path.as_uri(),
+    )
+    return {"COGAME_REPORT_REQUEST": request.model_dump_json(exclude_none=True)}, out_path
 
 
 # ---------- helpers ----------
@@ -322,7 +327,7 @@ def test_replay_config_missing_dimensions_raises() -> None:
         par.PaintArenaReplay.model_validate(bad_replay)
 
 
-# ---------- end-to-end via file:// bundle URIs ----------
+# ---------- end-to-end via file:// artifact refs ----------
 
 
 def _setup_bundle(
@@ -335,24 +340,14 @@ def _setup_bundle(
     ereq_id: str = "ereq_test_001",
     status: str = "success",
 ) -> tuple[dict[str, str], Path]:
-    """Write a synthetic bundle zip to ``tmp_path`` and return the env
-    var pair plus the output path the reporter should write to."""
-    bundle_bytes = make_bundle_bytes(
+    """Write synthetic artifact files and return the report-request env var."""
+    return make_report_request_env(
+        tmp_path,
         results=results,
-        metadata=metadata,
         replay=replay,
-        include_metadata=include_metadata,
         ereq_id=ereq_id,
         status=status,
     )
-    bundle_path = tmp_path / "bundle.zip"
-    bundle_path.write_bytes(bundle_bytes)
-    out_path = tmp_path / "report.zip"
-    env = {
-        "COGAME_EPISODE_BUNDLE_URI": bundle_path.as_uri(),
-        "COGAME_REPORT_URI": out_path.as_uri(),
-    }
-    return env, out_path
 
 
 def _invoke_run(monkeypatch: pytest.MonkeyPatch, env: dict[str, str]) -> None:
@@ -424,7 +419,6 @@ def test_run_malformed_results_raises(tmp_path: Path, monkeypatch: pytest.Monkey
 def test_load_reporter_inputs_missing_env_var_raises(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    for k in ("COGAME_EPISODE_BUNDLE_URI", "COGAME_REPORT_URI"):
-        monkeypatch.delenv(k, raising=False)
+    monkeypatch.delenv("COGAME_REPORT_REQUEST", raising=False)
     with pytest.raises(KeyError):
         par.load_reporter_inputs()

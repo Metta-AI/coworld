@@ -48,7 +48,7 @@ Optional: `run`, `env`, `source_url`, `repository_url`
 - Player logs are included in the episode bundle
 
 ### Reporter
-- Reads `COGAME_EPISODE_BUNDLE_URI` (zip), writes zip to `COGAME_REPORT_URI`
+- Reads `COGAME_REPORT_REQUEST` (direct episode artifact refs), writes zip to request `report_uri`
 - Report zip: manifest.json + renderable files + optional event_log.parquet + optional trace
 
 ### Grader

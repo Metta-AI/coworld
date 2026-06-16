@@ -1,6 +1,6 @@
 """Report-artifact consumer contract: parse and certify a reporter's output zip.
 
-A reporter writes one zip to ``COGAME_REPORT_URI`` (see
+A reporter writes one zip to the request's ``report_uri`` (see
 ``docs/roles/REPORTER.md``). The zip's root holds a ``manifest.json`` that
 self-describes the report (``docs/artifacts/REPORT.md``); a ``render`` entry,
 if present, is the one file platform UI surfaces can embed.

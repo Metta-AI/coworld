@@ -390,10 +390,10 @@ def _seed_certification_artifacts(tmp_path: Path) -> EpisodeArtifacts:
 def test_run_certification_reporters_validates_each_report(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     package = _write_package(tmp_path)
     artifacts = _seed_certification_artifacts(tmp_path)
-    bundles: list[bytes] = []
+    episode_counts: list[int] = []
 
-    def fake_run_reporter(reporter, *, workspace, bundle_bytes, timeout_seconds):
-        bundles.append(bundle_bytes)
+    def fake_run_reporter(reporter, *, workspace, request_id, episodes, timeout_seconds):
+        episode_counts.append(len(episodes))
         return _report_zip({"reporter_id": "unit-test-reporter", "render": "summary.md"}, {"summary.md": b"# ok\n"})
 
     monkeypatch.setattr("coworld.certifier.run_reporter", fake_run_reporter)
@@ -402,15 +402,14 @@ def test_run_certification_reporters_validates_each_report(tmp_path: Path, monke
 
     assert [report.reporter_id for report in reports] == ["unit-test-reporter"]
     assert reports[0].manifest.render == "summary.md"
-    # The reporter was handed a real assembled bundle built from the episode artifacts.
-    assert bundles and b"manifest.json" in bundles[0]
+    assert episode_counts == [1]
 
 
 def test_run_certification_reporters_rejects_unsafe_render(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     package = _write_package(tmp_path)
     artifacts = _seed_certification_artifacts(tmp_path)
 
-    def fake_run_reporter(reporter, *, workspace, bundle_bytes, timeout_seconds):
+    def fake_run_reporter(reporter, *, workspace, request_id, episodes, timeout_seconds):
         return _report_zip(
             {"reporter_id": "unit-test-reporter", "render": "summary.html"},
             {"summary.html": b"<script>alert(1)</script>"},

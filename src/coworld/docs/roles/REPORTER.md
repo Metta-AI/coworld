@@ -53,12 +53,12 @@ report-output metadata. See [`COWORLD_MANIFEST.md`](../COWORLD_MANIFEST.md) for 
 ## Contract
 
 A reporter's hosted runtime contract is a service container that the platform starts for a reporter run. The platform
-connects when there is something to report on, sends the episode-bundle inputs and output URI, the reporter writes a
+connects when there is something to report on, sends direct episode artifact refs and an output URI, the reporter writes a
 report zip to that URI, and the reporter sends lifecycle messages over the WebSocket. The MVP runner uses one
 Kubernetes reporter service per reporter run and cleans it up after the request finishes.
 
 The Crewrift lab reporter implements this hosted shape as an external reference, while the in-tree Paint Arena reporters
-still use the transitional env-var bundle-runner contract documented below.
+use the same request shape through the local process contract documented below.
 
 ### Hosted Service Contract
 
@@ -87,16 +87,16 @@ embed even though the reporter is author-supplied.
 2. If the reporter container is not running, the platform starts it and waits for `/healthz`.
 3. The platform opens `WEBSOCKET /reporter`.
 4. The reporter accepts the socket and sends `reporter_ready`.
-5. The platform sends `report_request` with `request_id`, `report_uri`, and either `episode_bundle_uris` or `episodes`.
-6. The reporter sends `report_started`, reads the input bundles, builds the report, and writes a `.zip` to `report_uri`.
+5. The platform sends `report_request` with `request_id`, `report_uri`, and `episodes`.
+6. The reporter sends `report_started`, reads the requested artifact refs, builds the report, and writes a `.zip` to `report_uri`.
 7. The reporter sends `report_finished` with the `report_uri` and summary counts, or `report_failed` with a stage and
    error.
 8. The reporter closes the WebSocket.
 
 ### Hosted Protocol Messages
 
-All hosted protocol messages are JSON objects with a `type` discriminator. The models are not currently shipped in this
-package; this is the service protocol implemented by the hosted MVP reporter runner.
+All hosted protocol messages are JSON objects with a `type` discriminator. The episode-input models are mirrored in the
+Paint Arena vendored reporter SDK and in the backend reporter runner.
 
 Platform to reporter:
 
@@ -116,42 +116,52 @@ Minimal request:
 {
   "type": "report_request",
   "request_id": "req_001",
-  "episode_bundle_uris": [
-    "https://.../episode-1.zip",
-    "https://.../episode-2.zip"
-  ],
-  "report_uri": "https://.../round-report.zip"
-}
-```
-
-Preferred request when stable identity must survive seat rotation:
-
-```json
-{
-  "type": "report_request",
-  "request_id": "req_001",
+  "report_uri": "https://.../round-report.zip",
   "episodes": [
     {
-      "episode_id": "ereq_abc",
-      "bundle_uri": "https://.../episode-1.zip",
-      "players": [
-        { "slot": 0, "player_id": "policy-alpha", "display_name": "Alpha" },
-        { "slot": 1, "player_id": "policy-bravo", "display_name": "Bravo" }
-      ]
+      "episode_request_id": "ereq_abc",
+      "status": "success",
+      "manifest": {
+        "ereq_id": "ereq_abc",
+        "status": "success",
+        "include": ["results", "replay", "game_logs"],
+        "files": {
+          "results": "results.json",
+          "replay": "replay",
+          "game_logs": {
+            "combined": "logs/game.log"
+          }
+        }
+      },
+      "artifacts": {
+        "results": {
+          "uri": "https://.../jobs/job_123/results.json",
+          "media_type": "application/json",
+          "encoding": "identity"
+        },
+        "replay": {
+          "uri": "https://.../jobs/job_123/replay.z",
+          "media_type": "application/octet-stream",
+          "encoding": "zlib"
+        },
+        "game_logs": {
+          "combined": {
+            "uri": "https://.../jobs/job_123/logs.txt",
+            "media_type": "text/plain",
+            "encoding": "identity"
+          }
+        }
+      },
+      "inline_json": {}
     }
-  ],
-  "report_uri": "https://.../round-report.zip",
-  "round": {
-    "league": "Crewrift League",
-    "division": "Finals",
-    "round_id": "round_123"
-  }
+  ]
 }
 ```
 
-Exactly one of `episode_bundle_uris` or `episodes` is required. `episode_bundle_uris` is the compact form for a set of
-input bundles. `episodes` is the richer form: each entry has `bundle_uri`, optional `episode_id`, and optional
-slot-to-policy identity metadata.
+Each `episodes[]` entry carries the bundle-style manifest plus direct artifact refs. The platform presigns source
+artifacts in the eval artifact store; it does not assemble or upload an input zip. `replay` refs are zlib-compressed in
+hosted storage and declare `"encoding": "zlib"` so SDK readers can decompress on demand. Small synthesized JSON payloads
+such as `error_info` travel under `inline_json` instead of being uploaded as separate artifacts.
 
 Reporter messages:
 
@@ -207,25 +217,23 @@ MVP platform orchestration only requires the reporter to upload a valid zip. Rep
 `manifest.json` or any other metadata file to help downstream consumers find primary renderable, structured, or trace
 entries, but the platform does not require that file yet.
 
-### Transitional Bundle-Runner Contract
+### Local Process Contract
 
 The currently shipped Paint Arena reporters are short-lived process containers:
 
-- Input: `COGAME_EPISODE_BUNDLE_URI`, pointing at an [episode bundle](../artifacts/EPISODE_BUNDLE.md).
-- Output: `COGAME_REPORT_URI`, where the reporter writes a [report zip](../artifacts/REPORT.md).
+- Input: `COGAME_REPORT_REQUEST`, containing the same `report_request` JSON shape as the hosted protocol.
+- Output: the `report_uri` inside that request, where the reporter writes a [report zip](../artifacts/REPORT.md).
 
-This contract is useful for local examples and one-shot tooling, but it is not the hosted reporter integration.
-New platform reporter orchestration should use the persisted `/reporter` service contract above.
+Local certification uses `file://` artifact refs in that request. Hosted orchestration uses presigned `https://` refs.
 
 ### Certification
 
-`coworld certify` exercises the local bundle-runner contract end-to-end. After the certification episode produces
-results and a replay, it assembles an [episode bundle](../artifacts/EPISODE_BUNDLE.md) from those artifacts and runs
-**every** runnable in `manifest.reporter[]` against it on `COGAME_EPISODE_BUNDLE_URI` / `COGAME_REPORT_URI`. Each report
-zip is then validated: its `manifest.json` must parse, every declared `render` / `event_log` / `trace` entry must exist
-with an accepted extension, and an HTML `render` entry must satisfy the safe [render profile](../artifacts/RENDER.md). A
-reporter that crashes, writes no report, or emits an unsafe render entry fails certification. A Coworld with no reporters
-certifies unchanged.
+`coworld certify` exercises the local process contract end-to-end. After the certification episode produces results and
+a replay, it builds a one-episode `COGAME_REPORT_REQUEST` with `file://` refs and runs **every** runnable in
+`manifest.reporter[]` against it. Each report zip is then validated: its `manifest.json` must parse, every declared
+`render` / `event_log` / `trace` entry must exist with an accepted extension, and an HTML `render` entry must satisfy the
+safe [render profile](../artifacts/RENDER.md). A reporter that crashes, writes no report, or emits an unsafe render entry
+fails certification. A Coworld with no reporters certifies unchanged.
 
 ### Determinism
 
@@ -238,10 +246,9 @@ Reporters live in the post-episode analysis layer. They turn episode evidence in
 event, trace, or visualization signals that humans and downstream roles consume. The optimizer is the center of gravity:
 reporters are one of its sensory organs, alongside graders and diagnosers.
 
-The paintarena example reporters (`paint_arena_summarizer.py`, `stats_reporter.py`) run on the canonical
-`COGAME_EPISODE_BUNDLE_URI` / `COGAME_REPORT_URI` transitional contract and write an in-zip `manifest.json` flagging
-their `render` / `event_log` outputs. That manifest is reporter-owned metadata, not a platform requirement. Richer
-production reporters live in
+The paintarena example reporters (`paint_arena_summarizer.py`, `stats_reporter.py`) run on the
+`COGAME_REPORT_REQUEST` process contract and write an in-zip `manifest.json` flagging their `render` / `event_log`
+outputs. That manifest is reporter-owned metadata, not a platform requirement. Richer production reporters live in
 [`Metta-AI/reporters`](https://github.com/Metta-AI/reporters).
 
 ## Future directions
@@ -260,10 +267,9 @@ considered but deferred until a real use case lands.
 
 ## See Also
 
-- [`artifacts/EPISODE_BUNDLE.md`](../artifacts/EPISODE_BUNDLE.md) — episode bundle consumed by one-shot reporters and
-  passed by URI to hosted reporter services.
-- [`artifacts/REPORT.md`](../artifacts/REPORT.md) — report zip produced by one-shot reporters and hosted reporter
-  services.
+- [`artifacts/EPISODE_BUNDLE.md`](../artifacts/EPISODE_BUNDLE.md) — episode bundle consumed by graders, diagnosers, and
+  user-facing downloads.
+- [`artifacts/REPORT.md`](../artifacts/REPORT.md) — report zip produced by process reporters and hosted reporter services.
 - [`artifacts/EVENT_LOG.md`](../artifacts/EVENT_LOG.md) — optional structured event log inside a report zip.
 - [`artifacts/TRACE.md`](../artifacts/TRACE.md) — optional machine-readable trace inside a report zip.
 - [`COWORLD_MANIFEST.md`](../COWORLD_MANIFEST.md) — manifest guide and generated-schema pointer.

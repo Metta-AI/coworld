@@ -1,10 +1,10 @@
 """PaintArena summarizer reporter (reference / canonical contract).
 
-Pure function of the episode bundle pointed at by ``COGAME_EPISODE_BUNDLE_URI``.
-Produces a single ``.zip`` written to ``COGAME_REPORT_URI`` containing a
-Markdown summary and a JSON stats blob, plus a top-level ``manifest.json``
-flagging ``summary.md`` as the renderable per the canonical Coworld
-reporter contract (``docs/roles/REPORTER.md`` in this package).
+Pure function of the episode inputs carried by ``COGAME_REPORT_REQUEST``.
+Produces a single ``.zip`` written to the request's ``report_uri`` containing
+a Markdown summary and a JSON stats blob, plus a top-level ``manifest.json``
+flagging ``summary.md`` as the renderable per the canonical Coworld reporter
+contract (``docs/roles/REPORTER.md`` in this package).
 
 This reporter is the minimal *reference* implementation of the contract
 for a PaintArena bundle. Grid dimensions come from the game-owned
@@ -270,22 +270,40 @@ def build_zip_bytes(
 
 
 def run(inputs: ReporterInputs) -> None:
-    with BundleReader(inputs.episode_bundle_uri) as bundle:
-        inner = bundle.inner_manifest()
-        if inner.status != "success":
-            raise RuntimeError(f"bundle status={inner.status!r}; reporter cannot operate on a failed episode")
-        results = PaintArenaResults.model_validate(bundle.read_json("results"))
-        replay = PaintArenaReplay.model_validate(bundle.read_json("replay"))
-        metadata_payload = bundle.read_json_optional("metadata")
-        # Only None (token absent) coalesces to {}. A present-but-not-dict payload (`[]`, `""`,
-        # `0`, etc.) is upstream bundle corruption — fail fast rather than getting an
-        # AttributeError on the next line's .setdefault() or a confusing EpisodeMetadata error.
-        if metadata_payload is not None and not isinstance(metadata_payload, dict):
-            raise ValueError(f"metadata token must be a JSON object, got {type(metadata_payload).__name__}")
-        metadata_raw: dict[str, Any] = {} if metadata_payload is None else metadata_payload
-    metadata_raw.setdefault("episode_id", inner.ereq_id)
-    metadata = EpisodeMetadata.model_validate(metadata_raw)
-    payload = build_zip_bytes(results=results, metadata=metadata, replay=replay)
+    stats: list[PaintArenaStats] = []
+    for episode in inputs.episodes:
+        with BundleReader(episode) as bundle:
+            inner = bundle.inner_manifest()
+            if inner.status != "success":
+                raise RuntimeError(f"bundle status={inner.status!r}; reporter cannot operate on a failed episode")
+            results = PaintArenaResults.model_validate(bundle.read_json("results"))
+            replay = PaintArenaReplay.model_validate(bundle.read_json("replay"))
+            metadata_payload = bundle.read_json_optional("metadata")
+            # Only None (token absent) coalesces to {}. A present-but-not-dict payload (`[]`, `""`,
+            # `0`, etc.) is upstream input corruption — fail fast rather than getting an
+            # AttributeError on the next line's .setdefault() or a confusing EpisodeMetadata error.
+            if metadata_payload is not None and not isinstance(metadata_payload, dict):
+                raise ValueError(f"metadata token must be a JSON object, got {type(metadata_payload).__name__}")
+            metadata_raw: dict[str, Any] = {} if metadata_payload is None else metadata_payload
+        metadata_raw.setdefault("episode_id", inner.ereq_id)
+        metadata = EpisodeMetadata.model_validate(metadata_raw)
+        stats.append(build_stats(results, metadata, replay.config))
+    if len(stats) == 1:
+        summary_md = render_summary_markdown(stats[0]).encode("utf-8")
+        stats_json = (json.dumps(stats[0].model_dump(), indent=2) + "\n").encode("utf-8")
+    else:
+        summary_md = "\n".join(render_summary_markdown(item).rstrip() for item in stats).encode("utf-8") + b"\n"
+        stats_json = (json.dumps({"episodes": [item.model_dump() for item in stats]}, indent=2) + "\n").encode("utf-8")
+    payload = build_report_zip(
+        OutputManifest(
+            reporter_id=REPORTER_ID,
+            render="summary.md",
+        ),
+        [
+            ("summary.md", summary_md),
+            ("stats.json", stats_json),
+        ],
+    )
     write_uri(inputs.report_uri, payload, content_type="application/zip")
     print(
         f"[{REPORTER_ID}] wrote zip to {inputs.report_uri}",

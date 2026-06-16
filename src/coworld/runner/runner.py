@@ -21,6 +21,7 @@ import websockets
 from pydantic import BaseModel, ConfigDict, Field, TypeAdapter
 from websockets.exceptions import ConnectionClosed, InvalidHandshake, InvalidStatus
 
+from coworld.reporter_protocol import ReporterEpisodeInput, ReportRequest
 from coworld.schema_validation import validate_json_schema
 from coworld.types import CoworldEpisodeJobSpec, CoworldRunnableSpec
 
@@ -31,8 +32,7 @@ REPLAY_SAVE_ENV_VAR = "COGAME_SAVE_REPLAY_URI"
 REPLAY_LOAD_ENV_VAR = "COGAME_LOAD_REPLAY_URI"
 GAME_HOST_ENV_VAR = "COGAME_HOST"
 GAME_PORT_ENV_VAR = "COGAME_PORT"
-EPISODE_BUNDLE_ENV_VAR = "COGAME_EPISODE_BUNDLE_URI"
-REPORT_ENV_VAR = "COGAME_REPORT_URI"
+REPORT_REQUEST_ENV_VAR = "COGAME_REPORT_REQUEST"
 GAME_HOST = "0.0.0.0"
 GAME_PORT = 8080
 LOCAL_DOCKER_NETWORK = "coworld-local"
@@ -414,23 +414,27 @@ def run_reporter(
     reporter: RunnableLaunchSpec,
     *,
     workspace: Path,
-    bundle_bytes: bytes,
+    request_id: str,
+    episodes: list[ReporterEpisodeInput],
     timeout_seconds: float,
     container_prefix: str = LOCAL_EPISODE_CONTAINER_PREFIX,
 ) -> bytes:
-    """Run one reporter container against ``bundle_bytes`` and return its report zip.
+    """Run one reporter container against direct episode inputs and return its report zip.
 
-    Writes the bundle into ``workspace``, mounts that directory into the
-    container, points ``COGAME_EPISODE_BUNDLE_URI`` / ``COGAME_REPORT_URI`` at
-    in-workspace files, runs the reporter to completion, and returns the bytes
-    it wrote. A reporter is a short-lived process-style container that only does
-    file I/O, so it needs neither the local network nor a published port.
+    Mounts ``workspace`` into the container, passes ``COGAME_REPORT_REQUEST``
+    with container-visible ``file://`` artifact refs, runs the reporter to
+    completion, and returns the bytes it wrote. A reporter is a short-lived
+    process-style container that only does file I/O, so it needs neither the
+    local network nor a published port.
     """
     workspace.mkdir(parents=True, exist_ok=True)
-    bundle_path = workspace / "bundle.zip"
-    bundle_path.write_bytes(bundle_bytes)
     report_path = workspace / "report.zip"
     report_path.unlink(missing_ok=True)
+    report_request = ReportRequest(
+        request_id=request_id,
+        episodes=episodes,
+        report_uri=f"file://{CONTAINER_WORKDIR}/report.zip",
+    )
 
     container_name = f"{container_prefix}-reporter-{secrets.token_hex(8)}"
     completed = subprocess.run(
@@ -442,9 +446,7 @@ def run_reporter(
             container_name,
             *_env_args(reporter.env),
             "-e",
-            f"{EPISODE_BUNDLE_ENV_VAR}=file://{CONTAINER_WORKDIR}/bundle.zip",
-            "-e",
-            f"{REPORT_ENV_VAR}=file://{CONTAINER_WORKDIR}/report.zip",
+            f"{REPORT_REQUEST_ENV_VAR}={report_request.model_dump_json(exclude_none=True)}",
             "-v",
             f"{workspace.resolve()}:{CONTAINER_WORKDIR}:rw",
             *_image_command(reporter),
@@ -456,9 +458,7 @@ def run_reporter(
     if completed.returncode != 0:
         raise RuntimeError(f"Reporter container exited with status {completed.returncode}.\n{completed.stderr[-4000:]}")
     if not report_path.exists():
-        raise FileNotFoundError(
-            f"Reporter container did not write a report to {REPORT_ENV_VAR}.\n{completed.stderr[-4000:]}"
-        )
+        raise FileNotFoundError(f"Reporter container did not write a report to report_uri.\n{completed.stderr[-4000:]}")
     return report_path.read_bytes()
 
 

@@ -11,14 +11,21 @@ from urllib.parse import quote, unquote, urlparse
 
 import httpx
 
-from coworld.episode_bundle import assemble_episode_bundle
 from coworld.manifest_validation import (
     game_config_with_tokens,
     infer_token_count_for_game_config,
     validate_coworld_manifest_game_configs,
 )
 from coworld.report import ReportManifest, validate_report_zip
+from coworld.reporter_protocol import (
+    BundleToken,
+    ReporterArtifactRef,
+    ReporterEpisodeArtifacts,
+    ReporterEpisodeInput,
+    ReporterEpisodeManifest,
+)
 from coworld.runner.runner import (
+    CONTAINER_WORKDIR,
     EpisodeArtifacts,
     PlayerLaunchSpec,
     RunnableLaunchSpec,
@@ -268,14 +275,16 @@ def run_certification_reporters(
     if not reporters:
         return []
 
-    bundle_bytes = assemble_episode_bundle(artifacts, ereq_id=f"cert-{artifacts.workspace.name}")
+    request_id = f"cert-{artifacts.workspace.name}"
+    episode = build_local_reporter_episode_input(artifacts, episode_request_id=request_id)
     certifications: list[ReportCertification] = []
     for reporter in reporters:
         workspace = artifacts.workspace / "reports" / reporter.id
         report_bytes = run_reporter(
             RunnableLaunchSpec.from_model(reporter.as_runnable_spec()),
             workspace=workspace,
-            bundle_bytes=bundle_bytes,
+            request_id=request_id,
+            episodes=[episode],
             timeout_seconds=timeout_seconds,
         )
         manifest = validate_report_zip(report_bytes)
@@ -283,6 +292,76 @@ def run_certification_reporters(
             ReportCertification(reporter_id=reporter.id, manifest=manifest, report_path=workspace / "report.zip")
         )
     return certifications
+
+
+def build_local_reporter_episode_input(
+    artifacts: EpisodeArtifacts,
+    *,
+    episode_request_id: str,
+    uri_root: str = CONTAINER_WORKDIR,
+) -> ReporterEpisodeInput:
+    files: dict[BundleToken, str | dict[str, str]] = {
+        "results": "results.json",
+        "replay": "replay",
+        "game_logs": {"stdout": "logs/game.stdout.log", "stderr": "logs/game.stderr.log"},
+    }
+    include: list[BundleToken] = ["results", "replay", "game_logs"]
+    episode_artifacts = ReporterEpisodeArtifacts(
+        results=ReporterArtifactRef(
+            uri=f"file://{uri_root}/{artifacts.results_path.relative_to(artifacts.workspace)}",
+            media_type="application/json",
+        ),
+        replay=ReporterArtifactRef(
+            uri=f"file://{uri_root}/{artifacts.replay_path.relative_to(artifacts.workspace)}",
+            media_type="application/json",
+        ),
+        game_logs={
+            "stdout": ReporterArtifactRef(
+                uri=f"file://{uri_root}/{artifacts.game_stdout_path.relative_to(artifacts.workspace)}",
+                media_type="text/plain",
+            ),
+            "stderr": ReporterArtifactRef(
+                uri=f"file://{uri_root}/{artifacts.game_stderr_path.relative_to(artifacts.workspace)}",
+                media_type="text/plain",
+            ),
+        },
+    )
+
+    player_log_files: dict[str, str] = {}
+    for log_path in sorted(artifacts.logs_dir.glob("policy_agent_*.log")):
+        slot = log_path.stem.removeprefix("policy_agent_")
+        player_log_files[slot] = f"logs/{log_path.name}"
+        episode_artifacts.player_logs[slot] = ReporterArtifactRef(
+            uri=f"file://{uri_root}/{log_path.relative_to(artifacts.workspace)}",
+            media_type="text/plain",
+        )
+    if player_log_files:
+        files["player_logs"] = player_log_files
+        include.append("player_logs")
+
+    player_artifact_files: dict[str, str] = {}
+    for artifact_path in sorted(artifacts.workspace.glob("policy_artifact_*.zip")):
+        slot = artifact_path.stem.removeprefix("policy_artifact_")
+        player_artifact_files[slot] = f"artifacts/{artifact_path.name}"
+        episode_artifacts.player_artifact[slot] = ReporterArtifactRef(
+            uri=f"file://{uri_root}/{artifact_path.relative_to(artifacts.workspace)}",
+            media_type="application/zip",
+        )
+    if player_artifact_files:
+        files["player_artifact"] = player_artifact_files
+        include.append("player_artifact")
+
+    return ReporterEpisodeInput(
+        episode_request_id=episode_request_id,
+        status="success",
+        manifest=ReporterEpisodeManifest(
+            ereq_id=episode_request_id,
+            status="success",
+            include=include,
+            files=files,
+        ),
+        artifacts=episode_artifacts,
+    )
 
 
 def _image_references(package: CoworldPackage) -> list[tuple[str, str]]:

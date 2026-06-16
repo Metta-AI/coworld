@@ -1,18 +1,19 @@
 # Report Artifact
 
-> **Reporter integration note.** This zip is the reporter artifact envelope. Current one-shot reporters write it to
-> `COGAME_REPORT_URI`; the hosted reporter service writes it to the `report_uri` supplied over
-> `WEBSOCKET /reporter`. The platform MVP only requires a valid zip upload; the zip contents are reporter-defined and
+> **Reporter integration note.** This zip is the reporter artifact envelope. Process-style reporters write it to
+> the `report_uri` inside `COGAME_REPORT_REQUEST`; hosted reporter services write it to the `report_uri` supplied
+> over `WEBSOCKET /reporter`. The platform MVP only requires a valid zip upload; the zip contents are reporter-defined and
 > should match the reporter's declared purpose/output format. See the [Reporter role](../roles/REPORTER.md).
 
 The **report artifact** is a reporter-written zip that explains or summarizes one completed episode.
 
 ## Producer
 
-The [reporter role](../roles/REPORTER.md) writes one zip per report request. Current one-shot reporters write to
-`COGAME_REPORT_URI`. Hosted reporter services receive `report_uri` over `/reporter`, consume the requested
-[episode bundle](EPISODE_BUNDLE.md) URI(s), decide which episode evidence matters, and write a report for humans, UIs,
-agents, or downstream supporting roles.
+The [reporter role](../roles/REPORTER.md) writes one zip per report request. Process-style reporters read
+`COGAME_REPORT_REQUEST` and write to the request's `report_uri`. Hosted reporter services receive `report_uri` over
+`/reporter`, consume the requested direct
+episode artifact refs, decide which episode evidence matters, and write a report for humans, UIs, agents, or downstream
+supporting roles.
 
 ## Zip Contents
 
@@ -49,12 +50,12 @@ produce identical zip bytes.
 
 ## Relationship To Bundles
 
-Reports consume episode bundles, but report outputs are not currently included in the episode bundle. Chained reports or
-bundle inclusion of prior supporting-role outputs are future work.
+Reports consume episode artifact refs, but report outputs are not currently included in the episode bundle. Chained
+reports or bundle inclusion of prior supporting-role outputs are future work.
 
 ## See Also
 
 - [Reporter role](../roles/REPORTER.md) for invocation.
 - [Render artifact](RENDER.md) for the safe embeddable `render` entry contract.
 - [Event log](EVENT_LOG.md) for structured report entries.
-- [Episode bundle](EPISODE_BUNDLE.md) for reporter input.
+- [Episode bundle](EPISODE_BUNDLE.md) for grader, diagnoser, and user-download inputs.

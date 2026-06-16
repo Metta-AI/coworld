@@ -76,7 +76,6 @@ source of truth. They are generated docs and `$schema` targets; `test_types.py` 
 - `src/coworld/cli_support.py`, `api_client.py` - shared CLI helpers and the Softmax/Coworld API client.
 - `src/coworld/certifier.py` - `coworld certify` smoke-test pipeline (episode + declared-reporter certification).
 - `src/coworld/manifest_validation.py`, `schema_validation.py`, `manifest_uri.py` - manifest and schema validation.
-- `src/coworld/episode_bundle.py` - assembles an episode bundle zip (`COGAME_EPISODE_BUNDLE_URI`) from local artifacts.
 - `src/coworld/report.py` - report-zip consumer contract and the safe-render profile `coworld certify` enforces.
 - `src/coworld/bundle.py` - `coworld build`: hydrates a manifest template from a Docker Compose build.
 - `src/coworld/play.py`, `src/coworld/runner/` - local play, local episode runner, and hosted-runner contracts.
