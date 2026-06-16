@@ -4,21 +4,22 @@
 
 ## What it does
 
-The commissioner role decides the structure of a league: which episodes get scheduled in each round, which policy
-versions play in each episode and in which slots, and how policies move between divisions based on results.
-Commissioners run once per league round — the lifetime of a commissioner container session is exactly the lifetime of
-one round, not one episode and not the whole league.
+The commissioner role decides the structure of a league: when new rounds should be created for each division, which
+episodes get scheduled in each round, which policy versions play in each episode and in which slots, and how policies
+move between divisions based on results. Hosted leagues invoke the selected commissioner runnable in two phases: a
+league scheduling phase that returns zero or more round specs, and a per-round execution phase that drives the episodes
+for one persisted round.
 
-A commissioner is a long-lived container scoped to one round that communicates with the platform via WebSocket,
-consistent with how games and policies communicate. It schedules episodes incrementally, receives results and failures
-as they complete, can schedule additional episodes in response to those episode outcomes, and signals when the round is
-done. Commissioner behavior comes from the runnable selected by the league's
-`commissioner_config.commissioner_runnable_id`; the runnable may rely on its image entrypoint, or may provide optional
-`run` and public-only `env` overrides in the manifest.
+A commissioner is a WebSocket service container, consistent with how games and policies communicate. During league
+scheduling, the platform asks it whether any division should get a new round. During round execution, it schedules
+episodes incrementally, receives results and failures as they complete, can schedule additional episodes in response to
+those episode outcomes, and signals when the round is done. Commissioner behavior comes from the runnable selected by
+the league's `commissioner_config.commissioner_runnable_id`; the runnable may rely on its image entrypoint, or may
+provide optional `run` and public-only `env` overrides in the manifest.
 
 The commissioner is a black box from the platform's perspective — the platform doesn't know or care whether it's doing
-round-robin, elimination, Swiss, or something exotic. It just executes the episodes the commissioner asks for and
-streams results back.
+round-robin, elimination, Swiss, or something exotic. The platform just executes the episodes the commissioner asks for
+and streams results back.
 
 ## Where it lives in the manifest
 
@@ -70,9 +71,11 @@ the public environment is empty. This is the current shape of the canonical Amon
 
 ## Contract
 
-Unlike post-episode analysis roles, the commissioner is a **per-round** runnable that exposes a WebSocket server. Once a
-round begins, the platform starts the commissioner container, connects to its `/round` WebSocket, exchanges JSON protocol
-messages, and lets the container exit when the round completes.
+Unlike post-episode analysis roles, the commissioner exposes a WebSocket server that the platform uses for both
+league-level scheduling and per-round execution. The platform owns container startup, persistence, episode job dispatch,
+and membership updates. The commissioner owns the league-specific decisions: whether a scheduling tick should create
+rounds, how each round should be configured, which episodes to run inside a round, and what rankings or membership
+events should result.
 
 ### Runtime contract
 
@@ -85,21 +88,31 @@ The commissioner container follows the same listen-on-8080 conventions as game c
 The platform waits for `/healthz` to return 200, then connects to `/round`. All subsequent communication happens over
 that WebSocket connection as JSON messages with a `"type"` field.
 
-### Round lifecycle
+### League scheduling lifecycle
 
-1. Platform's round-scheduling logic determines a new round is due (per the league's `commissioner_config`).
-2. Platform starts the commissioner container.
-3. Platform polls `/healthz` until ready (startup timeout, default 30s).
-4. Platform connects to `WEBSOCKET /round` and sends `round_start` (round context: divisions, memberships, recent
-   results, variants, optional state blob from the previous round).
-5. Commissioner reads its state, sends `schedule_episodes` listing the episodes it wants to run.
-6. Platform responds with `episodes_accepted` or `episodes_rejected`, dispatches valid episodes.
-7. As episodes complete, platform sends `episode_result` or `episode_failed`.
-8. Platform calls the commissioner's episode-completed hook for the result or failure; the commissioner may schedule
-   more episodes, including retries or replacements after failures, or declare the round done.
-9. Commissioner sends `round_complete` (per-division rankings, policy membership events, optional state blob) and exits.
-10. Platform records results, applies policy membership events, stores commissioner state for the next round.
-11. Container is terminated.
+1. The platform round runner ticks for active container leagues.
+2. Platform gathers the league, divisions, active memberships, and recent rounds, then resolves the selected commissioner
+   runnable from the canonical Coworld manifest.
+3. Platform starts the commissioner container, polls `/healthz` until ready (startup timeout, default 30s), connects to
+   `WEBSOCKET /round`, and sends `schedule_rounds_request`.
+4. Commissioner returns `schedule_rounds_response` with zero or more `RoundSpec` entries. An empty `rounds` array means
+   no round is due on this tick.
+5. Platform filters returned specs to known league divisions, enforces active-round and concurrency constraints, persists
+   accepted `Round` rows, and starts per-round supervisors for them.
+
+### Round execution lifecycle
+
+1. For each persisted container round, platform starts the commissioner container.
+2. Platform polls `/healthz` until ready, connects to `WEBSOCKET /round`, and sends `round_start` (round context:
+   divisions, memberships, recent results, variants, optional state blob from the previous round).
+3. Commissioner reads its state, sends `schedule_episodes` listing the episodes it wants to run.
+4. Platform responds with `episodes_accepted` or `episodes_rejected`, dispatches valid episodes.
+5. As episodes complete, platform sends `episode_result` or `episode_failed`.
+6. Platform calls the commissioner's episode-completed hook for the result or failure; the commissioner may schedule more
+   episodes, including retries or replacements after failures, or declare the round done.
+7. Commissioner sends `round_complete` (per-division rankings, policy membership events, optional state blob) and exits.
+8. Platform records results, applies policy membership events, stores commissioner state for the next round.
+9. Container is terminated.
 
 If the platform needs to cancel the round mid-stream, it sends `round_abort`. The commissioner is expected to exit
 cleanly without sending `round_complete` in that case.
@@ -110,6 +123,53 @@ All commissioner protocol messages are JSON objects with a `"type"` discriminato
 [`commissioner/protocol.py`](../../commissioner/protocol.py).
 
 #### Platform → commissioner
+
+##### `schedule_rounds_request`
+
+Sent during the league scheduling phase before a new round exists:
+
+```json
+{
+  "type": "schedule_rounds_request",
+  "league": {
+    "id": "uuid_league",
+    "commissioner_key": "container",
+    "commissioner_config": { "commissioner_runnable_id": "among-them-commissioner" }
+  },
+  "divisions": [
+    { "id": "uuid_open", "name": "open", "level": 0, "type": "competition" },
+    { "id": "uuid_pro", "name": "pro", "level": 1, "type": "competition" }
+  ],
+  "active_memberships": [
+    {
+      "id": "uuid",
+      "league_id": "uuid_league",
+      "division_id": "uuid_open",
+      "policy_version_id": "uuid",
+      "player_id": "player_abc",
+      "status": "competing",
+      "substatus": "champion",
+      "is_champion": true
+    }
+  ],
+  "recent_rounds": [
+    {
+      "id": "uuid_round",
+      "public_id": "round_abc",
+      "division_id": "uuid_open",
+      "round_number": 4,
+      "status": "completed",
+      "round_config": {},
+      "created_at": "2026-06-16T12:00:00Z",
+      "started_at": "2026-06-16T12:05:00Z",
+      "completed_at": "2026-06-16T12:10:00Z"
+    }
+  ]
+}
+```
+
+The commissioner receives all divisions, active memberships, and recent rounds for the league. It decides whether any
+new rounds should be created now and returns that decision in `schedule_rounds_response`.
 
 ##### `round_start`
 
@@ -262,6 +322,30 @@ the round as cancelled.
 
 #### Commissioner → platform
 
+##### `schedule_rounds_response`
+
+Return zero or more round specs for the current scheduling tick:
+
+```json
+{
+  "type": "schedule_rounds_response",
+  "rounds": [
+    {
+      "division_id": "uuid_open",
+      "round_config": {
+        "stages": [{ "label": "Round", "num_episodes": 8 }],
+        "entrant_policy_version_ids": ["uuid_a", "uuid_b", "uuid_c", "uuid_d"]
+      },
+      "execution_backend": "dispatch",
+      "notes": "daily open division round"
+    }
+  ]
+}
+```
+
+The platform persists accepted specs as `Round` rows. It does not create a round when `rounds` is empty, when the
+division is unknown, or when an active non-concurrent round already exists for that division.
+
 ##### `schedule_episodes`
 
 Request episodes to run:
@@ -379,9 +463,14 @@ The commissioner never sees internal IDs like `env_config_id` or `mod_id`.
 
 ## Round scheduling
 
-The decision of when to start a new round remains platform-side. The league's `commissioner_config` specifies the
-scheduling cadence and minimum champions — the same `RoundSchedulingConfig` fields used today. The commissioner
-container only drives what happens _within_ a round.
+The platform owns the scheduling loop, round persistence, duplicate-active-round prevention, episode dispatch, and final
+application of results and membership events. For container leagues, the commissioner owns the decision to return zero or
+more round specs during that loop. A scheduling tick that returns an empty `schedule_rounds_response.rounds` list means
+the commissioner decided no round is due.
+
+`commissioner_config.commissioner_runnable_id` selects the commissioner runnable. Other values in `commissioner_config`
+are platform context, not an override for a config-driven commissioner image; reusable `ruleset_strategy` commissioners
+read their round cadence and structure from the YAML config baked into the image.
 
 ## League creation on deploy
 
@@ -389,10 +478,11 @@ When a Coworld with a commissioner is deployed:
 
 1. Platform creates a `League` with `commissioner_key = "container"` and stores the Coworld release reference. If
    `commissioner_config.commissioner_runnable_id` is omitted or does not match a `manifest.commissioner[].id`, container
-   scheduling fails before the round starts.
+   scheduling fails before a round is created.
 2. Platform creates default divisions (configurable in manifest, defaults to a single "open" division).
-3. The round runner begins scheduling rounds per `commissioner_config`.
-4. Each round, the platform starts the commissioner container and drives the WebSocket protocol.
+3. The round runner periodically asks the selected commissioner to schedule rounds with `schedule_rounds_request`.
+4. For each accepted `RoundSpec`, the platform persists a round, starts a per-round commissioner container, and drives
+   the `round_start`/episode/`round_complete` protocol.
 
 ## Manifest-selected commissioner
 
@@ -522,8 +612,9 @@ See [`README.md`](../README.md) for the full artifact and control-flow diagram.
 
 The protocol message models are live in [`commissioner/protocol.py`](../../commissioner/protocol.py). The platform's
 container commissioner path resolves the selected runnable from the canonical Coworld manifest, starts a commissioner
-container as a Kubernetes Job, connects to `/round`, dispatches requested episode jobs, streams results or failures back
-to the commissioner, and persists rankings, membership changes, and the opaque state blob.
+container for `schedule_rounds_request`, persists accepted round specs, then starts per-round commissioner containers,
+connects to `/round`, dispatches requested episode jobs, streams results or failures back to the commissioner, and
+persists rankings, membership changes, and the opaque state blob.
 
 The hosted backend no longer runs in-process commissioners. Leagues whose `commissioner_key` is not `container` are not
 scheduled by the Coworld round runner.
