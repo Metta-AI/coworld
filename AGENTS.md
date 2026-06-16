@@ -55,7 +55,7 @@ Use the narrowest check that covers the touched surface, then broaden when chang
 uv run metta pytest packages/coworld/tests/test_types.py -v
 uv run metta pytest packages/coworld/tests -v
 uv run metta pytest --changed
-uv run metta lint --fix
+./bazel/fix_lint.sh
 ```
 
 When changing manifest Pydantic models or generated schema files, update `types.py` first and regenerate the checked-in
