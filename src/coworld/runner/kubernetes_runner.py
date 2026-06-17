@@ -348,7 +348,7 @@ def _create_player_pod(
                 client.V1Container(
                     name="player",
                     image=player.image,
-                    image_pull_policy=os.environ.get("COWORLD_PLAYER_IMAGE_PULL_POLICY", "Always"),
+                    image_pull_policy=_player_image_pull_policy(player.image),
                     command=command,
                     args=args,
                     env=[
@@ -366,6 +366,16 @@ def _create_player_pod(
         ),
     )
     core_v1.create_namespaced_pod(namespace=namespace, body=pod)
+
+
+def _player_image_pull_policy(image: str) -> str:
+    """Digest-pinned (@sha256:) player images are immutable, so IfNotPresent skips the
+    registry round-trip on warm nodes. The dispatcher sets the env override for local dev,
+    where images are bare tags that only exist on the node."""
+    override = os.environ.get("COWORLD_PLAYER_IMAGE_PULL_POLICY")
+    if override:
+        return override
+    return "IfNotPresent" if "@sha256:" in image else "Always"
 
 
 def _player_artifact_upload_url(slot: int) -> str | None:

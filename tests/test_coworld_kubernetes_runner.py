@@ -15,7 +15,12 @@ from kubernetes.client.rest import ApiException
 from coworld.runner import io as runner_io
 from coworld.runner import kubernetes_runner
 from coworld.runner import runner as runner_module
-from coworld.runner.kubernetes_runner import _collect_logs, _upload_outputs, _wait_for_episode_artifacts
+from coworld.runner.kubernetes_runner import (
+    _collect_logs,
+    _player_image_pull_policy,
+    _upload_outputs,
+    _wait_for_episode_artifacts,
+)
 from coworld.runner.phase_timings import EpisodePhaseTimings
 from coworld.runner.runner import EpisodeArtifacts, EpisodeRunSpec, PlayerLaunchSpec, RunnableLaunchSpec
 
@@ -184,6 +189,21 @@ def test_upload_timings_noop_without_env(monkeypatch):
     )
 
     assert uploads == []
+
+
+def test_player_image_pull_policy_uses_ifnotpresent_for_digest(monkeypatch):
+    monkeypatch.delenv("COWORLD_PLAYER_IMAGE_PULL_POLICY", raising=False)
+    assert _player_image_pull_policy("public.ecr.aws/x/paintbot@sha256:abc123") == "IfNotPresent"
+
+
+def test_player_image_pull_policy_uses_always_for_mutable_tag(monkeypatch):
+    monkeypatch.delenv("COWORLD_PLAYER_IMAGE_PULL_POLICY", raising=False)
+    assert _player_image_pull_policy("public.ecr.aws/x/paintbot:latest") == "Always"
+
+
+def test_player_image_pull_policy_env_override_wins(monkeypatch):
+    monkeypatch.setenv("COWORLD_PLAYER_IMAGE_PULL_POLICY", "IfNotPresent")
+    assert _player_image_pull_policy("public.ecr.aws/x/paintbot:latest") == "IfNotPresent"
 
 
 def test_require_http_ok_accepts_replay_client_redirect(monkeypatch):
