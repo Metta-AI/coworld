@@ -297,6 +297,15 @@ def _create_player_pod(
         if player_artifact_upload_url is not None
         else []
     )
+    # Tag this player's Bedrock invocations with the coworld/episode (forwarded by
+    # the worker) plus its slot, so model-invocation logs attribute player-side LLM
+    # usage to a coworld. A player image that uses @cogweb/llm sets it as the
+    # Converse requestMetadata; harmless for a non-Bedrock player.
+    metadata_base = os.environ.get("BEDROCK_REQUEST_METADATA")
+    metadata_env_vars = []
+    if metadata_base:
+        slot_metadata = json.dumps({**json.loads(metadata_base), "slot": str(slot)})
+        metadata_env_vars = [client.V1EnvVar(name="BEDROCK_REQUEST_METADATA", value=slot_metadata)]
     pod = client.V1Pod(
         metadata=client.V1ObjectMeta(
             name=name,
@@ -326,6 +335,7 @@ def _create_player_pod(
                         client.V1EnvVar(name="COWORLD_PLAYER_WS_URL", value=player_ws_url),
                         client.V1EnvVar(name="COGAMES_ENGINE_WS_URL", value=player_ws_url),
                         *artifact_env_vars,
+                        *metadata_env_vars,
                     ],
                     resources=client.V1ResourceRequirements(
                         requests={"cpu": player_cpu_request, "memory": player_memory_request}

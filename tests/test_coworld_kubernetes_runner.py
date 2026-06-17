@@ -820,6 +820,43 @@ def test_create_player_pod_forwards_artifact_upload_url_for_its_slot(monkeypatch
     assert env["COWORLD_PLAYER_ARTIFACT_UPLOAD_URL"] == "https://s3.example/put/policy_artifact_1.zip"
 
 
+def test_create_player_pod_tags_bedrock_request_metadata_with_slot(monkeypatch):
+    created: dict[str, object] = {}
+    core_v1 = SimpleNamespace(create_namespaced_pod=lambda *, namespace, body: created.update({"body": body}))
+    monkeypatch.setenv(
+        "BEDROCK_REQUEST_METADATA",
+        '{"coworld_id": "cow_abc", "coworld": "paintarena", "episode_id": "job-id"}',
+    )
+    player = PlayerLaunchSpec(image="paintbot:latest", run=(), env={})
+
+    kubernetes_runner._create_player_pod(
+        core_v1, "jobs", "job-player-1", 1, "slot-token", player, {}, "job-id", "game-service", "2", "2Gi", []
+    )
+
+    env = {env_var.name: env_var.value for env_var in created["body"].spec.containers[0].env}
+    # The worker forwards the coworld/episode base and adds this pod's slot.
+    assert json.loads(env["BEDROCK_REQUEST_METADATA"]) == {
+        "coworld_id": "cow_abc",
+        "coworld": "paintarena",
+        "episode_id": "job-id",
+        "slot": "1",
+    }
+
+
+def test_create_player_pod_omits_bedrock_request_metadata_when_unset(monkeypatch):
+    created: dict[str, object] = {}
+    core_v1 = SimpleNamespace(create_namespaced_pod=lambda *, namespace, body: created.update({"body": body}))
+    monkeypatch.delenv("BEDROCK_REQUEST_METADATA", raising=False)
+    player = PlayerLaunchSpec(image="paintbot:latest", run=(), env={})
+
+    kubernetes_runner._create_player_pod(
+        core_v1, "jobs", "job-player-0", 0, "slot-token", player, {}, "job-id", "game-service", "2", "2Gi", []
+    )
+
+    env = {env_var.name: env_var.value for env_var in created["body"].spec.containers[0].env}
+    assert "BEDROCK_REQUEST_METADATA" not in env
+
+
 def test_kubernetes_runner_uses_direct_player_urls_without_address():
     assert kubernetes_runner._player_client_url(1, "slot-token") == (
         "http://127.0.0.1:8080/client/player?slot=1&token=slot-token"
