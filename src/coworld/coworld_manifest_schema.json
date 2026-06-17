@@ -529,6 +529,20 @@
     "certification": {
       "$ref": "#/$defs/CoworldCertificationFixture",
       "description": "Smoke-test episode used by coworld certify and default local episode runs."
+    },
+    "players_per_user": {
+      "anyOf": [
+        {
+          "minimum": 1,
+          "type": "integer"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "description": "Maximum number of simultaneously active policy memberships a single user may hold in this Coworld's league. Unset means the platform default applies.",
+      "title": "Players Per User"
     }
   },
   "required": ["game", "player", "variants", "certification"],

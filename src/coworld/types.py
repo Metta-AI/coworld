@@ -259,6 +259,14 @@ class CoworldManifest(BaseModel):
     certification: CoworldCertificationFixture = Field(
         description="Smoke-test episode used by coworld certify and default local episode runs."
     )
+    players_per_user: int | None = Field(
+        default=None,
+        ge=1,
+        description=(
+            "Maximum number of simultaneously active policy memberships a single user may hold in this Coworld's "
+            "league. Unset means the platform default applies."
+        ),
+    )
 
     @model_validator(mode="after")
     def validate_role_types(self) -> "CoworldManifest":
