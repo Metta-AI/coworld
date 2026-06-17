@@ -93,11 +93,15 @@ that WebSocket connection as JSON messages with a `"type"` field.
 1. The platform round runner ticks for active container leagues.
 2. Platform gathers the league, divisions, active memberships, and recent rounds, then resolves the selected commissioner
    runnable from the canonical Coworld manifest.
-3. Platform starts the commissioner container, polls `/healthz` until ready (startup timeout, default 30s), connects to
+3. If the resolved commissioner runtime has not been made canonical for the league yet, platform starts the commissioner
+   container and runs the league migration handshake before scheduling. The commissioner declares the canonical division
+   set, may return policy membership events that move live memberships out of divisions it wants archived, and platform
+   only records the commissioner migration version after that batch leaves no live memberships in archived divisions.
+4. Platform starts the commissioner container, polls `/healthz` until ready (startup timeout, default 30s), connects to
    `WEBSOCKET /round`, and sends `schedule_rounds_request`.
-4. Commissioner returns `schedule_rounds_response` with zero or more `RoundSpec` entries. An empty `rounds` array means
+5. Commissioner returns `schedule_rounds_response` with zero or more `RoundSpec` entries. An empty `rounds` array means
    no round is due on this tick.
-5. Platform filters returned specs to known league divisions, enforces active-round and concurrency constraints, persists
+6. Platform filters returned specs to known league divisions, enforces active-round and concurrency constraints, persists
    accepted `Round` rows, and starts per-round supervisors for them.
 
 ### Round execution lifecycle
@@ -172,6 +176,60 @@ The commissioner receives all divisions, active memberships, and recent rounds f
 state is carried by `is_champion`; `substatus` is commissioner-owned display and workflow state. The default scheduling
 policy is to create rounds from `status="competing"` memberships with `is_champion=true`, report those memberships as
 `substatus="active"`, and report non-champion competing memberships as `substatus="benched"`.
+
+##### `league_migration_config_request`
+
+Sent before scheduling when the selected commissioner runtime/config has not yet been made canonical for the league:
+
+```json
+{
+  "type": "league_migration_config_request",
+  "league": {
+    "id": "uuid_league",
+    "commissioner_key": "container",
+    "commissioner_config": { "commissioner_runnable_id": "default-commissioner" }
+  },
+  "divisions": [
+    { "id": "uuid_daily", "name": "Daily", "level": 1, "type": "competition" }
+  ]
+}
+```
+
+The commissioner responds with `league_migration_config_response`, declaring the canonical division names, levels, types,
+and descriptions for this commissioner version. `previous_name` can be used to rename an existing division while
+preserving its ID and history.
+
+##### `league_migration_request`
+
+Sent after the platform has created or renamed divisions from `league_migration_config_response`:
+
+```json
+{
+  "type": "league_migration_request",
+  "league": {
+    "id": "uuid_league",
+    "commissioner_key": "container",
+    "commissioner_config": { "commissioner_runnable_id": "default-commissioner" }
+  },
+  "divisions": [
+    { "id": "uuid_competition", "name": "Competition", "level": 1, "type": "competition" }
+  ],
+  "memberships": [
+    {
+      "id": "uuid_membership",
+      "league_id": "uuid_league",
+      "division_id": "uuid_daily",
+      "policy_version_id": "uuid_policy_version",
+      "status": "competing"
+    }
+  ]
+}
+```
+
+The commissioner responds with `league_migration_response`, optionally returning policy membership events to move,
+disqualify, or otherwise update memberships before obsolete divisions are archived. The platform applies the events in
+one transaction, rejects events targeting divisions outside the canonical active set, and rejects the migration if any
+live membership would remain in a division being archived.
 
 ##### `round_start`
 
@@ -325,6 +383,56 @@ On receiving `round_abort`, the commissioner should exit cleanly without sending
 the round as cancelled.
 
 #### Commissioner → platform
+
+##### `league_migration_config_response`
+
+Declare the canonical division set for this commissioner runtime/config:
+
+```json
+{
+  "type": "league_migration_config_response",
+  "divisions": [
+    {
+      "name": "Qualifiers",
+      "level": -99,
+      "type": "staging",
+      "description": "Qualifier division for new submissions"
+    },
+    {
+      "name": "Competition",
+      "previous_name": "Daily",
+      "level": 1,
+      "type": "competition",
+      "description": "Main competition ladder"
+    }
+  ]
+}
+```
+
+Division names must be unique within the response. Existing divisions whose names are not in the response are archived
+after the migration's policy membership events are applied and validated.
+
+##### `league_migration_response`
+
+Return membership events needed before obsolete divisions are archived:
+
+```json
+{
+  "type": "league_migration_response",
+  "policy_membership_events": [
+    {
+      "league_policy_membership_id": "uuid_membership",
+      "from_division_id": "uuid_daily",
+      "to_division_id": "uuid_competition",
+      "status": "competing",
+      "reason": "commissioner division migration"
+    }
+  ]
+}
+```
+
+An empty response is valid only when no live memberships are left in divisions that the config response omits. The
+platform records the migration version only after the event batch and archive validation succeed.
 
 ##### `schedule_rounds_response`
 
@@ -483,9 +591,12 @@ When a Coworld with a commissioner is deployed:
 1. Platform creates a `League` with `commissioner_key = "container"` and stores the Coworld release reference. If
    `commissioner_config.commissioner_runnable_id` is omitted or does not match a `manifest.commissioner[].id`, container
    scheduling fails before a round is created.
-2. Platform creates default divisions (configurable in manifest, defaults to a single "open" division).
-3. The round runner periodically asks the selected commissioner to schedule rounds with `schedule_rounds_request`.
-4. For each accepted `RoundSpec`, the platform persists a round, starts a per-round commissioner container, and drives
+2. On the first scheduling tick for a new commissioner runtime/config, the platform asks the selected commissioner to
+   declare the canonical division set and migration membership events.
+3. The platform creates, renames, or archives divisions according to that migration, then records the commissioner
+   migration version so the same migration is not repeated.
+4. The round runner periodically asks the selected commissioner to schedule rounds with `schedule_rounds_request`.
+5. For each accepted `RoundSpec`, the platform persists a round, starts a per-round commissioner container, and drives
    the `round_start`/episode/`round_complete` protocol.
 
 ## Manifest-selected commissioner
@@ -634,6 +745,7 @@ Per-goal status:
 | 5   | Commissioner containers scoped to a single round (can be swapped between rounds)           | Done                                                                      |
 | 6   | Commissioners emit round rankings, scores, and policy membership events at the end of each round | Done                                                                 |
 | 7   | Existing registered commissioners continue to work unchanged                               | Removed; hosted scheduling is container-only                              |
+| 8   | Commissioners declare canonical league divisions and migration events                      | Done                                                                      |
 
 Container commissioner support is live in the backend. A league schedules only when its `commissioner_key` is
 `container` and `commissioner_config.commissioner_runnable_id` resolves against the canonical Coworld manifest.
@@ -675,8 +787,9 @@ Before relying on an independent commissioner for a daily league:
    this limit (round still succeeds, state is not persisted, warning logged).
 5. **Stuck commissioner detection.** Handled by the max-lifetime timeout (default 10 minutes). A per-message no-progress
    timeout can be added later if real cases require finer-grained detection.
-6. **Dynamic division creation.** No for v1. Division structure is fixed at Coworld deploy time. If dynamic divisions
-   become a real requirement, they will be added in a separate spec.
+6. **Dynamic division creation.** Commissioner runtimes can declare canonical divisions during the migration handshake
+   for a new commissioner version/config. Per-round ad hoc division creation remains out of scope; schedule responses
+   may only target known active league divisions.
 
 ## See Also
 

@@ -6,6 +6,7 @@ from pydantic import ValidationError
 from coworld.commissioner.protocol import (
     CommissionerMessage,
     DescribeDivisionResponse,
+    DivisionConfig,
     DivisionDescription,
     DivisionInfo,
     DivisionRanking,
@@ -16,6 +17,10 @@ from coworld.commissioner.protocol import (
     EpisodeResult,
     EpisodeScore,
     LeagueInfo,
+    LeagueMigrationConfigRequest,
+    LeagueMigrationConfigResponse,
+    LeagueMigrationRequest,
+    LeagueMigrationResponse,
     MembershipChange,
     MembershipInfo,
     PolicyMembershipEventChange,
@@ -311,6 +316,92 @@ def test_commissioner_message_parses_extended_hook_responses() -> None:
             )
         ],
     )
+
+
+def test_commissioner_message_parses_league_migration_responses() -> None:
+    membership_id = uuid4()
+    division_id = uuid4()
+    target_division_id = uuid4()
+
+    parsed_config = CommissionerMessage.from_json(
+        {
+            "type": "league_migration_config_response",
+            "divisions": [
+                {
+                    "name": "Competition",
+                    "previous_name": "Daily",
+                    "level": 1,
+                    "type": "competition",
+                    "description": "Main ladder",
+                }
+            ],
+        }
+    )
+    assert parsed_config == LeagueMigrationConfigResponse(
+        divisions=[
+            DivisionConfig(
+                name="Competition",
+                previous_name="Daily",
+                level=1,
+                type="competition",
+                description="Main ladder",
+            )
+        ]
+    )
+
+    parsed_migration = CommissionerMessage.from_json(
+        {
+            "type": "league_migration_response",
+            "policy_membership_events": [
+                {
+                    "league_policy_membership_id": str(membership_id),
+                    "from_division_id": str(division_id),
+                    "to_division_id": str(target_division_id),
+                    "status": "competing",
+                    "substatus": "champion",
+                    "reason": "legacy tier migration",
+                }
+            ],
+        }
+    )
+    assert parsed_migration == LeagueMigrationResponse(
+        policy_membership_events=[
+            PolicyMembershipEventChange(
+                league_policy_membership_id=membership_id,
+                from_division_id=division_id,
+                to_division_id=target_division_id,
+                status="competing",
+                substatus="champion",
+                reason="legacy tier migration",
+            )
+        ]
+    )
+
+
+def test_league_migration_requests_serialize_with_message_type() -> None:
+    league_id = uuid4()
+    division_id = uuid4()
+    membership_id = uuid4()
+    policy_version_id = uuid4()
+    league = LeagueInfo(id=league_id, commissioner_config={"mode": "daily"})
+    divisions = [DivisionInfo(id=division_id, name="Daily", level=1)]
+    memberships = [
+        MembershipInfo(
+            id=membership_id,
+            league_id=league_id,
+            division_id=division_id,
+            policy_version_id=policy_version_id,
+            status="competing",
+        )
+    ]
+
+    config_request = LeagueMigrationConfigRequest(league=league, divisions=divisions)
+    migration_request = LeagueMigrationRequest(league=league, divisions=divisions, memberships=memberships)
+
+    assert config_request.to_json()["type"] == "league_migration_config_request"
+    assert config_request.to_json()["divisions"][0]["id"] == str(division_id)
+    assert migration_request.to_json()["type"] == "league_migration_request"
+    assert migration_request.to_json()["memberships"][0]["policy_version_id"] == str(policy_version_id)
 
 
 def test_episode_completed_request_serializes_episode_result_and_failure() -> None:

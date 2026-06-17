@@ -25,6 +25,14 @@ class DivisionInfo(BaseModel):
     type: str = "competition"
 
 
+class DivisionConfig(BaseModel):
+    name: str
+    level: int
+    type: str = "competition"
+    description: str | None = None
+    previous_name: str | None = None
+
+
 class MembershipInfo(BaseModel):
     id: UUID
     league_id: UUID
@@ -298,6 +306,45 @@ class ScheduleRoundsResponse(BaseModel):
         return data
 
 
+class LeagueMigrationConfigRequest(BaseModel):
+    league: LeagueInfo
+    divisions: list[DivisionInfo]
+
+    def to_json(self) -> dict[str, Any]:
+        data = self.model_dump(mode="json")
+        data["type"] = "league_migration_config_request"
+        return data
+
+
+class LeagueMigrationConfigResponse(BaseModel):
+    divisions: list[DivisionConfig] = Field(default_factory=list)
+
+    def to_json(self) -> dict[str, Any]:
+        data = self.model_dump(mode="json")
+        data["type"] = "league_migration_config_response"
+        return data
+
+
+class LeagueMigrationRequest(BaseModel):
+    league: LeagueInfo
+    divisions: list[DivisionInfo]
+    memberships: list[MembershipInfo]
+
+    def to_json(self) -> dict[str, Any]:
+        data = self.model_dump(mode="json")
+        data["type"] = "league_migration_request"
+        return data
+
+
+class LeagueMigrationResponse(BaseModel):
+    policy_membership_events: list[PolicyMembershipEventChange] = Field(default_factory=list)
+
+    def to_json(self) -> dict[str, Any]:
+        data = self.model_dump(mode="json")
+        data["type"] = "league_migration_response"
+        return data
+
+
 class RankDivisionRequest(BaseModel):
     league: LeagueInfo
     division: DivisionInfo
@@ -405,6 +452,8 @@ PlatformMessage = (
     | EpisodeFailed
     | RoundAbort
     | ScheduleRoundsRequest
+    | LeagueMigrationConfigRequest
+    | LeagueMigrationRequest
     | RankDivisionRequest
     | DescribeDivisionRequest
     | RoundCompletedRequest
@@ -416,6 +465,8 @@ CommissionerMessageType = (
     | EpisodeCancel
     | RoundComplete
     | ScheduleRoundsResponse
+    | LeagueMigrationConfigResponse
+    | LeagueMigrationResponse
     | RankDivisionResponse
     | DescribeDivisionResponse
     | RoundCompletedResponse
@@ -427,6 +478,8 @@ _COMMISSIONER_MESSAGE_TYPES: dict[str, type[CommissionerMessageType]] = {
     "episode_cancel": EpisodeCancel,
     "round_complete": RoundComplete,
     "schedule_rounds_response": ScheduleRoundsResponse,
+    "league_migration_config_response": LeagueMigrationConfigResponse,
+    "league_migration_response": LeagueMigrationResponse,
     "rank_division_response": RankDivisionResponse,
     "describe_division_response": DescribeDivisionResponse,
     "round_completed_response": RoundCompletedResponse,
@@ -437,6 +490,9 @@ _COMMISSIONER_MESSAGE_TYPES: dict[str, type[CommissionerMessageType]] = {
 class CommissionerMessage:
     @staticmethod
     def from_json(data: dict[str, Any]) -> CommissionerMessageType:
+        # TODO(protocol): move `type` into each message model as a Literal discriminator
+        # and parse this with a Pydantic discriminated union instead of the custom
+        # registry/to_json pattern.
         msg_type = data["type"]
         cls = _COMMISSIONER_MESSAGE_TYPES.get(msg_type)
         if cls is None:
