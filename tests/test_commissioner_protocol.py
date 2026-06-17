@@ -29,6 +29,8 @@ from coworld.commissioner.protocol import (
     ScheduleRoundsResponse,
     StageConfig,
     VariantInfo,
+    default_competing_entrants,
+    default_competing_membership_events,
 )
 
 
@@ -50,7 +52,7 @@ def test_round_start_serializes_with_message_type() -> None:
                 policy_version_id=policy_version_id,
                 player_id="player_abc",
                 status="competing",
-                substatus="champion",
+                substatus="active",
                 is_champion=True,
             )
         ],
@@ -72,6 +74,58 @@ def test_round_start_serializes_with_message_type() -> None:
     assert data["memberships"][0]["policy_version_id"] == str(policy_version_id)
     assert data["memberships"][0]["is_champion"] is True
     assert data["variants"][0]["num_agents"] == 2
+
+
+def test_default_competing_helpers_use_is_champion_and_emit_commissioner_substatuses() -> None:
+    league_id = uuid4()
+    division_id = uuid4()
+    other_division_id = uuid4()
+    champion = MembershipInfo(
+        id=uuid4(),
+        league_id=league_id,
+        division_id=division_id,
+        policy_version_id=uuid4(),
+        status="competing",
+        substatus="benched",
+        is_champion=True,
+    )
+    benched = MembershipInfo(
+        id=uuid4(),
+        league_id=league_id,
+        division_id=division_id,
+        policy_version_id=uuid4(),
+        status="competing",
+        substatus=None,
+        is_champion=False,
+    )
+    qualifier = MembershipInfo(
+        id=uuid4(),
+        league_id=league_id,
+        division_id=division_id,
+        policy_version_id=uuid4(),
+        status="qualifying",
+        is_champion=True,
+    )
+    other_division_champion = MembershipInfo(
+        id=uuid4(),
+        league_id=league_id,
+        division_id=other_division_id,
+        policy_version_id=uuid4(),
+        status="competing",
+        is_champion=True,
+    )
+
+    memberships = [champion, benched, qualifier, other_division_champion]
+
+    assert default_competing_entrants(memberships, division_id=division_id) == [champion]
+    events = default_competing_membership_events(memberships, division_id=division_id)
+
+    assert [(event.league_policy_membership_id, event.substatus) for event in events] == [
+        (champion.id, "active"),
+        (benched.id, "benched"),
+    ]
+    assert all(event.status == "competing" for event in events)
+    assert all(event.from_division_id == division_id and event.to_division_id == division_id for event in events)
 
 
 def test_commissioner_message_parses_schedule_episodes() -> None:

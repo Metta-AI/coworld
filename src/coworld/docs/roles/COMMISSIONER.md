@@ -148,7 +148,7 @@ Sent during the league scheduling phase before a new round exists:
       "policy_version_id": "uuid",
       "player_id": "player_abc",
       "status": "competing",
-      "substatus": "champion",
+      "substatus": "active",
       "is_champion": true
     }
   ],
@@ -168,12 +168,16 @@ Sent during the league scheduling phase before a new round exists:
 }
 ```
 
-The commissioner receives all divisions, active memberships, and recent rounds for the league. It decides whether any
-new rounds should be created now and returns that decision in `schedule_rounds_response`.
+The commissioner receives all divisions, active memberships, and recent rounds for the league. Platform-owned champion
+state is carried by `is_champion`; `substatus` is commissioner-owned display and workflow state. The default scheduling
+policy is to create rounds from `status="competing"` memberships with `is_champion=true`, report those memberships as
+`substatus="active"`, and report non-champion competing memberships as `substatus="benched"`.
 
 ##### `round_start`
 
-Sent once after the WebSocket connects, providing the full round context:
+Sent once after the WebSocket connects, providing the full round context. Competition rounds include all
+`status="competing"` memberships for the division so the commissioner can decide whether to use only champions or a
+custom entrant set.
 
 ```json
 {
@@ -196,7 +200,7 @@ Sent once after the WebSocket connects, providing the full round context:
       "policy_version_id": "uuid",
       "player_id": "player_abc",
       "status": "competing",
-      "substatus": "champion",
+      "substatus": "active",
       "is_champion": true
     }
   ],

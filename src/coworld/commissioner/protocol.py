@@ -7,6 +7,9 @@ from uuid import UUID
 from pydantic import BaseModel, Field, field_validator, model_validator
 
 _STATE_MAX_BYTES = 10 * 1024 * 1024
+POLICY_MEMBERSHIP_STATUS_COMPETING = "competing"
+POLICY_MEMBERSHIP_SUBSTATUS_ACTIVE = "active"
+POLICY_MEMBERSHIP_SUBSTATUS_BENCHED = "benched"
 
 
 class LeagueInfo(BaseModel):
@@ -439,3 +442,45 @@ class CommissionerMessage:
         if cls is None:
             raise ValueError(f"Unknown commissioner message type: {msg_type!r}")
         return cls.model_validate({key: value for key, value in data.items() if key != "type"})
+
+
+def default_competing_entrants(
+    memberships: list[MembershipInfo],
+    *,
+    division_id: UUID,
+) -> list[MembershipInfo]:
+    return [
+        membership
+        for membership in memberships
+        if membership.division_id == division_id
+        and membership.status == POLICY_MEMBERSHIP_STATUS_COMPETING
+        and membership.is_champion
+    ]
+
+
+def default_competing_membership_events(
+    memberships: list[MembershipInfo],
+    *,
+    division_id: UUID,
+    reason: str = "Default commissioner membership status assignment",
+) -> list[PolicyMembershipEventChange]:
+    desired_substatus_by_membership_id = {
+        membership.id: POLICY_MEMBERSHIP_SUBSTATUS_ACTIVE
+        if membership.is_champion
+        else POLICY_MEMBERSHIP_SUBSTATUS_BENCHED
+        for membership in memberships
+        if membership.division_id == division_id and membership.status == POLICY_MEMBERSHIP_STATUS_COMPETING
+    }
+    return [
+        PolicyMembershipEventChange(
+            league_policy_membership_id=membership.id,
+            from_division_id=membership.division_id,
+            to_division_id=membership.division_id,
+            status=POLICY_MEMBERSHIP_STATUS_COMPETING,
+            substatus=desired_substatus_by_membership_id[membership.id],
+            reason=reason,
+        )
+        for membership in memberships
+        if membership.id in desired_substatus_by_membership_id
+        and membership.substatus != desired_substatus_by_membership_id[membership.id]
+    ]

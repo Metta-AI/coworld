@@ -1,6 +1,9 @@
 """Commissioner protocol types shared by commissioner containers and platform code."""
 
 from coworld.commissioner.protocol import (
+    POLICY_MEMBERSHIP_STATUS_COMPETING,
+    POLICY_MEMBERSHIP_SUBSTATUS_ACTIVE,
+    POLICY_MEMBERSHIP_SUBSTATUS_BENCHED,
     CommissionerMessage,
     DescribeDivisionRequest,
     DescribeDivisionResponse,
@@ -42,6 +45,8 @@ from coworld.commissioner.protocol import (
     ScheduleRoundsResponse,
     StageConfig,
     VariantInfo,
+    default_competing_entrants,
+    default_competing_membership_events,
 )
 
 __all__ = [
@@ -66,6 +71,9 @@ __all__ = [
     "MembershipChange",
     "MembershipInfo",
     "PlatformMessage",
+    "POLICY_MEMBERSHIP_STATUS_COMPETING",
+    "POLICY_MEMBERSHIP_SUBSTATUS_ACTIVE",
+    "POLICY_MEMBERSHIP_SUBSTATUS_BENCHED",
     "PolicyMembershipEventChange",
     "PolicyMembershipEventEvidence",
     "RankDivisionRequest",
@@ -86,4 +94,6 @@ __all__ = [
     "ScheduleRoundsResponse",
     "StageConfig",
     "VariantInfo",
+    "default_competing_entrants",
+    "default_competing_membership_events",
 ]
