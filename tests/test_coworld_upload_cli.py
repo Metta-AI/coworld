@@ -1500,11 +1500,40 @@ def test_downloaded_image_tags_include_coworld_id() -> None:
     )
 
 
-def test_local_image_client_hash_uses_docker_archive_content(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_local_image_client_hash_uses_docker_archive_content(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("XDG_CACHE_HOME", str(tmp_path))
     config = b'{"architecture":"amd64","cmd":["python","game.py"],"os":"linux"}'
     archive = _docker_archive(config=config, layers=[b"layer-one", b"layer-two"])
+    save_calls: list[list[str]] = []
 
     def fake_run(command: list[str], **kwargs: object) -> subprocess.CompletedProcess[str]:
+        if command[:3] == ["docker", "image", "inspect"]:
+            return subprocess.CompletedProcess(command, 0, stdout="sha256:unit-image-id\n")
+        assert command == ["docker", "image", "save", "unit-test-runtime:latest"]
+        save_calls.append(command)
+        stdout = cast(BinaryIO, kwargs["stdout"])
+        stdout.write(archive)
+        return subprocess.CompletedProcess(command, 0)
+
+    monkeypatch.setattr("coworld.upload.subprocess.run", fake_run)
+
+    expected = _expected_archive_hash(config, [b"layer-one", b"layer-two"])
+    assert _local_image_client_hash("unit-test-runtime:latest") == expected
+    assert _local_image_client_hash("unit-test-runtime:latest") == expected
+    assert len(save_calls) == 1
+
+
+def test_local_image_client_hash_ignores_malformed_cache(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("XDG_CACHE_HOME", str(tmp_path))
+    cache_path = tmp_path / "coworld" / "image_client_hashes.json"
+    cache_path.parent.mkdir()
+    cache_path.write_text("{not-json", encoding="utf-8")
+    config = b'{"architecture":"amd64","os":"linux"}'
+    archive = _docker_archive(config=config, layers=[b"layer-one"])
+
+    def fake_run(command: list[str], **kwargs: object) -> subprocess.CompletedProcess[str]:
+        if command[:3] == ["docker", "image", "inspect"]:
+            return subprocess.CompletedProcess(command, 0, stdout="sha256:unit-image-id\n")
         assert command == ["docker", "image", "save", "unit-test-runtime:latest"]
         stdout = cast(BinaryIO, kwargs["stdout"])
         stdout.write(archive)
@@ -1512,9 +1541,9 @@ def test_local_image_client_hash_uses_docker_archive_content(monkeypatch: pytest
 
     monkeypatch.setattr("coworld.upload.subprocess.run", fake_run)
 
-    assert _local_image_client_hash("unit-test-runtime:latest") == _expected_archive_hash(
-        config, [b"layer-one", b"layer-two"]
-    )
+    expected = _expected_archive_hash(config, [b"layer-one"])
+    assert _local_image_client_hash("unit-test-runtime:latest") == expected
+    assert json.loads(cache_path.read_text(encoding="utf-8")) == {"sha256:unit-image-id": expected}
 
 
 def test_docker_archive_client_hash_matches_config_and_layer_digests() -> None:
@@ -1524,10 +1553,13 @@ def test_docker_archive_client_hash_matches_config_and_layer_digests() -> None:
     assert _docker_archive_client_hash(archive) == _expected_archive_hash(config, [b"layer-one"])
 
 
-def test_local_image_client_hash_rejects_non_amd64_archive(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_local_image_client_hash_rejects_non_amd64_archive(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("XDG_CACHE_HOME", str(tmp_path))
     archive = _docker_archive(config=b'{"architecture":"arm64","os":"linux"}', layers=[b"layer-one"])
 
     def fake_run(command: list[str], **kwargs: object) -> subprocess.CompletedProcess[str]:
+        if command[:3] == ["docker", "image", "inspect"]:
+            return subprocess.CompletedProcess(command, 0, stdout="sha256:unit-image-id\n")
         assert command == ["docker", "image", "save", "unit-test-runtime:latest"]
         stdout = cast(BinaryIO, kwargs["stdout"])
         stdout.write(archive)

@@ -1143,10 +1143,59 @@ def _upload_container_image(client: CoworldUploadClient, image: str) -> Containe
 
 
 def _local_image_client_hash(image: str) -> str:
+    image_id = subprocess.run(
+        ["docker", "image", "inspect", "--format", "{{.Id}}", image],
+        check=True,
+        capture_output=True,
+        text=True,
+    ).stdout.strip()
+    cache_path = _client_hash_cache_path()
+    cache = _load_client_hash_cache(cache_path)
+    cached = cache.get(image_id)
+    if cached is not None:
+        return cached
     with tempfile.TemporaryFile() as archive:
         subprocess.run(["docker", "image", "save", image], check=True, stdout=archive)
         archive.seek(0)
-        return _docker_archive_client_hash(archive, image=image)
+        client_hash = _docker_archive_client_hash(archive, image=image)
+    cache[image_id] = client_hash
+    _write_client_hash_cache(cache_path, cache)
+    return client_hash
+
+
+def _client_hash_cache_path() -> Path:
+    xdg = os.environ.get("XDG_CACHE_HOME")
+    base = Path(xdg).expanduser() if xdg else Path.home() / ".cache"
+    return base / "coworld" / "image_client_hashes.json"
+
+
+def _load_client_hash_cache(cache_path: Path) -> dict[str, str]:
+    if not cache_path.is_file():
+        return {}
+    try:
+        cache = json.loads(cache_path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return {}
+    if not isinstance(cache, dict):
+        return {}
+    return {key: value for key, value in cache.items() if isinstance(value, str)}
+
+
+def _write_client_hash_cache(cache_path: Path, cache: dict[str, str]) -> None:
+    cache_path.parent.mkdir(parents=True, exist_ok=True)
+    tmp_fd, tmp_name = tempfile.mkstemp(prefix=f".{cache_path.name}.", suffix=".tmp", dir=cache_path.parent)
+    try:
+        with os.fdopen(tmp_fd, "w", encoding="utf-8") as tmp_file:
+            json.dump(cache, tmp_file, indent=2, sort_keys=True)
+            tmp_file.write("\n")
+            tmp_file.flush()
+            os.fsync(tmp_file.fileno())
+        os.replace(tmp_name, cache_path)
+    finally:
+        try:
+            os.unlink(tmp_name)
+        except FileNotFoundError:
+            pass
 
 
 def _docker_archive_client_hash(archive: Any, *, image: str | None = None) -> str:
