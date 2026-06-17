@@ -29,7 +29,7 @@ def build_coworld_manifest(
 
     manifest_json = load_json_object(template_path)
     game = manifest_json["game"]
-    if "version" in game and template_path.name != "coworld_manifest.json":
+    if isinstance(game, dict) and "version" in game and template_path.name != "coworld_manifest.json":
         raise RuntimeError(f"Coworld manifest templates must not set game.version: {template_path}")
 
     manifest = _load_template_manifest(manifest_json, version, _compose_image_placeholders(compose_file))
@@ -109,13 +109,13 @@ def _built_image_tags(manifest: CoworldManifest) -> dict[str, str]:
 
 def _resolved_mutable_image_refs(manifest: CoworldManifest) -> dict[str, str]:
     return {
-        image: _resolve_registry_image_ref(image)
+        image: resolve_registry_image_ref(image)
         for image in _manifest_images(manifest)
         if is_mutable_registry_image_ref(image)
     }
 
 
-def _resolve_registry_image_ref(image: str) -> str:
+def resolve_registry_image_ref(image: str) -> str:
     completed = subprocess.run(
         ["docker", "buildx", "imagetools", "inspect", image, "--format", "{{json .Manifest}}"],
         check=True,

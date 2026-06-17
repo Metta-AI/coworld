@@ -38,6 +38,7 @@ from coworld.upload import (
     coworld_status,
     download_coworld_cmd,
     downloaded_coworld_manifest_path,
+    patch_commissioner_cmd,
     upload_coworld_cmd,
     upload_policy_cmd,
 )
@@ -531,6 +532,29 @@ def upload_coworld(
         image_updates=image_updates,
         wait_for_hosted_smoke=wait_hosted_smoke,
         hosted_smoke_timeout_seconds=hosted_smoke_timeout_seconds,
+    )
+
+
+@app.command("patch-commissioner")
+def patch_commissioner(
+    coworld_name: Annotated[str, typer.Argument(help="Canonical Coworld name to patch.")],
+    image: Annotated[str, typer.Argument(help="Commissioner image to upload.")],
+    runnable_id: Annotated[
+        str | None,
+        typer.Option("--runnable-id", help="Commissioner runnable ID. Required when the manifest has multiple."),
+    ] = None,
+    version: Annotated[
+        str | None,
+        typer.Option("--version", help="Override the patched Coworld version. Defaults to the next patch version."),
+    ] = None,
+    server: Annotated[str, typer.Option("--server", help="Observatory API server URL.")] = DEFAULT_SUBMIT_SERVER,
+) -> None:
+    patch_commissioner_cmd(
+        coworld_name,
+        image,
+        runnable_id=runnable_id,
+        version=version,
+        server=server,
     )
 
 

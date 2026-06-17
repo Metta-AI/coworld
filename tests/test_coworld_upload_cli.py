@@ -695,6 +695,88 @@ def test_upload_coworld_from_existing_manifest_updates_one_role_image(
     assert uploaded_manifest["commissioner"][0]["image"] == commissioner_image_id
 
 
+def test_patch_commissioner_command_uploads_image_and_patches(
+    httpserver: HTTPServer,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    coworld_id = "cow_00000000-0000-0000-0000-000000000015"
+    commissioner_image_id = "img_00000000-0000-0000-0000-000000000101"
+    source_image = "ghcr.io/metta-ai/commissioners-baseline:latest"
+    resolved_image = "ghcr.io/metta-ai/commissioners-baseline@sha256:commissionerdigest"
+    hashed_images: list[str] = []
+    inspected_images: list[str] = []
+
+    def fake_hash(image: str) -> str:
+        hashed_images.append(image)
+        return "sha256:commissioner-hash"
+
+    def fake_subprocess_run(args: list[str], **_kwargs: object) -> subprocess.CompletedProcess[str]:
+        if args[:3] == ["docker", "image", "inspect"]:
+            inspected_images.append(args[3])
+            return subprocess.CompletedProcess(args, 0, stdout="")
+        raise AssertionError(f"unexpected subprocess.run: {args}")
+
+    monkeypatch.setattr("coworld.upload.resolve_registry_image_ref", lambda image: resolved_image)
+    monkeypatch.setattr("coworld.upload.subprocess.run", fake_subprocess_run)
+    monkeypatch.setattr("coworld.upload._local_image_client_hash", fake_hash)
+    monkeypatch.setattr("coworld.upload._push_container_image", lambda source_image, push_info: None)
+    httpserver.expect_request(
+        "/observatory/v2/container_images/upload",
+        method="POST",
+        json={"name": "commissioners-baseline", "client_hash": "sha256:commissioner-hash"},
+    ).respond_with_json(
+        {
+            "image": {
+                "id": commissioner_image_id,
+                "name": "commissioners-baseline",
+                "version": 1,
+                "client_hash": "sha256:commissioner-hash",
+                "status": "ready",
+                "image_uri": (
+                    "123456789012.dkr.ecr.us-east-1.amazonaws.com/coworld/user/commissioners-baseline@sha256:digest"
+                ),
+                "image_digest": "sha256:digest",
+            },
+            "pre_signed_info": None,
+        }
+    )
+    httpserver.expect_request(
+        "/observatory/v2/coworlds/patch-commissioner",
+        method="POST",
+        json={
+            "coworld_name": "crewrift",
+            "container_image_id": commissioner_image_id,
+            "runnable_id": "crewrift-commissioner",
+        },
+    ).respond_with_json(
+        {
+            **_coworld_entry(coworld_id, _manifest(), name="crewrift", version="0.1.23", canonical=True),
+            "created_at": "2026-05-08T21:00:00Z",
+        }
+    )
+
+    result = CliRunner().invoke(
+        app,
+        [
+            "patch-commissioner",
+            "crewrift",
+            source_image,
+            "--runnable-id",
+            "crewrift-commissioner",
+            "--server",
+            httpserver.url_for(""),
+        ],
+    )
+
+    assert result.exit_code == 0, result.output
+    assert inspected_images == [resolved_image]
+    assert hashed_images == [resolved_image]
+    assert f"Resolved image: {resolved_image}" in result.output
+    assert "Patched commissioner: crewrift:0.1.23" in result.output
+    assert f"Commissioner image: {commissioner_image_id}" in result.output
+    assert "Canonical: yes" in result.output
+
+
 def test_manifest_with_softmax_image_ids_keeps_existing_image_ids() -> None:
     manifest = _manifest_with_image("img_00000000-0000-0000-0000-000000000099")
     uploaded = _manifest_with_softmax_image_ids(cast(CoworldUploadClient, object()), manifest)

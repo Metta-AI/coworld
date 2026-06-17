@@ -23,6 +23,7 @@ import httpx
 import typer
 from pydantic import BaseModel
 
+from coworld.bundle import resolve_registry_image_ref
 from coworld.certifier import certify_coworld, load_coworld_package
 from coworld.cli_support import validate_run_argv
 from coworld.config import DEFAULT_SUBMIT_SERVER
@@ -257,6 +258,31 @@ class CoworldUploadClient:
             "/v2/coworlds/upload",
             headers=self._headers(),
             json={"manifest": manifest},
+            timeout=120.0,
+        )
+        _raise_for_status(response)
+        return CoworldUploadResponse.model_validate(response.json())
+
+    def patch_commissioner(
+        self,
+        *,
+        coworld_name: str,
+        container_image_id: str,
+        runnable_id: str | None = None,
+        version: str | None = None,
+    ) -> CoworldUploadResponse:
+        payload: dict[str, Any] = {
+            "coworld_name": coworld_name,
+            "container_image_id": container_image_id,
+        }
+        if runnable_id is not None:
+            payload["runnable_id"] = runnable_id
+        if version is not None:
+            payload["version"] = version
+        response = self._http_client.post(
+            "/v2/coworlds/patch-commissioner",
+            headers=self._headers(),
+            json=payload,
             timeout=120.0,
         )
         _raise_for_status(response)
@@ -943,6 +969,45 @@ def upload_policy_cmd(
             tags=tags,
         )
     typer.echo(f"Upload complete: {result.name}:v{result.version}")
+
+
+def patch_commissioner_cmd(
+    coworld_name: str,
+    image: str,
+    *,
+    runnable_id: str | None = None,
+    version: str | None = None,
+    server: str = DEFAULT_SUBMIT_SERVER,
+) -> None:
+    upload_image = _resolve_commissioner_patch_image(image)
+    _ensure_local_image(upload_image)
+    with CoworldUploadClient.from_login(server_url=server) as client:
+        uploaded_image = _upload_container_image(client, upload_image)
+        result = client.patch_commissioner(
+            coworld_name=coworld_name,
+            container_image_id=uploaded_image.id,
+            runnable_id=runnable_id,
+            version=version,
+        )
+    if upload_image != image:
+        typer.echo(f"Resolved image: {upload_image}")
+    typer.echo(f"Patched commissioner: {result.name}:{result.version}")
+    typer.echo(f"Coworld: {result.id}")
+    typer.echo(f"Commissioner image: {uploaded_image.id}")
+    typer.echo(f"Canonical: {'yes' if result.canonical else 'no'}")
+
+
+def _resolve_commissioner_patch_image(image: str) -> str:
+    if not is_mutable_registry_image_ref(image):
+        return image
+    return resolve_registry_image_ref(image)
+
+
+def _ensure_local_image(image: str) -> None:
+    inspect_result = subprocess.run(["docker", "image", "inspect", image], capture_output=True, text=True)
+    if inspect_result.returncode == 0:
+        return
+    subprocess.run(["docker", "pull", image], check=True)
 
 
 def download_coworld(
