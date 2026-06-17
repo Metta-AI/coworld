@@ -199,6 +199,7 @@ These boundaries are useful when deciding where a new feature, artifact, or debu
 - Package usage and starting guide: [README](../../../README.md).
 - Workflow recipes: [Coworld cookbook](../../../COOKBOOK.md).
 - Manifest reference: [COWORLD_MANIFEST.md](COWORLD_MANIFEST.md).
+- Bedrock for players: [BEDROCK.md](BEDROCK.md).
 - Lifecycle overview: [LIFECYCLE.md](LIFECYCLE.md).
 - Artifact reference: [artifacts/README.md](artifacts/README.md).
 - Game container contract: [GAME.md](roles/GAME.md).

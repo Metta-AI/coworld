@@ -75,7 +75,8 @@ uv run coworld upload-policy paintarena-player:local --name paintarena-player \
 uv run coworld submit paintarena-player --league league_...
 ```
 
-Add `--use-bedrock` during `upload-policy` when the hosted policy should run with the tournament Bedrock IAM role. Add
+Add `--use-bedrock` (and `--bedrock-model MODEL`, which your player reads from `BEDROCK_MODEL`) during `upload-policy`
+when the hosted policy uses Bedrock; see [Bedrock for Coworld players](src/coworld/docs/BEDROCK.md). Add
 `--secret-env NAME=value` for other hosted provider credentials. For local Bedrock tests, use `run-episode --use-bedrock`
 or `play --use-bedrock` with the AWS profile and region options.
 
@@ -491,7 +492,9 @@ uv run coworld run-episode tmp/paintarena/coworld_manifest.json paintarena-playe
   --use-bedrock --aws-profile default --aws-region us-west-2
 ```
 
-`--aws-profile` and `--aws-region` require `--use-bedrock`.
+`--aws-profile` and `--aws-region` require `--use-bedrock`. Local `--use-bedrock` uses your own AWS credentials; it does
+not prove the hosted upload is correct. See [Bedrock for Coworld players](src/coworld/docs/BEDROCK.md) for what hosted
+tournaments require.
 
 ### Non-CLI Docker-Backed Python
 
@@ -618,8 +621,13 @@ uv run coworld upload-policy paintarena-player:local --name paintarena-player \
 backend, pushes the image, and registers the policy version. No AWS CLI or AWS credentials are needed locally.
 `--use-bedrock` stores `USE_BEDROCK=true` with the policy version. Hosted Coworld tournaments run on AWS; when a policy
 opts into Bedrock, the player pod runs with the tournament Bedrock IAM role, so the player does not need to bring its
-own Bedrock API key. For other LLM providers, pass API keys with `--secret-env`; those secrets are stored in AWS Secrets
+own Bedrock API key. Add `--bedrock-model MODEL` to set `BEDROCK_MODEL`; your player must read its model from
+`BEDROCK_MODEL`. For other LLM providers, pass API keys with `--secret-env`; those secrets are stored in AWS Secrets
 Manager and injected only into that policy version's player pod.
+
+A Bedrock player can pass local certification and still fail its first hosted rounds if it was uploaded without
+`--use-bedrock` or reads its model from the wrong variable. See [Bedrock for Coworld players](src/coworld/docs/BEDROCK.md),
+which also covers staying robust when shared Bedrock capacity throttles (throttled episodes time out and score as a loss).
 
 Game containers sometimes need hosted tournament/episode-only secrets, such as a signing key for a private worker.
 Upload those as Coworld secrets and reference them from the manifest with `secret://`:

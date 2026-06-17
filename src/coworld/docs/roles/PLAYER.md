@@ -51,6 +51,9 @@ them. See [`COOKBOOK.md`](../../../../COOKBOOK.md#upload-and-submit-a-player) fo
 
 ## Secrets, Bedrock, and LLM credentials
 
+See [`BEDROCK.md`](../BEDROCK.md) for the hosted Bedrock upload contract and staying robust to shared-capacity
+throttling. This section covers the underlying secret-env mechanics.
+
 Treat `manifest.player[].env` as public configuration. Bundled players are uploaded with the Coworld package and their
 images may be mirrored for user download, so neither the image nor manifest env should contain API keys, cloud
 credentials, private model endpoints, or other secrets.
@@ -143,6 +146,7 @@ game's output artifacts after the episode. Players' per-slot actions plus the ga
   game runnable's `/player` websocket route.
 - [`COWORLD_MANIFEST.md`](../COWORLD_MANIFEST.md) — manifest guide and generated-schema pointer.
 - [`COOKBOOK.md`](../../../../COOKBOOK.md) — policy-upload flow, secrets, league submission.
+- [`BEDROCK.md`](../BEDROCK.md) — hosted Bedrock upload contract and robustness to shared-quota throttling.
 - [`artifacts/EPISODE_BUNDLE.md`](../artifacts/EPISODE_BUNDLE.md) — how player-related artifacts can be bundled.
 - [`artifacts/PLAYER_LOGS.md`](../artifacts/PLAYER_LOGS.md) — diagnostic logs produced by player containers.
 - [`artifacts/PLAYER_ARTIFACT.md`](../artifacts/PLAYER_ARTIFACT.md) — optional artifact a player uploads at episode end.

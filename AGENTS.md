@@ -91,6 +91,8 @@ source of truth. They are generated docs and `$schema` targets; `test_types.py` 
   cross-links.
 - [src/coworld/docs/COWORLD_MANIFEST.md](src/coworld/docs/COWORLD_MANIFEST.md) - manifest semantics and schema source
   of truth.
+- [src/coworld/docs/BEDROCK.md](src/coworld/docs/BEDROCK.md) - hosted Bedrock upload contract for player policies and
+  robustness to shared-quota throttling.
 - [src/coworld/docs/LIFECYCLE.md](src/coworld/docs/LIFECYCLE.md) - local and hosted episode lifecycle.
 - `src/coworld/docs/roles/*.md` - per-role contracts.
 - `src/coworld/docs/artifacts/*.md` - artifact contracts.
