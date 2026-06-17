@@ -19,6 +19,7 @@ from kubernetes import client, config
 from kubernetes.client.rest import ApiException
 
 from coworld.runner.io import RunnerError, read_data, upload_data
+from coworld.runner.phase_timings import EpisodePhaseTimings
 from coworld.runner.runner import (
     EpisodeArtifacts,
     PlayerLaunchSpec,
@@ -85,7 +86,7 @@ def run_from_env() -> None:
     job = _read_job_spec()
     artifacts = EpisodeArtifacts.create(WORKDIR, prefix="coworld-job-")
     try:
-        _run_kubernetes_episode(
+        core_timings = _run_kubernetes_episode(
             job,
             artifacts,
             timeout_seconds=float(os.environ.get("COWORLD_TIMEOUT_SECONDS", "3600")),
@@ -94,7 +95,9 @@ def run_from_env() -> None:
         _write_error_info(exc)
         _upload_debug_logs(artifacts)
         raise
+    upload_start = time.monotonic()
     _upload_outputs(artifacts)
+    _upload_timings(EpisodePhaseTimings(**core_timings, artifact_upload_s=time.monotonic() - upload_start))
 
 
 def _read_job_spec() -> CoworldEpisodeJobSpec:
@@ -129,6 +132,12 @@ def _upload_debug_logs(artifacts: EpisodeArtifacts) -> None:
             log_path = artifacts.policy_log_path(int(slot))
             if log_path.exists():
                 upload_data(log_uri, log_path.read_bytes(), content_type="text/plain")
+
+
+def _upload_timings(timings: EpisodePhaseTimings) -> None:
+    timings_uri = os.environ.get("WORKER_TIMINGS_URI")
+    if timings_uri is not None:
+        upload_data(timings_uri, timings.model_dump_json(), content_type="application/json")
 
 
 def _upload_outputs(artifacts: EpisodeArtifacts) -> None:
@@ -170,7 +179,8 @@ def _run_kubernetes_episode(
     artifacts: EpisodeArtifacts,
     *,
     timeout_seconds: float,
-) -> None:
+) -> dict[str, float]:
+    worker_start = time.monotonic()
     _load_incluster_config()
     core_v1 = client.CoreV1Api()
     namespace = os.environ["JOB_NAMESPACE"]
@@ -188,6 +198,7 @@ def _run_kubernetes_episode(
     try:
         _create_game_service(core_v1, namespace, service_name, job_id, owner_references)
         _wait_for_health(core_v1, namespace, pod_name, timeout_seconds=timeout_seconds)
+        game_ready = time.monotonic()
         if players:
             _require_http_ok(_player_client_url(0, tokens[0]))
             asyncio.run(_require_bad_player_rejected(f"ws://127.0.0.1:{GAME_PORT}/player?slot=0&token=bad"))
@@ -210,8 +221,10 @@ def _run_kubernetes_episode(
                 player_memory_request,
                 owner_references,
             )
+        players_launched = time.monotonic()
 
         asyncio.run(_require_global_message(f"ws://127.0.0.1:{GAME_PORT}/global", timeout_seconds=timeout_seconds))
+        first_step = time.monotonic()
         _wait_for_episode_artifacts(
             artifacts,
             core_v1,
@@ -221,11 +234,19 @@ def _run_kubernetes_episode(
             timeout_seconds=timeout_seconds,
             require_replay=os.environ.get("REPLAY_URI") is not None,
         )
+        gameplay_done = time.monotonic()
         results = json.loads(artifacts.results_path.read_text(encoding="utf-8"))
         validate_json_schema(results, job.results_schema)
+        core_timings = {
+            "game_boot_s": game_ready - worker_start,
+            "player_launch_s": players_launched - game_ready,
+            "first_step_s": first_step - players_launched,
+            "gameplay_s": gameplay_done - first_step,
+        }
     finally:
         _collect_logs(core_v1, namespace, pod_name, child_names, artifacts)
         _delete_child_resources(core_v1, namespace, service_name, child_names)
+    return core_timings
 
 
 def _load_incluster_config() -> None:

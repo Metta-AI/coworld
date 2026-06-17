@@ -82,6 +82,7 @@ _CORE_SRCS = [
     "src/coworld/reporter_protocol.py",
     "src/coworld/runner/__init__.py",
     "src/coworld/runner/io.py",
+    "src/coworld/runner/phase_timings.py",
     "src/coworld/runner/runner.py",
     "src/coworld/schema_validation.py",
     "src/coworld/types.py",

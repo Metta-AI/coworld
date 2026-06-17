@@ -16,6 +16,7 @@ from coworld.runner import io as runner_io
 from coworld.runner import kubernetes_runner
 from coworld.runner import runner as runner_module
 from coworld.runner.kubernetes_runner import _collect_logs, _upload_outputs, _wait_for_episode_artifacts
+from coworld.runner.phase_timings import EpisodePhaseTimings
 from coworld.runner.runner import EpisodeArtifacts, EpisodeRunSpec, PlayerLaunchSpec, RunnableLaunchSpec
 
 
@@ -150,6 +151,39 @@ def test_upload_outputs_zlib_compresses_replay_at_boundary(tmp_path, monkeypatch
     assert content_type == "application/x-compress"
     assert zlib.decompress(replay_bytes) == replay_payload
     assert not (artifacts.workspace / "replay.z").exists()
+
+
+def test_upload_timings_writes_model_json_to_env_uri(monkeypatch):
+    uploads: list[tuple[str, str, str]] = []
+    monkeypatch.setattr(
+        kubernetes_runner,
+        "upload_data",
+        lambda uri, data, *, content_type: uploads.append((uri, data, content_type)),
+    )
+    monkeypatch.setenv("WORKER_TIMINGS_URI", "file:///tmp/timings.json")
+    timings = EpisodePhaseTimings(
+        game_boot_s=1.0, player_launch_s=2.0, first_step_s=3.0, gameplay_s=4.0, artifact_upload_s=0.5
+    )
+
+    kubernetes_runner._upload_timings(timings)
+
+    assert len(uploads) == 1
+    uri, data, content_type = uploads[0]
+    assert uri == "file:///tmp/timings.json"
+    assert content_type == "application/json"
+    assert EpisodePhaseTimings.model_validate_json(data).first_step_s == 3.0
+
+
+def test_upload_timings_noop_without_env(monkeypatch):
+    uploads: list[object] = []
+    monkeypatch.setattr(kubernetes_runner, "upload_data", lambda *a, **k: uploads.append(a))
+    monkeypatch.delenv("WORKER_TIMINGS_URI", raising=False)
+
+    kubernetes_runner._upload_timings(
+        EpisodePhaseTimings(game_boot_s=1, player_launch_s=1, first_step_s=1, gameplay_s=1, artifact_upload_s=1)
+    )
+
+    assert uploads == []
 
 
 def test_require_http_ok_accepts_replay_client_redirect(monkeypatch):
