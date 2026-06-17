@@ -9,6 +9,7 @@ from typing import Annotated, Iterator
 from urllib.parse import urlparse
 
 import typer
+from packaging.version import Version
 from rich import box
 from rich.table import Table
 
@@ -385,6 +386,20 @@ def list_coworlds(
         emit_json([coworld.model_dump(mode="json") for coworld in coworlds])
         return
     _print_coworld_table(coworlds)
+
+
+@app.command("next-version")
+def next_version(
+    coworld_name: Annotated[str, typer.Argument(help="Coworld name.")],
+    server: Annotated[str, typer.Option("--server", help="Observatory API server URL.")] = DEFAULT_SUBMIT_SERVER,
+) -> None:
+    with CoworldUploadClient.from_login(server_url=server) as client:
+        coworld = client.find_canonical_coworld(coworld_name)
+    if coworld is None:
+        console.print(f"[red]Canonical Coworld not found: {coworld_name}. Pass an explicit version instead.[/red]")
+        raise typer.Exit(1)
+    release = Version(coworld.version).release
+    typer.echo(".".join(str(part) for part in (*release[:-1], release[-1] + 1)))
 
 
 @app.command("show")

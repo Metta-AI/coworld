@@ -58,6 +58,45 @@ def test_upload_client_auth_error_mentions_server_url(monkeypatch: pytest.Monkey
     assert "uv run softmax login --server http://localhost:3102/api" in str(exc_info.value)
 
 
+def test_next_version_command_bumps_canonical_patch(httpserver: HTTPServer) -> None:
+    coworld_id = "cow_00000000-0000-0000-0000-000000000010"
+    manifest = _manifest()
+    httpserver.expect_request(
+        "/observatory/v2/coworlds",
+        method="GET",
+        query_string="limit=200&offset=0",
+    ).respond_with_json(
+        [
+            _coworld_entry(coworld_id, manifest, name="cogs_vs_clips", version="0.1.22", canonical=True),
+            _coworld_entry(
+                "cow_00000000-0000-0000-0000-000000000011",
+                manifest,
+                name="cogs_vs_clips",
+                version="0.1.21",
+                canonical=False,
+            ),
+        ]
+    )
+
+    result = CliRunner().invoke(app, ["next-version", "cogs-vs-clips", "--server", httpserver.url_for("")])
+
+    assert result.exit_code == 0, result.output
+    assert result.output == "0.1.23\n"
+
+
+def test_next_version_command_fails_without_canonical_coworld(httpserver: HTTPServer) -> None:
+    httpserver.expect_request(
+        "/observatory/v2/coworlds",
+        method="GET",
+        query_string="limit=200&offset=0",
+    ).respond_with_json([])
+
+    result = CliRunner().invoke(app, ["next-version", "crewrift", "--server", httpserver.url_for("")], color=False)
+
+    assert result.exit_code == 1
+    assert "Canonical Coworld not found: crewrift" in result.output
+
+
 def test_upload_coworld_rejects_mutable_registry_image_refs(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
@@ -1650,10 +1689,11 @@ def _coworld_entry(
     *,
     version: str,
     canonical: bool,
+    name: str = "unit-test-game",
 ) -> dict[str, object]:
     return {
         "id": coworld_id,
-        "name": "unit-test-game",
+        "name": name,
         "version": version,
         "manifest": manifest,
         "manifest_hash": "sha256:manifest-hash",
