@@ -661,7 +661,7 @@ The non-CLI flow is an API sequence with a Docker registry step:
 3. If `pre_signed_info` is returned, push the Docker image to the returned registry/repository/tag.
 4. `POST /v2/container_images/upload/complete` with `{"id": "<container-image-id>"}`.
 5. `POST /stats/policies/docker-img/complete` with the container image ID, policy name, optional `run`, and optional
-   `policy_secret_env`.
+   secret environment variables (uploaded via `POST /stats/policy-secret-envs` and referenced by ID).
 6. `POST /v2/league-submissions` with the returned policy version ID and target league.
 
 Use the Python upload client if you want the API calls without hand-writing request models:
