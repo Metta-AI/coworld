@@ -28,7 +28,6 @@ from coworld.api_client import (
     LeaguePolicyMembershipPublic,
     LeaguePublic,
     LeagueSubmissionPublic,
-    PolicyPoolPublic,
     RoundDetailPublic,
     RoundPublic,
     V2EpisodeRequestRow,
@@ -240,29 +239,6 @@ def register_tournament_commands(app: typer.Typer) -> None:
             return
         _print_round_detail(round_detail)
 
-    @app.command("pools")
-    def pools(
-        pool_id: Annotated[str | None, typer.Argument(help="Pool ID to inspect. Lists pools when omitted.")] = None,
-        round_id: Annotated[str | None, typer.Option("--round", "-r", help="Filter by round ID.")] = None,
-        limit: Annotated[int, typer.Option("--limit", min=1, max=1000, help="Maximum rows to return.")] = 200,
-        offset: Annotated[int, typer.Option("--offset", min=0, help="Rows to skip.")] = 0,
-        server: Annotated[str, typer.Option("--server", help="Observatory API server URL.")] = DEFAULT_SUBMIT_SERVER,
-        json_output: Annotated[bool, typer.Option("--json", help="Print raw JSON.")] = False,
-    ) -> None:
-        with CoworldApiClient.from_login(server_url=server) as client:
-            if pool_id is None:
-                rows = client.list_pools(round_id=round_id, limit=limit, offset=offset)
-                if json_output:
-                    emit_json(_dump_models(rows))
-                    return
-                _print_pools(rows)
-                return
-            pool = client.get_pool(pool_id)
-        if json_output:
-            emit_json(pool.model_dump(mode="json"))
-            return
-        _print_pool_detail(pool)
-
     @app.command("memberships")
     def memberships(
         league_id: Annotated[str | None, typer.Option("--league", "-l", help="Filter by league ID.")] = None,
@@ -383,7 +359,6 @@ def register_tournament_commands(app: typer.Typer) -> None:
         ] = None,
         division_id: Annotated[str | None, typer.Option("--division", "-d", help="Filter by division ID.")] = None,
         round_id: Annotated[str | None, typer.Option("--round", "-r", help="Filter by round ID.")] = None,
-        pool_id: Annotated[str | None, typer.Option("--pool", help="Filter by pool ID.")] = None,
         policy: Annotated[
             str | None,
             typer.Option("--policy", "-p", help="Filter by policy name/version or policy version UUID."),
@@ -411,7 +386,6 @@ def register_tournament_commands(app: typer.Typer) -> None:
                 client,
                 division_id=division_id,
                 round_id=round_id,
-                pool_id=pool_id,
                 limit=limit,
                 offset=offset,
             )
@@ -594,7 +568,6 @@ def register_tournament_commands(app: typer.Typer) -> None:
     def replays(
         division_id: Annotated[str | None, typer.Option("--division", "-d", help="Filter by division ID.")] = None,
         round_id: Annotated[str | None, typer.Option("--round", "-r", help="Filter by round ID.")] = None,
-        pool_id: Annotated[str | None, typer.Option("--pool", help="Filter by pool ID.")] = None,
         policy: Annotated[
             str | None,
             typer.Option("--policy", "-p", help="Filter by policy name/version or policy version UUID."),
@@ -615,7 +588,6 @@ def register_tournament_commands(app: typer.Typer) -> None:
                 client,
                 division_id=division_id,
                 round_id=round_id,
-                pool_id=pool_id,
                 limit=limit,
                 offset=offset,
             )
@@ -853,7 +825,6 @@ def _print_round_detail(row: RoundDetailPublic) -> None:
     console.print(f"Number: {row.round_number}")
     console.print(f"Status: {row.status}")
     console.print(f"Division: {row.division.name} ({row.division.id})")
-    console.print(f"Pools: {len(row.pools)}")
     console.print(f"Results: {len(row.results)}")
     if row.error is not None:
         console.print(f"[red]Error:[/red] {row.error}")
@@ -873,35 +844,6 @@ def _print_round_results(row: RoundDetailPublic) -> None:
             _policy_label(result.policy_version),
             _format_score(result.score),
         )
-    console.print(table)
-
-
-def _print_pools(rows: list[PolicyPoolPublic]) -> None:
-    table = Table(title="Coworld Pools", box=box.SIMPLE_HEAVY, show_lines=False, pad_edge=False)
-    table.add_column("ID")
-    table.add_column("Label")
-    table.add_column("Type")
-    table.add_column("Status")
-    table.add_column("Round")
-    table.add_column("Coworld")
-    for row in rows:
-        table.add_row(row.id, row.label, row.pool_type, row.status, row.round_id or "-", row.coworld_id or "-")
-    console.print(table)
-
-
-def _print_pool_detail(row: Any) -> None:
-    console.print(f"[bold]Pool:[/bold] {row.id}")
-    console.print(f"Label: {row.label}")
-    console.print(f"Type: {row.pool_type}")
-    console.print(f"Status: {row.status}")
-    console.print(f"Round: {row.round_id or '-'}")
-    console.print(f"Coworld: {row.coworld_id or '-'}")
-    table = Table(title="Pool Entries", box=box.SIMPLE_HEAVY, show_lines=False, pad_edge=False)
-    table.add_column("Seed", justify="right")
-    table.add_column("Player")
-    table.add_column("Policy")
-    for entry in row.entries:
-        table.add_row(str(entry.seed_order), _player_label(entry.player), _policy_label(entry.policy_version))
     console.print(table)
 
 
@@ -962,12 +904,10 @@ def _collect_episode_requests(
     *,
     division_id: str | None,
     round_id: str | None,
-    pool_id: str | None,
     limit: int,
     offset: int,
 ) -> list[V2EpisodeRequestRow]:
     return client.list_episode_requests(
-        pool_id=pool_id,
         division_id=division_id,
         round_id=round_id,
         limit=limit,
@@ -1045,7 +985,7 @@ def _print_episodes(rows: list[V2EpisodeRequestRow]) -> None:
 def _print_episode_detail(row: V2EpisodeRequestRow) -> None:
     console.print(f"[bold]Episode request:[/bold] {row.id}")
     console.print(f"Status: {row.status}")
-    console.print(f"Pool: {row.pool_id or '-'}")
+    console.print(f"Round: {row.round_id or '-'}")
     console.print(f"Coworld: {row.coworld_id or '-'}")
     console.print(f"Seed: {row.seed if row.seed is not None else '-'}")
     console.print(f"Job: {row.job_id or '-'}")

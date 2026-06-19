@@ -82,7 +82,6 @@ def make_metadata(variant_id: str = "default") -> dict[str, Any]:
             "league_id": None,
             "division_id": None,
             "round_id": None,
-            "pool_id": None,
             "tags": {},
         }
     )

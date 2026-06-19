@@ -760,9 +760,8 @@ from softmax.auth import get_api_server
 
 with CoworldApiClient.from_login(server_url=get_api_server()) as client:
     rounds = client.list_rounds(division_id="div_...", status="completed", limit=5)
-    pools = client.list_pools(round_id="round_...")
     round_detail = client.get_round("round_...")
-    episodes = client.list_episode_requests(pool_id=pools[0].id, limit=200)
+    episodes = client.list_episode_requests(round_id="round_...", limit=200)
     events = client.list_events(round_id="round_...")
 ```
 
@@ -770,9 +769,8 @@ Raw API routes:
 
 ```text
 GET /v2/rounds?division_id=div_...&status=completed
-GET /v2/pools?round_id=round_...
 GET /v2/rounds/round_...
-GET /v2/episode-requests?pool_id=pool_...
+GET /v2/episode-requests?round_id=round_...
 GET /v2/competition-events?round_id=round_...
 ```
 
@@ -931,7 +929,7 @@ from softmax.auth import get_api_server
 
 
 with CoworldApiClient.from_login(server_url=get_api_server()) as client:
-    episodes = client.list_episode_requests(pool_id="pool_...", limit=200)
+    episodes = client.list_episode_requests(round_id="round_...", limit=200)
     episode = client.get_episode_request("ereq_...")
     game_log = client.get_episode_request_artifact_text(episode.id, "logs")
     scores = episode.scores

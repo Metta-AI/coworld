@@ -142,37 +142,6 @@ class EnvConfigPublic(CoworldAPIModel):
     created_at: datetime
 
 
-class PolicyPoolPublic(CoworldAPIModel):
-    id: str
-    round_id: str | None = None
-    pool_index: int | None = None
-    label: str
-    pool_type: str
-    env_config: EnvConfigPublic | None = None
-    coworld_id: str | None = None
-    config: dict[str, Any]
-    status: str
-    error: str | None = None
-    started_at: datetime | None = None
-    completed_at: datetime | None = None
-    created_at: datetime
-
-
-class PolicyPoolEntryPublic(CoworldAPIModel):
-    id: UUID
-    pool_id: str
-    league_policy_membership_id: str | None = None
-    policy_version: PolicyVersionPublic
-    player: PlayerPublic | None = None
-    seed_order: int
-    metadata: dict[str, Any] | None = None
-    created_at: datetime
-
-
-class PoolDetailPublic(PolicyPoolPublic):
-    entries: list[PolicyPoolEntryPublic]
-
-
 class RoundResultPublic(CoworldAPIModel):
     id: str
     rank: int
@@ -184,7 +153,6 @@ class RoundResultPublic(CoworldAPIModel):
 
 
 class RoundDetailPublic(RoundPublic):
-    pools: list[PolicyPoolPublic]
     results: list[RoundResultPublic]
 
 
@@ -230,7 +198,7 @@ class EpisodeRequestScore(CoworldAPIModel):
 class V2EpisodeRequestRow(CoworldAPIModel):
     id: str
     requester_user_id: str
-    pool_id: str | None = None
+    round_id: str | None = None
     mod_name: str | None = None
     env_config_name: str | None = None
     coworld_id: str | None = None
@@ -459,21 +427,6 @@ class CoworldApiClient:
     def get_round(self, round_id: str) -> RoundDetailPublic:
         return self._get(f"/v2/rounds/{round_id}", RoundDetailPublic)
 
-    def list_pools(
-        self,
-        *,
-        round_id: str | None = None,
-        limit: int = 200,
-        offset: int = 0,
-    ) -> list[PolicyPoolPublic]:
-        params: dict[str, str | int] = {"limit": limit, "offset": offset}
-        if round_id is not None:
-            params["round_id"] = round_id
-        return self._get("/v2/pools", list[PolicyPoolPublic], params=params)
-
-    def get_pool(self, pool_id: str) -> PoolDetailPublic:
-        return self._get(f"/v2/pools/{pool_id}", PoolDetailPublic)
-
     def list_memberships(
         self,
         *,
@@ -541,7 +494,6 @@ class CoworldApiClient:
     def list_episode_requests(
         self,
         *,
-        pool_id: str | None = None,
         division_id: str | None = None,
         round_id: str | None = None,
         player_id: str | None = None,
@@ -549,8 +501,6 @@ class CoworldApiClient:
         offset: int = 0,
     ) -> list[V2EpisodeRequestRow]:
         params: dict[str, str | int] = {"limit": limit, "offset": offset}
-        if pool_id is not None:
-            params["pool_id"] = pool_id
         if division_id is not None:
             params["division_id"] = division_id
         if round_id is not None:
