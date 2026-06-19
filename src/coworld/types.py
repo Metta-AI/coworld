@@ -35,6 +35,39 @@ def _future_required_role_schema(role: str) -> JsonSchema:
     }
 
 
+class CoworldResourceRequests(BaseModel):
+    model_config = ConfigDict(extra="forbid", populate_by_name=True)
+
+    cpu: str | None = Field(
+        default=None,
+        description="Kubernetes CPU request quantity, e.g. '2' or '500m'. Omit to use the role default.",
+    )
+    memory: str | None = Field(
+        default=None,
+        description="Kubernetes memory request quantity, e.g. '512Mi' or '4Gi'. Omit to use the role default.",
+    )
+    ephemeral_storage: str | None = Field(
+        default=None,
+        alias="ephemeral-storage",
+        description=(
+            "Kubernetes node-local scratch disk request, e.g. '10Gi'. Covers the unpacked image plus workdir. "
+            "Omit to use the role default."
+        ),
+    )
+
+
+class CoworldRunnableResources(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    requests: CoworldResourceRequests = Field(
+        description=(
+            "Scheduler reservation for this runnable. The backend clamps each field to the role's bounds and "
+            "rejects an upload whose request exceeds a role maximum. Limits are derived by the backend, not "
+            "declared here."
+        ),
+    )
+
+
 class CoworldRunnableSpec(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -51,6 +84,13 @@ class CoworldRunnableSpec(BaseModel):
     source_url: str | None = Field(
         default=None,
         description="Optional public source repository, directory, or file URL for this runnable.",
+    )
+    resources: CoworldRunnableResources | None = Field(
+        default=None,
+        description=(
+            "Optional compute request profile for this runnable. Omit to inherit the role's default profile. "
+            "Declared requests are clamped to per-role bounds by the backend."
+        ),
     )
 
     def as_runnable_spec(self) -> CoworldRunnableSpec:

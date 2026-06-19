@@ -40,7 +40,57 @@ def test_runnable_and_manifest_role_fields_are_flat() -> None:
     spec = CoworldRunnableSpec(type="game", image="game", source_url="https://example.com")
 
     assert spec.source_url == "https://example.com"
-    assert set(CoworldRunnableSpec.model_fields) == {"type", "image", "run", "env", "source_url"}
+    assert set(CoworldRunnableSpec.model_fields) == {"type", "image", "run", "env", "source_url", "resources"}
+
+
+def test_runnable_resources_round_trip_through_as_runnable_spec() -> None:
+    spec = CoworldRunnableSpec.model_validate(
+        {
+            "type": "game",
+            "image": "game",
+            "resources": {"requests": {"cpu": "4", "memory": "4Gi", "ephemeral-storage": "12Gi"}},
+        }
+    )
+
+    assert spec.resources is not None
+    assert spec.resources.requests.cpu == "4"
+    assert spec.resources.requests.memory == "4Gi"
+    assert spec.resources.requests.ephemeral_storage == "12Gi"
+    # as_runnable_spec dumps by field name (ephemeral_storage), so populate_by_name must accept it.
+    assert spec.as_runnable_spec().resources == spec.resources
+
+
+def test_runnable_resources_default_to_none() -> None:
+    spec = CoworldRunnableSpec(type="game", image="game")
+    assert spec.resources is None
+
+
+def test_runnable_resources_reject_limits_key() -> None:
+    with pytest.raises(ValidationError):
+        CoworldRunnableSpec.model_validate(
+            {
+                "type": "game",
+                "image": "game",
+                "resources": {"requests": {"cpu": "4"}, "limits": {"memory": "6Gi"}},
+            }
+        )
+
+
+def test_runnable_resources_partial_requests_allowed() -> None:
+    spec = CoworldRunnableSpec.model_validate(
+        {"type": "player", "image": "player", "resources": {"requests": {"cpu": "500m"}}}
+    )
+    assert spec.resources is not None
+    assert spec.resources.requests.cpu == "500m"
+    assert spec.resources.requests.memory is None
+    assert spec.resources.requests.ephemeral_storage is None
+
+
+def test_manifest_schema_accepts_game_resources() -> None:
+    manifest = _manifest_data()
+    manifest["game"]["runnable"]["resources"] = {"requests": {"cpu": "4", "memory": "4Gi", "ephemeral-storage": "12Gi"}}
+
+    validate_json_schema(manifest, coworld_manifest_schema())
 
 
 def test_manifest_rejects_wrong_game_runnable_type() -> None:

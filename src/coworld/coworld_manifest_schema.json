@@ -225,6 +225,18 @@
           "description": "Optional public source repository, directory, or file URL for this runnable.",
           "title": "Source Url"
         },
+        "resources": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/CoworldRunnableResources"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Optional compute request profile for this runnable. Omit to inherit the role's default profile. Declared requests are clamped to per-role bounds by the backend."
+        },
         "id": {
           "description": "Stable runnable identifier within this manifest. Certification fixtures reference player ids.",
           "minLength": 1,
@@ -307,6 +319,64 @@
       "title": "CoworldProtocolDocs",
       "type": "object"
     },
+    "CoworldResourceRequests": {
+      "additionalProperties": false,
+      "properties": {
+        "cpu": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Kubernetes CPU request quantity, e.g. '2' or '500m'. Omit to use the role default.",
+          "title": "Cpu"
+        },
+        "memory": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Kubernetes memory request quantity, e.g. '512Mi' or '4Gi'. Omit to use the role default.",
+          "title": "Memory"
+        },
+        "ephemeral-storage": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Kubernetes node-local scratch disk request, e.g. '10Gi'. Covers the unpacked image plus workdir. Omit to use the role default.",
+          "title": "Ephemeral-Storage"
+        }
+      },
+      "title": "CoworldResourceRequests",
+      "type": "object"
+    },
+    "CoworldRunnableResources": {
+      "additionalProperties": false,
+      "properties": {
+        "requests": {
+          "$ref": "#/$defs/CoworldResourceRequests",
+          "description": "Scheduler reservation for this runnable. The backend clamps each field to the role's bounds and rejects an upload whose request exceeds a role maximum. Limits are derived by the backend, not declared here."
+        }
+      },
+      "required": ["requests"],
+      "title": "CoworldRunnableResources",
+      "type": "object"
+    },
     "CoworldRunnableSpec": {
       "additionalProperties": false,
       "properties": {
@@ -349,6 +419,18 @@
           "default": null,
           "description": "Optional public source repository, directory, or file URL for this runnable.",
           "title": "Source Url"
+        },
+        "resources": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/CoworldRunnableResources"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Optional compute request profile for this runnable. Omit to inherit the role's default profile. Declared requests are clamped to per-role bounds by the backend."
         }
       },
       "required": ["type", "image"],
