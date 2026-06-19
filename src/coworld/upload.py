@@ -523,11 +523,22 @@ class CoworldUploadClient:
         secret_env: dict[str, str] | None,
         tags: dict[str, str] | None = None,
     ) -> PolicyVersionResponse:
+        policy_secret_env_id: str | None = None
+        if secret_env:
+            secret_response = self._http_client.post(
+                "/stats/policy-secret-envs",
+                headers=self._headers(),
+                json={"policy_secret_env": secret_env},
+                timeout=120.0,
+            )
+            _raise_for_status(secret_response)
+            policy_secret_env_id = secret_response.json()["id"]
+
         payload: dict[str, Any] = {"name": name, "container_image_id": container_image_id}
         if run:
             payload["run"] = run
-        if secret_env:
-            payload["policy_secret_env"] = secret_env
+        if policy_secret_env_id is not None:
+            payload["policy_secret_env_id"] = policy_secret_env_id
         if tags:
             payload["tags"] = tags
         response = self._http_client.post(

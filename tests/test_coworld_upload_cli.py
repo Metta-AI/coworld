@@ -933,6 +933,20 @@ def test_upload_policy_command_sends_policy_secrets(
             "pre_signed_info": None,
         }
     )
+    # New flow: secret_env is uploaded first to /stats/policy-secret-envs.
+    httpserver.expect_request(
+        "/observatory/stats/policy-secret-envs",
+        method="POST",
+        headers={"Authorization": "Bearer token"},
+        json={
+            "policy_secret_env": {
+                "USE_BEDROCK": "true",
+                "BEDROCK_MODEL": "us.amazon.nova-micro-v1:0",
+                "ANTHROPIC_API_KEY": "sk-ant-test",
+            },
+        },
+    ).respond_with_json({"id": "00000000-0000-0000-0000-000000000040"})
+    # Then docker-img/complete carries policy_secret_env_id, NOT policy_secret_env.
     httpserver.expect_request(
         "/observatory/stats/policies/docker-img/complete",
         method="POST",
@@ -940,11 +954,7 @@ def test_upload_policy_command_sends_policy_secrets(
         json={
             "name": "paintbot",
             "container_image_id": "img_00000000-0000-0000-0000-000000000030",
-            "policy_secret_env": {
-                "USE_BEDROCK": "true",
-                "BEDROCK_MODEL": "us.amazon.nova-micro-v1:0",
-                "ANTHROPIC_API_KEY": "sk-ant-test",
-            },
+            "policy_secret_env_id": "00000000-0000-0000-0000-000000000040",
         },
     ).respond_with_json(
         {
