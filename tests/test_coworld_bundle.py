@@ -80,7 +80,7 @@ def test_build_coworld_manifest_runs_compose_and_writes_hydrated_manifest(
             {"cwd": tmp_path, "check": True},
         ),
         (
-            ["docker", "compose", "-f", str(tmp_path / "compose.yaml"), "build"],
+            ["docker", "compose", "-f", str(tmp_path / "compose.yaml"), "build", "--pull"],
             {"cwd": tmp_path, "check": True},
         ),
         (

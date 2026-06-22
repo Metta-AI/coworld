@@ -39,7 +39,16 @@ def build_coworld_manifest(
         cwd=compose_file.parent,
         check=True,
     )
-    subprocess.run(["docker", "compose", "-f", str(compose_file), "build"], cwd=compose_file.parent, check=True)
+    # --pull so buildable services (e.g. a commissioner built FROM
+    # commissioners-default:latest) always refresh their base image instead of
+    # reusing a stale locally-cached one. A mutable FROM can otherwise bake an
+    # out-of-date base, and --resolve-mutable-images below only rewrites manifest
+    # image refs after the local image is built, not Dockerfile base layers.
+    subprocess.run(
+        ["docker", "compose", "-f", str(compose_file), "build", "--pull"],
+        cwd=compose_file.parent,
+        check=True,
+    )
     if resolve_mutable_image_refs:
         resolved_image_refs = _resolved_mutable_image_refs(manifest)
         manifest = _with_image_tags(manifest, resolved_image_refs)

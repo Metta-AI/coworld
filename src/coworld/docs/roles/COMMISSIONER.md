@@ -613,7 +613,12 @@ Current examples include:
 - Reusable default commissioner: `id: "default-commissioner"` with image
   `ghcr.io/metta-ai/commissioners-default:latest`.
 
-Resolve mutable tags such as `:latest` to the intended pinned digest before relying on them for a league.
+Prefer the mutable `:latest` tag in your source (`compose.yaml` / `commissioner.Dockerfile`), like the canonical
+worlds (paintarena, tribal_village, ...) do. `coworld build --resolve-mutable-images` resolves `:latest` to the
+intended immutable digest **at upload time** and writes that digest into the uploaded manifest, so each upload picks up
+the newest published commissioner while the runner still gets an exact, pinned image. Hardcoding a digest in source
+instead freezes the game on whatever was current when the digest was written, which is how coworlds silently ran a
+months-stale commissioner.
 
 ## The reusable config-driven commissioner (`ruleset_strategy`)
 
@@ -685,7 +690,7 @@ Three options, cheapest first:
 
    ```dockerfile
    # my-game/coworld/commissioner.Dockerfile
-   FROM ghcr.io/metta-ai/commissioners-default@sha256:<pinned-amd64-digest>
+   FROM ghcr.io/metta-ai/commissioners-default:latest
    COPY my-commissioner.yaml /config/my-commissioner.yaml
    ENV RULESET_STRATEGY_CONFIG_PATH=/config/my-commissioner.yaml
    ```
@@ -703,9 +708,11 @@ Three options, cheapest first:
    ```
 
    This keeps your scheduling config in your own repo instead of editing the shared `Metta-AI/commissioners` configs.
-   **Pin a specific amd64 _digest_ as the base** — the `:latest` tag is an amd64-only manifest list that `coworld build`
-   cannot `docker pull` on an arm64 host (building `FROM` a digest works). cognames is the in-tree reference for this:
-   `games/cognames/coworld/{cognames-commissioner.yaml,commissioner.Dockerfile,compose.yaml}`.
+   **Build `FROM …commissioners-default:latest`** so each build picks up the newest published commissioner; `coworld
+   build --resolve-mutable-images` resolves the tag to an immutable digest at upload time, so the uploaded image is still
+   exactly pinned. (The build/upload runs on linux/amd64 — where the `:latest` manifest list pulls fine — so the old
+   arm64 caveat about pinning a platform-specific digest no longer applies on the build host.) cognames is the in-tree
+   reference for this: `games/cognames/coworld/{cognames-commissioner.yaml,commissioner.Dockerfile,compose.yaml}`.
 
 ## How it fits with other roles
 
