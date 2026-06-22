@@ -1,3 +1,4 @@
+import asyncio
 import json
 import os
 import socket
@@ -216,6 +217,81 @@ def test_require_http_ok_accepts_replay_client_redirect(monkeypatch):
     monkeypatch.setattr(runner_module.httpx, "get", lambda _url, timeout: RedirectResponse())
 
     runner_module._require_http_ok("http://example.test/client/replay", allow_redirect=True)
+
+
+def test_require_http_ok_reports_game_contract_violation(monkeypatch):
+    url = "http://example.test/client/global"
+
+    class ErrorResponse:
+        status_code = 500
+
+        def raise_for_status(self):
+            request = runner_module.httpx.Request("GET", url)
+            response = runner_module.httpx.Response(500, request=request)
+            raise runner_module.httpx.HTTPStatusError("server error", request=request, response=response)
+
+    monkeypatch.setattr(runner_module.httpx, "get", lambda _url, timeout: ErrorResponse())
+
+    with pytest.raises(runner_io.RunnerEpisodeError) as exc_info:
+        runner_module._require_http_ok(url)
+
+    assert exc_info.value.error_type == "game_contract_violation"
+
+
+def test_require_replay_message_reports_replay_unloadable(monkeypatch):
+    def fail_connect(*_args, **_kwargs):
+        raise OSError("connection refused")
+
+    monkeypatch.setattr(runner_module.websockets, "connect", fail_connect)
+
+    with pytest.raises(runner_io.RunnerEpisodeError) as exc_info:
+        asyncio.run(runner_module._require_replay_message("ws://example.test/replay", timeout_seconds=1))
+
+    assert exc_info.value.error_type == "replay_unloadable"
+
+
+def test_require_global_message_blames_player_when_player_already_failed(monkeypatch):
+    # A player that crashes before the game emits its first global message starves
+    # the /global socket. The connect failure must be attributed to the player
+    # (player_error, with the slot), not the game contract.
+    def fail_connect(*_args, **_kwargs):
+        raise OSError("connection refused")
+
+    monkeypatch.setattr(runner_module.websockets, "connect", fail_connect)
+
+    def probe() -> None:
+        raise runner_io.RunnerEpisodeError(
+            "Player container exited with status 1.",
+            error_type="player_error",
+            failed_policy_index=2,
+        )
+
+    with pytest.raises(runner_io.RunnerEpisodeError) as exc_info:
+        asyncio.run(
+            runner_module._require_global_message(
+                "ws://example.test/global", timeout_seconds=1, on_connect_failure=probe
+            )
+        )
+
+    assert exc_info.value.error_type == "player_error"
+    assert exc_info.value.failed_policy_index == 2
+
+
+def test_require_global_message_blames_game_contract_when_players_healthy(monkeypatch):
+    # If no player has failed, a stalled /global socket is genuinely the game's fault.
+    def fail_connect(*_args, **_kwargs):
+        raise OSError("connection refused")
+
+    monkeypatch.setattr(runner_module.websockets, "connect", fail_connect)
+
+    with pytest.raises(runner_io.RunnerEpisodeError) as exc_info:
+        asyncio.run(
+            runner_module._require_global_message(
+                "ws://example.test/global", timeout_seconds=1, on_connect_failure=lambda: None
+            )
+        )
+
+    assert exc_info.value.error_type == "game_contract_violation"
 
 
 def test_run_episode_containers_uses_docker_dns_and_omits_policy_names_env(tmp_path, monkeypatch):
@@ -508,7 +584,7 @@ def test_wait_for_episode_artifacts_fails_when_game_exits_without_replay(tmp_pat
         },
     )
 
-    with pytest.raises(TimeoutError, match="replay"):
+    with pytest.raises(runner_io.RunnerEpisodeError, match="replay") as exc_info:
         _wait_for_episode_artifacts(
             artifacts,
             core_v1,
@@ -518,6 +594,66 @@ def test_wait_for_episode_artifacts_fails_when_game_exits_without_replay(tmp_pat
             timeout_seconds=1.0,
             require_replay=True,
         )
+
+    assert exc_info.value.error_type == "replay_missing"
+
+
+def test_wait_for_episode_artifacts_reports_results_missing_when_game_exits_without_results(tmp_path):
+    artifacts = EpisodeArtifacts.create(tmp_path)
+    core_v1 = _FakeCoreV1(game_exit_codes=[0])
+
+    with pytest.raises(runner_io.RunnerEpisodeError, match="results.json") as exc_info:
+        _wait_for_episode_artifacts(
+            artifacts,
+            core_v1,
+            "default",
+            "game-pod",
+            [],
+            timeout_seconds=1.0,
+            require_replay=False,
+        )
+
+    assert exc_info.value.error_type == "results_missing"
+
+
+def test_wait_for_episode_artifacts_reports_game_unhealthy_when_game_exits_nonzero(tmp_path):
+    artifacts = EpisodeArtifacts.create(tmp_path)
+    core_v1 = _FakeCoreV1(game_exit_codes=[42])
+
+    with pytest.raises(runner_io.RunnerEpisodeError, match="42") as exc_info:
+        _wait_for_episode_artifacts(
+            artifacts,
+            core_v1,
+            "default",
+            "game-pod",
+            [],
+            timeout_seconds=1.0,
+            require_replay=False,
+        )
+
+    assert exc_info.value.error_type == "game_unhealthy"
+
+
+def test_wait_for_health_reports_game_unhealthy_when_game_exits_nonzero():
+    core_v1 = _FakeCoreV1(game_exit_codes=[2])
+
+    with pytest.raises(runner_io.RunnerEpisodeError, match="2") as exc_info:
+        kubernetes_runner._wait_for_health(core_v1, "default", "game-pod", timeout_seconds=1.0)
+
+    assert exc_info.value.error_type == "game_unhealthy"
+
+
+def test_validate_results_file_reports_results_malformed(tmp_path):
+    results_path = tmp_path / "results.json"
+    results_path.write_text('{"score": "not-a-number"}', encoding="utf-8")
+
+    with pytest.raises(runner_io.RunnerEpisodeError, match="results_schema") as exc_info:
+        runner_module._validate_results_file(
+            results_path,
+            {"type": "object", "properties": {"score": {"type": "number"}}},
+        )
+
+    assert exc_info.value.error_type == "results_malformed"
 
 
 @pytest.mark.parametrize(
@@ -557,7 +693,7 @@ def test_wait_for_episode_artifacts_ignores_clean_player_exit_on_timeout(tmp_pat
         }
     )
 
-    with pytest.raises(TimeoutError, match="results"):
+    with pytest.raises(runner_io.RunnerEpisodeError, match="results") as exc_info:
         _wait_for_episode_artifacts(
             artifacts,
             core_v1,
@@ -568,12 +704,14 @@ def test_wait_for_episode_artifacts_ignores_clean_player_exit_on_timeout(tmp_pat
             require_replay=False,
         )
 
+    assert exc_info.value.error_type == "episode_timeout"
+
 
 def test_wait_for_episode_artifacts_ignores_player_pods(tmp_path, monkeypatch):
     # Regression: episode success depends only on the game container. A player pod
     # exiting (even cleanly) or disappearing must not fail the episode. Previously a
     # player pod that exited 0 before results were written was reported as a
-    # policy_error and failed the entire round.
+    # player_error and failed the entire round.
     artifacts = EpisodeArtifacts.create(tmp_path)
     core_v1 = _FakeCoreV1(
         artifact_writes=[[artifacts.results_path], [artifacts.replay_path]],
@@ -751,7 +889,7 @@ def test_run_kubernetes_episode_defaults_player_resource_requests(monkeypatch, t
     monkeypatch.setattr(kubernetes_runner, "_require_bad_player_rejected", noop_async)
     monkeypatch.setattr(kubernetes_runner, "_require_global_message", noop_async)
     monkeypatch.setattr(kubernetes_runner, "_wait_for_episode_artifacts", lambda *_args, **_kwargs: None)
-    monkeypatch.setattr(kubernetes_runner, "validate_json_schema", lambda *_args: None)
+    monkeypatch.setattr(kubernetes_runner, "_validate_results_file", lambda *_args: None)
     monkeypatch.setattr(kubernetes_runner, "_collect_logs", lambda *_args: None)
     monkeypatch.setattr(kubernetes_runner, "_delete_child_resources", lambda *_args: None)
     monkeypatch.setattr(kubernetes_runner, "_policy_secrets_from_env", lambda: {})
@@ -956,26 +1094,28 @@ def test_write_error_info_marks_failure_as_crash(monkeypatch, tmp_path):
     assert "Game container exited with code 1" in error_info["message"]
 
 
-def test_write_error_info_marks_player_pod_failure_as_policy_error(monkeypatch, tmp_path):
+def test_write_error_info_marks_player_pod_failure_as_player_error(monkeypatch, tmp_path):
     error_dest = tmp_path / "error_info.json"
     monkeypatch.setenv("ERROR_INFO_URI", error_dest.as_uri())
 
     kubernetes_runner._write_error_info(kubernetes_runner.PlayerPodFailure(3, "player pod failed"))
 
     error_info = json.loads(error_dest.read_text(encoding="utf-8"))
-    assert error_info["error_type"] == "policy_error"
+    assert error_info["error_type"] == "player_error"
     assert error_info["failed_policy_index"] == 3
     assert error_info["message"] == "player pod failed"
 
 
-def test_write_error_info_marks_timeout_as_game_timeout(monkeypatch, tmp_path):
+def test_write_error_info_uses_typed_episode_error(monkeypatch, tmp_path):
     error_dest = tmp_path / "error_info.json"
     monkeypatch.setenv("ERROR_INFO_URI", error_dest.as_uri())
 
-    kubernetes_runner._write_error_info(TimeoutError("Timed out waiting for game container"))
+    kubernetes_runner._write_error_info(
+        runner_io.RunnerEpisodeError("Timed out waiting for game container", error_type="episode_timeout")
+    )
 
     error_info = json.loads(error_dest.read_text(encoding="utf-8"))
-    assert error_info["error_type"] == "game_timeout"
+    assert error_info["error_type"] == "episode_timeout"
     assert error_info["failed_policy_index"] is None
     assert "Timed out waiting for game container" in error_info["message"]
 

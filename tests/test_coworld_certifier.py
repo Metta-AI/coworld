@@ -34,6 +34,7 @@ from coworld.certifier import (
 )
 from coworld.play import BedrockAwsEnv, ReplaySession, build_play_links, play_coworld, replay_coworld
 from coworld.report import ReportRenderError
+from coworld.runner.io import RunnerEpisodeError
 from coworld.runner.runner import (
     CONFIG_ENV_VAR,
     LOCAL_DOCKER_NETWORK,
@@ -841,8 +842,10 @@ def test_bad_player_probe_rejects_live_websocket(monkeypatch: pytest.MonkeyPatch
         lambda _url, **_kwargs: LiveWebSocket(),
     )
 
-    with pytest.raises(AssertionError, match="Bad player token was accepted"):
+    with pytest.raises(RunnerEpisodeError, match="Bad player token was accepted") as exc_info:
         asyncio.run(_require_bad_player_rejected("ws://example.test/player?slot=0&token=bad"))
+
+    assert exc_info.value.error_type == "game_contract_violation"
 
 
 def test_play_coworld_starts_certification_player_containers(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:

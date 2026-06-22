@@ -12,11 +12,36 @@ from pydantic import BaseModel
 _WRITE_RETRY_DELAYS_SECONDS = (0.5, 1.0, 2.0)
 _RETRYABLE_WRITE_STATUS_CODES = {429, 500, 502, 503, 504}
 
+RunnerErrorType = Literal[
+    "player_error",
+    "game_unhealthy",
+    "game_contract_violation",
+    "results_missing",
+    "results_malformed",
+    "replay_missing",
+    "replay_unloadable",
+    "episode_timeout",
+    "crash",
+]
+
 
 class RunnerError(BaseModel):
-    error_type: Literal["policy_error", "game_timeout", "crash"]
+    error_type: RunnerErrorType
     message: str
     failed_policy_index: int | None = None
+
+
+class RunnerEpisodeError(RuntimeError):
+    def __init__(
+        self,
+        message: str,
+        *,
+        error_type: RunnerErrorType,
+        failed_policy_index: int | None = None,
+    ):
+        super().__init__(message)
+        self.error_type = error_type
+        self.failed_policy_index = failed_policy_index
 
 
 def read_data(uri: str) -> bytes:

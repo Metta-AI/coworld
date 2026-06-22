@@ -12,16 +12,19 @@ import time
 import zlib
 from contextlib import ExitStack
 from dataclasses import dataclass, field
+from json import JSONDecodeError
 from pathlib import Path
-from typing import Mapping
+from typing import Callable, Mapping
 from urllib.parse import urlencode
 
 import httpx
 import websockets
+from jsonschema.exceptions import ValidationError as JsonSchemaValidationError
 from pydantic import BaseModel, ConfigDict, Field, TypeAdapter
 from websockets.exceptions import ConnectionClosed, InvalidHandshake, InvalidStatus
 
 from coworld.reporter_protocol import ReporterEpisodeInput, ReportRequest
+from coworld.runner.io import RunnerEpisodeError, RunnerErrorType
 from coworld.schema_validation import validate_json_schema
 from coworld.types import CoworldEpisodeJobSpec, CoworldRunnableSpec
 
@@ -194,8 +197,12 @@ def run_coworld_episode(
     )
     run_episode_containers(run_spec, verify_replay=verify_replay)
 
-    results = json.loads(artifacts.results_path.read_text(encoding="utf-8"))
-    validate_json_schema(results, job.results_schema)
+    if not artifacts.results_path.exists():
+        raise RunnerEpisodeError(
+            f"Game container exited without writing results.json: {artifacts.results_path}",
+            error_type="results_missing",
+        )
+    _validate_results_file(artifacts.results_path, job.results_schema)
 
 
 def generate_tokens(player_count: int) -> list[str]:
@@ -352,11 +359,17 @@ def run_episode_containers(spec: EpisodeRunSpec, *, verify_replay: bool = True) 
                     )
                 )
 
-            asyncio.run(_require_global_message(f"ws://127.0.0.1:{port}/global", timeout_seconds=spec.timeout_seconds))
+            asyncio.run(
+                _require_global_message(
+                    f"ws://127.0.0.1:{port}/global",
+                    timeout_seconds=spec.timeout_seconds,
+                    on_connect_failure=lambda: _raise_if_local_player_exited(player_processes),
+                )
+            )
             _wait_for_game_exit(game_process, spec.artifacts.game_stderr_path, timeout_seconds=spec.timeout_seconds)
 
-            for player_process, player_stderr_path in player_processes:
-                _wait_for_player_exit(player_process, player_stderr_path)
+            for slot, (player_process, player_stderr_path) in enumerate(player_processes):
+                _wait_for_player_exit(player_process, player_stderr_path, failed_policy_index=slot)
 
             if not verify_replay:
                 return
@@ -364,6 +377,11 @@ def run_episode_containers(spec: EpisodeRunSpec, *, verify_replay: bool = True) 
             replay_port = _free_local_port()
             replay_load_dir = Path(stack.enter_context(tempfile.TemporaryDirectory(prefix="coworld-replay-load-")))
             replay_load_path = replay_load_dir / "replay.z"
+            if not spec.artifacts.replay_path.exists():
+                raise RunnerEpisodeError(
+                    f"Replay required but game did not write replay: {spec.artifacts.replay_path}",
+                    error_type="replay_missing",
+                )
             replay_load_path.write_bytes(zlib.compress(spec.artifacts.replay_path.read_bytes()))
             replay_uri = "file:///coworld-replay/replay.z"
             replay_process = subprocess.Popen(
@@ -395,8 +413,9 @@ def run_episode_containers(spec: EpisodeRunSpec, *, verify_replay: bool = True) 
                 replay_process,
                 spec.artifacts.game_stderr_path,
                 timeout_seconds=spec.timeout_seconds,
+                error_type="replay_unloadable",
             )
-            _require_http_ok(replay_client_url(replay_port), allow_redirect=True)
+            _require_http_ok(replay_client_url(replay_port), allow_redirect=True, error_type="replay_unloadable")
             asyncio.run(
                 _require_replay_message(
                     f"ws://127.0.0.1:{replay_port}{replay_session_path()}",
@@ -487,11 +506,33 @@ def _image_command(runnable: RunnableLaunchSpec) -> list[str]:
     return ["--entrypoint", runnable.run[0], runnable.image, *runnable.run[1:]]
 
 
-def _require_http_ok(url: str, *, allow_redirect: bool = False) -> None:
-    response = httpx.get(url, timeout=5.0)
-    if allow_redirect and 300 <= response.status_code < 400:
-        return
-    response.raise_for_status()
+def _validate_results_file(path: Path, results_schema: dict[str, object]) -> None:
+    try:
+        results = json.loads(path.read_text(encoding="utf-8"))
+    except JSONDecodeError as exc:
+        raise RunnerEpisodeError(f"results.json is not valid JSON: {exc}", error_type="results_malformed") from exc
+    try:
+        validate_json_schema(results, results_schema)
+    except JsonSchemaValidationError as exc:
+        raise RunnerEpisodeError(
+            f"results.json failed manifest results_schema validation: {exc.message}",
+            error_type="results_malformed",
+        ) from exc
+
+
+def _require_http_ok(
+    url: str,
+    *,
+    allow_redirect: bool = False,
+    error_type: RunnerErrorType = "game_contract_violation",
+) -> None:
+    try:
+        response = httpx.get(url, timeout=5.0)
+        if allow_redirect and 300 <= response.status_code < 400:
+            return
+        response.raise_for_status()
+    except httpx.HTTPError as exc:
+        raise RunnerEpisodeError(f"HTTP contract check failed for {url}: {exc}", error_type=error_type) from exc
 
 
 async def _require_bad_player_rejected(url: str) -> None:
@@ -507,25 +548,56 @@ async def _require_bad_player_rejected(url: str) -> None:
     except InvalidStatus as exc:
         rejected = exc.response.status_code in {401, 403}
         if not rejected:
-            raise
+            raise RunnerEpisodeError(
+                f"Bad player token returned unexpected status {exc.response.status_code}: {url}",
+                error_type="game_contract_violation",
+            ) from exc
     except (ConnectionClosed, InvalidHandshake):
         rejected = True
+    except OSError as exc:
+        raise RunnerEpisodeError(
+            f"Bad player token rejection check failed for {url}: {exc}",
+            error_type="game_contract_violation",
+        ) from exc
     if not rejected:
-        raise AssertionError(f"Bad player token was accepted: {url}")
+        raise RunnerEpisodeError(f"Bad player token was accepted: {url}", error_type="game_contract_violation")
 
 
-async def _require_global_message(url: str, *, timeout_seconds: float) -> None:
-    async with websockets.connect(url, open_timeout=5) as websocket:
-        message = await asyncio.wait_for(websocket.recv(), timeout=min(timeout_seconds, 10.0))
-        if not message:
-            raise AssertionError(f"Global viewer received an empty message from {url}")
+async def _require_global_message(
+    url: str, *, timeout_seconds: float, on_connect_failure: Callable[[], None] | None = None
+) -> None:
+    try:
+        async with websockets.connect(url, open_timeout=5) as websocket:
+            message = await asyncio.wait_for(websocket.recv(), timeout=min(timeout_seconds, 10.0))
+    except (OSError, asyncio.TimeoutError, ConnectionClosed, InvalidHandshake, InvalidStatus) as exc:
+        # A player that crashes before the game emits its first global message
+        # starves this socket, so the timeout/close is the player's fault, not
+        # the game's. Let the caller surface a player_error (with the failing
+        # slot) before we blame the game contract.
+        if on_connect_failure is not None:
+            on_connect_failure()
+        raise RunnerEpisodeError(
+            f"Global viewer websocket did not produce a message from {url}: {exc}",
+            error_type="game_contract_violation",
+        ) from exc
+    if not message:
+        raise RunnerEpisodeError(
+            f"Global viewer received an empty message from {url}",
+            error_type="game_contract_violation",
+        )
 
 
 async def _require_replay_message(url: str, *, timeout_seconds: float) -> None:
-    async with websockets.connect(url, open_timeout=5, max_size=None) as websocket:
-        message = await asyncio.wait_for(websocket.recv(), timeout=min(timeout_seconds, 10.0))
-        if not message:
-            raise AssertionError(f"Replay viewer received an empty message from {url}")
+    try:
+        async with websockets.connect(url, open_timeout=5, max_size=None) as websocket:
+            message = await asyncio.wait_for(websocket.recv(), timeout=min(timeout_seconds, 10.0))
+    except (OSError, asyncio.TimeoutError, ConnectionClosed, InvalidHandshake, InvalidStatus) as exc:
+        raise RunnerEpisodeError(
+            f"Replay viewer websocket did not produce a message from {url}: {exc}",
+            error_type="replay_unloadable",
+        ) from exc
+    if not message:
+        raise RunnerEpisodeError(f"Replay viewer received an empty message from {url}", error_type="replay_unloadable")
 
 
 def _wait_for_health(
@@ -534,12 +606,17 @@ def _wait_for_health(
     stderr_path: Path,
     *,
     timeout_seconds: float,
+    error_type: RunnerErrorType = "game_unhealthy",
 ) -> None:
     deadline = time.monotonic() + timeout_seconds
     url = f"http://127.0.0.1:{port}/healthz"
     while time.monotonic() < deadline:
-        if game_process.poll() is not None:
-            raise RuntimeError(f"Game container exited before healthz passed.\n{_tail(stderr_path)}")
+        return_code = game_process.poll()
+        if return_code is not None:
+            raise RunnerEpisodeError(
+                f"Game container exited with status {return_code} before healthz passed.\n{_tail(stderr_path)}",
+                error_type=error_type,
+            )
         try:
             response = httpx.get(url, timeout=1.0)
             if response.status_code == 200:
@@ -547,7 +624,7 @@ def _wait_for_health(
         except httpx.HTTPError:
             pass
         time.sleep(0.2)
-    raise TimeoutError(f"Timed out waiting for {url}.\n{_tail(stderr_path)}")
+    raise RunnerEpisodeError(f"Timed out waiting for {url}.\n{_tail(stderr_path)}", error_type=error_type)
 
 
 def _wait_for_game_exit(
@@ -559,18 +636,50 @@ def _wait_for_game_exit(
     try:
         return_code = game_process.wait(timeout=timeout_seconds)
     except subprocess.TimeoutExpired as exc:
-        raise TimeoutError(f"Timed out waiting for game container to exit.\n{_tail(stderr_path)}") from exc
+        raise RunnerEpisodeError(
+            f"Timed out waiting for game container to exit.\n{_tail(stderr_path)}",
+            error_type="episode_timeout",
+        ) from exc
     if return_code != 0:
-        raise RuntimeError(f"Game container exited with status {return_code}.\n{_tail(stderr_path)}")
+        raise RunnerEpisodeError(
+            f"Game container exited with status {return_code}.\n{_tail(stderr_path)}",
+            error_type="game_unhealthy",
+        )
 
 
-def _wait_for_player_exit(player_process: subprocess.Popen[str], stderr_path: Path) -> None:
+def _raise_if_local_player_exited(
+    player_processes: list[tuple[subprocess.Popen[str], Path]],
+) -> None:
+    """Non-blocking probe: if a player container has already exited non-zero, raise
+    player_error for it. Used when a downstream game check stalls so an early player
+    crash is attributed to the player, not the game."""
+    for slot, (player_process, stderr_path) in enumerate(player_processes):
+        return_code = player_process.poll()
+        if return_code is not None and return_code != 0:
+            raise RunnerEpisodeError(
+                f"Player container exited with status {return_code}.\n{_tail(stderr_path)}",
+                error_type="player_error",
+                failed_policy_index=slot,
+            )
+
+
+def _wait_for_player_exit(
+    player_process: subprocess.Popen[str], stderr_path: Path, *, failed_policy_index: int
+) -> None:
     try:
         return_code = player_process.wait(timeout=30)
     except subprocess.TimeoutExpired as exc:
-        raise TimeoutError(f"Timed out waiting for player container to exit.\n{_tail(stderr_path)}") from exc
+        raise RunnerEpisodeError(
+            f"Timed out waiting for player container to exit.\n{_tail(stderr_path)}",
+            error_type="player_error",
+            failed_policy_index=failed_policy_index,
+        ) from exc
     if return_code != 0:
-        raise RuntimeError(f"Player container exited with status {return_code}.\n{_tail(stderr_path)}")
+        raise RunnerEpisodeError(
+            f"Player container exited with status {return_code}.\n{_tail(stderr_path)}",
+            error_type="player_error",
+            failed_policy_index=failed_policy_index,
+        )
 
 
 def _free_local_port() -> int:
