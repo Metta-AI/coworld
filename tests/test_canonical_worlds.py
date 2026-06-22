@@ -38,7 +38,7 @@ PLAY_GUIDE_URI_PREFIXES = (
     "https://github.com/Metta-AI/coworld-tribal-village/blob/main/docs/play_tribal_village.md",
 )
 SOURCE_MANIFEST_REFERENCE_COUNTS = {
-    "${GAME_CONTEXT}/coworld_manifest.json": 2,
+    "${GAME_CONTEXT}/coworld_manifest.json": 4,
     "${GAME_CONTEXT}/coworld_manifest_template.json": 3,
     "${GAME_CONTEXT}/coworld/coworld_manifest_template.json": 1,
     "${GAME_CONTEXT}/coworld_four_score_manifest_template.json": 1,
@@ -201,6 +201,32 @@ def test_canonical_crewrift_build_declares_game_context() -> None:
     assert "coworld-crewrift-notsus:latest" in compose_text
 
 
+def test_canonical_standalone_cogame_builds_declare_game_context() -> None:
+    expected = {
+        "diplomacog": ("coworld-diplomacog", "coworld-diplomacog-game:latest", "coworld-diplomacog-player:latest"),
+        "hungercog": ("coworld-hungercog", "coworld-hungercog-game:latest", "coworld-hungercog-player:latest"),
+        "overcogged": ("coworld-overcogged", "coworld-overcogged-game:latest", "coworld-overcogged-player:latest"),
+        "tribal_fortress": (
+            "coworld-tribal-fortress",
+            "coworld-tribal-fortress-game:latest",
+            "coworld-tribal-fortress-player:latest",
+        ),
+    }
+    upload_text = (WORLDS / "upload.sh").read_text(encoding="utf-8")
+
+    for world_name, (source_repo, game_image, player_image) in expected.items():
+        compose_text = (WORLDS / world_name / "compose.yaml").read_text(encoding="utf-8")
+        assert not (WORLDS / world_name / "coworld_manifest.json").exists()
+        assert not (WORLDS / world_name / "coworld_manifest_template.json").exists()
+        assert "GAME_CONTEXT" in compose_text
+        assert source_repo in compose_text
+        assert "Dockerfile" in compose_text
+        assert "player/Dockerfile" in compose_text
+        assert game_image in compose_text
+        assert player_image in compose_text
+        assert 'template_file="${GAME_CONTEXT}/coworld_manifest.json"' in upload_text
+
+
 def test_canonical_cue_n_woo_upload_adds_default_commissioner() -> None:
     compose_text = (WORLDS / "cue_n_woo" / "compose.yaml").read_text(encoding="utf-8")
     upload_text = (WORLDS / "upload.sh").read_text(encoding="utf-8")
@@ -313,6 +339,23 @@ def test_external_canonical_manifests_live_with_source_repos() -> None:
             "GAME_CONTEXT=/path/to/coworld-crewrift",
             "../coworld-crewrift/coworld_manifest.json",
         ),
+        "diplomacog": (
+            "GAME_CONTEXT=/path/to/coworld-diplomacog",
+            "../coworld-diplomacog/coworld_manifest.json",
+        ),
+        "hungercog": (
+            "GAME_CONTEXT=/path/to/coworld-hungercog",
+            "../coworld-hungercog/coworld_manifest.json",
+        ),
+        "overcogged": (
+            "GAME_CONTEXT=/path/to/coworld-overcogged",
+            "../coworld-overcogged/coworld_manifest.json",
+        ),
+        "tribal_fortress": (
+            "GAME_CONTEXT=/path/to/coworld-tribal-fortress",
+            "../coworld-tribal-fortress/coworld_manifest.json",
+            "legacy uploader aliases `tribalcog`, `tribal-cog`, and `tribal-fortress`",
+        ),
         "tribal_village": (
             "GAME_CONTEXT=/path/to/coworld-tribal-village",
             "../coworld-tribal-village/coworld_manifest_template.json",
@@ -374,9 +417,13 @@ def _world_compose_files() -> tuple[Path, ...]:
         WORLDS / "among_them" / "compose.yaml",
         WORLDS / "cogs_vs_clips" / "compose.yaml",
         WORLDS / "cue_n_woo" / "compose.yaml",
+        WORLDS / "diplomacog" / "compose.yaml",
         WORLDS / "four_score" / "compose.yaml",
         WORLDS / "crewrift" / "compose.yaml",
+        WORLDS / "hungercog" / "compose.yaml",
+        WORLDS / "overcogged" / "compose.yaml",
         WORLDS / "paintarena" / "compose.yaml",
+        WORLDS / "tribal_fortress" / "compose.yaml",
         WORLDS / "tribal_village" / "compose.yaml",
     )
 
