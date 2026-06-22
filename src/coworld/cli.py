@@ -28,6 +28,7 @@ from coworld.play import PlaySession, ReplaySession, _resolve_bedrock_aws_env, p
 from coworld.runner.runner import EpisodeArtifacts, run_coworld_episode
 from coworld.submit import submit_policy_to_league_cmd
 from coworld.tournament_cli import register_tournament_commands
+from coworld.types import StepResult, TranscriptStep
 from coworld.upload import (
     AutoChampion,
     ContainerImageResponse,
@@ -211,9 +212,20 @@ def certify(
     server: Annotated[str, typer.Option("--server", help="Observatory API server URL.")] = DEFAULT_SUBMIT_SERVER,
     timeout_seconds: Annotated[float, typer.Option("--timeout-seconds", min=1.0)] = 60.0,
 ) -> None:
-    with materialized_manifest_path(manifest_uri, server=server) as manifest_path:
-        result = certify_coworld(manifest_path, timeout_seconds=timeout_seconds)
+    def on_step(result: StepResult, step: TranscriptStep) -> None:
+        marker = "run " if result.status == "running" else "pass"
+        typer.echo(f"  [{marker}] {result.id}: {step.checks}")
+
+    with _materialized_manifest_path(manifest_uri, server=server) as manifest_path:
+        typer.echo(f"Certifying {manifest_uri} against transcript coworld-executable")
+        result = certify_coworld(manifest_path, timeout_seconds=timeout_seconds, on_step=on_step)
     typer.echo(f"Certified {manifest_uri}")
+    certificate = result.certificate
+    typer.echo(f"Degree: {certificate.category} {certificate.degree} conferred {certificate.graduated_at.isoformat()}")
+    typer.echo(f"Transcript: {result.transcript.name} ({len(result.step_results)} steps passed)")
+    typer.echo(f"Transcript hash: {certificate.transcript_hash}")
+    typer.echo(f"Certificate: {result.certificate_path}")
+    typer.echo(f"Degree file: {result.degree_path}")
     typer.echo(f"Artifacts: {result.artifacts.workspace}")
     typer.echo(f"Results: {result.artifacts.results_path}")
     _echo_replay_paths(result.artifacts)

@@ -111,7 +111,11 @@ filegroup(
 py_library(
     name = "coworld_core",
     srcs = _CORE_SRCS,
-    data = ["src/coworld/py.typed"],
+    data = [
+        "src/coworld/py.typed",
+        # certifier.py reads the transcript next to its source at runtime.
+        "src/coworld/transcripts/coworld-executable.transcript.md",
+    ],
     imports = ["src"],
     visibility = ["//visibility:public"],
     deps = [

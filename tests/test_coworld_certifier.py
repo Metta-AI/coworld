@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import hashlib
 import importlib
 import io
 import json
@@ -25,6 +26,7 @@ from coworld.certifier import (
     build_player_launch_specs,
     certify_coworld,
     load_coworld_package,
+    load_executable_transcript,
     load_manifest_episode_job_spec,
     load_results,
     run_certification_reporters,
@@ -46,7 +48,7 @@ from coworld.runner.runner import (
     replay_client_url,
     replay_session_path,
 )
-from coworld.types import CoworldEpisodeJobSpec, CoworldManifest
+from coworld.types import CoworldCertificate, CoworldEpisodeJobSpec, CoworldManifest, TranscriptStep
 
 
 def test_load_coworld_package_validates_inline_game_manifest(tmp_path: Path) -> None:
@@ -430,6 +432,134 @@ def test_run_certification_reporters_noops_without_reporters(tmp_path: Path) -> 
     artifacts = _seed_certification_artifacts(tmp_path)
 
     assert run_certification_reporters(package, artifacts, timeout_seconds=5.0) == []
+
+
+def _stub_executable_pipeline(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr("coworld.certifier.validate_source_references", lambda package: None)
+    monkeypatch.setattr("coworld.certifier.validate_image_references", lambda package: None)
+    monkeypatch.setattr("coworld.certifier.build_episode_request", lambda package, artifacts: {})
+    monkeypatch.setattr("coworld.certifier.build_coworld_episode_job_spec", lambda request: None)
+
+    def fake_run_episode(job, artifacts, **kwargs):
+        artifacts.replay_path.write_text("{}")
+        artifacts.game_stdout_path.write_text("game started\n")
+        artifacts.policy_log_path(0).write_text("player started\n")
+
+    monkeypatch.setattr("coworld.certifier.run_coworld_episode", fake_run_episode)
+    monkeypatch.setattr("coworld.certifier.load_results", lambda package, artifacts: {})
+    monkeypatch.setattr(
+        "coworld.certifier.run_certification_reporters",
+        lambda package, artifacts, *, timeout_seconds: [],
+    )
+
+
+def test_load_executable_transcript_parses_auto_steps() -> None:
+    transcript = load_executable_transcript()
+
+    assert transcript.name == "coworld-executable"
+    assert [step.id for step in transcript.steps] == [
+        "matriculate",
+        "source-resolves",
+        "images-reachable",
+        "smoke-episode",
+        "results-conform",
+        "replay-present",
+        "purposes-run",
+    ]
+    assert all(step.kind == "auto" for step in transcript.steps)
+    assert transcript.steps[0].pass_ == "schema validates"
+    assert transcript.text.lstrip().startswith("# coworld-executable")
+
+
+def test_certify_coworld_records_transcript_steps(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    coworld_manifest_path = _write_package_files(tmp_path)
+    _stub_executable_pipeline(monkeypatch)
+
+    result = certify_coworld(coworld_manifest_path, workspace=tmp_path / "cert")
+
+    assert [step.id for step in result.step_results] == [step.id for step in result.transcript.steps]
+    assert all(step.status == "pass" for step in result.step_results)
+    assert result.transcript.name == "coworld-executable"
+
+
+def test_certify_coworld_announces_running_before_pass(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    coworld_manifest_path = _write_package_files(tmp_path)
+    _stub_executable_pipeline(monkeypatch)
+
+    events: list[tuple[str, str]] = []
+    certify_coworld(
+        coworld_manifest_path,
+        workspace=tmp_path / "cert",
+        on_step=lambda result, step: events.append((result.id, result.status)),
+    )
+
+    transcript = load_executable_transcript()
+    assert events == [(step.id, status) for step in transcript.steps for status in ("running", "pass")]
+
+
+def test_certify_coworld_rejects_transcript_drift(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    coworld_manifest_path = _write_package_files(tmp_path)
+    _stub_executable_pipeline(monkeypatch)
+
+    transcript = load_executable_transcript()
+    ghost = TranscriptStep.model_validate({"id": "ghost", "kind": "auto", "checks": "x", "pass": "y", "how": "z"})
+    drifted = transcript.model_copy(update={"steps": [*transcript.steps, ghost]})
+    monkeypatch.setattr("coworld.certifier.load_executable_transcript", lambda: drifted)
+
+    with pytest.raises(ValueError, match="transcript"):
+        certify_coworld(coworld_manifest_path, workspace=tmp_path / "cert")
+
+
+def test_certify_coworld_rejects_player_without_launch_log(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    coworld_manifest_path = _write_package_files(tmp_path)
+    _stub_executable_pipeline(monkeypatch)
+
+    def fake_run_episode(job, artifacts, **kwargs):
+        artifacts.replay_path.write_text("{}")
+        artifacts.game_stdout_path.write_text("game started\n")
+
+    monkeypatch.setattr("coworld.certifier.run_coworld_episode", fake_run_episode)
+
+    with pytest.raises(ValueError, match="left no launch log"):
+        certify_coworld(coworld_manifest_path, workspace=tmp_path / "cert")
+
+
+def test_certify_coworld_issues_certificate_and_degree_file(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    coworld_manifest_path = _write_package_files(tmp_path)
+    _stub_executable_pipeline(monkeypatch)
+
+    result = certify_coworld(coworld_manifest_path, workspace=tmp_path / "cert")
+
+    certificate = result.certificate
+    assert certificate.category == "Coworld"
+    assert certificate.degree == "Executable"
+    assert certificate.transcript_name == "coworld-executable"
+    assert certificate.transcript_hash == hashlib.sha256(result.transcript.text.encode("utf-8")).hexdigest()
+    assert certificate.coworld.hash == hashlib.sha256(coworld_manifest_path.read_bytes()).hexdigest()
+    assert certificate.matriculated_at <= certificate.graduated_at
+
+    degree_text = result.degree_path.read_text(encoding="utf-8")
+    assert certificate.degree_file_hash == hashlib.sha256(degree_text.encode("utf-8")).hexdigest()
+    assert "Degree:     Executable" in degree_text
+    assert f"Transcript: coworld-executable.transcript.md {certificate.transcript_hash}" in degree_text
+    assert f"Conferred:  {certificate.graduated_at.isoformat()}" in degree_text
+
+    saved = CoworldCertificate.model_validate_json(result.certificate_path.read_text(encoding="utf-8"))
+    assert saved == certificate
+
+
+def test_certify_coworld_rejects_player_without_certification_slot(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    coworld_manifest_path = _write_package_files(tmp_path)
+    manifest = json.loads(coworld_manifest_path.read_text(encoding="utf-8"))
+    bench_player = dict(manifest["player"][0], id="bench-player", name="Bench Player")
+    manifest["player"].append(bench_player)
+    coworld_manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
+    _stub_executable_pipeline(monkeypatch)
+
+    with pytest.raises(ValueError, match="'bench-player'.*no certification slot"):
+        certify_coworld(coworld_manifest_path, workspace=tmp_path / "cert")
 
 
 def test_build_game_config_validates_after_tokens_are_injected_via_json_schema(tmp_path: Path) -> None:

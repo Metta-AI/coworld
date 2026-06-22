@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from datetime import datetime
 from typing import Annotated, Any, Literal, cast, get_args
 
 from packaging.version import Version
@@ -356,6 +357,65 @@ class CoworldEpisodeJobSpec(BaseModel):
     @property
     def config_schema(self) -> JsonSchema:
         return self.manifest.game.config_schema
+
+
+TranscriptStepKind = Literal["auto", "human"]
+
+
+class TranscriptStep(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    id: str = Field(min_length=1)
+    kind: TranscriptStepKind
+    checks: str = Field(min_length=1)
+    pass_: str = Field(min_length=1, alias="pass")
+    how: str = Field(min_length=1)
+
+
+class CoworldTranscript(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    name: str = Field(min_length=1)
+    text: str = Field(min_length=1)
+    steps: list[TranscriptStep] = Field(min_length=1)
+
+
+class StepResult(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    id: str = Field(min_length=1)
+    kind: TranscriptStepKind
+    status: Literal["running", "pass"] = "pass"
+
+
+class CertifiedIdentity(BaseModel):
+    """A ⟨hash, date⟩ identity from the certificate tuple (CERTIFIER_PRD §3)."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    hash: str = Field(min_length=1)
+    date: datetime
+
+
+class CoworldCertificate(BaseModel):
+    """The immutable certificate tuple (CERTIFIER_PRD §3).
+
+    Certifier ⟨authority @hash, date⟩ attests that the certified ⟨Coworld @hash, date⟩ met
+    ⟨transcript @hash⟩ — matriculated @ T₁, graduated @ T₂ conferring ⟨degree-file @hash⟩.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    authority_name: str = Field(min_length=1)
+    authority: CertifiedIdentity
+    coworld: CertifiedIdentity
+    transcript_name: str = Field(min_length=1)
+    transcript_hash: str = Field(min_length=1)
+    matriculated_at: datetime
+    graduated_at: datetime
+    category: Literal["Coworld"] = "Coworld"
+    degree: str = Field(min_length=1)
+    degree_file_hash: str = Field(min_length=1)
 
 
 def coworld_manifest_schema() -> dict[str, Any]:

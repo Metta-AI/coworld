@@ -1,4 +1,5 @@
 import json
+from datetime import datetime, timezone
 from pathlib import Path
 from types import SimpleNamespace
 from typing import Callable, cast
@@ -141,7 +142,20 @@ def test_coworld_certify_prints_replay_liveness_and_inspection_command(
     )
 
     def fake_certify_coworld(_manifest_path: Path, **_kwargs: object) -> SimpleNamespace:
-        return SimpleNamespace(artifacts=artifacts, reports=[])
+        return SimpleNamespace(
+            transcript=SimpleNamespace(name="coworld-executable"),
+            step_results=[1, 2, 3, 4, 5, 6, 7],
+            artifacts=artifacts,
+            reports=[],
+            certificate=SimpleNamespace(
+                category="Coworld",
+                degree="Executable",
+                graduated_at=datetime(2026, 6, 11, tzinfo=timezone.utc),
+                transcript_hash="deadbeef",
+            ),
+            certificate_path=Path("/tmp/workspace/certificate.json"),
+            degree_path=Path("/tmp/workspace/coworld.degree.md"),
+        )
 
     monkeypatch.setattr("coworld.cli.certify_coworld", fake_certify_coworld)
 
@@ -223,6 +237,64 @@ def test_coworld_play_downloads_missing_coworld_id_cache(tmp_path: Path, monkeyp
     assert downloads == [(COWORLD_ID, Path("./coworld"), "http://example.test", False)]
     assert captured["manifest_path"] == (tmp_path / "coworld" / COWORLD_ID / "coworld_manifest.json").resolve()
     assert captured["manifest"] == manifest
+
+
+def test_coworld_certify_downloads_missing_coworld_id_cache(tmp_path: Path, monkeypatch: MonkeyPatch) -> None:
+    manifest = {"game": {"name": "downloaded-cache"}}
+    captured: dict[str, object] = {}
+    downloads: list[tuple[str, Path, str, bool]] = []
+
+    def fake_download_coworld_cmd(
+        coworld_ref: str,
+        output_dir: Path,
+        *,
+        server: str,
+        refresh: bool = False,
+    ) -> None:
+        downloads.append((coworld_ref, output_dir, server, refresh))
+        manifest_path = output_dir / coworld_ref / "coworld_manifest.json"
+        manifest_path.parent.mkdir(parents=True)
+        manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
+        (output_dir / coworld_ref / "coworld_images.json").write_text("{}", encoding="utf-8")
+
+    def fake_certify_coworld(resolved_manifest_path: Path, **_kwargs: object) -> SimpleNamespace:
+        captured["manifest_path"] = resolved_manifest_path
+        captured["manifest"] = json.loads(resolved_manifest_path.read_text())
+        artifacts = SimpleNamespace(
+            workspace=Path("/tmp/workspace"),
+            results_path=Path("/tmp/results.json"),
+            replay_path=Path("/tmp/replay.json"),
+            logs_dir=Path("/tmp/logs"),
+        )
+        return SimpleNamespace(
+            transcript=SimpleNamespace(name="coworld-executable"),
+            step_results=[1, 2, 3, 4, 5, 6, 7],
+            artifacts=artifacts,
+            reports=[],
+            certificate=SimpleNamespace(
+                category="Coworld",
+                degree="Executable",
+                graduated_at=datetime(2026, 6, 11, tzinfo=timezone.utc),
+                transcript_hash="deadbeef",
+            ),
+            certificate_path=Path("/tmp/workspace/certificate.json"),
+            degree_path=Path("/tmp/workspace/coworld.degree.md"),
+        )
+
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr("coworld.cli.download_coworld_cmd", fake_download_coworld_cmd)
+    monkeypatch.setattr("coworld.cli.certify_coworld", fake_certify_coworld)
+
+    result = CliRunner().invoke(app, ["certify", COWORLD_ID, "--server", "http://example.test"])
+
+    assert result.exit_code == 0, result.output
+    assert downloads == [(COWORLD_ID, Path("./coworld"), "http://example.test", False)]
+    assert captured["manifest_path"] == (tmp_path / "coworld" / COWORLD_ID / "coworld_manifest.json").resolve()
+    assert captured["manifest"] == manifest
+    assert "Transcript: coworld-executable (7 steps passed)" in result.output
+    assert "Degree: Coworld Executable conferred 2026-06-11T00:00:00+00:00" in result.output
+    assert "Certificate: /tmp/workspace/certificate.json" in result.output
+    assert "Degree file: /tmp/workspace/coworld.degree.md" in result.output
 
 
 def test_coworld_play_accepts_player_image_override(monkeypatch: MonkeyPatch, tmp_path: Path) -> None:

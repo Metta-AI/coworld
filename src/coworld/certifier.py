@@ -1,12 +1,14 @@
 from __future__ import annotations
 
 import copy
+import hashlib
 import os
 import shutil
 import subprocess
 from dataclasses import dataclass
+from datetime import datetime, timezone
 from pathlib import Path
-from typing import cast
+from typing import Callable, cast
 from urllib.parse import quote, unquote, urlparse
 
 import httpx
@@ -40,13 +42,25 @@ from coworld.schema_validation import (
     validate_json_schema,
 )
 from coworld.types import (
+    CertifiedIdentity,
+    CoworldCertificate,
     CoworldDoc,
     CoworldEpisodeJobSpec,
     CoworldManifest,
     CoworldRunnableSpec,
+    CoworldTranscript,
+    StepResult,
+    TranscriptStep,
     coworld_episode_request_schema,
     coworld_manifest_schema,
 )
+
+EXECUTABLE_TRANSCRIPT_PATH = Path(__file__).parent / "transcripts" / "coworld-executable.transcript.md"
+EXECUTABLE_DEGREE = "Executable"
+AUTHORITY_NAME = "Softmax coworld-certifier"
+CERTIFICATE_FILE_NAME = "certificate.json"
+DEGREE_FILE_NAME = "coworld.degree.md"
+_TRANSCRIPT_COLUMNS = ("id", "kind", "checks", "pass", "how")
 
 
 @dataclass(frozen=True)
@@ -87,6 +101,17 @@ class CertificationResult:
     episode_request: JsonObject
     results: JsonObject
     reports: list[ReportCertification]
+    transcript: CoworldTranscript
+    step_results: list[StepResult]
+    certificate: CoworldCertificate
+
+    @property
+    def certificate_path(self) -> Path:
+        return self.artifacts.workspace / CERTIFICATE_FILE_NAME
+
+    @property
+    def degree_path(self) -> Path:
+        return self.artifacts.workspace / DEGREE_FILE_NAME
 
 
 def load_coworld_package(manifest_path: Path) -> CoworldPackage:
@@ -118,6 +143,26 @@ def validate_certification_references(package: CoworldPackage) -> None:
 def validate_image_references(package: CoworldPackage) -> None:
     for label, image in _image_references(package):
         assert_docker_image_reachable(image, label=label)
+
+
+def validate_required_purposes_ran(package: CoworldPackage, artifacts: EpisodeArtifacts) -> None:
+    issues = []
+    if not artifacts.game_stdout_path.exists():
+        issues.append(f"game.runnable left no launch log at {artifacts.game_stdout_path}")
+
+    slots_by_player_id: dict[str, list[int]] = {}
+    for slot, certification_player in enumerate(package.manifest.certification.players):
+        slots_by_player_id.setdefault(certification_player.player_id, []).append(slot)
+
+    for index, player in enumerate(package.manifest.player):
+        slots = slots_by_player_id.get(player.id, [])
+        if not slots:
+            issues.append(f"Coworld player[{index}] ({player.id!r}) has no certification slot, so it never ran")
+        elif not any(artifacts.policy_log_path(slot).exists() for slot in slots):
+            issues.append(f"Coworld player[{index}] ({player.id!r}) left no launch log for slots {slots}")
+
+    if issues:
+        raise ValueError("Required-purpose runnables did not run on the smoke episode:\n- " + "\n- ".join(issues))
 
 
 def validate_source_references(package: CoworldPackage) -> None:
@@ -224,15 +269,61 @@ def load_results(package: CoworldPackage, artifacts: EpisodeArtifacts) -> JsonOb
     return results
 
 
+def load_executable_transcript() -> CoworldTranscript:
+    return load_transcript(EXECUTABLE_TRANSCRIPT_PATH, name="coworld-executable")
+
+
+def load_transcript(path: Path, *, name: str) -> CoworldTranscript:
+    text = path.read_text(encoding="utf-8")
+    rows = [line for line in text.splitlines() if line.strip().startswith("|")]
+    header, _separator, *data_rows = rows
+    columns = tuple(_split_transcript_row(header))
+    if columns != _TRANSCRIPT_COLUMNS:
+        raise ValueError(f"{path} transcript table columns must be {_TRANSCRIPT_COLUMNS}, found {columns}")
+    steps = [
+        TranscriptStep.model_validate(dict(zip(_TRANSCRIPT_COLUMNS, _split_transcript_row(row), strict=True)))
+        for row in data_rows
+    ]
+    return CoworldTranscript(name=name, text=text, steps=steps)
+
+
 def certify_coworld(
     manifest_path: Path,
     *,
     workspace: Path | None = None,
     timeout_seconds: float = 60.0,
+    on_step: Callable[[StepResult, TranscriptStep], None] | None = None,
 ) -> CertificationResult:
+    transcript = load_executable_transcript()
+    step_results: list[StepResult] = []
+
+    def announce(step_id: str) -> None:
+        if on_step is None:
+            return
+        step = _transcript_step(transcript, step_id)
+        on_step(StepResult(id=step.id, kind=step.kind, status="running"), step)
+
+    def record(step_id: str) -> None:
+        step = _transcript_step(transcript, step_id)
+        result = StepResult(id=step.id, kind=step.kind)
+        step_results.append(result)
+        if on_step is not None:
+            on_step(result, step)
+
+    announce("matriculate")
     package = load_coworld_package(manifest_path)
+    matriculated_at = datetime.now(timezone.utc)
+    record("matriculate")
+
+    announce("source-resolves")
     validate_source_references(package)
+    record("source-resolves")
+
+    announce("images-reachable")
     validate_image_references(package)
+    record("images-reachable")
+
+    announce("smoke-episode")
     artifacts = EpisodeArtifacts.create(workspace)
     episode_request = build_episode_request(package, artifacts)
     run_coworld_episode(
@@ -241,12 +332,31 @@ def certify_coworld(
         timeout_seconds=timeout_seconds,
         verify_replay=True,
     )
+    record("smoke-episode")
 
+    announce("results-conform")
     results = load_results(package, artifacts)
+    record("results-conform")
+
+    announce("replay-present")
     if not artifacts.replay_path.exists():
         raise FileNotFoundError(f"Replay file was not produced: {artifacts.replay_path}")
+    record("replay-present")
+
+    announce("purposes-run")
+    validate_required_purposes_ran(package, artifacts)
+    record("purposes-run")
+
+    _assert_transcript_complete(transcript, step_results)
 
     reports = run_certification_reporters(package, artifacts, timeout_seconds=timeout_seconds)
+    certificate = issue_certificate(
+        package,
+        transcript,
+        artifacts,
+        matriculated_at=matriculated_at,
+        graduated_at=datetime.now(timezone.utc),
+    )
 
     return CertificationResult(
         package=package,
@@ -254,6 +364,9 @@ def certify_coworld(
         episode_request=episode_request,
         results=results,
         reports=reports,
+        transcript=transcript,
+        step_results=step_results,
+        certificate=certificate,
     )
 
 
@@ -362,6 +475,83 @@ def build_local_reporter_episode_input(
         ),
         artifacts=episode_artifacts,
     )
+
+
+def issue_certificate(
+    package: CoworldPackage,
+    transcript: CoworldTranscript,
+    artifacts: EpisodeArtifacts,
+    *,
+    matriculated_at: datetime,
+    graduated_at: datetime,
+) -> CoworldCertificate:
+    """Issue the §3 certificate tuple and write its two artifacts to the workspace.
+
+    Writes the degree file (what was earned, §6.4) and the certificate JSON (the tuple itself)
+    next to the episode artifacts. The transcript markdown is hashed as-is, giving the degree a
+    fixed, citable meaning; the certificate references the degree file by its content hash.
+    """
+    # The authority identity is the version of the certifier that ran the process
+    # (CERTIFIER_PRD §3): content-address this module's own source.
+    authority = CertifiedIdentity(
+        hash=hashlib.sha256(Path(__file__).read_bytes()).hexdigest(),
+        date=graduated_at,
+    )
+    coworld = CertifiedIdentity(
+        hash=hashlib.sha256(package.manifest_path.read_bytes()).hexdigest(),
+        date=graduated_at,
+    )
+    transcript_hash = _sha256_text(transcript.text)
+    transcript_file = f"{transcript.name}.transcript.md"
+
+    degree_text = (
+        f"Coworld:    {coworld.hash} ({coworld.date.date().isoformat()})\n"
+        f"Authority:  {AUTHORITY_NAME} {authority.hash} ({authority.date.date().isoformat()})\n"
+        f"Degree:     {EXECUTABLE_DEGREE}\n"
+        f"Conferred:  {graduated_at.isoformat()}\n"
+        f"Transcript: {transcript_file} {transcript_hash}\n"
+        f"Statement:  This Coworld is Executable: its manifest conforms to the Coworld schema, its\n"
+        f"            sources and images resolve, and its required parts ran a smoke episode\n"
+        f"            end-to-end with conformant results and a replay.\n"
+    )
+    (artifacts.workspace / DEGREE_FILE_NAME).write_text(degree_text, encoding="utf-8")
+
+    certificate = CoworldCertificate(
+        authority_name=AUTHORITY_NAME,
+        authority=authority,
+        coworld=coworld,
+        transcript_name=transcript.name,
+        transcript_hash=transcript_hash,
+        matriculated_at=matriculated_at,
+        graduated_at=graduated_at,
+        degree=EXECUTABLE_DEGREE,
+        degree_file_hash=_sha256_text(degree_text),
+    )
+    certificate_path = artifacts.workspace / CERTIFICATE_FILE_NAME
+    certificate_path.write_text(certificate.model_dump_json(indent=2) + "\n", encoding="utf-8")
+    return certificate
+
+
+def _sha256_text(text: str) -> str:
+    return hashlib.sha256(text.encode("utf-8")).hexdigest()
+
+
+def _split_transcript_row(row: str) -> list[str]:
+    return [cell.strip() for cell in row.strip().strip("|").split("|")]
+
+
+def _transcript_step(transcript: CoworldTranscript, step_id: str) -> TranscriptStep:
+    for step in transcript.steps:
+        if step.id == step_id:
+            return step
+    raise ValueError(f"certifier step {step_id!r} is not declared in transcript {transcript.name!r}")
+
+
+def _assert_transcript_complete(transcript: CoworldTranscript, step_results: list[StepResult]) -> None:
+    executed = [result.id for result in step_results]
+    declared = [step.id for step in transcript.steps]
+    if executed != declared:
+        raise ValueError(f"certifier executed {executed} but transcript {transcript.name!r} declares {declared}")
 
 
 def _image_references(package: CoworldPackage) -> list[tuple[str, str]]:
