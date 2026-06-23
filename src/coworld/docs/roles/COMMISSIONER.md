@@ -91,8 +91,8 @@ that WebSocket connection as JSON messages with a `"type"` field.
 ### League scheduling lifecycle
 
 1. The platform round runner ticks for active container leagues.
-2. Platform gathers the league, divisions, active memberships, and recent rounds, then resolves the selected commissioner
-   runnable from the canonical Coworld manifest.
+2. Platform gathers the league, divisions, active memberships, and recent rounds, then resolves the selected
+   commissioner runnable from the canonical Coworld manifest.
 3. If the resolved commissioner runtime has not been made canonical for the league yet, platform starts the commissioner
    container and runs the league migration handshake before scheduling. The commissioner declares the canonical division
    set, may return policy membership events that move live memberships out of divisions it wants archived, and platform
@@ -101,8 +101,8 @@ that WebSocket connection as JSON messages with a `"type"` field.
    `WEBSOCKET /round`, and sends `schedule_rounds_request`.
 5. Commissioner returns `schedule_rounds_response` with zero or more `RoundSpec` entries. An empty `rounds` array means
    no round is due on this tick.
-6. Platform filters returned specs to known league divisions, enforces active-round and concurrency constraints, persists
-   accepted `Round` rows, and starts per-round supervisors for them.
+6. Platform filters returned specs to known league divisions, enforces active-round and concurrency constraints,
+   persists accepted `Round` rows, and starts per-round supervisors for them.
 
 ### Round execution lifecycle
 
@@ -112,8 +112,8 @@ that WebSocket connection as JSON messages with a `"type"` field.
 3. Commissioner reads its state, sends `schedule_episodes` listing the episodes it wants to run.
 4. Platform responds with `episodes_accepted` or `episodes_rejected`, dispatches valid episodes.
 5. As episodes complete, platform sends `episode_result` or `episode_failed`.
-6. Platform calls the commissioner's episode-completed hook for the result or failure; the commissioner may schedule more
-   episodes, including retries or replacements after failures, or declare the round done.
+6. Platform calls the commissioner's episode-completed hook for the result or failure; the commissioner may schedule
+   more episodes, including retries or replacements after failures, or declare the round done.
 7. Commissioner sends `round_complete` (per-division rankings, policy membership events, optional state blob) and exits.
 8. Platform records results, applies policy membership events, stores commissioner state for the next round.
 9. Container is terminated.
@@ -189,14 +189,12 @@ Sent before scheduling when the selected commissioner runtime/config has not yet
     "commissioner_key": "container",
     "commissioner_config": { "commissioner_runnable_id": "default-commissioner" }
   },
-  "divisions": [
-    { "id": "uuid_daily", "name": "Daily", "level": 1, "type": "competition" }
-  ]
+  "divisions": [{ "id": "uuid_daily", "name": "Daily", "level": 1, "type": "competition" }]
 }
 ```
 
-The commissioner responds with `league_migration_config_response`, declaring the canonical division names, levels, types,
-and descriptions for this commissioner version. `previous_name` can be used to rename an existing division while
+The commissioner responds with `league_migration_config_response`, declaring the canonical division names, levels,
+types, and descriptions for this commissioner version. `previous_name` can be used to rename an existing division while
 preserving its ID and history.
 
 ##### `league_migration_request`
@@ -211,9 +209,7 @@ Sent after the platform has created or renamed divisions from `league_migration_
     "commissioner_key": "container",
     "commissioner_config": { "commissioner_runnable_id": "default-commissioner" }
   },
-  "divisions": [
-    { "id": "uuid_competition", "name": "Competition", "level": 1, "type": "competition" }
-  ],
+  "divisions": [{ "id": "uuid_competition", "name": "Competition", "level": 1, "type": "competition" }],
   "memberships": [
     {
       "id": "uuid_membership",
@@ -276,14 +272,12 @@ custom entrant set.
     {
       "id": "arena_4p",
       "name": "4-Player Arena",
-      "num_agents": 4,
-      "game_config": { "tokens": ["", "", "", ""], "map_size": 32, "max_steps": 1000 }
+      "game_config": { "map_size": 32, "max_steps": 1000 }
     },
     {
       "id": "arena_2p",
       "name": "1v1 Arena",
-      "num_agents": 2,
-      "game_config": { "tokens": ["", ""], "map_size": 16, "max_steps": 500 }
+      "game_config": { "map_size": 16, "max_steps": 500 }
     }
   ],
   "state": null
@@ -297,10 +291,8 @@ The commissioner receives all divisions in the league and all active memberships
 for any division and move policies between divisions via `policy_membership_events` in `round_complete`. Each membership
 includes its `division_id` so the commissioner knows where each policy currently sits.
 
-The `variants` array comes from the Coworld manifest's declared variants, plus platform-derived `num_agents` metadata.
-The number of agents is inferred from the Coworld `config_schema` token count and is included explicitly so commissioner
-containers do not need to duplicate schema inspection. The commissioner selects a variant by ID when scheduling
-episodes.
+The `variants` array comes from the Coworld manifest's declared variants. The commissioner selects a variant by ID when
+scheduling episodes, and the scheduled episode's `policy_version_ids` list defines that episode's player roster.
 
 The `state` field contains the opaque blob returned by the commissioner's previous `round_complete` message (or `null`
 for the first round). State is stored as a JSON column and limited to 10 MB.
@@ -480,9 +472,8 @@ Request episodes to run:
 The `variant_id` references a variant declared in the Coworld manifest (passed in `round_start.variants`). The platform
 uses this to resolve the game config and env config for the episode.
 
-`policy_version_ids` is the ordered per-slot policy list — index `i` controls player slot `i` in the episode. Length
-must match the variant's player count (the `tokens` array length declared in the Coworld's `game.config_schema`).
-Repeating a policy version is valid when one policy should control multiple slots.
+`policy_version_ids` is the ordered per-slot policy list — index `i` controls player slot `i` in the episode. Its length
+is the episode's player count. Repeating a policy version is valid when one policy should control multiple slots.
 
 The `request_id` is commissioner-generated and opaque to the platform. It's echoed back in `episode_result`,
 `episode_failed`, `episodes_accepted`, and `episodes_rejected`.
@@ -576,9 +567,9 @@ The commissioner never sees internal IDs like `env_config_id` or `mod_id`.
 ## Round scheduling
 
 The platform owns the scheduling loop, round persistence, duplicate-active-round prevention, episode dispatch, and final
-application of results and membership events. For container leagues, the commissioner owns the decision to return zero or
-more round specs during that loop. A scheduling tick that returns an empty `schedule_rounds_response.rounds` list means
-the commissioner decided no round is due.
+application of results and membership events. For container leagues, the commissioner owns the decision to return zero
+or more round specs during that loop. A scheduling tick that returns an empty `schedule_rounds_response.rounds` list
+means the commissioner decided no round is due.
 
 `commissioner_config.commissioner_runnable_id` selects the commissioner runnable. Other values in `commissioner_config`
 are platform context, not an override for a config-driven commissioner image; reusable `ruleset_strategy` commissioners
@@ -623,9 +614,10 @@ months-stale commissioner.
 ## The reusable config-driven commissioner (`ruleset_strategy`)
 
 Most Coworlds do not write their own commissioner. They reuse the **config-driven `ruleset_strategy` commissioner**
-(images `ghcr.io/metta-ai/commissioners-*`, source [`Metta-AI/commissioners`](https://github.com/Metta-AI/commissioners)).
-Its entire behavior — how many episodes a round runs, how entrants fill slots, how policies are promoted/disqualified —
-comes from a **YAML config file baked into the image**.
+(images `ghcr.io/metta-ai/commissioners-*`, source
+[`Metta-AI/commissioners`](https://github.com/Metta-AI/commissioners)). Its entire behavior — how many episodes a round
+runs, how entrants fill slots, how policies are promoted/disqualified — comes from a **YAML config file baked into the
+image**.
 
 The config is selected by a runtime environment variable the commissioner reads at startup:
 
@@ -636,8 +628,8 @@ The config is selected by a runtime environment variable the commissioner reads 
   `_CONFIG_NAME`. This is the hook for a game-specific config.
 
 > **The config-driven commissioner does not read `league.commissioner_config` for scheduling.** That backend field is a
-> platform wire artifact and may hold legacy data. The schedule comes entirely from the baked YAML — so you cannot change
-> round behavior by editing the league row / backend seed; you change the **image's config**.
+> platform wire artifact and may hold legacy data. The schedule comes entirely from the baked YAML — so you cannot
+> change round behavior by editing the league row / backend seed; you change the **image's config**.
 
 ### What the config controls (rounds, seating, coverage)
 
@@ -649,13 +641,13 @@ episode_count = stage.episodes                                              # wh
                     ceil(num_entrants * min_episodes_per_entrant / num_agents))   # when it is set
 ```
 
-where `num_agents` is the game's player count per episode (from the variant's `tokens` length).
+where `num_agents` is the player count the commissioner chooses for each scheduled episode.
 
 `defaults.seating` decides which entrants fill the slots in each episode `job_index` of the round:
 
 - **`baseline_window`** (the `default` config's choice): a sliding window with
-  `offset = job_index * num_agents (mod num_entrants)`. It rotates every episode, so across enough episodes every entrant
-  is seated.
+  `offset = job_index * num_agents (mod num_entrants)`. It rotates every episode, so across enough episodes every
+  entrant is seated.
 - **`rolling_window`**: window `[(job_index + seat) % num_entrants]` — rotates by one entrant per episode.
 - **`team_blocks`** / **`leaderboard_neighbors`**: team-structured and skill-adjacent pairings.
 
@@ -723,10 +715,10 @@ produces episode results; the platform routes those results back to the commissi
 hook; and the commissioner eventually closes the round with [round decisions](../artifacts/ROUND_DECISIONS.md).
 
 Unlike grader, diagnoser, and optimizer — all of which consume _individual_ episode evidence after episodes finish — the
-commissioner consumes a stream of episode results in aggregate during a round and emits round-level decisions. The target
-[reporter](REPORTER.md) runtime is the other supporting role with a long-lived WebSocket service contract, but it is
-driven through one `/reporter` request per report, receives bundle URI(s) plus an output URI, and writes per-report zip
-artifacts rather than round decisions.
+commissioner consumes a stream of episode results in aggregate during a round and emits round-level decisions. The
+target [reporter](REPORTER.md) runtime is the other supporting role with a long-lived WebSocket service contract, but it
+is driven through one `/reporter` request per report, receives bundle URI(s) plus an output URI, and writes per-report
+zip artifacts rather than round decisions.
 
 See [`README.md`](../README.md) for the full artifact and control-flow diagram.
 
@@ -743,16 +735,16 @@ scheduled by the Coworld round runner.
 
 Per-goal status:
 
-| #   | Goal                                                                                       | Status                                                                    |
-| --- | ------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------- |
-| 1   | Commissioner containers drive rounds via WebSocket messaging                               | Done                                                                      |
-| 2   | Schedule episodes incrementally and receive results as they complete                       | Done                                                                      |
-| 3   | Commissioner image and optional command/env come from the Coworld manifest                 | Done; verify the pinned image and `run`/`env` before daily-league cutover |
-| 4   | Deploying a Coworld with a commissioner creates a league and begins scheduling             | Done when seeding resolves a matching `manifest.commissioner[].id`        |
-| 5   | Commissioner containers scoped to a single round (can be swapped between rounds)           | Done                                                                      |
-| 6   | Commissioners emit round rankings, scores, and policy membership events at the end of each round | Done                                                                 |
-| 7   | Existing registered commissioners continue to work unchanged                               | Removed; hosted scheduling is container-only                              |
-| 8   | Commissioners declare canonical league divisions and migration events                      | Done                                                                      |
+| #   | Goal                                                                                             | Status                                                                    |
+| --- | ------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------- |
+| 1   | Commissioner containers drive rounds via WebSocket messaging                                     | Done                                                                      |
+| 2   | Schedule episodes incrementally and receive results as they complete                             | Done                                                                      |
+| 3   | Commissioner image and optional command/env come from the Coworld manifest                       | Done; verify the pinned image and `run`/`env` before daily-league cutover |
+| 4   | Deploying a Coworld with a commissioner creates a league and begins scheduling                   | Done when seeding resolves a matching `manifest.commissioner[].id`        |
+| 5   | Commissioner containers scoped to a single round (can be swapped between rounds)                 | Done                                                                      |
+| 6   | Commissioners emit round rankings, scores, and policy membership events at the end of each round | Done                                                                      |
+| 7   | Existing registered commissioners continue to work unchanged                                     | Removed; hosted scheduling is container-only                              |
+| 8   | Commissioners declare canonical league divisions and migration events                            | Done                                                                      |
 
 Container commissioner support is live in the backend. A league schedules only when its `commissioner_key` is
 `container` and `commissioner_config.commissioner_runnable_id` resolves against the canonical Coworld manifest.
@@ -800,9 +792,9 @@ Before relying on an independent commissioner for a daily league:
 
 ## See Also
 
-- [`Metta-AI/commissioners`](https://github.com/Metta-AI/commissioners) — the reusable config-driven (`ruleset_strategy`)
-  commissioner: per-game configs under `configs/`, the `episodes`/`min_episodes_per_entrant`/`seating` schema, and the
-  image build matrix.
+- [`Metta-AI/commissioners`](https://github.com/Metta-AI/commissioners) — the reusable config-driven
+  (`ruleset_strategy`) commissioner: per-game configs under `configs/`, the
+  `episodes`/`min_episodes_per_entrant`/`seating` schema, and the image build matrix.
 - [`commissioner/protocol.py`](../../commissioner/protocol.py) — Pydantic models for every protocol message.
 - [`artifacts/EPISODE_BUNDLE.md`](../artifacts/EPISODE_BUNDLE.md) — post-episode artifact package that commissioner
   protocol messages do not directly carry.

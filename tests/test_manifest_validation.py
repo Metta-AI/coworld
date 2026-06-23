@@ -1,8 +1,11 @@
 import pytest
+from jsonschema.exceptions import ValidationError as JsonSchemaValidationError
 
 from coworld.manifest_validation import (
     game_config_with_named_players,
+    game_config_with_overwritten_named_players,
     infer_token_count_for_game_config,
+    validate_authored_game_config,
     validate_coworld_manifest_game_configs,
 )
 from coworld.types import CoworldCertificationFixture, CoworldGameManifest, CoworldManifest, CoworldVariant
@@ -82,23 +85,52 @@ def test_game_config_with_named_players_rejects_existing_player_names() -> None:
         game_config_with_named_players({"player_names": ["stale"]}, ["alpha:v1"], NAMED_PLAYERS_SCHEMA)
 
 
-def test_validate_manifest_requires_players_to_match_token_count() -> None:
+def test_game_config_with_overwritten_named_players_resizes_existing_players() -> None:
     schema = FIXED_NAMED_PLAYERS_SCHEMA | {
         "properties": FIXED_NAMED_PLAYERS_SCHEMA["properties"]
         | {
-            "players": FIXED_NAMED_PLAYERS_SCHEMA["properties"]["players"] | {"minItems": 3, "maxItems": 3},
+            "tokens": FIXED_NAMED_PLAYERS_SCHEMA["properties"]["tokens"] | {"maxItems": 3},
+            "players": FIXED_NAMED_PLAYERS_SCHEMA["properties"]["players"]
+            | {
+                "maxItems": 3,
+                "items": FIXED_NAMED_PLAYERS_SCHEMA["properties"]["players"]["items"]
+                | {"properties": {"name": {"type": "string"}, "role": {"type": "string"}}},
+            },
         }
     }
 
-    with pytest.raises(ValueError, match="players must declare the same fixed length as tokens"):
+    config = game_config_with_overwritten_named_players(
+        {"players": [{"name": "Old A", "role": "red"}, {"name": "Old B", "role": "blue"}]},
+        ["alpha", "beta", "alpha"],
+        schema,
+    )
+
+    assert config == {
+        "players": [
+            {"name": "alpha", "role": "red"},
+            {"name": "beta", "role": "blue"},
+            {"name": "alpha (2)", "role": "red"},
+        ]
+    }
+
+
+def test_validate_manifest_requires_tokens_schema() -> None:
+    schema = {
+        "type": "object",
+        "additionalProperties": False,
+        "required": ["players"],
+        "properties": {"players": FIXED_NAMED_PLAYERS_SCHEMA["properties"]["players"]},
+    }
+
+    with pytest.raises(ValueError, match="game.config_schema must require tokens"):
         validate_coworld_manifest_game_configs(_manifest(schema))
 
 
-def test_validate_manifest_allows_variant_specific_player_counts() -> None:
+def test_validate_manifest_allows_bounded_tokens_and_variant_specific_player_counts() -> None:
     schema = FIXED_NAMED_PLAYERS_SCHEMA | {
         "properties": FIXED_NAMED_PLAYERS_SCHEMA["properties"]
         | {
-            "tokens": FIXED_NAMED_PLAYERS_SCHEMA["properties"]["tokens"] | {"maxItems": 4},
+            "tokens": {"type": "array", "minItems": 2, "maxItems": 4, "items": {"type": "string"}},
             "players": FIXED_NAMED_PLAYERS_SCHEMA["properties"]["players"] | {"maxItems": 4},
         }
     }
@@ -119,13 +151,38 @@ def test_validate_manifest_allows_variant_specific_player_counts() -> None:
         ),
     )
 
-    counts = validate_coworld_manifest_game_configs(manifest)
-    assert counts.variant_player_counts == {"two-player": 2, "four-player": 4}
-    assert counts.default_player_count == 2
+    validate_coworld_manifest_game_configs(manifest)
     assert infer_token_count_for_game_config(schema, manifest.variants[1].game_config) == 4
 
 
-def test_validate_manifest_rejects_open_tokens_without_game_config_player_count() -> None:
+def test_validate_manifest_requires_token_bounds() -> None:
+    schema = FIXED_NAMED_PLAYERS_SCHEMA | {
+        "properties": FIXED_NAMED_PLAYERS_SCHEMA["properties"]
+        | {
+            "tokens": {"type": "array", "items": {"type": "string"}},
+        }
+    }
+
+    with pytest.raises(ValueError, match="tokens must declare minItems and maxItems"):
+        validate_coworld_manifest_game_configs(_manifest(schema))
+
+
+def test_validate_manifest_rejects_token_free_game_schema() -> None:
+    schema = {
+        "type": "object",
+        "additionalProperties": False,
+        "required": ["map"],
+        "properties": {"map": {"type": "string"}},
+    }
+    manifest = _manifest(schema)
+    manifest.variants[0].game_config = {"map": "arena"}
+    manifest.certification.game_config = {"map": "arena"}
+
+    with pytest.raises(ValueError, match="game.config_schema must require tokens"):
+        validate_coworld_manifest_game_configs(manifest)
+
+
+def test_validate_authored_game_config_uses_supplied_token_count() -> None:
     schema = {
         "type": "object",
         "additionalProperties": False,
@@ -135,8 +192,21 @@ def test_validate_manifest_rejects_open_tokens_without_game_config_player_count(
         },
     }
 
-    with pytest.raises(ValueError, match="game_config.players must define the seat count"):
-        validate_coworld_manifest_game_configs(_manifest(schema))
+    validate_authored_game_config({}, schema, token_count=3)
+
+    with pytest.raises(JsonSchemaValidationError):
+        validate_authored_game_config({}, schema, token_count=5)
+
+
+def test_validate_manifest_requires_certification_players_to_match_authored_players() -> None:
+    manifest = _manifest(FIXED_NAMED_PLAYERS_SCHEMA)
+    manifest.certification = CoworldCertificationFixture.model_construct(
+        game_config={"players": [{"name": "A"}, {"name": "B"}]},
+        players=[object()],
+    )
+
+    with pytest.raises(ValueError, match="certification.players must match certification game_config.players length"):
+        validate_coworld_manifest_game_configs(manifest)
 
 
 def test_validate_manifest_rejects_duplicate_variant_ids() -> None:

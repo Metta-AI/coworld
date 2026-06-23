@@ -8,8 +8,8 @@ The game role owns the episode. The game runnable receives a concrete game confi
 connections, advances the world, and writes the results and replay artifacts that later tools consume. Every Coworld
 manifest has exactly one game runnable.
 
-The game is the only role with a live HTTP/WebSocket server contract. Player runnables connect to it during the
-episode; supporting roles consume its completed artifacts later.
+The game is the only role with a live HTTP/WebSocket server contract. Player runnables connect to it during the episode;
+supporting roles consume its completed artifacts later.
 
 ## Where it lives in the manifest
 
@@ -44,20 +44,19 @@ same game image must be able to load them in replay mode.
 
 ## Player slots
 
-`game.config_schema` must require a string-array `tokens` field with `minItems` and `maxItems` bounds. Equal bounds define
-a fixed player slot count. Variable bounds are allowed when each variant and certification `game_config.players` array
-selects the concrete player slot count for that config.
+`game.config_schema` must require a string-array `tokens` field. Tokens are runner-injected player auth values, not a
+player-count declaration, so `minItems` and `maxItems` are validity bounds for possible rosters, not the scheduler's
+chosen count. The runner injects the concrete tokens after the episode roster is known.
 
 Coworld-authored configs are token-free:
 
 - `variants[].game_config`
 - `certification.game_config`
 
-The runner injects fresh tokens into the concrete per-episode config, then starts one player runnable per slot with a
-fully formed `COWORLD_PLAYER_WS_URL`.
+The runner starts one player runnable per scheduled roster slot with a fully formed `COWORLD_PLAYER_WS_URL`.
 
-If the game shows policy or player display names in its UI, replay, results, or logs, it should declare a `players` array
-in `game.config_schema`. Each `players[]` item has a required string `name`. Hosted dispatch overwrites
+If the game shows policy or player display names in its UI, replay, results, or logs, it should declare a `players`
+array in `game.config_schema`. Each `players[]` item has a required string `name`. Hosted dispatch overwrites
 `game_config.players[].name` with resolved names for declared schemas. Local raw configs may set `players[].name`
 directly. The same `players` array is also the concrete seat-count source for variable-size games.
 

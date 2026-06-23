@@ -57,7 +57,10 @@ class VariantInfo(BaseModel):
     id: str
     name: str
     game_config: dict[str, Any]
-    num_agents: int = Field(gt=0)
+    # TODO(commissioner-rollout): remove this deprecated wire-compat field with
+    # `_compat_variant_num_agents` after deployed commissioner containers accept
+    # roster-owned episode player counts. Track every cleanup site with this tag.
+    num_agents: int = Field(default=1, gt=0)
 
 
 class EpisodeRequest(BaseModel):

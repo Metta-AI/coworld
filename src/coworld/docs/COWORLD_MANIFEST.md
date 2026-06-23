@@ -1,15 +1,15 @@
 # Coworld Manifest
 
-Every Coworld package has a `coworld_manifest.json` file. The manifest is the package map: it tells Coworld tooling which
-game to run, which bundled players and supporting runnables ship with the Coworld, which variants exist, which docs are
-game-authored, and which certification episode proves the package works.
+Every Coworld package has a `coworld_manifest.json` file. The manifest is the package map: it tells Coworld tooling
+which game to run, which bundled players and supporting runnables ship with the Coworld, which variants exist, which
+docs are game-authored, and which certification episode proves the package works.
 
 The field-level reference is the generated JSON Schema:
 
 - [`coworld_manifest_schema.json`](../coworld_manifest_schema.json) is the canonical machine-readable contract.
 - [`types.py`](../types.py) owns the Pydantic models and schema descriptions used to generate that JSON Schema.
-- [`examples/paintarena/coworld_manifest_template.json`](../examples/paintarena/coworld_manifest_template.json)
-  is the canonical worked example.
+- [`examples/paintarena/coworld_manifest_template.json`](../examples/paintarena/coworld_manifest_template.json) is the
+  canonical worked example.
 
 This document intentionally does **not** duplicate the schema field by field. It records how to use the manifest, which
 semantics live outside normal JSON Schema, and where to look when authoring or changing manifests.
@@ -38,18 +38,18 @@ The schema currently enforces only the roles with stable required runtime contra
 - `game` and `player` are required today.
 - `commissioner`, `reporter`, `grader`, `diagnoser`, and `optimizer` are optional today.
 
-The schema marks `diagnoser` and `optimizer` with descriptions plus `$comment` and
-`x-coworld-future-required: true`. Use that metadata when building authoring tools or schema renderers; it is the
-machine-readable version of "not required yet, but expected to be part of a complete Coworld."
+The schema marks `diagnoser` and `optimizer` with descriptions plus `$comment` and `x-coworld-future-required: true`.
+Use that metadata when building authoring tools or schema renderers; it is the machine-readable version of "not required
+yet, but expected to be part of a complete Coworld."
 
 The schema also links each role section back to its role contract using `x-coworld-role-doc` and a Markdown
 `markdownDescription`. That round trip is intentional: someone reading `coworld_manifest_schema.json` cold should be
 able to jump from `manifest.player[]` or `manifest.reporter[]` to the corresponding role doc.
 
-For commissioner runnables, `id` is also the value used by
-`commissioner_config.commissioner_runnable_id` when a Coworld league opts into a container commissioner. That config key
-must be present for container commissioner leagues and must match one `manifest.commissioner[].id`; the platform resolves
-the selected runnable from the canonical Coworld manifest before starting the commissioner container.
+For commissioner runnables, `id` is also the value used by `commissioner_config.commissioner_runnable_id` when a Coworld
+league opts into a container commissioner. That config key must be present for container commissioner leagues and must
+match one `manifest.commissioner[].id`; the platform resolves the selected runnable from the canonical Coworld manifest
+before starting the commissioner container.
 
 For role semantics, use the role docs rather than the schema:
 
@@ -85,32 +85,31 @@ for the same name must come from that original uploader or a Softmax team member
 
 ## Game Configs, Tokens, And Player Names
 
-`game.config_schema` is a JSON Schema for the runtime config the game reads from `COGAME_CONFIG_URI`. It has one
-cross-Coworld requirement that is easier to explain here than in a field table: it must require a string-array `tokens`
-field with `minItems` and `maxItems` bounds. When the bounds are equal, that fixed length defines the player slot count.
-When the bounds differ, each variant and certification `game_config.players` array defines the concrete player slot
-count for that config.
+`game.config_schema` is a JSON Schema for the runtime config the game reads from `COGAME_CONFIG_URI`. It must require a
+string-array `tokens` field for runner-injected player auth. The token schema must declare `minItems` and `maxItems` so
+non-commissioner flows can reject impossible rosters before launch. Those bounds are validity limits, not the
+scheduler's chosen count: scheduled rosters, hosted-play requests, and certification players define the concrete player
+slots.
 
 Coworld-authored configs do **not** include `tokens`:
 
 - `variants[].game_config` is token-free.
 - `certification.game_config` is token-free.
 
-The runner injects fresh tokens when it creates the concrete per-episode config. That means authoring tools should
-validate the author-provided configs by adding placeholder tokens first, not by expecting tokens to appear in the
-manifest.
+The runner injects fresh tokens when it creates the concrete per-episode config. Authoring tools validate
+author-provided configs by adding placeholder tokens first, not by expecting token values to appear in the manifest.
 
 Games that need policy or player display names use `game_config.players[].name`, matching the Paint Arena example.
 
-- Declare `game.config_schema.properties.players` as an array when the Coworld supports variable player counts or display
-  names.
+- Declare `game.config_schema.properties.players` as an array when the Coworld supports variable player counts or
+  display names.
 - If the game shows display names, each `players[]` item must be an object with required string field `name`.
 - Hosted dispatch overwrites `game_config.players[].name` with resolved, per-slot display names when the schema declares
   the field.
 - Local raw configs may set `players[].name` directly when a developer wants readable names without hosted dispatch.
 
-Game-specific `slots` config objects remain game-owned and can carry mechanics such as roles, colors, spawn settings,
-or other per-slot fields. Cross-Coworld player identity names flow through `game_config.players[].name`.
+Game-specific `slots` config objects remain game-owned and can carry mechanics such as roles, colors, spawn settings, or
+other per-slot fields. Cross-Coworld player identity names flow through `game_config.players[].name`.
 
 See [Game Role](roles/GAME.md#player-slots) and [Lifecycle](LIFECYCLE.md) for the runtime path.
 
@@ -133,9 +132,9 @@ uv run coworld secret put cue_n_woo worker_signing_key ./tournament_signing_key.
 ```
 
 During hosted episode dispatch, the backend resolves `secret://coworld/<coworld_name>/<secret_name>` only for the
-matching Coworld and injects a short-lived presigned HTTPS URL into the game container env. Hosted play and hosted replay
-sessions do not resolve Coworld secrets. Antfarm dispatch also does not resolve Coworld secrets; use the k8s hosted
-episode backend for Coworlds whose game env contains `secret://` values.
+matching Coworld and injects a short-lived presigned HTTPS URL into the game container env. Hosted play and hosted
+replay sessions do not resolve Coworld secrets. Antfarm dispatch also does not resolve Coworld secrets; use the k8s
+hosted episode backend for Coworlds whose game env contains `secret://` values.
 
 Secrets are stored in the Coworld uploader's Coworld-name namespace. Passing a name to `coworld secret put` targets your
 canonical Coworld for that name when you own it; pass the `cow_...` id to target a non-canonical candidate version
@@ -144,8 +143,8 @@ explicitly. Softmax team members must pass a `cow_...` id when a Coworld name ma
 Local users who run the downloaded game image see only the symbolic `secret://` URI and must override the env var with
 their own local `file://`, HTTP(S), or other game-supported URI when they need a development secret.
 
-Coworld secret uploads are capped at 1 MiB. Use them for credentials such as signing keys and tokens, not for
-large datasets or model artifacts.
+Coworld secret uploads are capped at 1 MiB. Use them for credentials such as signing keys and tokens, not for large
+datasets or model artifacts.
 
 ## Results Schema
 
@@ -161,11 +160,11 @@ The manifest stores document references, not local file uploads. A document is e
 URI. Referenced URI docs should be fetchable by users and tools after the Coworld is uploaded.
 
 `game.docs.readme` is required and points to the Coworld's `README.md`. That README is the canonical game-authored
-onboarding document for game rules, setup, player guidance, and context. It should be usable by humans and coding
-agents after the Coworld is uploaded.
+onboarding document for game rules, setup, player guidance, and context. It should be usable by humans and coding agents
+after the Coworld is uploaded.
 
-Game uploaders should put the durable game-owned material in `game.docs.readme`: rules, strategies, how to use or
-modify a game-specific policy, and game-specific FAQs.
+Game uploaders should put the durable game-owned material in `game.docs.readme`: rules, strategies, how to use or modify
+a game-specific policy, and game-specific FAQs.
 
 `game.docs.pages` is optional supplemental documentation. Coworlds may include pages for strategy notes, protocol
 supplements, reference material, or legacy rule/play guides, but the manifest contract no longer requires a `rules.md`
@@ -217,8 +216,7 @@ starter players and in-tree examples may keep game-repo or package-repo `source_
 are promoted into the corresponding role repo with build metadata.
 
 Backend storage, ECR publishing, public mirrors for bundled images, and private submitted-policy images are backend
-mechanics; see
-[`COWORLD_MECHANICS.md`](../../../../../app_backend/src/metta/app_backend/v2/COWORLD_MECHANICS.md).
+mechanics; see [`COWORLD_MECHANICS.md`](../../../../../app_backend/src/metta/app_backend/v2/COWORLD_MECHANICS.md).
 
 ## Validation And Regeneration
 

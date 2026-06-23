@@ -67,6 +67,8 @@ def test_round_start_serializes_with_message_type() -> None:
                 id="among_them",
                 name="Among Them",
                 game_config={"tokens": ["a", "b"], "imposter_count": 1},
+                # TODO(commissioner-rollout): remove this assertion fixture with
+                # the deprecated `VariantInfo.num_agents` wire-compat field.
                 num_agents=2,
             )
         ],
@@ -417,7 +419,7 @@ def test_episode_completed_request_serializes_episode_result_and_failure() -> No
             for policy_version_id in policy_version_ids
         ],
         recent_results=[],
-        variants=[VariantInfo(id="default", name="Default", game_config={}, num_agents=2)],
+        variants=[VariantInfo(id="default", name="Default", game_config={})],
     )
     result = EpisodeResult(
         request_id="episode-1",

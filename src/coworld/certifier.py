@@ -29,8 +29,7 @@ from coworld.commissioner.protocol import (
 from coworld.manifest_validation import (
     game_config_with_tokens,
     infer_token_count_for_game_config,
-    validate_coworld_certification_fixture,
-    validate_coworld_manifest_variant_game_configs,
+    validate_coworld_manifest_game_configs,
 )
 from coworld.report import ReportManifest, validate_report_zip
 from coworld.reporter_protocol import (
@@ -152,7 +151,7 @@ def load_coworld_package(manifest_path: Path) -> CoworldPackage:
     manifest = load_json_object(manifest_path)
     validate_json_schema(manifest, coworld_manifest_schema())
     typed_manifest = CoworldManifest.model_validate(manifest)
-    validate_coworld_manifest_variant_game_configs(typed_manifest)
+    validate_coworld_manifest_game_configs(typed_manifest)
 
     package = CoworldPackage(
         manifest_path=manifest_path,
@@ -257,7 +256,13 @@ def build_manifest_episode_job_spec(
             raise ValueError(f"unknown Coworld variant_id: {variant_id!r}")
         game_config = copy.deepcopy(variants[variant_id].game_config)
 
-    slot_count = infer_token_count_for_game_config(package.config_schema, game_config)
+    players_config = game_config.get("players")
+    if isinstance(players_config, list):
+        slot_count = len(players_config)
+    elif variant_id is None:
+        slot_count = len(package.manifest.certification.players)
+    else:
+        slot_count = infer_token_count_for_game_config(package.config_schema, game_config)
     players = _certification_player_specs(package)
     if len(players) != slot_count:
         players = [players[index % len(players)].model_copy(deep=True) for index in range(slot_count)]
@@ -399,7 +404,7 @@ def certify_coworld(
     run_step("images-reachable", lambda: validate_image_references(package), "All declared images are reachable.")
     run_step(
         "fixture-conforms",
-        lambda: validate_coworld_certification_fixture(package.manifest),
+        lambda: validate_coworld_manifest_game_configs(package.manifest),
         "Certification fixture validates against game.config_schema after token injection.",
     )
 

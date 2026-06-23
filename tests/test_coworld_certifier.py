@@ -34,7 +34,7 @@ from coworld.certifier import (
     validate_source_references,
 )
 from coworld.commissioner.protocol import LeagueInfo, ScheduleRoundsRequest, ScheduleRoundsResponse
-from coworld.manifest_validation import game_config_with_tokens, validate_coworld_certification_fixture
+from coworld.manifest_validation import game_config_with_tokens
 from coworld.play import BedrockAwsEnv, ReplaySession, build_play_links, play_coworld, replay_coworld
 from coworld.report import ReportRenderError
 from coworld.runner.io import RunnerEpisodeError
@@ -52,6 +52,7 @@ from coworld.runner.runner import (
     replay_client_url,
     replay_session_path,
 )
+from coworld.schema_validation import validate_json_schema
 from coworld.types import CoworldEpisodeJobSpec, CoworldManifest, TranscriptStep
 
 
@@ -554,7 +555,7 @@ def test_request_commissioner_once_rejects_wrong_message_type(monkeypatch: pytes
 def _stub_executable_pipeline(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr("coworld.certifier.validate_source_references", lambda package: [])
     monkeypatch.setattr("coworld.certifier.validate_image_references", lambda package: None)
-    monkeypatch.setattr("coworld.certifier.validate_coworld_certification_fixture", lambda manifest: None)
+    monkeypatch.setattr("coworld.certifier.validate_coworld_manifest_game_configs", lambda manifest: None)
     monkeypatch.setattr("coworld.certifier.build_episode_request", lambda package, artifacts: {})
     monkeypatch.setattr("coworld.certifier.build_coworld_episode_job_spec", lambda request: None)
 
@@ -668,7 +669,7 @@ def test_certify_coworld_records_fixture_failure_before_episode(
             on_step=lambda result, step: events.append((result.id, result.status, result.failure_reason)),
         )
 
-    assert events[-1] == ("fixture-conforms", "fail", "fixture_invalid")
+    assert events[-1] == ("matriculate", "fail", "manifest_invalid")
 
 
 def test_certify_coworld_records_smoke_episode_runner_error_type(
@@ -850,6 +851,16 @@ def test_game_config_with_tokens_only_injects_tokens(tmp_path: Path) -> None:
     }
 
 
+def test_game_config_with_tokens_rejects_non_string_tokens_via_json_schema(tmp_path: Path) -> None:
+    package = _write_package(tmp_path)
+
+    with pytest.raises(JsonSchemaValidationError):
+        validate_json_schema(
+            game_config_with_tokens(package.manifest.certification.game_config, cast(list[str], [1])),
+            package.config_schema,
+        )
+
+
 def test_load_coworld_package_requires_bounded_token_count(tmp_path: Path) -> None:
     coworld_manifest_path = _write_package_files(tmp_path)
     manifest = json.loads(coworld_manifest_path.read_text())
@@ -870,7 +881,7 @@ def test_load_coworld_package_rejects_tokens_in_variant_game_config(tmp_path: Pa
         load_coworld_package(coworld_manifest_path)
 
 
-def test_load_coworld_package_requires_certification_player_count_to_match_tokens(tmp_path: Path) -> None:
+def test_load_coworld_package_uses_certification_players_as_token_count(tmp_path: Path) -> None:
     coworld_manifest_path = _write_package_files(
         tmp_path,
         certification={
@@ -878,10 +889,12 @@ def test_load_coworld_package_requires_certification_player_count_to_match_token
             "players": [{"player_id": "unit-test-player"}, {"player_id": "unit-test-player"}],
         },
     )
+    manifest = json.loads(coworld_manifest_path.read_text())
+    manifest["game"]["config_schema"]["properties"]["tokens"]["maxItems"] = 2
+    coworld_manifest_path.write_text(json.dumps(manifest))
     package = load_coworld_package(coworld_manifest_path)
 
-    with pytest.raises(ValueError, match="certification.players must match"):
-        validate_coworld_certification_fixture(package.manifest)
+    assert len(game_config_with_tokens(package.manifest.certification.game_config, ["a", "b"])["tokens"]) == 2
 
 
 def test_load_results_validates_against_cogame_results_schema(tmp_path: Path) -> None:
@@ -980,16 +993,20 @@ def test_build_manifest_episode_job_spec_defaults_to_certification_config(tmp_pa
 
 
 def test_build_manifest_episode_job_spec_deep_copies_config_and_player_env(tmp_path: Path) -> None:
-    package = _write_package(
+    coworld_manifest_path = _write_package_files(
         tmp_path,
         certification={
             "game_config": {
                 "players": [{"name": "one"}, {"name": "two"}],
             },
-            "players": [{"player_id": "unit-test-player"}],
+            "players": [{"player_id": "unit-test-player"}, {"player_id": "unit-test-player"}],
         },
         game_config={"difficulty": "watch"},
     )
+    manifest = json.loads(coworld_manifest_path.read_text(encoding="utf-8"))
+    manifest["game"]["config_schema"]["properties"]["tokens"]["maxItems"] = 2
+    coworld_manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
+    package = load_coworld_package(coworld_manifest_path)
 
     spec = build_manifest_episode_job_spec(package)
     spec.game_config["players"][0]["name"] = "mutated"
