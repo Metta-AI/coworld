@@ -82,8 +82,15 @@ def league_create(
     coworld_name: Annotated[str, typer.Argument(help="Canonical coworld name to promote into a league.")],
     template: Annotated[
         str,
-        typer.Option("--template", "-t", help="Template: default | social_deduction | cogs_vs_clips | four_score."),
-    ] = "default",
+        typer.Option(
+            "--template",
+            "-t",
+            help=(
+                "Temporary seed template. Defaults to commissioner_driven; legacy values are "
+                "default | social_deduction | cogs_vs_clips | four_score."
+            ),
+        ),
+    ] = "commissioner_driven",
     overrides: Annotated[
         list[str] | None,
         typer.Option("--set", help="Override KEY=VALUE (VALUE parsed as JSON when possible). Repeatable."),

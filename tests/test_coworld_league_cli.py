@@ -7,7 +7,7 @@ from coworld.cli import app
 SEED_RESPONSE = {
     "id": "lseed_00000000-0000-0000-0000-000000000071",
     "coworld_name": "newworld",
-    "template": "default",
+    "template": "commissioner_driven",
     "overrides": {"is_game_of_week": True, "commissioner_runnable_id": "cue-n-woo-commissioner"},
     "enabled": True,
     "created_by": "debug_user_id",
@@ -29,7 +29,7 @@ def test_create_coworld_league_seed_posts_request(httpserver: HTTPServer) -> Non
         headers={"Authorization": "Bearer token"},
         json={
             "coworld_name": "newworld",
-            "template": "default",
+            "template": "commissioner_driven",
             "overrides": {"is_game_of_week": True, "commissioner_runnable_id": "cue-n-woo-commissioner"},
             "enabled": True,
         },
@@ -41,8 +41,6 @@ def test_create_coworld_league_seed_posts_request(httpserver: HTTPServer) -> Non
             "league",
             "create",
             "newworld",
-            "--template",
-            "default",
             "--set",
             "is_game_of_week=true",
             "--set",
@@ -91,4 +89,4 @@ def test_list_coworld_league_seeds(httpserver: HTTPServer) -> None:
 
     assert result.exit_code == 0, result.output
     assert "newworld" in result.output
-    assert "default" in result.output
+    assert "commissioner_driven" in result.output

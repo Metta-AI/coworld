@@ -385,7 +385,7 @@ class CoworldUploadClient:
         self,
         *,
         coworld_name: str,
-        template: str,
+        template: str = "commissioner_driven",
         overrides: dict[str, Any] | None = None,
         enabled: bool = True,
     ) -> CoworldLeagueSeedResponse:
