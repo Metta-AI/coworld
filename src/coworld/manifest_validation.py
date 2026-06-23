@@ -131,6 +131,12 @@ def _player_config_objects(value: Any, field_name: str) -> list[dict[str, Any]]:
 
 
 def validate_coworld_manifest_game_configs(manifest: CoworldManifest) -> CoworldManifestGameConfigCounts:
+    counts = validate_coworld_manifest_variant_game_configs(manifest)
+    validate_coworld_certification_fixture(manifest)
+    return counts
+
+
+def validate_coworld_manifest_variant_game_configs(manifest: CoworldManifest) -> CoworldManifestGameConfigCounts:
     _reject_legacy_name_config_schema(manifest.game.config_schema)
     fixed_token_count: int | None
     try:
@@ -151,6 +157,12 @@ def validate_coworld_manifest_game_configs(manifest: CoworldManifest) -> Coworld
             manifest.game.config_schema,
         )
 
+    return CoworldManifestGameConfigCounts(
+        variant_player_counts=variant_player_counts,
+    )
+
+
+def validate_coworld_certification_fixture(manifest: CoworldManifest) -> None:
     certification_token_count = infer_token_count_for_game_config(
         manifest.game.config_schema,
         manifest.certification.game_config,
@@ -164,9 +176,6 @@ def validate_coworld_manifest_game_configs(manifest: CoworldManifest) -> Coworld
             [f"token-{slot}" for slot in range(certification_token_count)],
         ),
         manifest.game.config_schema,
-    )
-    return CoworldManifestGameConfigCounts(
-        variant_player_counts=variant_player_counts,
     )
 
 

@@ -544,7 +544,7 @@ def _write_manifest(
                         "name": "Unit Test Default Grader",
                         "type": "grader",
                         "image": "ghcr.io/metta-ai/graders-default:latest",
-                        "source_url": "https://github.com/Metta-AI/graders/tree/main/graders/default/default_grader",
+                        "source_url": "https://github.com/Metta-AI/graders/tree/ec741c91bb08c8f5aca024218ff122a8d1ae85f9/graders/default/default_grader",
                         "description": "Default grader stub.",
                     }
                 ],

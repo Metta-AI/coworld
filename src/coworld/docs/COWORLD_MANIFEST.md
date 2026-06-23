@@ -188,9 +188,10 @@ One Docker image can implement multiple roles by appearing in multiple runnable 
 different commands. `coworld upload-coworld` deduplicates image uploads by image reference and backend content identity.
 At hosted execution time, image tags resolve to immutable digests.
 
-`source_url` is informational for humans inspecting a runnable, but `coworld certify` also checks GitHub URLs for
-non-empty contents and a Dockerfile at that path or an ancestor build root. Point it at the repository, directory, or
-file that implements the runnable, not just a documentation page.
+`source_url` is informational for humans inspecting a runnable, but `coworld certify` also checks GitHub URLs. Any
+GitHub `source_url` must pin a full 40-hex commit SHA in the ref position; branch names, tags, and implicit default
+branches fail certification. The pinned source must have non-empty contents and a Dockerfile at that path or an ancestor
+build root. Point it at the repository, directory, or file that implements the runnable, not just a documentation page.
 
 `repository_url` is an optional, machine-readable field used by `coworld optimize`: on an `optimizer[]` entry it names
 the Git repository the command clones and runs locally (falling back to `Metta-AI/optimizers` when unset). Unlike

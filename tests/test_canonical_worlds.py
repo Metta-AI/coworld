@@ -30,7 +30,9 @@ SUPPORTING_ROLE_REPOS = {
     "diagnoser": "https://github.com/Metta-AI/diagnosers",
     "optimizer": "https://github.com/Metta-AI/optimizers",
 }
-IN_TREE_EXAMPLE_SOURCE_PREFIX = "https://github.com/Metta-AI/coworld/tree/main/src/coworld/examples/paintarena/"
+IN_TREE_EXAMPLE_SOURCE_PREFIX = (
+    "https://github.com/Metta-AI/coworld/tree/68257d7b450fb8013ed496538221cd2bd423e140/src/coworld/examples/paintarena/"
+)
 COWORLD_ISSUES_URL = "https://github.com/Metta-AI/coworld/issues"
 PLAY_GUIDE_URI_PREFIXES = (
     "https://softmax.com/play_",

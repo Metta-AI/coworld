@@ -263,7 +263,6 @@ def run_episode_containers(spec: EpisodeRunSpec, *, verify_replay: bool = True) 
     run_id = secrets.token_hex(8)
     game_network_alias = f"{LOCAL_GAME_NETWORK_ALIAS_PREFIX}{run_id}"
     game_container = f"{spec.container_prefix}-game-{run_id}"
-    replay_container = f"{spec.container_prefix}-replay-{run_id}"
     player_containers: list[str] = []
     player_processes: list[tuple[subprocess.Popen[str], Path]] = []
 
@@ -374,15 +373,40 @@ def run_episode_containers(spec: EpisodeRunSpec, *, verify_replay: bool = True) 
             if not verify_replay:
                 return
 
-            replay_port = _free_local_port()
+            verify_replay_loadable(
+                spec.game,
+                spec.artifacts,
+                timeout_seconds=spec.timeout_seconds,
+                container_prefix=spec.container_prefix,
+            )
+    finally:
+        for container_name in player_containers:
+            subprocess.run(["docker", "rm", "-f", container_name], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        subprocess.run(["docker", "rm", "-f", game_container], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+
+
+def verify_replay_loadable(
+    game: RunnableLaunchSpec,
+    artifacts: EpisodeArtifacts,
+    *,
+    timeout_seconds: float,
+    container_prefix: str = LOCAL_EPISODE_CONTAINER_PREFIX,
+) -> None:
+    replay_port = _free_local_port()
+    replay_container = f"{container_prefix}-replay-{secrets.token_hex(8)}"
+    if not artifacts.replay_path.exists():
+        raise RunnerEpisodeError(
+            f"Replay required but game did not write replay: {artifacts.replay_path}",
+            error_type="replay_missing",
+        )
+
+    try:
+        with ExitStack() as stack:
+            game_stdout = stack.enter_context(artifacts.game_stdout_path.open("a"))
+            game_stderr = stack.enter_context(artifacts.game_stderr_path.open("a"))
             replay_load_dir = Path(stack.enter_context(tempfile.TemporaryDirectory(prefix="coworld-replay-load-")))
             replay_load_path = replay_load_dir / "replay.z"
-            if not spec.artifacts.replay_path.exists():
-                raise RunnerEpisodeError(
-                    f"Replay required but game did not write replay: {spec.artifacts.replay_path}",
-                    error_type="replay_missing",
-                )
-            replay_load_path.write_bytes(zlib.compress(spec.artifacts.replay_path.read_bytes()))
+            replay_load_path.write_bytes(zlib.compress(artifacts.replay_path.read_bytes()))
             replay_uri = "file:///coworld-replay/replay.z"
             replay_process = subprocess.Popen(
                 [
@@ -393,7 +417,7 @@ def run_episode_containers(spec: EpisodeRunSpec, *, verify_replay: bool = True) 
                     replay_container,
                     "-p",
                     f"127.0.0.1:{replay_port}:{GAME_PORT}",
-                    *_env_args(spec.game.env),
+                    *_env_args(game.env),
                     "-e",
                     f"{GAME_HOST_ENV_VAR}={GAME_HOST}",
                     "-e",
@@ -402,7 +426,7 @@ def run_episode_containers(spec: EpisodeRunSpec, *, verify_replay: bool = True) 
                     f"{REPLAY_LOAD_ENV_VAR}={replay_uri}",
                     "-v",
                     f"{replay_load_dir}:/coworld-replay:ro",
-                    *_image_command(spec.game),
+                    *_image_command(game),
                 ],
                 stdout=game_stdout,
                 stderr=game_stderr,
@@ -411,21 +435,18 @@ def run_episode_containers(spec: EpisodeRunSpec, *, verify_replay: bool = True) 
             _wait_for_health(
                 replay_port,
                 replay_process,
-                spec.artifacts.game_stderr_path,
-                timeout_seconds=spec.timeout_seconds,
+                artifacts.game_stderr_path,
+                timeout_seconds=timeout_seconds,
                 error_type="replay_unloadable",
             )
             _require_http_ok(replay_client_url(replay_port), allow_redirect=True, error_type="replay_unloadable")
             asyncio.run(
                 _require_replay_message(
                     f"ws://127.0.0.1:{replay_port}{replay_session_path()}",
-                    timeout_seconds=spec.timeout_seconds,
+                    timeout_seconds=timeout_seconds,
                 )
             )
     finally:
-        for container_name in player_containers:
-            subprocess.run(["docker", "rm", "-f", container_name], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-        subprocess.run(["docker", "rm", "-f", game_container], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
         subprocess.run(["docker", "rm", "-f", replay_container], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
 
 

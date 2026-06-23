@@ -1008,9 +1008,13 @@ uv run coworld certify tmp/paintarena/coworld_manifest.json
 uv run coworld upload-coworld tmp/paintarena/coworld_manifest.json
 ```
 
-`certify` runs the manifest's certification fixture locally, then validates results and replay artifacts. It also starts
-the game image in replay mode with `COGAME_LOAD_REPLAY_URI`, verifies `GET /client/replay`, and waits for a frame from
-the `/replay` WebSocket. `upload-coworld` certifies again before uploading the manifest and runnable images.
+`certify` runs the Executable transcript locally. It requires GitHub `source_url` refs to pin full commit SHAs, validates
+the manifest's certification fixture before launching containers, runs one smoke episode, validates results, verifies the
+replay artifact is present and loadable, confirms declared players launched, and checks implemented supporting-role
+probes. Replay-load verification starts the game image in replay mode with `COGAME_LOAD_REPLAY_URI` and verifies `GET /client/replay`;
+it then waits for a frame from the `/replay` WebSocket. Reporters run against the certification episode; commissioners
+are probed over `/healthz` and `/round`. `upload-coworld` certifies again before uploading the manifest and runnable
+images.
 
 After certification, open the printed replay command and watch the replay once before upload. The automated probe proves
 the replay route is alive; the visual check proves the game-specific viewer shows the expected state, controls, and

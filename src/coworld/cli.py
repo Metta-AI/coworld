@@ -213,19 +213,14 @@ def certify(
     timeout_seconds: Annotated[float, typer.Option("--timeout-seconds", min=1.0)] = 60.0,
 ) -> None:
     def on_step(result: StepResult, step: TranscriptStep) -> None:
-        marker = "run " if result.status == "running" else "pass"
+        marker = "run " if result.status == "running" else result.status
         typer.echo(f"  [{marker}] {result.id}: {step.checks}")
 
     with _materialized_manifest_path(manifest_uri, server=server) as manifest_path:
         typer.echo(f"Certifying {manifest_uri} against transcript coworld-executable")
         result = certify_coworld(manifest_path, timeout_seconds=timeout_seconds, on_step=on_step)
     typer.echo(f"Certified {manifest_uri}")
-    certificate = result.certificate
-    typer.echo(f"Degree: {certificate.category} {certificate.degree} conferred {certificate.graduated_at.isoformat()}")
     typer.echo(f"Transcript: {result.transcript.name} ({len(result.step_results)} steps passed)")
-    typer.echo(f"Transcript hash: {certificate.transcript_hash}")
-    typer.echo(f"Certificate: {result.certificate_path}")
-    typer.echo(f"Degree file: {result.degree_path}")
     typer.echo(f"Artifacts: {result.artifacts.workspace}")
     typer.echo(f"Results: {result.artifacts.results_path}")
     _echo_replay_paths(result.artifacts)

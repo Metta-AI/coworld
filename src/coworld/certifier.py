@@ -1,22 +1,36 @@
 from __future__ import annotations
 
+import asyncio
 import copy
-import hashlib
+import json
 import os
+import re
+import secrets
 import shutil
 import subprocess
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Callable, cast
+from typing import Callable, Literal, cast
 from urllib.parse import quote, unquote, urlparse
+from uuid import UUID
 
 import httpx
+import websockets
 
+from coworld.commissioner.protocol import (
+    CommissionerMessage,
+    DivisionInfo,
+    LeagueInfo,
+    MembershipInfo,
+    ScheduleRoundsRequest,
+    ScheduleRoundsResponse,
+)
 from coworld.manifest_validation import (
     game_config_with_tokens,
     infer_token_count_for_game_config,
-    validate_coworld_manifest_game_configs,
+    validate_coworld_certification_fixture,
+    validate_coworld_manifest_variant_game_configs,
 )
 from coworld.report import ReportManifest, validate_report_zip
 from coworld.reporter_protocol import (
@@ -26,14 +40,26 @@ from coworld.reporter_protocol import (
     ReporterEpisodeInput,
     ReporterEpisodeManifest,
 )
+from coworld.runner.io import RunnerEpisodeError
 from coworld.runner.runner import (
     CONTAINER_WORKDIR,
+    GAME_HOST,
+    GAME_HOST_ENV_VAR,
+    GAME_PORT,
+    GAME_PORT_ENV_VAR,
     EpisodeArtifacts,
+    EpisodeRunSpec,
     PlayerLaunchSpec,
     RunnableLaunchSpec,
+    _env_args,
+    _free_local_port,
+    _image_command,
+    _wait_for_health,
     assert_docker_image_reachable,
-    run_coworld_episode,
+    generate_tokens,
+    run_episode_containers,
     run_reporter,
+    verify_replay_loadable,
 )
 from coworld.schema_validation import (
     JsonObject,
@@ -42,8 +68,6 @@ from coworld.schema_validation import (
     validate_json_schema,
 )
 from coworld.types import (
-    CertifiedIdentity,
-    CoworldCertificate,
     CoworldDoc,
     CoworldEpisodeJobSpec,
     CoworldManifest,
@@ -56,11 +80,27 @@ from coworld.types import (
 )
 
 EXECUTABLE_TRANSCRIPT_PATH = Path(__file__).parent / "transcripts" / "coworld-executable.transcript.md"
-EXECUTABLE_DEGREE = "Executable"
-AUTHORITY_NAME = "Softmax coworld-certifier"
-CERTIFICATE_FILE_NAME = "certificate.json"
-DEGREE_FILE_NAME = "coworld.degree.md"
 _TRANSCRIPT_COLUMNS = ("id", "kind", "checks", "pass", "how")
+_FULL_COMMIT_SHA_RE = re.compile(r"^[0-9a-fA-F]{40}$")
+_CERTIFICATION_LEAGUE_ID = UUID("00000000-0000-4000-8000-000000000001")
+_CERTIFICATION_DIVISION_ID = UUID("00000000-0000-4000-8000-000000000002")
+_CERTIFICATION_POLICY_IDS = (
+    UUID("00000000-0000-4000-8000-000000000003"),
+    UUID("00000000-0000-4000-8000-000000000004"),
+)
+CertifierEpisodeRunner = Callable[[CoworldEpisodeJobSpec, EpisodeArtifacts, float], None]
+
+
+class SourceNotPinnedError(ValueError):
+    pass
+
+
+class ReporterCertificationError(RuntimeError):
+    pass
+
+
+class CommissionerProbeError(RuntimeError):
+    pass
 
 
 @dataclass(frozen=True)
@@ -103,15 +143,8 @@ class CertificationResult:
     reports: list[ReportCertification]
     transcript: CoworldTranscript
     step_results: list[StepResult]
-    certificate: CoworldCertificate
-
-    @property
-    def certificate_path(self) -> Path:
-        return self.artifacts.workspace / CERTIFICATE_FILE_NAME
-
-    @property
-    def degree_path(self) -> Path:
-        return self.artifacts.workspace / DEGREE_FILE_NAME
+    matriculated_at: datetime
+    graduated_at: datetime
 
 
 def load_coworld_package(manifest_path: Path) -> CoworldPackage:
@@ -119,7 +152,7 @@ def load_coworld_package(manifest_path: Path) -> CoworldPackage:
     manifest = load_json_object(manifest_path)
     validate_json_schema(manifest, coworld_manifest_schema())
     typed_manifest = CoworldManifest.model_validate(manifest)
-    validate_coworld_manifest_game_configs(typed_manifest)
+    validate_coworld_manifest_variant_game_configs(typed_manifest)
 
     package = CoworldPackage(
         manifest_path=manifest_path,
@@ -145,7 +178,7 @@ def validate_image_references(package: CoworldPackage) -> None:
         assert_docker_image_reachable(image, label=label)
 
 
-def validate_required_purposes_ran(package: CoworldPackage, artifacts: EpisodeArtifacts) -> None:
+def validate_players_ran(package: CoworldPackage, artifacts: EpisodeArtifacts) -> None:
     issues = []
     if not artifacts.game_stdout_path.exists():
         issues.append(f"game.runnable left no launch log at {artifacts.game_stdout_path}")
@@ -162,29 +195,41 @@ def validate_required_purposes_ran(package: CoworldPackage, artifacts: EpisodeAr
             issues.append(f"Coworld player[{index}] ({player.id!r}) left no launch log for slots {slots}")
 
     if issues:
-        raise ValueError("Required-purpose runnables did not run on the smoke episode:\n- " + "\n- ".join(issues))
+        raise ValueError("Required player runnables did not run on the smoke episode:\n- " + "\n- ".join(issues))
 
 
-def validate_source_references(package: CoworldPackage) -> None:
+def validate_source_references(package: CoworldPackage) -> list[str]:
     issues = []
+    pinned_issues = []
+    resolved_sources = []
+    github_sources: list[tuple[str, str, GitHubSource]] = []
     for label, source_url in _source_references(package):
         source = _github_source(source_url)
         if source is None:
             continue
+        if source.ref is None or _FULL_COMMIT_SHA_RE.fullmatch(source.ref) is None:
+            ref = source.ref or "<default branch>"
+            pinned_issues.append(
+                f"{label}: source_url must pin a commit SHA, not a branch/tag ({ref}); "
+                "repoint to an immutable commit SHA"
+            )
+            continue
+        github_sources.append((label, source_url, source))
+
+    if pinned_issues:
+        raise SourceNotPinnedError("\n".join(pinned_issues))
+
+    for label, source_url, source in github_sources:
         resolved_source, contents = _github_contents(source)
         if not contents:
             issues.append(f"{label}: Empty source directory ({source_url})")
         if not _source_or_ancestor_has_dockerfile(resolved_source, contents):
             issues.append(f"{label}: No Dockerfile found ({source_url})")
+        resolved_sources.append(f"{label}: {source.ref}")
 
     if issues:
         raise ValueError("Coworld source references are not certifiable:\n- " + "\n- ".join(issues))
-
-
-def build_game_config(package: CoworldPackage, tokens: list[str]) -> JsonObject:
-    game_config = game_config_with_tokens(package.manifest.certification.game_config, tokens)
-    validate_json_schema(game_config, package.config_schema)
-    return game_config
+    return resolved_sources
 
 
 def build_episode_request(package: CoworldPackage, artifacts: EpisodeArtifacts) -> JsonObject:
@@ -293,70 +338,122 @@ def certify_coworld(
     workspace: Path | None = None,
     timeout_seconds: float = 60.0,
     on_step: Callable[[StepResult, TranscriptStep], None] | None = None,
+    episode_runner: CertifierEpisodeRunner | None = None,
 ) -> CertificationResult:
     transcript = load_executable_transcript()
     step_results: list[StepResult] = []
+    run_episode = episode_runner or _run_local_certifier_episode
 
-    def announce(step_id: str) -> None:
+    def announce(step: TranscriptStep) -> None:
         if on_step is None:
             return
-        step = _transcript_step(transcript, step_id)
         on_step(StepResult(id=step.id, kind=step.kind, status="running"), step)
 
-    def record(step_id: str) -> None:
-        step = _transcript_step(transcript, step_id)
-        result = StepResult(id=step.id, kind=step.kind)
+    def record(
+        step: TranscriptStep,
+        *,
+        status: Literal["pass", "fail"],
+        failure_reason: str | None = None,
+        feedback: str | None = None,
+    ) -> StepResult:
+        result = StepResult(id=step.id, kind=step.kind, status=status, failure_reason=failure_reason, feedback=feedback)
         step_results.append(result)
         if on_step is not None:
             on_step(result, step)
+        return result
 
-    announce("matriculate")
-    package = load_coworld_package(manifest_path)
-    matriculated_at = datetime.now(timezone.utc)
-    record("matriculate")
+    def run_step(
+        step_id: str,
+        action: Callable[[], object],
+        pass_feedback: Callable[[object], str | None] | str | None = None,
+    ) -> object:
+        step = _transcript_step(transcript, step_id)
+        announce(step)
+        try:
+            value = action()
+        except Exception as exc:
+            record(
+                step,
+                status="fail",
+                failure_reason=_step_failure_reason(step_id, exc),
+                feedback=str(exc),
+            )
+            raise
+        feedback = pass_feedback(value) if callable(pass_feedback) else pass_feedback
+        record(step, status="pass", feedback=feedback)
+        return value
 
-    announce("source-resolves")
-    validate_source_references(package)
-    record("source-resolves")
-
-    announce("images-reachable")
-    validate_image_references(package)
-    record("images-reachable")
-
-    announce("smoke-episode")
-    artifacts = EpisodeArtifacts.create(workspace)
-    episode_request = build_episode_request(package, artifacts)
-    run_coworld_episode(
-        build_coworld_episode_job_spec(episode_request),
-        artifacts,
-        timeout_seconds=timeout_seconds,
-        verify_replay=True,
+    package = cast(
+        CoworldPackage,
+        run_step("matriculate", lambda: load_coworld_package(manifest_path), "Manifest schema validated."),
     )
-    record("smoke-episode")
+    matriculated_at = datetime.now(timezone.utc)
 
-    announce("results-conform")
-    results = load_results(package, artifacts)
-    record("results-conform")
+    def source_refs_feedback(resolved: object) -> str:
+        sources = cast(list[str], resolved)
+        if not sources:
+            return "No GitHub source_url references declared."
+        return "Pinned source refs validated:\n- " + "\n- ".join(sources)
 
-    announce("replay-present")
-    if not artifacts.replay_path.exists():
-        raise FileNotFoundError(f"Replay file was not produced: {artifacts.replay_path}")
-    record("replay-present")
+    run_step("source-resolves", lambda: validate_source_references(package), source_refs_feedback)
+    run_step("images-reachable", lambda: validate_image_references(package), "All declared images are reachable.")
+    run_step(
+        "fixture-conforms",
+        lambda: validate_coworld_certification_fixture(package.manifest),
+        "Certification fixture validates against game.config_schema after token injection.",
+    )
 
-    announce("purposes-run")
-    validate_required_purposes_ran(package, artifacts)
-    record("purposes-run")
+    artifacts = EpisodeArtifacts.create(workspace)
+
+    def run_smoke_episode() -> tuple[JsonObject, CoworldEpisodeJobSpec]:
+        episode_request = build_episode_request(package, artifacts)
+        episode_spec = build_coworld_episode_job_spec(episode_request)
+        run_episode(episode_spec, artifacts, timeout_seconds)
+        return episode_request, episode_spec
+
+    smoke_result = cast(
+        tuple[JsonObject, CoworldEpisodeJobSpec],
+        run_step(
+            "smoke-episode",
+            run_smoke_episode,
+            f"Episode completed in {artifacts.workspace}.",
+        ),
+    )
+    episode_request = smoke_result[0]
+
+    results = cast(
+        JsonObject,
+        run_step(
+            "results-conform",
+            lambda: load_results(package, artifacts),
+            f"{artifacts.results_path} validates against game.results_schema.",
+        ),
+    )
+
+    run_step(
+        "replay-present",
+        lambda: _assert_replay_present(artifacts),
+        f"Replay artifact exists at {artifacts.replay_path}.",
+    )
+    run_step(
+        "replay-loadable",
+        lambda: verify_replay_loadable(package.game, artifacts, timeout_seconds=timeout_seconds),
+        "Replay loads through /client/replay and /replay.",
+    )
+    run_step("players-run", lambda: validate_players_ran(package, artifacts), "Game and declared players started.")
+
+    supporting_result = cast(
+        tuple[list[ReportCertification], str],
+        run_step(
+            "supporting-roles",
+            lambda: run_certification_supporting_roles(package, artifacts, timeout_seconds=timeout_seconds),
+            lambda value: cast(tuple[list[ReportCertification], str], value)[1],
+        ),
+    )
+    reports = supporting_result[0]
 
     _assert_transcript_complete(transcript, step_results)
-
-    reports = run_certification_reporters(package, artifacts, timeout_seconds=timeout_seconds)
-    certificate = issue_certificate(
-        package,
-        transcript,
-        artifacts,
-        matriculated_at=matriculated_at,
-        graduated_at=datetime.now(timezone.utc),
-    )
+    graduated_at = datetime.now(timezone.utc)
 
     return CertificationResult(
         package=package,
@@ -366,7 +463,183 @@ def certify_coworld(
         reports=reports,
         transcript=transcript,
         step_results=step_results,
-        certificate=certificate,
+        matriculated_at=matriculated_at,
+        graduated_at=graduated_at,
+    )
+
+
+def _run_local_certifier_episode(
+    job: CoworldEpisodeJobSpec,
+    artifacts: EpisodeArtifacts,
+    timeout_seconds: float,
+) -> None:
+    tokens = generate_tokens(len(job.players))
+    game_config = game_config_with_tokens(job.game_config, tokens)
+    artifacts.config_path.write_text(json.dumps(game_config, indent=2), encoding="utf-8")
+    run_spec = EpisodeRunSpec(
+        game=RunnableLaunchSpec.from_model(job.game_runnable),
+        players=[PlayerLaunchSpec.from_model(player) for player in job.players],
+        tokens=tokens,
+        artifacts=artifacts,
+        timeout_seconds=timeout_seconds,
+    )
+    run_episode_containers(run_spec, verify_replay=False)
+
+
+def _assert_replay_present(artifacts: EpisodeArtifacts) -> None:
+    if not artifacts.replay_path.exists():
+        raise FileNotFoundError(f"Replay file was not produced: {artifacts.replay_path}")
+
+
+def _step_failure_reason(step_id: str, exc: Exception) -> str:
+    if isinstance(exc, SourceNotPinnedError):
+        return "source_not_pinned"
+    if isinstance(exc, ReporterCertificationError):
+        return "reporter_failed"
+    if isinstance(exc, CommissionerProbeError):
+        return "commissioner_protocol_failed"
+    if isinstance(exc, RunnerEpisodeError):
+        return exc.error_type
+    if step_id == "results-conform":
+        if isinstance(exc, FileNotFoundError):
+            return "results_missing"
+        return "results_malformed"
+    if step_id == "replay-present":
+        return "replay_missing"
+    return {
+        "matriculate": "manifest_invalid",
+        "source-resolves": "source_unresolved",
+        "images-reachable": "image_unreachable",
+        "fixture-conforms": "fixture_invalid",
+        "players-run": "players_missing",
+        "supporting-roles": "supporting_roles_failed",
+    }.get(step_id, "step_failed")
+
+
+def run_certification_supporting_roles(
+    package: CoworldPackage,
+    artifacts: EpisodeArtifacts,
+    *,
+    timeout_seconds: float,
+) -> tuple[list[ReportCertification], str]:
+    feedback = []
+    try:
+        reports = run_certification_reporters(package, artifacts, timeout_seconds=timeout_seconds)
+    except Exception as exc:
+        raise ReporterCertificationError(str(exc)) from exc
+    feedback.append(f"reporters run: {len(reports)}")
+
+    for commissioner in package.manifest.commissioner:
+        try:
+            run_certification_commissioner(
+                commissioner.id,
+                commissioner.as_runnable_spec(),
+                artifacts,
+                timeout_seconds=timeout_seconds,
+            )
+        except Exception as exc:
+            raise CommissionerProbeError(f"{commissioner.id}: {exc}") from exc
+    feedback.append(f"commissioners probed: {len(package.manifest.commissioner)}")
+
+    if package.manifest.grader:
+        feedback.append(f"graders declared, harness not available yet: {len(package.manifest.grader)}")
+    if package.manifest.diagnoser:
+        feedback.append(f"diagnosers declared, harness not available yet: {len(package.manifest.diagnoser)}")
+    if package.manifest.optimizer:
+        feedback.append(f"optimizers skipped for Executable: {len(package.manifest.optimizer)}")
+    if feedback == ["reporters run: 0", "commissioners probed: 0"]:
+        feedback.append("no supporting roles declared")
+    return reports, "; ".join(feedback)
+
+
+def run_certification_commissioner(
+    commissioner_id: str,
+    commissioner: CoworldRunnableSpec,
+    artifacts: EpisodeArtifacts,
+    *,
+    timeout_seconds: float,
+) -> ScheduleRoundsResponse:
+    workspace = artifacts.workspace / "commissioners" / commissioner_id
+    workspace.mkdir(parents=True, exist_ok=True)
+    stdout_path = workspace / "commissioner.stdout.log"
+    stderr_path = workspace / "commissioner.stderr.log"
+    port = _free_local_port()
+    container = f"coworld-cert-commissioner-{secrets.token_hex(8)}"
+    launch_spec = RunnableLaunchSpec.from_model(commissioner)
+    try:
+        with stdout_path.open("w") as stdout, stderr_path.open("w") as stderr:
+            process = subprocess.Popen(
+                [
+                    "docker",
+                    "run",
+                    "--rm",
+                    "--name",
+                    container,
+                    "-p",
+                    f"127.0.0.1:{port}:{GAME_PORT}",
+                    *_env_args(commissioner.env),
+                    "-e",
+                    f"{GAME_HOST_ENV_VAR}={GAME_HOST}",
+                    "-e",
+                    f"{GAME_PORT_ENV_VAR}={GAME_PORT}",
+                    *_image_command(launch_spec),
+                ],
+                stdout=stdout,
+                stderr=stderr,
+                text=True,
+            )
+            _wait_for_health(port, process, stderr_path, timeout_seconds=timeout_seconds)
+            return asyncio.run(
+                request_commissioner_once(
+                    ws_url=f"ws://127.0.0.1:{port}/round",
+                    request=_certification_schedule_rounds_request(),
+                    response_type=ScheduleRoundsResponse,
+                    timeout_seconds=timeout_seconds,
+                )
+            )
+    finally:
+        subprocess.run(["docker", "rm", "-f", container], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+
+
+async def request_commissioner_once(
+    *,
+    ws_url: str,
+    request: ScheduleRoundsRequest,
+    response_type: type[ScheduleRoundsResponse],
+    timeout_seconds: float,
+    ping_timeout_seconds: float = 30.0,
+) -> ScheduleRoundsResponse:
+    async with asyncio.timeout(timeout_seconds):
+        async with websockets.connect(
+            ws_url,
+            ping_interval=ping_timeout_seconds,
+            ping_timeout=ping_timeout_seconds,
+        ) as websocket:
+            await websocket.send(json.dumps(request.to_json()))
+            payload = json.loads(await websocket.recv())
+            message = CommissionerMessage.from_json(payload)
+            if not isinstance(message, response_type):
+                raise RuntimeError(f"Unexpected commissioner message type: {payload['type']!r}")
+            return message
+
+
+def _certification_schedule_rounds_request() -> ScheduleRoundsRequest:
+    division = DivisionInfo(id=_CERTIFICATION_DIVISION_ID, name="Certification", level=1)
+    return ScheduleRoundsRequest(
+        league=LeagueInfo(id=_CERTIFICATION_LEAGUE_ID, commissioner_key="container"),
+        divisions=[division],
+        active_memberships=[
+            MembershipInfo(
+                id=policy_id,
+                league_id=_CERTIFICATION_LEAGUE_ID,
+                division_id=division.id,
+                policy_version_id=policy_id,
+                player_id=f"cert-player-{index}",
+                is_champion=True,
+            )
+            for index, policy_id in enumerate(_CERTIFICATION_POLICY_IDS)
+        ],
+        recent_rounds=[],
     )
 
 
@@ -475,65 +748,6 @@ def build_local_reporter_episode_input(
         ),
         artifacts=episode_artifacts,
     )
-
-
-def issue_certificate(
-    package: CoworldPackage,
-    transcript: CoworldTranscript,
-    artifacts: EpisodeArtifacts,
-    *,
-    matriculated_at: datetime,
-    graduated_at: datetime,
-) -> CoworldCertificate:
-    """Issue the §3 certificate tuple and write its two artifacts to the workspace.
-
-    Writes the degree file (what was earned, §6.4) and the certificate JSON (the tuple itself)
-    next to the episode artifacts. The transcript markdown is hashed as-is, giving the degree a
-    fixed, citable meaning; the certificate references the degree file by its content hash.
-    """
-    # The authority identity is the version of the certifier that ran the process
-    # (CERTIFIER_PRD §3): content-address this module's own source.
-    authority = CertifiedIdentity(
-        hash=hashlib.sha256(Path(__file__).read_bytes()).hexdigest(),
-        date=graduated_at,
-    )
-    coworld = CertifiedIdentity(
-        hash=hashlib.sha256(package.manifest_path.read_bytes()).hexdigest(),
-        date=graduated_at,
-    )
-    transcript_hash = _sha256_text(transcript.text)
-    transcript_file = f"{transcript.name}.transcript.md"
-
-    degree_text = (
-        f"Coworld:    {coworld.hash} ({coworld.date.date().isoformat()})\n"
-        f"Authority:  {AUTHORITY_NAME} {authority.hash} ({authority.date.date().isoformat()})\n"
-        f"Degree:     {EXECUTABLE_DEGREE}\n"
-        f"Conferred:  {graduated_at.isoformat()}\n"
-        f"Transcript: {transcript_file} {transcript_hash}\n"
-        f"Statement:  This Coworld is Executable: its manifest conforms to the Coworld schema, its\n"
-        f"            sources and images resolve, and its required parts ran a smoke episode\n"
-        f"            end-to-end with conformant results and a replay.\n"
-    )
-    (artifacts.workspace / DEGREE_FILE_NAME).write_text(degree_text, encoding="utf-8")
-
-    certificate = CoworldCertificate(
-        authority_name=AUTHORITY_NAME,
-        authority=authority,
-        coworld=coworld,
-        transcript_name=transcript.name,
-        transcript_hash=transcript_hash,
-        matriculated_at=matriculated_at,
-        graduated_at=graduated_at,
-        degree=EXECUTABLE_DEGREE,
-        degree_file_hash=_sha256_text(degree_text),
-    )
-    certificate_path = artifacts.workspace / CERTIFICATE_FILE_NAME
-    certificate_path.write_text(certificate.model_dump_json(indent=2) + "\n", encoding="utf-8")
-    return certificate
-
-
-def _sha256_text(text: str) -> str:
-    return hashlib.sha256(text.encode("utf-8")).hexdigest()
 
 
 def _split_transcript_row(row: str) -> list[str]:

@@ -5,15 +5,13 @@ from coworld.certifier import (
     CoworldPackage,
     build_coworld_episode_job_spec,
     build_episode_request,
-    build_game_config,
     build_player_launch_specs,
     certify_coworld,
-    issue_certificate,
     load_coworld_package,
     load_executable_transcript,
     load_results,
     validate_image_references,
-    validate_required_purposes_ran,
+    validate_players_ran,
     validate_source_references,
 )
 from coworld.play import (
@@ -34,8 +32,6 @@ from coworld.runner.runner import (
     run_episode_containers,
 )
 from coworld.types import (
-    CertifiedIdentity,
-    CoworldCertificate,
     CoworldEpisodeJobSpec,
     CoworldManifestRoleSpec,
     CoworldRunnableSpec,
@@ -46,8 +42,6 @@ from coworld.types import (
 
 __all__ = [
     "CertificationResult",
-    "CertifiedIdentity",
-    "CoworldCertificate",
     "CoworldPackage",
     "CoworldEpisodeJobSpec",
     "CoworldManifestRoleSpec",
@@ -65,11 +59,9 @@ __all__ = [
     "assert_docker_image_reachable",
     "build_coworld_episode_job_spec",
     "build_episode_request",
-    "build_game_config",
     "build_player_launch_specs",
     "build_play_links",
     "certify_coworld",
-    "issue_certificate",
     "load_executable_transcript",
     "load_results",
     "load_coworld_package",
@@ -78,6 +70,6 @@ __all__ = [
     "run_episode_containers",
     "run_coworld_episode",
     "validate_image_references",
-    "validate_required_purposes_ran",
+    "validate_players_ran",
     "validate_source_references",
 ]

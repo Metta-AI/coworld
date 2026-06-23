@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import asyncio
-import hashlib
 import importlib
 import io
 import json
@@ -12,6 +11,7 @@ from pathlib import Path
 from types import SimpleNamespace
 from typing import Any, cast
 from urllib.parse import parse_qs, urlparse
+from uuid import UUID
 
 import httpx
 import pytest
@@ -21,7 +21,6 @@ from websockets.exceptions import ConnectionClosedOK
 
 from coworld.certifier import (
     build_episode_request,
-    build_game_config,
     build_manifest_episode_job_spec,
     build_player_launch_specs,
     certify_coworld,
@@ -29,9 +28,13 @@ from coworld.certifier import (
     load_executable_transcript,
     load_manifest_episode_job_spec,
     load_results,
+    request_commissioner_once,
     run_certification_reporters,
+    run_certification_supporting_roles,
     validate_source_references,
 )
+from coworld.commissioner.protocol import LeagueInfo, ScheduleRoundsRequest, ScheduleRoundsResponse
+from coworld.manifest_validation import game_config_with_tokens, validate_coworld_certification_fixture
 from coworld.play import BedrockAwsEnv, ReplaySession, build_play_links, play_coworld, replay_coworld
 from coworld.report import ReportRenderError
 from coworld.runner.io import RunnerEpisodeError
@@ -49,7 +52,7 @@ from coworld.runner.runner import (
     replay_client_url,
     replay_session_path,
 )
-from coworld.types import CoworldCertificate, CoworldEpisodeJobSpec, CoworldManifest, TranscriptStep
+from coworld.types import CoworldEpisodeJobSpec, CoworldManifest, TranscriptStep
 
 
 def test_load_coworld_package_validates_inline_game_manifest(tmp_path: Path) -> None:
@@ -258,7 +261,8 @@ def test_assert_docker_image_reachable_rejects_wrong_local_platform(monkeypatch:
 def test_validate_source_references_rejects_empty_github_source_url(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    package = _package_with_player_source_url(tmp_path, "https://github.com/Metta-AI/example/tree/main/empty")
+    source_sha = "0123456789abcdef0123456789abcdef01234567"
+    package = _package_with_player_source_url(tmp_path, f"https://github.com/Metta-AI/example/tree/{source_sha}/empty")
 
     monkeypatch.setattr(
         "coworld.certifier.httpx.get",
@@ -273,8 +277,9 @@ def test_validate_source_references_rejects_empty_github_source_url(
     assert "Coworld player[0].source_url: No Dockerfile found" in message
 
 
-def test_validate_source_references_accepts_github_repo_root(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    package = _package_with_player_source_url(tmp_path, "https://github.com/Metta-AI/optimizers")
+def test_validate_source_references_accepts_github_sha_ref(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    source_sha = "0123456789abcdef0123456789abcdef01234567"
+    package = _package_with_player_source_url(tmp_path, f"https://github.com/Metta-AI/optimizers/tree/{source_sha}")
     calls = []
 
     def fake_get(url, **kwargs):
@@ -291,15 +296,16 @@ def test_validate_source_references_accepts_github_repo_root(tmp_path: Path, mon
 
     validate_source_references(package)
 
-    assert calls == [("https://api.github.com/repos/Metta-AI/optimizers/contents", {})]
+    assert calls == [("https://api.github.com/repos/Metta-AI/optimizers/contents", {"ref": source_sha})]
 
 
 def test_validate_source_references_accepts_ancestor_dockerfile(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
+    source_sha = "0123456789abcdef0123456789abcdef01234567"
     package = _package_with_player_source_url(
         tmp_path,
-        "https://github.com/Metta-AI/coworld/tree/main/src/coworld/examples/paintarena/reporter",
+        f"https://github.com/Metta-AI/coworld/tree/{source_sha}/src/coworld/examples/paintarena/reporter",
     )
     calls = []
 
@@ -318,36 +324,26 @@ def test_validate_source_references_accepts_ancestor_dockerfile(
     assert calls == [
         (
             "https://api.github.com/repos/Metta-AI/coworld/contents/src/coworld/examples/paintarena/reporter",
-            {"ref": "main"},
+            {"ref": source_sha},
         ),
-        ("https://api.github.com/repos/Metta-AI/coworld/contents/src/coworld/examples/paintarena", {"ref": "main"}),
+        ("https://api.github.com/repos/Metta-AI/coworld/contents/src/coworld/examples/paintarena", {"ref": source_sha}),
     ]
 
 
-def test_validate_source_references_accepts_github_branch_names_with_slashes(
+def test_validate_source_references_rejects_mutable_github_refs(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     package = _package_with_player_source_url(
         tmp_path, "https://github.com/Metta-AI/optimizers/tree/feature/foo/workbench"
     )
-    calls = []
 
-    def fake_get(url, **kwargs):
-        calls.append((url, kwargs["params"]))
-        if kwargs["params"] == {"ref": "feature"}:
-            return httpx.Response(404)
-        if kwargs["params"] == {"ref": "feature/foo"}:
-            return httpx.Response(200, json=[{"type": "file", "name": "Dockerfile"}])
-        raise AssertionError(kwargs["params"])
+    def fail_get(*_args, **_kwargs):
+        raise AssertionError("mutable refs should fail before GitHub contents are fetched")
 
-    monkeypatch.setattr("coworld.certifier.httpx.get", fake_get)
+    monkeypatch.setattr("coworld.certifier.httpx.get", fail_get)
 
-    validate_source_references(package)
-
-    assert calls == [
-        ("https://api.github.com/repos/Metta-AI/optimizers/contents/foo/workbench", {"ref": "feature"}),
-        ("https://api.github.com/repos/Metta-AI/optimizers/contents/workbench", {"ref": "feature/foo"}),
-    ]
+    with pytest.raises(ValueError, match="source_url must pin a commit SHA"):
+        validate_source_references(package)
 
 
 def test_certify_coworld_checks_source_references_before_images(
@@ -435,22 +431,148 @@ def test_run_certification_reporters_noops_without_reporters(tmp_path: Path) -> 
     assert run_certification_reporters(package, artifacts, timeout_seconds=5.0) == []
 
 
+def test_run_certification_supporting_roles_probes_commissioners(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    coworld_manifest_path = _write_package_files(tmp_path)
+    manifest = json.loads(coworld_manifest_path.read_text(encoding="utf-8"))
+    manifest["reporter"] = []
+    manifest["grader"] = []
+    manifest["commissioner"] = [
+        {
+            "id": "unit-test-commissioner",
+            "name": "Unit Test Commissioner",
+            "type": "commissioner",
+            "image": "unit-test-runtime:latest",
+            "description": "Unit test commissioner.",
+        }
+    ]
+    coworld_manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
+    package = load_coworld_package(coworld_manifest_path)
+    artifacts = _seed_certification_artifacts(tmp_path)
+    calls = []
+
+    def fake_probe(commissioner_id, commissioner, artifacts, *, timeout_seconds):
+        calls.append((commissioner_id, commissioner.image, timeout_seconds))
+        return ScheduleRoundsResponse()
+
+    monkeypatch.setattr("coworld.certifier.run_certification_commissioner", fake_probe)
+
+    reports, feedback = run_certification_supporting_roles(package, artifacts, timeout_seconds=5.0)
+
+    assert reports == []
+    assert calls == [("unit-test-commissioner", "unit-test-runtime:latest", 5.0)]
+    assert feedback == "reporters run: 0; commissioners probed: 1"
+
+
+def test_request_commissioner_once_accepts_schedule_rounds_response(monkeypatch: pytest.MonkeyPatch) -> None:
+    sent_payloads = []
+
+    class FakeWebSocket:
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *_args: object) -> None:
+            return None
+
+        async def send(self, payload: str) -> None:
+            sent_payloads.append(json.loads(payload))
+
+        async def recv(self) -> str:
+            return json.dumps({"type": "schedule_rounds_response", "rounds": []})
+
+    def fake_connect(ws_url: str, *, ping_interval: float, ping_timeout: float):
+        assert ws_url == "ws://127.0.0.1:1234/round"
+        assert ping_interval == 30.0
+        assert ping_timeout == 30.0
+        return FakeWebSocket()
+
+    monkeypatch.setattr("coworld.certifier.websockets.connect", fake_connect)
+
+    response = asyncio.run(
+        request_commissioner_once(
+            ws_url="ws://127.0.0.1:1234/round",
+            request=ScheduleRoundsRequest(
+                league=LeagueInfo(id=UUID("00000000-0000-4000-8000-000000000001")),
+                divisions=[],
+                active_memberships=[],
+                recent_rounds=[],
+            ),
+            response_type=ScheduleRoundsResponse,
+            timeout_seconds=5.0,
+        )
+    )
+
+    assert response == ScheduleRoundsResponse()
+    assert sent_payloads == [
+        {
+            "type": "schedule_rounds_request",
+            "league": {
+                "id": "00000000-0000-4000-8000-000000000001",
+                "commissioner_key": None,
+                "commissioner_config": None,
+            },
+            "divisions": [],
+            "active_memberships": [],
+            "recent_rounds": [],
+        }
+    ]
+
+
+def test_request_commissioner_once_rejects_wrong_message_type(monkeypatch: pytest.MonkeyPatch) -> None:
+    class FakeWebSocket:
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *_args: object) -> None:
+            return None
+
+        async def send(self, _payload: str) -> None:
+            return None
+
+        async def recv(self) -> str:
+            return json.dumps({"type": "league_migration_config_response", "divisions": []})
+
+    monkeypatch.setattr("coworld.certifier.websockets.connect", lambda *_args, **_kwargs: FakeWebSocket())
+
+    with pytest.raises(RuntimeError, match="Unexpected commissioner message type"):
+        asyncio.run(
+            request_commissioner_once(
+                ws_url="ws://127.0.0.1:1234/round",
+                request=ScheduleRoundsRequest(
+                    league=LeagueInfo(id=UUID("00000000-0000-4000-8000-000000000001")),
+                    divisions=[],
+                    active_memberships=[],
+                    recent_rounds=[],
+                ),
+                response_type=ScheduleRoundsResponse,
+                timeout_seconds=5.0,
+            )
+        )
+
+
 def _stub_executable_pipeline(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr("coworld.certifier.validate_source_references", lambda package: None)
+    monkeypatch.setattr("coworld.certifier.validate_source_references", lambda package: [])
     monkeypatch.setattr("coworld.certifier.validate_image_references", lambda package: None)
+    monkeypatch.setattr("coworld.certifier.validate_coworld_certification_fixture", lambda manifest: None)
     monkeypatch.setattr("coworld.certifier.build_episode_request", lambda package, artifacts: {})
     monkeypatch.setattr("coworld.certifier.build_coworld_episode_job_spec", lambda request: None)
 
-    def fake_run_episode(job, artifacts, **kwargs):
+    def fake_run_episode(job, artifacts, timeout_seconds):
         artifacts.replay_path.write_text("{}")
+        artifacts.results_path.write_text(json.dumps({"scores": [1.0]}), encoding="utf-8")
         artifacts.game_stdout_path.write_text("game started\n")
         artifacts.policy_log_path(0).write_text("player started\n")
 
-    monkeypatch.setattr("coworld.certifier.run_coworld_episode", fake_run_episode)
+    monkeypatch.setattr("coworld.certifier._run_local_certifier_episode", fake_run_episode)
     monkeypatch.setattr("coworld.certifier.load_results", lambda package, artifacts: {})
     monkeypatch.setattr(
-        "coworld.certifier.run_certification_reporters",
-        lambda package, artifacts, *, timeout_seconds: [],
+        "coworld.certifier.verify_replay_loadable",
+        lambda game, artifacts, *, timeout_seconds: None,
+    )
+    monkeypatch.setattr(
+        "coworld.certifier.run_certification_supporting_roles",
+        lambda package, artifacts, *, timeout_seconds: ([], "supporting roles passed"),
     )
 
 
@@ -462,10 +584,13 @@ def test_load_executable_transcript_parses_auto_steps() -> None:
         "matriculate",
         "source-resolves",
         "images-reachable",
+        "fixture-conforms",
         "smoke-episode",
         "results-conform",
         "replay-present",
-        "purposes-run",
+        "replay-loadable",
+        "players-run",
+        "supporting-roles",
     ]
     assert all(step.kind == "auto" for step in transcript.steps)
     assert transcript.steps[0].pass_ == "schema validates"
@@ -498,6 +623,157 @@ def test_certify_coworld_announces_running_before_pass(tmp_path: Path, monkeypat
     assert events == [(step.id, status) for step in transcript.steps for status in ("running", "pass")]
 
 
+def test_certify_coworld_records_source_not_pinned_failure(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    coworld_manifest_path = _write_package_files(tmp_path)
+    manifest = json.loads(coworld_manifest_path.read_text(encoding="utf-8"))
+    manifest["player"][0]["source_url"] = "https://github.com/Metta-AI/players/tree/main/player"
+    manifest["grader"][0].pop("source_url")
+    coworld_manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
+    monkeypatch.setattr("coworld.certifier.httpx.get", lambda *_args, **_kwargs: pytest.fail("fetched mutable ref"))
+    events: list[tuple[str, str, str | None, str | None]] = []
+
+    with pytest.raises(ValueError, match="source_url must pin a commit SHA"):
+        certify_coworld(
+            coworld_manifest_path,
+            workspace=tmp_path / "cert",
+            on_step=lambda result, step: events.append(
+                (result.id, result.status, result.failure_reason, result.feedback)
+            ),
+        )
+
+    assert events[-1][0:3] == ("source-resolves", "fail", "source_not_pinned")
+    assert "not a branch/tag" in cast(str, events[-1][3])
+
+
+def test_certify_coworld_records_fixture_failure_before_episode(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    coworld_manifest_path = _write_package_files(
+        tmp_path,
+        config_schema_required=["tokens", "difficulty"],
+        certification={"game_config": {}, "players": [{"player_id": "unit-test-player"}]},
+    )
+    monkeypatch.setattr("coworld.certifier.validate_source_references", lambda package: [])
+    monkeypatch.setattr("coworld.certifier.validate_image_references", lambda package: None)
+    monkeypatch.setattr(
+        "coworld.certifier._run_local_certifier_episode",
+        lambda *_args: pytest.fail("episode should not launch before fixture-conforms passes"),
+    )
+    events: list[tuple[str, str, str | None]] = []
+
+    with pytest.raises(JsonSchemaValidationError):
+        certify_coworld(
+            coworld_manifest_path,
+            workspace=tmp_path / "cert",
+            on_step=lambda result, step: events.append((result.id, result.status, result.failure_reason)),
+        )
+
+    assert events[-1] == ("fixture-conforms", "fail", "fixture_invalid")
+
+
+def test_certify_coworld_records_smoke_episode_runner_error_type(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    coworld_manifest_path = _write_package_files(tmp_path)
+    _stub_executable_pipeline(monkeypatch)
+
+    def fail_episode(job, artifacts, timeout_seconds):
+        raise RunnerEpisodeError("game failed", error_type="game_unhealthy")
+
+    monkeypatch.setattr("coworld.certifier._run_local_certifier_episode", fail_episode)
+    events: list[tuple[str, str, str | None]] = []
+
+    with pytest.raises(RunnerEpisodeError, match="game failed"):
+        certify_coworld(
+            coworld_manifest_path,
+            workspace=tmp_path / "cert",
+            on_step=lambda result, step: events.append((result.id, result.status, result.failure_reason)),
+        )
+
+    assert events[-1] == ("smoke-episode", "fail", "game_unhealthy")
+
+
+def test_certify_coworld_records_results_missing_failure(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    coworld_manifest_path = _write_package_files(tmp_path)
+    _stub_executable_pipeline(monkeypatch)
+
+    def missing_results(package, artifacts):
+        raise FileNotFoundError("missing results")
+
+    monkeypatch.setattr("coworld.certifier.load_results", missing_results)
+    events: list[tuple[str, str, str | None]] = []
+
+    with pytest.raises(FileNotFoundError, match="missing results"):
+        certify_coworld(
+            coworld_manifest_path,
+            workspace=tmp_path / "cert",
+            on_step=lambda result, step: events.append((result.id, result.status, result.failure_reason)),
+        )
+
+    assert events[-1] == ("results-conform", "fail", "results_missing")
+
+
+def test_certify_coworld_records_replay_loadable_failure(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    coworld_manifest_path = _write_package_files(tmp_path)
+    _stub_executable_pipeline(monkeypatch)
+
+    def fail_replay(game, artifacts, *, timeout_seconds):
+        raise RunnerEpisodeError("replay bad", error_type="replay_unloadable")
+
+    monkeypatch.setattr("coworld.certifier.verify_replay_loadable", fail_replay)
+    events: list[tuple[str, str, str | None]] = []
+
+    with pytest.raises(RunnerEpisodeError, match="replay bad"):
+        certify_coworld(
+            coworld_manifest_path,
+            workspace=tmp_path / "cert",
+            on_step=lambda result, step: events.append((result.id, result.status, result.failure_reason)),
+        )
+
+    assert events[-1] == ("replay-loadable", "fail", "replay_unloadable")
+
+
+def test_certify_coworld_records_replay_present_failure(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    coworld_manifest_path = _write_package_files(tmp_path)
+    _stub_executable_pipeline(monkeypatch)
+
+    def no_replay(job, artifacts, timeout_seconds):
+        artifacts.results_path.write_text(json.dumps({"scores": [1.0]}), encoding="utf-8")
+        artifacts.game_stdout_path.write_text("game started\n")
+        artifacts.policy_log_path(0).write_text("player started\n")
+
+    monkeypatch.setattr("coworld.certifier._run_local_certifier_episode", no_replay)
+    events: list[tuple[str, str, str | None]] = []
+
+    with pytest.raises(FileNotFoundError, match="Replay file was not produced"):
+        certify_coworld(
+            coworld_manifest_path,
+            workspace=tmp_path / "cert",
+            on_step=lambda result, step: events.append((result.id, result.status, result.failure_reason)),
+        )
+
+    assert events[-1] == ("replay-present", "fail", "replay_missing")
+
+
+def test_certify_coworld_records_supporting_role_failure(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    coworld_manifest_path = _write_package_files(tmp_path)
+    _stub_executable_pipeline(monkeypatch)
+    monkeypatch.setattr(
+        "coworld.certifier.run_certification_supporting_roles",
+        lambda package, artifacts, *, timeout_seconds: (_ for _ in ()).throw(RuntimeError("support failed")),
+    )
+    events: list[tuple[str, str, str | None]] = []
+
+    with pytest.raises(RuntimeError, match="support failed"):
+        certify_coworld(
+            coworld_manifest_path,
+            workspace=tmp_path / "cert",
+            on_step=lambda result, step: events.append((result.id, result.status, result.failure_reason)),
+        )
+
+    assert events[-1] == ("supporting-roles", "fail", "supporting_roles_failed")
+
+
 def test_certify_coworld_rejects_transcript_drift(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     coworld_manifest_path = _write_package_files(tmp_path)
     _stub_executable_pipeline(monkeypatch)
@@ -515,38 +791,35 @@ def test_certify_coworld_rejects_player_without_launch_log(tmp_path: Path, monke
     coworld_manifest_path = _write_package_files(tmp_path)
     _stub_executable_pipeline(monkeypatch)
 
-    def fake_run_episode(job, artifacts, **kwargs):
+    def fake_run_episode(job, artifacts, timeout_seconds):
         artifacts.replay_path.write_text("{}")
         artifacts.game_stdout_path.write_text("game started\n")
 
-    monkeypatch.setattr("coworld.certifier.run_coworld_episode", fake_run_episode)
+    monkeypatch.setattr("coworld.certifier._run_local_certifier_episode", fake_run_episode)
+    events: list[tuple[str, str, str | None]] = []
 
     with pytest.raises(ValueError, match="left no launch log"):
-        certify_coworld(coworld_manifest_path, workspace=tmp_path / "cert")
+        certify_coworld(
+            coworld_manifest_path,
+            workspace=tmp_path / "cert",
+            on_step=lambda result, step: events.append((result.id, result.status, result.failure_reason)),
+        )
+
+    assert events[-1] == ("players-run", "fail", "players_missing")
 
 
-def test_certify_coworld_issues_certificate_and_degree_file(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_certify_coworld_returns_timestamps_without_certificate_files(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     coworld_manifest_path = _write_package_files(tmp_path)
     _stub_executable_pipeline(monkeypatch)
 
     result = certify_coworld(coworld_manifest_path, workspace=tmp_path / "cert")
 
-    certificate = result.certificate
-    assert certificate.category == "Coworld"
-    assert certificate.degree == "Executable"
-    assert certificate.transcript_name == "coworld-executable"
-    assert certificate.transcript_hash == hashlib.sha256(result.transcript.text.encode("utf-8")).hexdigest()
-    assert certificate.coworld.hash == hashlib.sha256(coworld_manifest_path.read_bytes()).hexdigest()
-    assert certificate.matriculated_at <= certificate.graduated_at
-
-    degree_text = result.degree_path.read_text(encoding="utf-8")
-    assert certificate.degree_file_hash == hashlib.sha256(degree_text.encode("utf-8")).hexdigest()
-    assert "Degree:     Executable" in degree_text
-    assert f"Transcript: coworld-executable.transcript.md {certificate.transcript_hash}" in degree_text
-    assert f"Conferred:  {certificate.graduated_at.isoformat()}" in degree_text
-
-    saved = CoworldCertificate.model_validate_json(result.certificate_path.read_text(encoding="utf-8"))
-    assert saved == certificate
+    assert result.matriculated_at <= result.graduated_at
+    assert result.transcript.name == "coworld-executable"
+    assert not (result.artifacts.workspace / "certificate.json").exists()
+    assert not (result.artifacts.workspace / "coworld.degree.md").exists()
 
 
 def test_certify_coworld_rejects_player_without_certification_slot(
@@ -563,16 +836,18 @@ def test_certify_coworld_rejects_player_without_certification_slot(
         certify_coworld(coworld_manifest_path, workspace=tmp_path / "cert")
 
 
-def test_build_game_config_validates_after_tokens_are_injected_via_json_schema(tmp_path: Path) -> None:
+def test_certification_fixture_validates_after_tokens_are_injected_via_json_schema(tmp_path: Path) -> None:
     with pytest.raises(JsonSchemaValidationError):
         _write_package(tmp_path, config_schema_required=["tokens", "missing"])
 
 
-def test_build_game_config_rejects_wrong_token_count(tmp_path: Path) -> None:
+def test_game_config_with_tokens_only_injects_tokens(tmp_path: Path) -> None:
     package = _write_package(tmp_path)
 
-    with pytest.raises(JsonSchemaValidationError):
-        build_game_config(package, [])
+    assert game_config_with_tokens(package.manifest.certification.game_config, []) == {
+        "difficulty": "easy",
+        "tokens": [],
+    }
 
 
 def test_load_coworld_package_requires_bounded_token_count(tmp_path: Path) -> None:
@@ -603,9 +878,10 @@ def test_load_coworld_package_requires_certification_player_count_to_match_token
             "players": [{"player_id": "unit-test-player"}, {"player_id": "unit-test-player"}],
         },
     )
+    package = load_coworld_package(coworld_manifest_path)
 
     with pytest.raises(ValueError, match="certification.players must match"):
-        load_coworld_package(coworld_manifest_path)
+        validate_coworld_certification_fixture(package.manifest)
 
 
 def test_load_results_validates_against_cogame_results_schema(tmp_path: Path) -> None:
@@ -1405,7 +1681,7 @@ def test_runnable_run_overrides_docker_entrypoint(tmp_path: Path, monkeypatch: p
 
 def test_example_coworld_manifest_validates(tmp_path: Path) -> None:
     package = load_coworld_package(_materialized_template(tmp_path, _example_root() / "coworld_manifest_template.json"))
-    config = build_game_config(package, ["token-0", "token-1"])
+    config = game_config_with_tokens(package.manifest.certification.game_config, ["token-0", "token-1"])
     assert package.game.image == "coworld-paintarena:latest"
     assert package.game.run == ("python", "-m", "coworld.examples.paintarena.game.server")
     assert (
@@ -1676,7 +1952,7 @@ def _coworld_manifest(
                 "name": "Unit Test Grader",
                 "type": "grader",
                 "image": "ghcr.io/metta-ai/graders-default:latest",
-                "source_url": "https://github.com/Metta-AI/graders/tree/main/graders/default/default_grader",
+                "source_url": "https://github.com/Metta-AI/graders/tree/ec741c91bb08c8f5aca024218ff122a8d1ae85f9/graders/default/default_grader",
                 "description": "Default grader stub for unit tests.",
             }
         ],

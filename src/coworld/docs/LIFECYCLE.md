@@ -32,8 +32,8 @@ This is the short lifecycle view of the roles. For details and status definition
 | ------------ | -------------------------------------------------------------------------------- | -------------------------------------------------------------------------------- |
 | Game         | Runs for `play`, `run-episode`, `certify`, and replay viewing.                   | Runs in the hosted Kubernetes episode job.                                       |
 | Player       | Runs one container per slot for certification, local episodes, and browser play. | Runs one child pod per player slot, using submitted policy versions.             |
-| Commissioner | Not run by the local runner.                                                     | Runs as a per-round container for leagues with `commissioner_key = "container"`. |
-| Reporter     | Not auto-run by the local runner.                                                | MVP hosted runner starts a per-report `/reporter` service, passes bundle URI(s), and expects a report zip at `report_uri`. |
+| Commissioner | `coworld certify` probes declared commissioners over `/healthz` and `/round`.    | Runs as a per-round container for leagues with `commissioner_key = "container"`. |
+| Reporter     | `coworld certify` runs declared reporters against the certification episode.     | MVP hosted runner starts a per-report `/reporter` service, passes bundle URI(s), and expects a report zip at `report_uri`. |
 | Grader       | Not auto-run by the local runner.                                                | Contract defined, runtime pending; consumes bundles on demand when invoked.      |
 | Diagnoser    | Reserved; not run by default.                                                    | Reserved; not run by default.                                                    |
 | Optimizer    | Workbench role; not an episode container.                                        | Workbench role; pulls artifacts and submits candidate policies separately.       |
@@ -58,16 +58,21 @@ game container contract in [GAME.md](roles/GAME.md).
 
 ## Certification
 
-Coworld certification turns the manifest's `certification` fixture into one local episode. It uses the same execution
-shape as a normal episode: the runner starts the game, starts the bundled player images from the fixture, waits for the
-game to finish, validates final results, and checks that the replay viewer can start.
+Coworld certification turns the manifest's `certification` fixture into one local episode. It first validates the
+manifest, pinned `source_url` references, image reachability, and the certification fixture itself. It then uses the same
+execution shape as a normal episode: the runner starts the game, starts the bundled player images from the fixture,
+waits for the game to finish, validates final results, checks that a replay was produced, and checks that the replay
+viewer can start.
 
 Certification is a package smoke test, not a gameplay benchmark. It should be short, deterministic enough to debug, and
 strong enough to prove that the manifest, game image, bundled players, HTTP routes, player-token rejection, results, and
 replay surface are wired correctly.
 
-Certification runs only the game and the bundled players named by `certification.players`. It does not run commissioner,
-reporter, grader, diagnoser, or optimizer containers.
+Certification also verifies that each declared player runnable left a launch log. After the smoke episode, it runs
+declared reporters against the episode bundle and validates their report zips. It probes declared commissioners with a
+single `schedule_rounds_request` over `/round`, proving protocol compatibility without attempting to judge scheduling
+quality. Graders and diagnosers are recorded as declared with no harness available yet; optimizers are skipped because
+they belong to the later Viability degree.
 
 ## Local Development Lifecycle
 

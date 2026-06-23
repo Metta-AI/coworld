@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-from datetime import datetime
 from typing import Annotated, Any, Literal, cast, get_args
 
 from packaging.version import Version
@@ -385,37 +384,9 @@ class StepResult(BaseModel):
 
     id: str = Field(min_length=1)
     kind: TranscriptStepKind
-    status: Literal["running", "pass"] = "pass"
-
-
-class CertifiedIdentity(BaseModel):
-    """A ⟨hash, date⟩ identity from the certificate tuple (CERTIFIER_PRD §3)."""
-
-    model_config = ConfigDict(extra="forbid")
-
-    hash: str = Field(min_length=1)
-    date: datetime
-
-
-class CoworldCertificate(BaseModel):
-    """The immutable certificate tuple (CERTIFIER_PRD §3).
-
-    Certifier ⟨authority @hash, date⟩ attests that the certified ⟨Coworld @hash, date⟩ met
-    ⟨transcript @hash⟩ — matriculated @ T₁, graduated @ T₂ conferring ⟨degree-file @hash⟩.
-    """
-
-    model_config = ConfigDict(extra="forbid")
-
-    authority_name: str = Field(min_length=1)
-    authority: CertifiedIdentity
-    coworld: CertifiedIdentity
-    transcript_name: str = Field(min_length=1)
-    transcript_hash: str = Field(min_length=1)
-    matriculated_at: datetime
-    graduated_at: datetime
-    category: Literal["Coworld"] = "Coworld"
-    degree: str = Field(min_length=1)
-    degree_file_hash: str = Field(min_length=1)
+    status: Literal["running", "pass", "fail"] = "pass"
+    failure_reason: str | None = None
+    feedback: str | None = None
 
 
 def coworld_manifest_schema() -> dict[str, Any]:
