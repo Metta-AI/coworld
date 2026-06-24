@@ -55,6 +55,35 @@ def test_create_coworld_league_seed_posts_request(httpserver: HTTPServer) -> Non
     assert "league_00000000-0000-0000-0000-000000000081" in result.output
 
 
+def test_create_coworld_league_seed_without_overrides_posts_no_commissioner_override(httpserver: HTTPServer) -> None:
+    seed_response = {**SEED_RESPONSE, "overrides": None}
+    httpserver.expect_request(
+        "/observatory/v2/coworld-league-seeds",
+        method="POST",
+        headers={"Authorization": "Bearer token"},
+        json={
+            "coworld_name": "newworld",
+            "template": "commissioner_driven",
+            "overrides": None,
+            "enabled": True,
+        },
+    ).respond_with_json(seed_response)
+
+    result = CliRunner().invoke(
+        app,
+        [
+            "league",
+            "create",
+            "newworld",
+            "--server",
+            httpserver.url_for(""),
+        ],
+    )
+
+    assert result.exit_code == 0, result.output
+    assert "newworld" in result.output
+
+
 def test_create_coworld_league_seed_rejects_bad_override() -> None:
     result = CliRunner().invoke(
         app,

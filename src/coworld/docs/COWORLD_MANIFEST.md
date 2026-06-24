@@ -47,9 +47,8 @@ The schema also links each role section back to its role contract using `x-cowor
 able to jump from `manifest.player[]` or `manifest.reporter[]` to the corresponding role doc.
 
 For commissioner runnables, `id` is also the value used by `commissioner_config.commissioner_runnable_id` when a Coworld
-league opts into a container commissioner. That config key must be present for container commissioner leagues and must
-match one `manifest.commissioner[].id`; the platform resolves the selected runnable from the canonical Coworld manifest
-before starting the commissioner container.
+league is seeded. That config key must match one `manifest.commissioner[].id`; the platform resolves the selected
+runnable from the canonical Coworld manifest before starting the commissioner container.
 
 For role semantics, use the role docs rather than the schema:
 
