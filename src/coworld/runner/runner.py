@@ -41,6 +41,11 @@ GAME_PORT = 8080
 LOCAL_DOCKER_NETWORK = "coworld-local"
 LOCAL_GAME_NETWORK_ALIAS_PREFIX = "coworld-game-"
 LOCAL_EPISODE_CONTAINER_PREFIX = "coworld-cert"
+LOCAL_EXTRA_PORTS_ENV_VAR = "COWORLD_LOCAL_EXTRA_PORTS"
+LOCAL_PORT_ENV_PREFIX = "COWORLD_LOCAL_PORT_"
+LOCAL_PORTS_JSON_ENV_VAR = "COWORLD_LOCAL_PORTS_JSON"
+LOCAL_PORT_HOST = "127.0.0.1"
+MAX_TCP_PORT = 65535
 
 # Hosted Coworld manifests store images as backend container-image ids: the "img_" prefix followed by a
 # UUID (see ContainerImageId / PrefixedId in metta-app-backend-client). The backend substitutes a pullable
@@ -92,6 +97,19 @@ class EpisodeArtifacts:
         Lives in the workspace root (not logs/) since it is a separate artifact from logs.
         """
         return self.workspace / f"policy_artifact_{slot}.zip"
+
+
+@dataclass(frozen=True)
+class LocalPortRequest:
+    container_port: int
+    host_port: int | None
+
+
+@dataclass(frozen=True)
+class ResolvedLocalPort:
+    container_port: int
+    host_port: int
+    host: str = LOCAL_PORT_HOST
 
 
 @dataclass(frozen=True)
@@ -260,6 +278,8 @@ def ensure_local_docker_network() -> None:
 
 def run_episode_containers(spec: EpisodeRunSpec, *, verify_replay: bool = True) -> None:
     port = _free_local_port()
+    local_ports = resolve_local_extra_ports(spec.game.env, reserved_host_ports={port})
+    game_env = game_env_with_resolved_local_ports(spec.game.env, local_ports)
     run_id = secrets.token_hex(8)
     game_network_alias = f"{LOCAL_GAME_NETWORK_ALIAS_PREFIX}{run_id}"
     game_container = f"{spec.container_prefix}-game-{run_id}"
@@ -284,7 +304,8 @@ def run_episode_containers(spec: EpisodeRunSpec, *, verify_replay: bool = True) 
                     game_network_alias,
                     "-p",
                     f"127.0.0.1:{port}:{GAME_PORT}",
-                    *_env_args(spec.game.env),
+                    *local_port_publish_args(local_ports),
+                    *_env_args(game_env),
                     "-e",
                     f"{GAME_HOST_ENV_VAR}={GAME_HOST}",
                     "-e",
@@ -378,6 +399,7 @@ def run_episode_containers(spec: EpisodeRunSpec, *, verify_replay: bool = True) 
                 spec.artifacts,
                 timeout_seconds=spec.timeout_seconds,
                 container_prefix=spec.container_prefix,
+                resolved_local_ports=local_ports,
             )
     finally:
         for container_name in player_containers:
@@ -391,8 +413,18 @@ def verify_replay_loadable(
     *,
     timeout_seconds: float,
     container_prefix: str = LOCAL_EPISODE_CONTAINER_PREFIX,
+    resolved_local_ports: list[ResolvedLocalPort] | None = None,
 ) -> None:
-    replay_port = _free_local_port()
+    local_ports = resolved_local_ports
+    if local_ports is None:
+        replay_port = _free_local_port()
+        local_ports = resolve_local_extra_ports(game.env, reserved_host_ports={replay_port})
+    else:
+        replay_port = _allocate_local_extra_host_port(
+            {port.host_port for port in local_ports},
+            _free_local_port,
+        )
+    game_env = game_env_with_resolved_local_ports(game.env, local_ports)
     replay_container = f"{container_prefix}-replay-{secrets.token_hex(8)}"
     if not artifacts.replay_path.exists():
         raise RunnerEpisodeError(
@@ -417,7 +449,8 @@ def verify_replay_loadable(
                     replay_container,
                     "-p",
                     f"127.0.0.1:{replay_port}:{GAME_PORT}",
-                    *_env_args(game.env),
+                    *local_port_publish_args(local_ports),
+                    *_env_args(game_env),
                     "-e",
                     f"{GAME_HOST_ENV_VAR}={GAME_HOST}",
                     "-e",
@@ -707,6 +740,130 @@ def _free_local_port() -> int:
     with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
         sock.bind(("127.0.0.1", 0))
         return int(sock.getsockname()[1])
+
+
+def resolve_local_extra_ports(
+    env: Mapping[str, str],
+    *,
+    reserved_host_ports: set[int] | None = None,
+    allocate_port: Callable[[], int] | None = None,
+) -> list[ResolvedLocalPort]:
+    requests = _local_port_requests(env)
+    if not requests:
+        return []
+
+    allocate_port = allocate_port or _free_local_port
+    used_container_ports = {GAME_PORT}
+    used_host_ports = set(reserved_host_ports or set())
+    resolved_ports: list[ResolvedLocalPort] = []
+
+    for request in requests:
+        if request.container_port in used_container_ports:
+            raise ValueError(
+                f"{LOCAL_EXTRA_PORTS_ENV_VAR} maps container port {request.container_port} more than once "
+                f"or conflicts with Coworld HTTP container port {GAME_PORT}"
+            )
+        used_container_ports.add(request.container_port)
+
+        host_port = request.host_port
+        if host_port is None:
+            host_port = _allocate_local_extra_host_port(used_host_ports, allocate_port)
+        elif host_port in used_host_ports:
+            raise ValueError(f"{LOCAL_EXTRA_PORTS_ENV_VAR} maps host port {host_port} more than once")
+        used_host_ports.add(host_port)
+        resolved_ports.append(ResolvedLocalPort(container_port=request.container_port, host_port=host_port))
+
+    return resolved_ports
+
+
+def local_port_publish_args(ports: list[ResolvedLocalPort]) -> list[str]:
+    args: list[str] = []
+    for port in ports:
+        args.extend(["-p", f"{port.host}:{port.host_port}:{port.container_port}"])
+    return args
+
+
+def local_port_env(ports: list[ResolvedLocalPort]) -> dict[str, str]:
+    if not ports:
+        return {}
+    env = {
+        f"{LOCAL_PORT_ENV_PREFIX}{port.container_port}": f"{port.host}:{port.host_port}"
+        for port in ports
+    }
+    env[LOCAL_PORTS_JSON_ENV_VAR] = json.dumps(
+        {str(port.container_port): {"host": port.host, "port": port.host_port} for port in ports},
+        separators=(",", ":"),
+        sort_keys=True,
+    )
+    return env
+
+
+def game_env_with_resolved_local_ports(
+    env: Mapping[str, str],
+    ports: list[ResolvedLocalPort],
+) -> dict[str, str]:
+    game_env = dict(env)
+    game_env.update(local_port_env(ports))
+    return game_env
+
+
+def _local_port_requests(env: Mapping[str, str]) -> list[LocalPortRequest]:
+    value = env.get(LOCAL_EXTRA_PORTS_ENV_VAR)
+    if value is None or value.strip() == "":
+        return []
+
+    requests: list[LocalPortRequest] = []
+    for raw_entry in value.split(","):
+        entry = raw_entry.strip()
+        if not entry:
+            raise ValueError(f"{LOCAL_EXTRA_PORTS_ENV_VAR} contains an empty port mapping")
+        if "/" in entry:
+            mapping, protocol = entry.rsplit("/", 1)
+            if protocol != "tcp":
+                raise ValueError(f"{LOCAL_EXTRA_PORTS_ENV_VAR} only supports tcp mappings, got {entry!r}")
+        else:
+            mapping = entry
+        parts = [part.strip() for part in mapping.split(":")]
+        if len(parts) > 2:
+            raise ValueError(
+                f"{LOCAL_EXTRA_PORTS_ENV_VAR} entry {entry!r} must be container_port[:host_port]"
+            )
+        container_port = _parse_local_extra_port(parts[0], entry=entry, label="container port", allow_zero=False)
+        host_port = None
+        if len(parts) == 2:
+            if parts[1] == "":
+                raise ValueError(
+                    f"{LOCAL_EXTRA_PORTS_ENV_VAR} entry {entry!r} must omit host_port or set it to 0"
+                )
+            parsed_host_port = _parse_local_extra_port(parts[1], entry=entry, label="host port", allow_zero=True)
+            host_port = parsed_host_port or None
+        requests.append(LocalPortRequest(container_port=container_port, host_port=host_port))
+    return requests
+
+
+def _parse_local_extra_port(value: str, *, entry: str, label: str, allow_zero: bool) -> int:
+    if value == "":
+        raise ValueError(f"{LOCAL_EXTRA_PORTS_ENV_VAR} entry {entry!r} has an empty {label}")
+    if not value.isdecimal():
+        raise ValueError(f"{LOCAL_EXTRA_PORTS_ENV_VAR} entry {entry!r} has non-numeric {label} {value!r}")
+    port = int(value)
+    minimum = 0 if allow_zero else 1
+    if port < minimum or port > MAX_TCP_PORT:
+        raise ValueError(
+            f"{LOCAL_EXTRA_PORTS_ENV_VAR} entry {entry!r} has invalid {label} {port}; "
+            f"expected {minimum}..{MAX_TCP_PORT}"
+        )
+    return port
+
+
+def _allocate_local_extra_host_port(used_host_ports: set[int], allocate_port: Callable[[], int]) -> int:
+    for _attempt in range(100):
+        port = allocate_port()
+        if port < 1 or port > MAX_TCP_PORT:
+            raise ValueError(f"Allocated invalid local host port {port}; expected 1..{MAX_TCP_PORT}")
+        if port not in used_host_ports:
+            return port
+    raise RuntimeError("Unable to allocate a free local host port for COWORLD_LOCAL_EXTRA_PORTS")
 
 
 def _repo_root() -> Path:

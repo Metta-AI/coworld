@@ -358,6 +358,140 @@ def test_run_episode_containers_uses_docker_dns_and_omits_policy_names_env(tmp_p
     assert "COWORLD_PLAYER_ARTIFACT_UPLOAD_URL=file:///coworld-artifact/policy_artifact_0.zip" in player_command
 
 
+def test_run_episode_containers_adds_fixed_extra_local_ports(tmp_path, monkeypatch):
+    commands: list[list[str]] = []
+
+    class FakeProcess:
+        def poll(self):
+            return None
+
+    async def noop_async(*_args, **_kwargs):
+        return None
+
+    monkeypatch.setattr(runner_module, "_free_local_port", lambda: 12345)
+    monkeypatch.setattr(runner_module.secrets, "token_hex", lambda _bytes: "session-1")
+    monkeypatch.setattr(runner_module, "_wait_for_health", lambda *_args, **_kwargs: None)
+    monkeypatch.setattr(runner_module, "_require_http_ok", lambda *_args, **_kwargs: None)
+    monkeypatch.setattr(runner_module, "_require_bad_player_rejected", noop_async)
+    monkeypatch.setattr(runner_module, "_require_global_message", noop_async)
+    monkeypatch.setattr(runner_module, "_wait_for_game_exit", lambda *_args, **_kwargs: None)
+
+    def fake_popen(command, **_kwargs):
+        commands.append(command)
+        return FakeProcess()
+
+    monkeypatch.setattr(runner_module.subprocess, "Popen", fake_popen)
+    monkeypatch.setattr(
+        runner_module.subprocess,
+        "run",
+        lambda command, **_kwargs: subprocess.CompletedProcess(command, 0),
+    )
+
+    runner_module.run_episode_containers(
+        EpisodeRunSpec(
+            game=RunnableLaunchSpec(
+                image="game:latest",
+                env={runner_module.LOCAL_EXTRA_PORTS_ENV_VAR: "3724:3724,8085:8085"},
+            ),
+            players=[],
+            tokens=[],
+            artifacts=EpisodeArtifacts.create(tmp_path),
+            timeout_seconds=1,
+            container_prefix="coworld-run",
+        ),
+        verify_replay=False,
+    )
+
+    game_command = commands[0]
+    assert _docker_publish_values(game_command) == [
+        "127.0.0.1:12345:8080",
+        "127.0.0.1:3724:3724",
+        "127.0.0.1:8085:8085",
+    ]
+    assert _env_value(game_command, "COWORLD_LOCAL_PORT_3724") == "127.0.0.1:3724"
+    assert _env_value(game_command, "COWORLD_LOCAL_PORT_8085") == "127.0.0.1:8085"
+    assert json.loads(_env_value(game_command, runner_module.LOCAL_PORTS_JSON_ENV_VAR)) == {
+        "3724": {"host": "127.0.0.1", "port": 3724},
+        "8085": {"host": "127.0.0.1", "port": 8085},
+    }
+
+
+def test_run_episode_containers_allocates_dynamic_extra_local_ports(tmp_path, monkeypatch):
+    commands: list[list[str]] = []
+    free_ports = iter([12345, 41000, 41001])
+
+    class FakeProcess:
+        def poll(self):
+            return None
+
+    async def noop_async(*_args, **_kwargs):
+        return None
+
+    monkeypatch.setattr(runner_module, "_free_local_port", lambda: next(free_ports))
+    monkeypatch.setattr(runner_module.secrets, "token_hex", lambda _bytes: "session-1")
+    monkeypatch.setattr(runner_module, "_wait_for_health", lambda *_args, **_kwargs: None)
+    monkeypatch.setattr(runner_module, "_require_http_ok", lambda *_args, **_kwargs: None)
+    monkeypatch.setattr(runner_module, "_require_bad_player_rejected", noop_async)
+    monkeypatch.setattr(runner_module, "_require_global_message", noop_async)
+    monkeypatch.setattr(runner_module, "_wait_for_game_exit", lambda *_args, **_kwargs: None)
+
+    def fake_popen(command, **_kwargs):
+        commands.append(command)
+        return FakeProcess()
+
+    monkeypatch.setattr(runner_module.subprocess, "Popen", fake_popen)
+    monkeypatch.setattr(
+        runner_module.subprocess,
+        "run",
+        lambda command, **_kwargs: subprocess.CompletedProcess(command, 0),
+    )
+
+    runner_module.run_episode_containers(
+        EpisodeRunSpec(
+            game=RunnableLaunchSpec(
+                image="game:latest",
+                env={runner_module.LOCAL_EXTRA_PORTS_ENV_VAR: "3724:0,8085"},
+            ),
+            players=[],
+            tokens=[],
+            artifacts=EpisodeArtifacts.create(tmp_path),
+            timeout_seconds=1,
+            container_prefix="coworld-run",
+        ),
+        verify_replay=False,
+    )
+
+    game_command = commands[0]
+    assert _docker_publish_values(game_command) == [
+        "127.0.0.1:12345:8080",
+        "127.0.0.1:41000:3724",
+        "127.0.0.1:41001:8085",
+    ]
+    assert _env_value(game_command, "COWORLD_LOCAL_PORT_3724") == "127.0.0.1:41000"
+    assert _env_value(game_command, "COWORLD_LOCAL_PORT_8085") == "127.0.0.1:41001"
+
+
+@pytest.mark.parametrize(
+    ("value", "message"),
+    [
+        ("0:3724", "invalid container port 0"),
+        ("3724:70000", "invalid host port 70000"),
+        ("3724:3724,3724:3725", "container port 3724"),
+        ("3724:3724,8085:3724", "host port 3724"),
+        ("8080:8080", "container port 8080"),
+        ("3724/udp", "only supports tcp"),
+        ("abc:3724", "non-numeric container port"),
+    ],
+)
+def test_resolve_local_extra_ports_rejects_invalid_or_duplicate_mappings(value, message):
+    with pytest.raises(ValueError, match=message):
+        runner_module.resolve_local_extra_ports(
+            {runner_module.LOCAL_EXTRA_PORTS_ENV_VAR: value},
+            reserved_host_ports={12345},
+            allocate_port=lambda: 41000,
+        )
+
+
 def test_run_episode_containers_player_artifact_round_trips_to_workspace(tmp_path, monkeypatch):
     """A player that uploads to COWORLD_PLAYER_ARTIFACT_UPLOAD_URL lands a file the runner can find.
 
@@ -421,6 +555,7 @@ def test_run_episode_containers_player_artifact_round_trips_to_workspace(tmp_pat
 def test_run_episode_containers_verifies_hosted_zlib_replay_uri(tmp_path, monkeypatch):
     commands: list[list[str]] = []
     mounted_replay_bytes: list[bytes] = []
+    free_ports = iter([12345, 3724, 41000])
     artifacts = EpisodeArtifacts.create(tmp_path)
     replay_payload = b"\x00crewrift-replay-bytes\xff"
     artifacts.replay_path.write_bytes(replay_payload)
@@ -432,7 +567,7 @@ def test_run_episode_containers_verifies_hosted_zlib_replay_uri(tmp_path, monkey
     async def noop_async(*_args, **_kwargs):
         return None
 
-    monkeypatch.setattr(runner_module, "_free_local_port", lambda: 12345)
+    monkeypatch.setattr(runner_module, "_free_local_port", lambda: next(free_ports))
     monkeypatch.setattr(runner_module.secrets, "token_hex", lambda _bytes: "session-1")
     monkeypatch.setattr(runner_module, "_wait_for_health", lambda *_args, **_kwargs: None)
     monkeypatch.setattr(runner_module, "_require_http_ok", lambda *_args, **_kwargs: None)
@@ -458,7 +593,10 @@ def test_run_episode_containers_verifies_hosted_zlib_replay_uri(tmp_path, monkey
 
     runner_module.run_episode_containers(
         EpisodeRunSpec(
-            game=RunnableLaunchSpec(image="game:latest"),
+            game=RunnableLaunchSpec(
+                image="game:latest",
+                env={runner_module.LOCAL_EXTRA_PORTS_ENV_VAR: "3724:3724"},
+            ),
             players=[],
             tokens=[],
             artifacts=artifacts,
@@ -469,6 +607,10 @@ def test_run_episode_containers_verifies_hosted_zlib_replay_uri(tmp_path, monkey
     )
 
     _game_command, replay_command = commands
+    assert _docker_publish_values(replay_command) == [
+        "127.0.0.1:41000:8080",
+        "127.0.0.1:3724:3724",
+    ]
     assert f"{runner_module.REPLAY_LOAD_ENV_VAR}=file:///coworld-replay/replay.z" in replay_command
     assert zlib.decompress(mounted_replay_bytes[0]) == replay_payload
 
@@ -1210,3 +1352,15 @@ def test_worker_health_server_accepts_connections_until_socket_closes():
 
     with socket.create_connection(("127.0.0.1", port), timeout=2) as conn:
         assert conn.fileno() >= 0
+
+
+def _docker_publish_values(command: list[str]) -> list[str]:
+    return [value for index, value in enumerate(command) if index > 0 and command[index - 1] == "-p"]
+
+
+def _env_value(command: list[str], key: str) -> str | None:
+    prefix = f"{key}="
+    for index, value in enumerate(command):
+        if index > 0 and command[index - 1] == "-e" and value.startswith(prefix):
+            return value.removeprefix(prefix)
+    return None

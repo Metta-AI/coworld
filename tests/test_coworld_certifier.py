@@ -41,7 +41,9 @@ from coworld.runner.io import RunnerEpisodeError
 from coworld.runner.runner import (
     CONFIG_ENV_VAR,
     LOCAL_DOCKER_NETWORK,
+    LOCAL_EXTRA_PORTS_ENV_VAR,
     LOCAL_GAME_NETWORK_ALIAS_PREFIX,
+    LOCAL_PORTS_JSON_ENV_VAR,
     REPLAY_LOAD_ENV_VAR,
     REPLAY_SAVE_ENV_VAR,
     RESULTS_ENV_VAR,
@@ -1207,7 +1209,9 @@ def test_play_coworld_starts_certification_player_containers(tmp_path: Path, mon
     assert game_command[game_command.index("--network") + 1] == LOCAL_DOCKER_NETWORK
     assert "--network-alias" in game_command
     assert game_command[game_command.index("--network-alias") + 1] == f"{LOCAL_GAME_NETWORK_ALIAS_PREFIX}session-1"
+    assert _docker_publish_values(game_command) == ["127.0.0.1:1234:8080"]
     assert f"{CONFIG_ENV_VAR}=file:///coworld/config.json" in game_command
+    assert _env_value(game_command, LOCAL_PORTS_JSON_ENV_VAR) is None
     assert "coworld-play-player-session-1-0" in player_command
     assert "--network" in player_command
     assert player_command[player_command.index("--network") + 1] == LOCAL_DOCKER_NETWORK
@@ -1225,6 +1229,58 @@ def test_play_coworld_starts_certification_player_containers(tmp_path: Path, mon
     assert waited_players == [tmp_path / "play-workspace" / "logs" / "policy_agent_0.log"]
     assert ["docker", "rm", "-f", "coworld-play-player-session-1-0"] in rm_commands
     assert ["docker", "rm", "-f", "coworld-play-game-session-1"] in rm_commands
+
+
+def test_play_coworld_adds_fixed_extra_local_ports_to_game_container(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    coworld_manifest_path = _write_package_files_with_game_env(
+        tmp_path,
+        {LOCAL_EXTRA_PORTS_ENV_VAR: "3724:3724,8085:8085"},
+    )
+    popen_commands: list[list[str]] = []
+
+    class FakeProcess:
+        def wait(self) -> int:
+            return 0
+
+    def fake_popen(cmd, **kwargs):
+        popen_commands.append(cmd)
+        return FakeProcess()
+
+    monkeypatch.setattr("coworld.play.assert_episode_images_reachable", lambda _job: None)
+    monkeypatch.setattr("coworld.play._free_local_port", lambda: 1234)
+    monkeypatch.setattr("coworld.play._wait_for_health", lambda *_args, **_kwargs: None)
+    monkeypatch.setattr("coworld.play._wait_for_game_exit", lambda *_args, **_kwargs: None)
+    monkeypatch.setattr("coworld.play._wait_for_player_exit", lambda *_args, **_kwargs: None)
+    monkeypatch.setattr("coworld.play.subprocess.Popen", fake_popen)
+    monkeypatch.setattr("coworld.play.subprocess.run", lambda cmd, **kwargs: subprocess.CompletedProcess(cmd, 0))
+    monkeypatch.setattr("coworld.play.secrets.token_hex", lambda _bytes: "session-1")
+    monkeypatch.setattr("coworld.runner.runner.secrets.token_urlsafe", lambda _bytes: "token-0")
+    monkeypatch.setattr("coworld.play.load_results", lambda package, artifacts: {"scores": [1.0]})
+
+    result = play_coworld(
+        coworld_manifest_path,
+        workspace=tmp_path / "play-workspace-extra-ports",
+        on_ready=lambda _session: None,
+    )
+
+    game_command = popen_commands[0]
+    assert _docker_publish_values(game_command) == [
+        "127.0.0.1:1234:8080",
+        "127.0.0.1:3724:3724",
+        "127.0.0.1:8085:8085",
+    ]
+    assert _env_value(game_command, "COWORLD_LOCAL_PORT_3724") == "127.0.0.1:3724"
+    assert _env_value(game_command, "COWORLD_LOCAL_PORT_8085") == "127.0.0.1:8085"
+    assert json.loads(cast(str, _env_value(game_command, LOCAL_PORTS_JSON_ENV_VAR))) == {
+        "3724": {"host": "127.0.0.1", "port": 3724},
+        "8085": {"host": "127.0.0.1", "port": 8085},
+    }
+    assert [(port.container_port, port.host_port) for port in result.session.local_ports] == [
+        (3724, 3724),
+        (8085, 8085),
+    ]
 
 
 @pytest.mark.parametrize("session_token", ["session-token", None])
@@ -1898,6 +1954,14 @@ def _write_package_files(
     return coworld_manifest_path
 
 
+def _write_package_files_with_game_env(tmp_path: Path, game_env: dict[str, str]) -> Path:
+    coworld_manifest_path = _write_package_files(tmp_path)
+    manifest = json.loads(coworld_manifest_path.read_text(encoding="utf-8"))
+    manifest["game"]["runnable"]["env"].update(game_env)
+    coworld_manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
+    return coworld_manifest_path
+
+
 def _package_with_player_source_url(tmp_path: Path, source_url: str):
     coworld_manifest_path = _write_package_files(tmp_path)
     manifest = json.loads(coworld_manifest_path.read_text(encoding="utf-8"))
@@ -2057,3 +2121,15 @@ def _reload_paintarena_server() -> Any:
 def _image_command_slice(command: list[str]) -> list[str]:
     entrypoint_index = command.index("--entrypoint")
     return command[entrypoint_index:]
+
+
+def _docker_publish_values(command: list[str]) -> list[str]:
+    return [value for index, value in enumerate(command) if index > 0 and command[index - 1] == "-p"]
+
+
+def _env_value(command: list[str], key: str) -> str | None:
+    prefix = f"{key}="
+    for index, value in enumerate(command):
+        if index > 0 and command[index - 1] == "-e" and value.startswith(prefix):
+            return value.removeprefix(prefix)
+    return None

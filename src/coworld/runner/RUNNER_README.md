@@ -7,6 +7,13 @@ The runner creates or reuses one Docker network named `coworld-local`. Game cont
 `127.0.0.1:<port>` and also join that network as `coworld-game-<run-id>`. Player containers join the same network and
 receive `COWORLD_PLAYER_WS_URL=ws://coworld-game-<run-id>:8080/player?...`.
 
+Games can request additional host-visible TCP ports for local runs by setting
+`COWORLD_LOCAL_EXTRA_PORTS` in `manifest.game.runnable.env`, using `container_port[:host_port]` entries separated by
+commas. For example, `3724:3724,8085:8085` publishes container ports 3724 and 8085 on the same localhost ports, while
+`3724:0,8085` allocates free host ports. The resolved mappings are passed into the game as
+`COWORLD_LOCAL_PORT_<container_port>` variables and `COWORLD_LOCAL_PORTS_JSON`. This is local Docker runner behavior;
+the hosted Kubernetes runner does not publish arbitrary extra host ports today.
+
 Use it through the public CLI:
 
 ```bash

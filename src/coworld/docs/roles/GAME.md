@@ -42,6 +42,23 @@ It must:
 The runner validates the final results against `manifest.game.results_schema`. Replay bytes are game-defined, but the
 same game image must be able to load them in replay mode.
 
+## Local extra ports
+
+Local Docker runners always publish the Coworld HTTP/WebSocket port as `127.0.0.1:<random>:8080`. A game that also
+needs host-visible TCP services can request additional local mappings through public `manifest.game.runnable.env`:
+
+```json
+"env": {
+  "COWORLD_LOCAL_EXTRA_PORTS": "3724:3724,8085:8085"
+}
+```
+
+Entries are `container_port[:host_port]`. Omit `host_port` or set it to `0` to allocate a free local host port. The
+local runner rejects invalid ports and duplicate host or container ports. When mappings are resolved, the game container
+receives `COWORLD_LOCAL_PORT_<container_port>=127.0.0.1:<host_port>` for each mapping and
+`COWORLD_LOCAL_PORTS_JSON` with the same resolved data. This is local-runner-only; hosted/Kubernetes runners do not
+publish arbitrary extra host ports today.
+
 ## Player slots
 
 `game.config_schema` must require a string-array `tokens` field. Tokens are runner-injected player auth values, not a

@@ -187,6 +187,12 @@ One Docker image can implement multiple roles by appearing in multiple runnable 
 different commands. `coworld upload-coworld` deduplicates image uploads by image reference and backend content identity.
 At hosted execution time, image tags resolve to immutable digests.
 
+`manifest.game.runnable.env.COWORLD_LOCAL_EXTRA_PORTS` is a local-runner-only deployment hint for games that expose
+additional host TCP services beyond Coworld HTTP on container port 8080. Use comma-separated
+`container_port[:host_port]` entries; `host_port` omitted or `0` means allocate a free localhost port. Local runners pass
+the resolved mappings back into the game container as `COWORLD_LOCAL_PORT_<container_port>` and
+`COWORLD_LOCAL_PORTS_JSON`. Hosted/Kubernetes runners do not support arbitrary extra host ports yet.
+
 `source_url` is informational for humans inspecting a runnable, but `coworld certify` also checks GitHub URLs. Any
 GitHub `source_url` must pin a full 40-hex commit SHA in the ref position; branch names, tags, and implicit default
 branches fail certification. The pinned source must have non-empty contents and a Dockerfile at that path or an ancestor

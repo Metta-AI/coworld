@@ -7,6 +7,9 @@ The runner is designed to run one episode inside a single Kubernetes `Job`. That
 coordinator container. The coordinator creates one child pod for each entry in `players`, waits for the episode to
 finish, gathers artifacts, then uploads them to the URIs provided in environment variables.
 
+Unlike the local Docker runner, the Kubernetes runner does not publish arbitrary extra host TCP ports from the game
+container. `COWORLD_LOCAL_EXTRA_PORTS` is local-runner-only today.
+
 ## Hosted resource baseline
 
 Hosted Kubernetes runners schedule each episode component with explicit resource requests so the scheduler reserves real

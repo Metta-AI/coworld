@@ -32,6 +32,7 @@ from coworld.runner.runner import (
     RESULTS_ENV_VAR,
     EpisodeArtifacts,
     PlayerLaunchSpec,
+    ResolvedLocalPort,
     RunnableLaunchSpec,
     _free_local_port,
     _player_container_ws_url,
@@ -43,9 +44,12 @@ from coworld.runner.runner import (
     assert_docker_image_reachable,
     assert_episode_images_reachable,
     ensure_local_docker_network,
+    game_env_with_resolved_local_ports,
     generate_tokens,
+    local_port_publish_args,
     replay_client_url,
     replay_session_path,
+    resolve_local_extra_ports,
     write_coworld_game_config,
 )
 from coworld.schema_validation import JsonObject
@@ -64,6 +68,7 @@ class PlaySession:
     artifacts: EpisodeArtifacts
     variant_id: str
     links: PlayLinks
+    local_ports: list[ResolvedLocalPort]
 
 
 @dataclass(frozen=True)
@@ -136,11 +141,18 @@ def play_coworld(
     write_coworld_game_config(job_spec, artifacts, tokens)
     players = [PlayerLaunchSpec.from_model(player) for player in job_spec.players]
     game_port = _free_local_port()
+    local_ports = resolve_local_extra_ports(
+        package.game.env,
+        reserved_host_ports={game_port},
+        allocate_port=_free_local_port,
+    )
+    game_env = game_env_with_resolved_local_ports(package.game.env, local_ports)
     session = PlaySession(
         package=package,
         artifacts=artifacts,
         variant_id=variant_label,
         links=build_play_links(players, tokens, game_port=game_port),
+        local_ports=local_ports,
     )
 
     run_id = secrets.token_hex(8)
@@ -174,7 +186,8 @@ def play_coworld(
                     game_network_alias,
                     "-p",
                     f"127.0.0.1:{game_port}:{GAME_PORT}",
-                    *_env_args(package.game.env),
+                    *local_port_publish_args(local_ports),
+                    *_env_args(game_env),
                     "-e",
                     f"{GAME_HOST_ENV_VAR}={GAME_HOST}",
                     "-e",

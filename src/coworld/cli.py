@@ -1089,6 +1089,11 @@ def _print_play_session(session: PlaySession) -> None:
         typer.echo(f"  {slot}: {link}")
     typer.echo(f"Global client: {session.links.global_}")
     typer.echo(f"Admin client: {session.links.admin}")
+    local_ports = getattr(session, "local_ports", [])
+    if local_ports:
+        typer.echo("Extra local ports:")
+        for port in local_ports:
+            typer.echo(f"  container {port.container_port}/tcp: {port.host}:{port.host_port}")
     typer.echo("Waiting for the game container to exit...")
 
 
