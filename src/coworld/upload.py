@@ -29,6 +29,7 @@ from coworld.cli_support import validate_run_argv
 from coworld.config import DEFAULT_SUBMIT_SERVER
 from coworld.image_refs import is_mutable_registry_image_ref
 from coworld.manifest_validation import validate_coworld_manifest_game_configs
+from coworld.runner.runner import assert_docker_image_reachable
 from coworld.schema_validation import validate_json_schema
 from coworld.types import MANIFEST_ROLE_SECTIONS, CoworldManifest, coworld_manifest_schema
 
@@ -1017,8 +1018,10 @@ def _resolve_commissioner_patch_image(image: str) -> str:
 def _ensure_local_image(image: str) -> None:
     inspect_result = subprocess.run(["docker", "image", "inspect", image], capture_output=True, text=True)
     if inspect_result.returncode == 0:
+        assert_docker_image_reachable(image, require_linux_amd64=True)
         return
     subprocess.run(["docker", "pull", image], check=True)
+    assert_docker_image_reachable(image, require_linux_amd64=True)
 
 
 def download_coworld(
@@ -1206,6 +1209,7 @@ def _manifest_with_local_images(
 
 
 def _upload_container_image(client: CoworldUploadClient, image: str) -> ContainerImageResponse:
+    assert_docker_image_reachable(image, require_linux_amd64=True)
     client_hash = _local_image_client_hash(image)
     response = client.request_image_upload(name=_image_upload_name(image), client_hash=client_hash)
 

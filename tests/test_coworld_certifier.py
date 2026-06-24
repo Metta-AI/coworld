@@ -51,6 +51,7 @@ from coworld.runner.runner import (
     _image_command,
     _require_bad_player_rejected,
     assert_docker_image_reachable,
+    assert_episode_images_reachable,
     replay_client_url,
     replay_session_path,
 )
@@ -251,14 +252,71 @@ def test_assert_docker_image_reachable_allows_local_image_named_like_id(monkeypa
     assert calls == [["docker", "image", "inspect", "img_game:latest"]]
 
 
-def test_assert_docker_image_reachable_rejects_wrong_local_platform(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_assert_docker_image_reachable_accepts_local_arm64_for_play(monkeypatch: pytest.MonkeyPatch) -> None:
     def fake_run(cmd, **kwargs):
         return subprocess.CompletedProcess(cmd, 0, stdout='[{"Os":"linux","Architecture":"arm64"}]', stderr="")
 
     monkeypatch.setattr(subprocess, "run", fake_run)
 
-    with pytest.raises(RuntimeError, match="linux/arm64"):
-        assert_docker_image_reachable("local-image:latest", label="Local image")
+    assert_docker_image_reachable("local-image:latest", label="Local image")
+
+
+def test_assert_docker_image_reachable_rejects_local_arm64_for_upload(monkeypatch: pytest.MonkeyPatch) -> None:
+    def fake_run(cmd, **kwargs):
+        return subprocess.CompletedProcess(cmd, 0, stdout='[{"Os":"linux","Architecture":"arm64"}]', stderr="")
+
+    monkeypatch.setattr(subprocess, "run", fake_run)
+
+    with pytest.raises(RuntimeError, match="Coworld uploads and hosted execution require linux/amd64 images"):
+        assert_docker_image_reachable("local-image:latest", label="Local image", require_linux_amd64=True)
+
+
+def test_assert_docker_image_reachable_requires_remote_manifest_with_amd64_for_upload(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    def fake_run(cmd, **kwargs):
+        if cmd[1:3] == ["image", "inspect"]:
+            return subprocess.CompletedProcess(cmd, 1, stdout="", stderr="not local")
+        return subprocess.CompletedProcess(
+            cmd,
+            0,
+            stdout=json.dumps({"manifests": [{"platform": {"os": "linux", "architecture": "arm64"}}]}),
+            stderr="",
+        )
+
+    monkeypatch.setattr(subprocess, "run", fake_run)
+
+    with pytest.raises(RuntimeError, match="manifest does not include linux/amd64"):
+        assert_docker_image_reachable("remote-image:latest", require_linux_amd64=True)
+
+
+def test_assert_episode_images_reachable_allows_local_arm64_for_play(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    package = load_coworld_package(_write_package_files(tmp_path))
+    job = build_manifest_episode_job_spec(package)
+
+    def fake_run(cmd, **kwargs):
+        return subprocess.CompletedProcess(cmd, 0, stdout='[{"Os":"linux","Architecture":"arm64"}]', stderr="")
+
+    monkeypatch.setattr(subprocess, "run", fake_run)
+
+    assert_episode_images_reachable(job)
+
+
+def test_assert_episode_images_reachable_rejects_local_arm64_for_upload(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    package = load_coworld_package(_write_package_files(tmp_path))
+    job = build_manifest_episode_job_spec(package)
+
+    def fake_run(cmd, **kwargs):
+        return subprocess.CompletedProcess(cmd, 0, stdout='[{"Os":"linux","Architecture":"arm64"}]', stderr="")
+
+    monkeypatch.setattr(subprocess, "run", fake_run)
+
+    with pytest.raises(RuntimeError, match="linux/amd64"):
+        assert_episode_images_reachable(job, require_linux_amd64=True)
 
 
 def test_validate_source_references_rejects_empty_github_source_url(

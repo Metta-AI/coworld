@@ -172,9 +172,9 @@ def validate_certification_references(package: CoworldPackage) -> None:
     _certification_player_specs(package)
 
 
-def validate_image_references(package: CoworldPackage) -> None:
+def validate_image_references(package: CoworldPackage, *, require_linux_amd64: bool = False) -> None:
     for label, image in _image_references(package):
-        assert_docker_image_reachable(image, label=label)
+        assert_docker_image_reachable(image, label=label, require_linux_amd64=require_linux_amd64)
 
 
 def validate_players_ran(package: CoworldPackage, artifacts: EpisodeArtifacts) -> None:

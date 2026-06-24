@@ -63,6 +63,27 @@ class DockerImageInspectEntry(BaseModel):
     architecture: str = Field(alias="Architecture")
 
 
+class DockerManifestPlatform(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+
+    os_name: str = Field(alias="os")
+    architecture: str
+
+
+class DockerManifestDescriptor(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+
+    platform: DockerManifestPlatform
+
+
+class DockerManifestInspectResult(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+
+    os_name: str | None = Field(default=None, alias="os")
+    architecture: str | None = None
+    manifests: list[DockerManifestDescriptor] = Field(default_factory=list)
+
+
 @dataclass(frozen=True)
 class EpisodeArtifacts:
     workspace: Path
@@ -147,7 +168,9 @@ class PlayerLaunchSpec(RunnableLaunchSpec):
         )
 
 
-def assert_docker_image_reachable(image: str, *, label: str = "Docker image") -> None:
+def assert_docker_image_reachable(
+    image: str, *, label: str = "Docker image", require_linux_amd64: bool = False
+) -> None:
     if _CONTAINER_IMAGE_ID_RE.match(image):
         raise RuntimeError(
             f"{label} is an unresolved Coworld image id: {image}\n"
@@ -159,11 +182,14 @@ def assert_docker_image_reachable(image: str, *, label: str = "Docker image") ->
 
     local_result = subprocess.run(["docker", "image", "inspect", image], capture_output=True, text=True, timeout=30)
     if local_result.returncode == 0:
-        _assert_linux_amd64_image(image, label=label, inspect_stdout=local_result.stdout)
+        if require_linux_amd64:
+            _assert_local_image_is_linux_amd64(image, label=label, inspect_stdout=local_result.stdout)
         return
 
     remote_result = subprocess.run(["docker", "manifest", "inspect", image], capture_output=True, text=True, timeout=60)
     if remote_result.returncode == 0:
+        if require_linux_amd64:
+            _assert_manifest_contains_linux_amd64(image, label=label, manifest_stdout=remote_result.stdout)
         return
 
     raise RuntimeError(
@@ -173,7 +199,7 @@ def assert_docker_image_reachable(image: str, *, label: str = "Docker image") ->
     )
 
 
-def _assert_linux_amd64_image(image: str, *, label: str, inspect_stdout: str) -> None:
+def _assert_local_image_is_linux_amd64(image: str, *, label: str, inspect_stdout: str) -> None:
     entries = TypeAdapter(list[DockerImageInspectEntry]).validate_json(inspect_stdout)
     if len(entries) != 1:
         raise RuntimeError(f"docker image inspect returned {len(entries)} entries for {image}")
@@ -181,15 +207,41 @@ def _assert_linux_amd64_image(image: str, *, label: str, inspect_stdout: str) ->
     if entry.os_name != "linux" or entry.architecture != "amd64":
         raise RuntimeError(
             f"{label} {image} is {entry.os_name}/{entry.architecture}; "
-            "Coworld episodes require linux/amd64 images. "
+            "Coworld uploads and hosted execution require linux/amd64 images. "
             "Rebuild the image with: docker build --platform linux/amd64 ..."
         )
 
 
-def assert_episode_images_reachable(job: CoworldEpisodeJobSpec) -> None:
-    assert_docker_image_reachable(job.game_runnable.image, label="game.runnable.image")
+def _assert_manifest_contains_linux_amd64(image: str, *, label: str, manifest_stdout: str) -> None:
+    manifest = DockerManifestInspectResult.model_validate_json(manifest_stdout)
+    if manifest.os_name == "linux" and manifest.architecture == "amd64":
+        return
+    if any(
+        descriptor.platform.os_name == "linux" and descriptor.platform.architecture == "amd64"
+        for descriptor in manifest.manifests
+    ):
+        return
+    platforms = [
+        f"{descriptor.platform.os_name}/{descriptor.platform.architecture}" for descriptor in manifest.manifests
+    ]
+    if manifest.os_name is not None and manifest.architecture is not None:
+        platforms.append(f"{manifest.os_name}/{manifest.architecture}")
+    platform_summary = ", ".join(platforms) if platforms else "no declared platforms"
+    raise RuntimeError(
+        f"{label} {image} manifest does not include linux/amd64 ({platform_summary}); "
+        "Coworld uploads and hosted execution require linux/amd64 images. "
+        "Publish a linux/amd64 image or a multi-platform manifest containing linux/amd64."
+    )
+
+
+def assert_episode_images_reachable(job: CoworldEpisodeJobSpec, *, require_linux_amd64: bool = False) -> None:
+    assert_docker_image_reachable(
+        job.game_runnable.image, label="game.runnable.image", require_linux_amd64=require_linux_amd64
+    )
     for slot, player in enumerate(job.players):
-        assert_docker_image_reachable(player.image, label=f"players[{slot}].image")
+        assert_docker_image_reachable(
+            player.image, label=f"players[{slot}].image", require_linux_amd64=require_linux_amd64
+        )
 
 
 def run_coworld_episode(
