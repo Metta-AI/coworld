@@ -139,6 +139,7 @@ def test_upload_coworld_posts_standalone_manifest(
         return "sha256:client-hash"
 
     monkeypatch.setattr("coworld.upload.certify_coworld", fake_certify)
+    monkeypatch.setattr("coworld.upload.assert_docker_image_reachable", lambda *_args, **_kwargs: None)
     monkeypatch.setattr("coworld.upload._local_image_client_hash", fake_hash)
     monkeypatch.setattr(
         "coworld.upload._push_container_image",
@@ -270,6 +271,7 @@ def test_upload_coworld_command_certifies_before_uploading(
         "coworld.upload.certify_coworld",
         lambda manifest_path, *, timeout_seconds: certification_calls.append((manifest_path, timeout_seconds)),
     )
+    monkeypatch.setattr("coworld.upload.assert_docker_image_reachable", lambda *_args, **_kwargs: None)
     monkeypatch.setattr("coworld.upload._local_image_client_hash", lambda image: "sha256:client-hash")
     monkeypatch.setattr("coworld.upload._push_container_image", lambda source_image, push_info: None)
     httpserver.expect_request(
@@ -619,6 +621,7 @@ def test_upload_coworld_from_existing_manifest_updates_one_role_image(
         return "sha256:commissioner-hash"
 
     monkeypatch.setattr("coworld.upload.certify_coworld", lambda *_args, **_kwargs: pytest.fail("certified manifest"))
+    monkeypatch.setattr("coworld.upload.assert_docker_image_reachable", lambda *_args, **_kwargs: None)
     monkeypatch.setattr("coworld.upload._local_image_client_hash", fake_hash)
     monkeypatch.setattr("coworld.upload._push_container_image", lambda source_image, push_info: None)
     httpserver.expect_request(
@@ -718,6 +721,7 @@ def test_patch_commissioner_command_uploads_image_and_patches(
 
     monkeypatch.setattr("coworld.upload.resolve_registry_image_ref", lambda image: resolved_image)
     monkeypatch.setattr("coworld.upload.subprocess.run", fake_subprocess_run)
+    monkeypatch.setattr("coworld.upload.assert_docker_image_reachable", lambda *_args, **_kwargs: None)
     monkeypatch.setattr("coworld.upload._local_image_client_hash", fake_hash)
     monkeypatch.setattr("coworld.upload._push_container_image", lambda source_image, push_info: None)
     httpserver.expect_request(
@@ -816,6 +820,7 @@ def test_upload_coworld_surfaces_server_error_detail(
 
     monkeypatch.setattr("coworld.upload._load_current_token", lambda *, server_url: "token")
     monkeypatch.setattr("coworld.upload.certify_coworld", lambda manifest_path, *, timeout_seconds: None)
+    monkeypatch.setattr("coworld.upload.assert_docker_image_reachable", lambda *_args, **_kwargs: None)
     monkeypatch.setattr("coworld.upload._local_image_client_hash", lambda image: "sha256:client-hash")
     monkeypatch.setattr("coworld.upload._push_container_image", lambda source_image, push_info: None)
     httpserver.expect_request("/observatory/v2/container_images/upload", method="POST").respond_with_json(
@@ -853,6 +858,7 @@ def test_upload_policy_command_creates_docker_image_policy(
 
     monkeypatch.setattr("softmax.auth.load_current_token", lambda *, server: "player-token")
     monkeypatch.setattr("softmax.auth.load_user_token", lambda *, server: pytest.fail("used user token"))
+    monkeypatch.setattr("coworld.upload.assert_docker_image_reachable", lambda *_args, **_kwargs: None)
     monkeypatch.setattr("coworld.upload._local_image_client_hash", lambda image: "sha256:client-hash")
     monkeypatch.setattr("coworld.upload._push_container_image", lambda source_image, push_info: None)
     httpserver.expect_request(
@@ -912,6 +918,7 @@ def test_upload_policy_command_sends_policy_secrets(
 ) -> None:
     softmax_image_uri = "123456789012.dkr.ecr.us-east-1.amazonaws.com/coworld/user/unit-test-policy@sha256:digest"
 
+    monkeypatch.setattr("coworld.upload.assert_docker_image_reachable", lambda *_args, **_kwargs: None)
     monkeypatch.setattr("coworld.upload._local_image_client_hash", lambda image: "sha256:client-hash")
     monkeypatch.setattr("coworld.upload._push_container_image", lambda source_image, push_info: None)
     httpserver.expect_request(
@@ -991,6 +998,7 @@ def test_upload_policy_command_sends_tags(
 ) -> None:
     softmax_image_uri = "123456789012.dkr.ecr.us-east-1.amazonaws.com/coworld/user/unit-test-policy@sha256:digest"
 
+    monkeypatch.setattr("coworld.upload.assert_docker_image_reachable", lambda *_args, **_kwargs: None)
     monkeypatch.setattr("coworld.upload._local_image_client_hash", lambda image: "sha256:client-hash")
     monkeypatch.setattr("coworld.upload._push_container_image", lambda source_image, push_info: None)
     httpserver.expect_request(
