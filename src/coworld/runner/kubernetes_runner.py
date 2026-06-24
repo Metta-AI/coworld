@@ -18,6 +18,7 @@ import httpx
 from kubernetes import client, config
 from kubernetes.client.rest import ApiException
 
+from coworld.runner.bedrock_enablement import BedrockEnablement, resolve_player_bedrock
 from coworld.runner.io import RunnerEpisodeError, RunnerError, read_data, upload_data
 from coworld.runner.phase_timings import EpisodePhaseTimings
 from coworld.runner.runner import (
@@ -309,8 +310,9 @@ def _create_player_pod(
     owner_references: list[client.V1OwnerReference],
 ) -> None:
     command, args = _command_args(player.run)
+    bedrock_enablement = resolve_player_bedrock(policy_secret_env)
     player_env = dict(player.env) | dict(policy_secret_env)
-    if _uses_bedrock(policy_secret_env):
+    if bedrock_enablement.enabled:
         bedrock_region = os.environ["COWORLD_BEDROCK_REGION"]
         player_env = {"AWS_REGION": bedrock_region, "AWS_DEFAULT_REGION": bedrock_region} | player_env
     player_ws_url = _player_service_ws_url(service_name, slot, token)
@@ -343,7 +345,7 @@ def _create_player_pod(
         ),
         spec=client.V1PodSpec(
             restart_policy="Never",
-            service_account_name=_player_service_account_name(policy_secret_env),
+            service_account_name=_player_service_account_name(bedrock_enablement),
             node_selector=_workload_node_selector(),
             tolerations=_workload_tolerations(),
             containers=[
@@ -393,14 +395,10 @@ def _player_artifact_upload_url(slot: int) -> str | None:
     return json.loads(raw).get(str(slot))
 
 
-def _player_service_account_name(policy_secret_env: Mapping[str, str]) -> str | None:
-    if _uses_bedrock(policy_secret_env):
+def _player_service_account_name(bedrock_enablement: BedrockEnablement) -> str | None:
+    if bedrock_enablement.enabled:
         return _BEDROCK_SERVICE_ACCOUNT
     return None
-
-
-def _uses_bedrock(policy_secret_env: Mapping[str, str]) -> bool:
-    return "USE_BEDROCK" in policy_secret_env and policy_secret_env["USE_BEDROCK"] == "true"
 
 
 def _policy_secrets_from_env() -> dict[int, dict[str, str]]:
