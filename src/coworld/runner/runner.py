@@ -46,6 +46,7 @@ LOCAL_PORT_ENV_PREFIX = "COWORLD_LOCAL_PORT_"
 LOCAL_PORTS_JSON_ENV_VAR = "COWORLD_LOCAL_PORTS_JSON"
 LOCAL_PORT_HOST = "127.0.0.1"
 MAX_TCP_PORT = 65535
+DEFAULT_PLAYER_EXIT_TIMEOUT_SECONDS = 30.0
 
 # Hosted Coworld manifests store images as backend container-image ids: the "img_" prefix followed by a
 # UUID (see ContainerImageId / PrefixedId in metta-app-backend-client). The backend substitutes a pullable
@@ -718,10 +719,14 @@ def _raise_if_local_player_exited(
 
 
 def _wait_for_player_exit(
-    player_process: subprocess.Popen[str], stderr_path: Path, *, failed_policy_index: int
+    player_process: subprocess.Popen[str],
+    stderr_path: Path,
+    *,
+    failed_policy_index: int,
+    timeout_seconds: float = DEFAULT_PLAYER_EXIT_TIMEOUT_SECONDS,
 ) -> None:
     try:
-        return_code = player_process.wait(timeout=30)
+        return_code = player_process.wait(timeout=timeout_seconds)
     except subprocess.TimeoutExpired as exc:
         raise RunnerEpisodeError(
             f"Timed out waiting for player container to exit.\n{_tail(stderr_path)}",

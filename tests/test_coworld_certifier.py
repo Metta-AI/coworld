@@ -1156,7 +1156,7 @@ def test_play_coworld_starts_certification_player_containers(tmp_path: Path, mon
     popen_commands: list[list[str]] = []
     network_commands: list[list[str]] = []
     rm_commands: list[list[str]] = []
-    waited_players: list[Path] = []
+    waited_players: list[tuple[Path, int, float]] = []
 
     class FakeProcess:
         def wait(self) -> int:
@@ -1171,8 +1171,14 @@ def test_play_coworld_starts_certification_player_containers(tmp_path: Path, mon
     ) -> None:
         pass
 
-    def fake_wait_for_player_exit(player_process: subprocess.Popen[str], stderr_path: Path) -> None:
-        waited_players.append(stderr_path)
+    def fake_wait_for_player_exit(
+        player_process: subprocess.Popen[str],
+        stderr_path: Path,
+        *,
+        failed_policy_index: int,
+        timeout_seconds: float,
+    ) -> None:
+        waited_players.append((stderr_path, failed_policy_index, timeout_seconds))
 
     def fake_subprocess_run(cmd, **kwargs):
         if cmd[:2] == ["docker", "network"]:
@@ -1195,6 +1201,7 @@ def test_play_coworld_starts_certification_player_containers(tmp_path: Path, mon
     result = play_coworld(
         coworld_manifest_path,
         workspace=tmp_path / "play-workspace",
+        player_exit_timeout_seconds=42.0,
         on_ready=ready_sessions.append,
     )
 
@@ -1226,7 +1233,7 @@ def test_play_coworld_starts_certification_player_containers(tmp_path: Path, mon
         "-m",
         "unit_test.player",
     ]
-    assert waited_players == [tmp_path / "play-workspace" / "logs" / "policy_agent_0.log"]
+    assert waited_players == [(tmp_path / "play-workspace" / "logs" / "policy_agent_0.log", 0, 42.0)]
     assert ["docker", "rm", "-f", "coworld-play-player-session-1-0"] in rm_commands
     assert ["docker", "rm", "-f", "coworld-play-game-session-1"] in rm_commands
 

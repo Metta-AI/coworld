@@ -21,6 +21,7 @@ from coworld.certifier import (
 from coworld.runner.runner import (
     CONFIG_ENV_VAR,
     CONTAINER_WORKDIR,
+    DEFAULT_PLAYER_EXIT_TIMEOUT_SECONDS,
     GAME_HOST,
     GAME_HOST_ENV_VAR,
     GAME_PORT,
@@ -119,6 +120,7 @@ def play_coworld(
     secret_env: Mapping[str, str] | None = None,
     workspace: Path | None = None,
     timeout_seconds: float = 3600.0,
+    player_exit_timeout_seconds: float = DEFAULT_PLAYER_EXIT_TIMEOUT_SECONDS,
     on_ready: Callable[[PlaySession], None],
 ) -> PlayResult:
     package = load_coworld_package(manifest_path)
@@ -246,8 +248,13 @@ def play_coworld(
             on_ready(session)
             _wait_for_game_exit(game_process, artifacts.game_stderr_path, timeout_seconds=timeout_seconds)
 
-            for player_process, player_log_path in player_processes:
-                _wait_for_player_exit(player_process, player_log_path)
+            for slot, (player_process, player_log_path) in enumerate(player_processes):
+                _wait_for_player_exit(
+                    player_process,
+                    player_log_path,
+                    failed_policy_index=slot,
+                    timeout_seconds=player_exit_timeout_seconds,
+                )
     finally:
         for container_name in player_containers:
             subprocess.run(["docker", "rm", "-f", container_name], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)

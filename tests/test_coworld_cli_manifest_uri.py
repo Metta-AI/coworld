@@ -308,6 +308,8 @@ def test_coworld_play_accepts_player_image_override(monkeypatch: MonkeyPatch, tm
             "python",
             "--run",
             "/app/player.py",
+            "--player-exit-timeout-seconds",
+            "45",
             "--no-open-browser",
         ],
     )
@@ -317,6 +319,7 @@ def test_coworld_play_accepts_player_image_override(monkeypatch: MonkeyPatch, tm
     assert kwargs["variant_id"] == "default"
     assert kwargs["player_images"] == ["my-player:latest"]
     assert kwargs["player_run"] == ["python", "/app/player.py"]
+    assert kwargs["player_exit_timeout_seconds"] == 45.0
     assert kwargs["episode_request_path"] is None
 
 

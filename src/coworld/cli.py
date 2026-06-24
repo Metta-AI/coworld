@@ -25,7 +25,7 @@ from coworld.config import DEFAULT_OPTIMIZER_PORT, DEFAULT_SUBMIT_SERVER
 from coworld.manifest_uri import materialized_manifest_path, materialized_replay_path
 from coworld.optimizer.runtime import OptimizerSetupError, run_optimizer_session
 from coworld.play import PlaySession, ReplaySession, _resolve_bedrock_aws_env, play_coworld, replay_coworld
-from coworld.runner.runner import EpisodeArtifacts, run_coworld_episode
+from coworld.runner.runner import DEFAULT_PLAYER_EXIT_TIMEOUT_SECONDS, EpisodeArtifacts, run_coworld_episode
 from coworld.submit import submit_policy_to_league_cmd
 from coworld.tournament_cli import register_tournament_commands
 from coworld.types import StepResult, TranscriptStep
@@ -322,6 +322,14 @@ def play(
         ),
     ] = None,
     timeout_seconds: Annotated[float, typer.Option("--timeout-seconds", min=1.0, help="Episode timeout.")] = 3600.0,
+    player_exit_timeout_seconds: Annotated[
+        float,
+        typer.Option(
+            "--player-exit-timeout-seconds",
+            min=1.0,
+            help="Seconds to wait for player containers to exit after the game ends.",
+        ),
+    ] = DEFAULT_PLAYER_EXIT_TIMEOUT_SECONDS,
     use_bedrock: Annotated[
         bool,
         typer.Option(
@@ -379,6 +387,7 @@ def play(
             aws_region=aws_region,
             secret_env=parsed_secret_env or None,
             timeout_seconds=timeout_seconds,
+            player_exit_timeout_seconds=player_exit_timeout_seconds,
             on_ready=on_ready,
         )
     typer.echo(f"Artifacts: {result.session.artifacts.workspace}")
