@@ -137,7 +137,6 @@ class RoundListPublic(CoworldAPIModel):
 class EnvConfigPublic(CoworldAPIModel):
     id: UUID
     name: str | None = None
-    compat_version: str | None = None
     num_agents: int | None = None
     created_at: datetime
 
