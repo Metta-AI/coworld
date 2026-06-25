@@ -19,6 +19,14 @@ from kubernetes import client, config
 from kubernetes.client.rest import ApiException
 
 from coworld.runner.bedrock_enablement import BedrockEnablement, resolve_player_bedrock
+from coworld.runner.bedrock_sidecar_wiring import (
+    RESERVED_SIDECAR_APP_ENV,
+    BedrockSidecarAttribution,
+    bedrock_app_endpoint_env,
+    bedrock_sidecar_token_volume,
+    build_bedrock_sidecar,
+    resolve_image_attribution_key,
+)
 from coworld.runner.io import RunnerEpisodeError, RunnerError, read_data, upload_data
 from coworld.runner.phase_timings import EpisodePhaseTimings
 from coworld.runner.runner import (
@@ -41,6 +49,16 @@ STATE_PATH = WORKDIR / "state.json"
 GAME_PORT = int(os.environ.get("COGAME_PORT", "8080"))
 HEALTH_PORT = int(os.environ.get("COWORLD_WORKER_HEALTH_PORT", "9090"))
 _BEDROCK_SERVICE_ACCOUNT = "episode-runner"
+_DIRECT_BEDROCK_APP_ENV = {
+    "USE_BEDROCK",
+    "AWS_REGION",
+    "AWS_DEFAULT_REGION",
+    "AWS_ACCESS_KEY_ID",
+    "AWS_SECRET_ACCESS_KEY",
+    "AWS_SESSION_TOKEN",
+    "AWS_WEB_IDENTITY_TOKEN_FILE",
+    "AWS_ROLE_ARN",
+}
 DEFAULT_PLAYER_CPU_REQUEST = "2"
 DEFAULT_PLAYER_MEMORY_REQUEST = "2Gi"
 _PLAYER_WAITING_POLICY_FAILURE_REASONS = {
@@ -312,7 +330,23 @@ def _create_player_pod(
     command, args = _command_args(player.run)
     bedrock_enablement = resolve_player_bedrock(policy_secret_env)
     player_env = dict(player.env) | dict(policy_secret_env)
-    if bedrock_enablement.enabled:
+    bedrock_sidecar_enabled = os.environ.get("BEDROCK_SIDECAR_ENABLED") == "true" and bedrock_enablement.enabled
+    if bedrock_sidecar_enabled:
+        bedrock_sidecar_port = int(os.environ["BEDROCK_SIDECAR_PORT"])
+        # Strip both the direct-access env and the reserved sidecar keys from the user's
+        # policy/secret env, then apply the sidecar endpoint env LAST so it wins. Otherwise a
+        # policy that pinned AWS_ENDPOINT_URL_BEDROCK_RUNTIME would bypass the sidecar.
+        player_env = {
+            key: value
+            for key, value in player_env.items()
+            if key not in _DIRECT_BEDROCK_APP_ENV and key not in RESERVED_SIDECAR_APP_ENV
+        }
+        endpoint_env = {
+            ev.name: ev.value
+            for ev in bedrock_app_endpoint_env(bedrock_sidecar_port, os.environ["COWORLD_BEDROCK_REGION"])
+        }
+        player_env = player_env | endpoint_env
+    elif bedrock_enablement.enabled:
         bedrock_region = os.environ["COWORLD_BEDROCK_REGION"]
         player_env = {"AWS_REGION": bedrock_region, "AWS_DEFAULT_REGION": bedrock_region} | player_env
     player_ws_url = _player_service_ws_url(service_name, slot, token)
@@ -331,11 +365,53 @@ def _create_player_pod(
     if metadata_base:
         slot_metadata = json.dumps({**json.loads(metadata_base), "slot": str(slot)})
         metadata_env_vars = [client.V1EnvVar(name="BEDROCK_REQUEST_METADATA", value=slot_metadata)]
+    pod_annotations = {"karpenter.sh/do-not-disrupt": "true"}
+    pod_volumes: list[client.V1Volume] | None = None
+    containers: list[client.V1Container] = [
+        client.V1Container(
+            name="player",
+            image=player.image,
+            image_pull_policy=_player_image_pull_policy(player.image),
+            command=command,
+            args=args,
+            env=[
+                *_env_vars(player_env),
+                client.V1EnvVar(name="COWORLD_PLAYER_WS_URL", value=player_ws_url),
+                client.V1EnvVar(name="COGAMES_ENGINE_WS_URL", value=player_ws_url),
+                *artifact_env_vars,
+                *metadata_env_vars,
+            ],
+            resources=client.V1ResourceRequirements(
+                requests={"cpu": player_cpu_request, "memory": player_memory_request}
+            ),
+        )
+    ]
+    # Native sidecar: an initContainer with restartPolicy=Always, NOT a regular container —
+    # a regular container running the long-lived proxy would keep this restartPolicy=Never pod
+    # Running after the player exits instead of letting it reach a terminal phase.
+    init_containers: list[client.V1Container] | None = None
+    if bedrock_sidecar_enabled:
+        pod_annotations["eks.amazonaws.com/skip-containers"] = "player"
+        pod_volumes = [bedrock_sidecar_token_volume()]
+        init_containers = [
+            build_bedrock_sidecar(
+                attribution=BedrockSidecarAttribution(
+                    image_digest=resolve_image_attribution_key(player.image),
+                    episode_request_id=job_id,
+                    role="player",
+                    slot=str(slot),
+                ),
+                region=os.environ["COWORLD_BEDROCK_REGION"],
+                listen_port=bedrock_sidecar_port,
+                upstream_endpoint=os.environ.get("BEDROCK_SIDECAR_UPSTREAM_ENDPOINT") or None,
+                image=os.environ["BEDROCK_SIDECAR_IMAGE"],
+            )
+        ]
     pod = client.V1Pod(
         metadata=client.V1ObjectMeta(
             name=name,
             namespace=namespace,
-            annotations={"karpenter.sh/do-not-disrupt": "true"},
+            annotations=pod_annotations,
             labels={
                 "coworld-job-id": job_id,
                 "coworld-component": "player",
@@ -346,27 +422,12 @@ def _create_player_pod(
         spec=client.V1PodSpec(
             restart_policy="Never",
             service_account_name=_player_service_account_name(bedrock_enablement),
+            automount_service_account_token=False if bedrock_sidecar_enabled else None,
             node_selector=_workload_node_selector(),
             tolerations=_workload_tolerations(),
-            containers=[
-                client.V1Container(
-                    name="player",
-                    image=player.image,
-                    image_pull_policy=_player_image_pull_policy(player.image),
-                    command=command,
-                    args=args,
-                    env=[
-                        *_env_vars(player_env),
-                        client.V1EnvVar(name="COWORLD_PLAYER_WS_URL", value=player_ws_url),
-                        client.V1EnvVar(name="COGAMES_ENGINE_WS_URL", value=player_ws_url),
-                        *artifact_env_vars,
-                        *metadata_env_vars,
-                    ],
-                    resources=client.V1ResourceRequirements(
-                        requests={"cpu": player_cpu_request, "memory": player_memory_request}
-                    ),
-                )
-            ],
+            volumes=pod_volumes,
+            init_containers=init_containers,
+            containers=containers,
         ),
     )
     core_v1.create_namespaced_pod(namespace=namespace, body=pod)

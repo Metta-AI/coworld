@@ -8,6 +8,7 @@ import zlib
 from io import BytesIO
 from pathlib import Path
 from types import SimpleNamespace
+from typing import Any
 
 import pytest
 from kubernetes import client
@@ -16,6 +17,11 @@ from kubernetes.client.rest import ApiException
 from coworld.runner import io as runner_io
 from coworld.runner import kubernetes_runner
 from coworld.runner import runner as runner_module
+from coworld.runner.bedrock_sidecar_wiring import (
+    BEDROCK_SIDECAR_CONTAINER_NAME,
+    BEDROCK_SIDECAR_TOKEN_FILE,
+    BEDROCK_SIDECAR_TOKEN_VOLUME_NAME,
+)
 from coworld.runner.kubernetes_runner import (
     _collect_logs,
     _player_image_pull_policy,
@@ -1075,6 +1081,7 @@ def test_create_player_pod_injects_policy_secret_env(monkeypatch):
     core_v1 = SimpleNamespace(
         create_namespaced_pod=lambda *, namespace, body: created.update({"namespace": namespace, "body": body})
     )
+    monkeypatch.delenv("BEDROCK_SIDECAR_ENABLED", raising=False)
     monkeypatch.setenv("COWORLD_WORKLOAD_TYPE", "jobs")
     monkeypatch.setenv("COWORLD_CAPACITY_TYPE", "on-demand")
     monkeypatch.setenv("COWORLD_BEDROCK_REGION", "us-east-1")
@@ -1107,8 +1114,9 @@ def test_create_player_pod_injects_policy_secret_env(monkeypatch):
         [],
     )
 
-    pod = created["body"]
-    container = pod.spec.containers[0]
+    pod: Any = created["body"]
+    container: Any = pod.spec.containers[0]
+    assert [container.name for container in pod.spec.containers] == ["player"]
     env = {env_var.name: env_var.value for env_var in container.env}
     assert env["PUBLIC_SETTING"] == "visible"
     assert env["ANTHROPIC_API_KEY"] == "sk-ant-test"
@@ -1116,6 +1124,7 @@ def test_create_player_pod_injects_policy_secret_env(monkeypatch):
     assert env["BEDROCK_MODEL"] == "us.amazon.nova-micro-v1:0"
     assert env["AWS_REGION"] == "us-east-1"
     assert env["AWS_DEFAULT_REGION"] == "us-east-1"
+    assert "AWS_ENDPOINT_URL_BEDROCK_RUNTIME" not in env
     assert env["COWORLD_PLAYER_WS_URL"] == "ws://game-service:8080/player?slot=0&token=slot-token"
     assert env["COGAMES_ENGINE_WS_URL"] == "ws://game-service:8080/player?slot=0&token=slot-token"
     # No PLAYER_ARTIFACT_UPLOAD_URLS set, so the player gets no artifact upload URL.
@@ -1124,6 +1133,106 @@ def test_create_player_pod_injects_policy_secret_env(monkeypatch):
     assert pod.metadata.annotations == {"karpenter.sh/do-not-disrupt": "true"}
     assert pod.spec.node_selector == {"workload-type": "jobs", "karpenter.sh/capacity-type": "on-demand"}
     assert pod.spec.service_account_name == "episode-runner"
+    assert pod.spec.volumes is None
+    assert pod.spec.automount_service_account_token is None
+
+
+def test_create_player_pod_with_bedrock_sidecar_inverts_bedrock_access(monkeypatch):
+    created: dict[str, object] = {}
+    core_v1 = SimpleNamespace(create_namespaced_pod=lambda *, namespace, body: created.update({"body": body}))
+    monkeypatch.setenv("COWORLD_BEDROCK_REGION", "us-west-2")
+    monkeypatch.setenv("BEDROCK_SIDECAR_ENABLED", "true")
+    monkeypatch.setenv("BEDROCK_SIDECAR_IMAGE", "ghcr.io/metta-ai/bedrock-sidecar:latest")
+    monkeypatch.setenv("BEDROCK_SIDECAR_PORT", "19191")
+    monkeypatch.setenv("BEDROCK_SIDECAR_UPSTREAM_ENDPOINT", "http://bedrock.local")
+    player = PlayerLaunchSpec(
+        image="ghcr.io/metta-ai/players/paintbot@sha256:player123",
+        run=(),
+        env={
+            "PUBLIC_SETTING": "visible",
+            "AWS_REGION": "from-player-env",
+            "AWS_ACCESS_KEY_ID": "from-player-env",
+        },
+    )
+
+    assert kubernetes_runner.resolve_image_attribution_key("ghcr.io/metta-ai/players/paintbot:latest") == (
+        "ghcr.io/metta-ai/players/paintbot:latest"
+    )
+
+    kubernetes_runner._create_player_pod(
+        core_v1,
+        "jobs",
+        "job-player-0",
+        0,
+        "slot-token",
+        player,
+        {
+            "USE_BEDROCK": "true",
+            "BEDROCK_MODEL": "us.amazon.nova-micro-v1:0",
+            "AWS_DEFAULT_REGION": "from-policy-secret",
+            "AWS_SECRET_ACCESS_KEY": "from-policy-secret",
+            "AWS_SESSION_TOKEN": "from-policy-secret",
+            "AWS_WEB_IDENTITY_TOKEN_FILE": "/tmp/token",
+            "AWS_ROLE_ARN": "arn:aws:iam::123456789012:role/direct",
+        },
+        "job-id",
+        "game-service",
+        "2",
+        "2Gi",
+        [],
+    )
+
+    pod: Any = created["body"]
+    assert pod.metadata.annotations == {
+        "karpenter.sh/do-not-disrupt": "true",
+        "eks.amazonaws.com/skip-containers": "player",
+    }
+    assert pod.spec.service_account_name == "episode-runner"
+    assert pod.spec.automount_service_account_token is False
+    # The player app is the only regular container; the sidecar is a native sidecar
+    # (initContainer with restartPolicy=Always) so the restartPolicy=Never pod can still finish.
+    assert [container.name for container in pod.spec.containers] == ["player"]
+    assert [c.name for c in pod.spec.init_containers] == [BEDROCK_SIDECAR_CONTAINER_NAME]
+    player_container: Any = pod.spec.containers[0]
+    sidecar: Any = pod.spec.init_containers[0]
+    assert sidecar.restart_policy == "Always"
+
+    env = {env_var.name: env_var.value for env_var in player_container.env}
+    assert env["PUBLIC_SETTING"] == "visible"
+    assert env["BEDROCK_MODEL"] == "us.amazon.nova-micro-v1:0"
+    # The reserved sidecar env wins over the policy's own values: the user set AWS_REGION /
+    # AWS_ACCESS_KEY_ID in their env, but they're overridden by the placeholder creds and the
+    # localhost endpoint — a policy cannot bypass or break the sidecar.
+    assert env["AWS_ENDPOINT_URL_BEDROCK_RUNTIME"] == "http://127.0.0.1:19191"
+    assert env["AWS_ACCESS_KEY_ID"] == "bedrock-sidecar"
+    assert env["AWS_SECRET_ACCESS_KEY"] == "bedrock-sidecar"
+    assert env["AWS_REGION"] == "us-west-2"
+    assert env["AWS_DEFAULT_REGION"] == "us-west-2"
+    # Direct-access / real-identity keys the policy supplied are stripped from the app entirely.
+    assert "USE_BEDROCK" not in env
+    assert "AWS_SESSION_TOKEN" not in env
+    assert "AWS_WEB_IDENTITY_TOKEN_FILE" not in env
+    assert "AWS_ROLE_ARN" not in env
+    assert env["COWORLD_PLAYER_WS_URL"] == "ws://game-service:8080/player?slot=0&token=slot-token"
+    assert env["COGAMES_ENGINE_WS_URL"] == "ws://game-service:8080/player?slot=0&token=slot-token"
+    assert not player_container.volume_mounts
+
+    volumes: dict[str, Any] = {volume.name: volume for volume in pod.spec.volumes}
+    assert list(volumes) == [BEDROCK_SIDECAR_TOKEN_VOLUME_NAME]
+    assert [mount.name for mount in sidecar.volume_mounts] == [BEDROCK_SIDECAR_TOKEN_VOLUME_NAME]
+    sidecar_env = {env_var.name: env_var.value for env_var in sidecar.env}
+    assert sidecar_env["BEDROCK_SIDECAR_LISTEN_PORT"] == "19191"
+    assert sidecar_env["BEDROCK_SIDECAR_REGION"] == "us-west-2"
+    assert sidecar_env["BEDROCK_SIDECAR_UPSTREAM_ENDPOINT"] == "http://bedrock.local"
+    assert sidecar_env["BEDROCK_SIDECAR_IMAGE_DIGEST"] == "sha256:player123"
+    assert sidecar_env["BEDROCK_SIDECAR_EPISODE_REQUEST_ID"] == "job-id"
+    assert sidecar_env["BEDROCK_SIDECAR_ROLE"] == "player"
+    assert sidecar_env["BEDROCK_SIDECAR_SLOT"] == "0"
+    assert sidecar_env["AWS_WEB_IDENTITY_TOKEN_FILE"] == BEDROCK_SIDECAR_TOKEN_FILE
+
+    token_projection = volumes[BEDROCK_SIDECAR_TOKEN_VOLUME_NAME].projected.sources[0].service_account_token
+    assert token_projection.audience == "sts.amazonaws.com"
+    assert token_projection.path == "token"
 
 
 def test_create_player_pod_forwards_artifact_upload_url_for_its_slot(monkeypatch):
