@@ -21,7 +21,9 @@ genrule(
         "src/coworld/examples/paintarena/Dockerfile",
         "src/coworld/examples/paintarena/__init__.py",
     ] + glob([
+        "src/coworld/examples/paintarena/diagnoser/**",
         "src/coworld/examples/paintarena/game/**",
+        "src/coworld/examples/paintarena/grader/**",
         "src/coworld/examples/paintarena/optimizer/**",
         "src/coworld/examples/paintarena/player/**",
         "src/coworld/examples/paintarena/reporter/**",
@@ -108,6 +110,12 @@ filegroup(
     visibility = ["//packages/coworld/tests:__pkg__"],
 )
 
+filegroup(
+    name = "package_metadata_files",
+    srcs = ["pyproject.toml"],
+    visibility = ["//packages/coworld/tests:__pkg__"],
+)
+
 py_library(
     name = "coworld_core",
     srcs = _CORE_SRCS,
@@ -132,7 +140,7 @@ py_library(
     name = "coworld",
     srcs = glob(
         ["src/coworld/**/*.py"],
-        exclude = _CORE_SRCS,
+        exclude = _CORE_SRCS + ["src/coworld/templates/**/*.py"],
     ),
     # Runtime data for the CLI and the example servers. Library
     # consumers don't need any of this; they get `py.typed` via
@@ -142,10 +150,12 @@ py_library(
             "src/coworld/examples/**/*.py",
             "src/coworld/examples/**/*.json",
             "src/coworld/examples/**/*.html",
+            "src/coworld/examples/**/*.md",
             # *.yaml + Dockerfile* needed by test_canonical_worlds, which
             # asserts the paintarena example's compose.yaml.is_file().
             "src/coworld/examples/**/*.yaml",
             "src/coworld/examples/**/Dockerfile*",
+            "src/coworld/templates/**/*",
         ],
         allow_empty = True,
     ),

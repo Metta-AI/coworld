@@ -1,8 +1,8 @@
 # Paint Arena Coworld Example
 
 Paint Arena is the smallest complete Coworld example in this package. It has one game image and one bundled player
-entrypoint. The same image also carries reference reporter and optimizer role entrypoints so the manifest shows the
-full Coworld role shape without extra build contexts.
+entrypoint. The same image also carries reference reporter, grader, diagnoser, and optimizer role entrypoints so the
+manifest shows the full Coworld role shape without extra build contexts.
 
 The game is two-player and tick-based. Each player moves around a grid and paints the tile they are standing on.
 Painting overwrites the previous owner. Final scores are the number of tiles painted with each player's color.
@@ -51,6 +51,13 @@ This is the same local smoke-test shape a league player would use with their own
 
 The manifest declares `paint-arena-reference-optimizer`, a minimal optimizer role that writes a deterministic JSON plan
 from the Coworld manifest and optional prior report, grader, and diagnoser artifact URI lists.
+
+## Reference Grader And Diagnoser
+
+The manifest declares `paint-arena-grader` and `paint-arena-diagnoser` as deterministic one-shot supporting runnables.
+Both consume an episode bundle. The grader writes a JSON score equal to absolute painted-tile margin divided by board
+area. The diagnoser also receives `COGAME_TARGET_POLICY_URI` and writes a zip containing Markdown advice plus structured
+findings.
 
 ## Certify
 

@@ -1,0 +1,8 @@
+{
+  "id": "my-commissioner",
+  "type": "commissioner",
+  "name": "My Commissioner",
+  "description": "Schedules Coworld league episodes and ranks policy memberships.",
+  "image": "my-commissioner:latest",
+  "run": ["python", "/app/commissioner.py"]
+}

@@ -114,7 +114,8 @@ source of truth. They are generated docs and `$schema` targets; `test_types.py` 
 ## Package Data Gotchas
 
 - Versioning uses `setuptools_scm` from `coworld-v*` git tags (`fallback_version = "0.0.0"`).
-- `pyproject.toml` deliberately excludes Dockerfiles and example READMEs from wheel package data. Non-runtime example
-  edits should not change wheel content or Bazel action keys for downstream `@pyenv` consumers.
+- `pyproject.toml` deliberately ships `coworld/templates/**/*` and the complete Paint Arena example surface, including
+  Dockerfile and README assets. Treat those files as public package data because `metta publish coworld` includes them
+  in the wheel.
 - Antfarm hosts Coworld game containers; keep `packages/antfarm/README.md` aligned when the game-container contract
   changes.

@@ -386,8 +386,10 @@ def test_paintarena_template_declares_all_viability_role_sections() -> None:
         assert isinstance(paintarena[section], list)
 
     assert [role["id"] for role in paintarena["commissioner"]] == ["default-commissioner"]
-    assert paintarena["grader"] == []
-    assert paintarena["diagnoser"] == []
+    assert [role["type"] for role in paintarena["grader"]] == ["grader"]
+    assert [role["id"] for role in paintarena["grader"]] == ["paint-arena-grader"]
+    assert [role["type"] for role in paintarena["diagnoser"]] == ["diagnoser"]
+    assert [role["id"] for role in paintarena["diagnoser"]] == ["paint-arena-diagnoser"]
     assert [role["type"] for role in paintarena["reporter"]] == ["reporter", "reporter"]
     assert [role["id"] for role in paintarena["reporter"]] == [
         "paint-arena-summarizer",
@@ -410,7 +412,7 @@ def test_paintarena_example_keeps_template_and_worlds_build_pointer() -> None:
         WORLDS / "paintarena" / "compose.yaml"
     ).read_text(encoding="utf-8").replace("../../packages/coworld/src/coworld/examples/paintarena", ".")
     dockerfile = (PAINTARENA_EXAMPLE / "Dockerfile").read_text(encoding="utf-8")
-    for package_dir in ("shared", "game", "player", "reporter", "optimizer"):
+    for package_dir in ("shared", "game", "player", "reporter", "grader", "diagnoser", "optimizer"):
         assert f"COPY {package_dir} /app/coworld/examples/paintarena/{package_dir}" in dockerfile
 
 

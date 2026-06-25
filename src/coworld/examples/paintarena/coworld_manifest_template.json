@@ -181,8 +181,28 @@
       "run": ["python", "-m", "coworld.examples.paintarena.reporter.stats_reporter"]
     }
   ],
-  "grader": [],
-  "diagnoser": [],
+  "grader": [
+    {
+      "id": "paint-arena-grader",
+      "type": "grader",
+      "name": "Paint Arena Grader",
+      "description": "Scores a PaintArena episode as the absolute painted-tile margin divided by board area.",
+      "source_url": "https://github.com/Metta-AI/coworld/tree/68257d7b450fb8013ed496538221cd2bd423e140/src/coworld/examples/paintarena/grader",
+      "image": "{{PAINTARENA_IMAGE}}",
+      "run": ["python", "-m", "coworld.examples.paintarena.grader.paint_arena_grader"]
+    }
+  ],
+  "diagnoser": [
+    {
+      "id": "paint-arena-diagnoser",
+      "type": "diagnoser",
+      "name": "Paint Arena Diagnoser",
+      "description": "Reads a PaintArena episode bundle plus target policy reference and emits a deterministic Markdown diagnosis zip.",
+      "source_url": "https://github.com/Metta-AI/coworld/tree/68257d7b450fb8013ed496538221cd2bd423e140/src/coworld/examples/paintarena/diagnoser",
+      "image": "{{PAINTARENA_IMAGE}}",
+      "run": ["python", "-m", "coworld.examples.paintarena.diagnoser.paint_arena_diagnoser"]
+    }
+  ],
   "optimizer": [
     {
       "id": "paint-arena-reference-optimizer",

@@ -70,8 +70,10 @@ the current reference docs.
 - Local and Kubernetes runner code for executing Coworld episodes.
 - Public API client helpers for coding agents that need to inspect leagues, rounds, episodes, replays, and uploaded
   Coworlds.
+- Installable starter templates under `coworld/templates` for game, player, commissioner, reporter, grader, diagnoser,
+  and optimizer roles.
 - The [Paint Arena example](src/coworld/examples/paintarena/README.md), which is the canonical example used by this
-  package documentation.
+  package documentation and includes concrete runnables for every Coworld role.
 
 Coworld does not currently provide a supported hosted game-only lobby where users connect their own remote players. Use
 `coworld play` for local browser play, or submit policies to leagues for fully hosted tournament episodes where the
@@ -91,6 +93,7 @@ progress:
 | Implement a game runnable | [Game role](src/coworld/docs/roles/GAME.md) |
 | Implement or submit a player | [Player role](src/coworld/docs/roles/PLAYER.md) and [Coworld cookbook](COOKBOOK.md) |
 | Implement supporting roles | [Reporter](src/coworld/docs/roles/REPORTER.md), [Commissioner](src/coworld/docs/roles/COMMISSIONER.md), [Grader](src/coworld/docs/roles/GRADER.md), [Diagnoser](src/coworld/docs/roles/DIAGNOSER.md), and [Optimizer](src/coworld/docs/roles/OPTIMIZER.md) |
+| Start from installable templates | `coworld/templates` in the installed package |
 | Understand artifact contracts | [Artifact reference](src/coworld/docs/artifacts/README.md) |
 | Consume episode artifacts as a unit | [Episode bundle reference](src/coworld/docs/artifacts/EPISODE_BUNDLE.md) |
 | Understand the episode lifecycle | [Lifecycle overview](src/coworld/docs/LIFECYCLE.md) |

@@ -1,0 +1,9 @@
+{
+  "id": "my-optimizer",
+  "type": "optimizer",
+  "name": "My Optimizer",
+  "description": "Game-specific optimizer workbench or starter plan writer.",
+  "image": "my-optimizer:latest",
+  "repository_url": "https://github.com/your-org/your-optimizer",
+  "run": ["python", "/app/optimizer_plan.py"]
+}

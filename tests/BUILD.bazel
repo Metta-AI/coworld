@@ -29,6 +29,7 @@ pyproject_test(
         "test_coworld_cookbook": {"data": ["//packages/coworld:docs_files"]},
         "test_coworld_artifact_docs": {"data": ["//packages/coworld:docs_files"]},
         "test_coworld_certify_docs": {"data": ["//packages/coworld:docs_files"]},
+        "test_coworld_templates": {"data": ["//packages/coworld:package_metadata_files"]},
         "test_types": {"data": ["//packages/coworld:generated_schema_files"]},
     },
     # `coworld` isn't in .ruff.toml's known-first-party (third-party from

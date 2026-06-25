@@ -4,7 +4,8 @@ This page is the conceptual home for Coworld documentation: what a complete Cowo
 manifest describes those roles, and how an episode turns into artifacts that player builders can learn from.
 
 For usage-oriented guidance, use the package [README](../../../README.md) and the [Coworld cookbook](../../../COOKBOOK.md).
-The package documentation uses [Paint Arena](../examples/paintarena/README.md) as its canonical example.
+The package documentation uses [Paint Arena](../examples/paintarena/README.md) as its canonical example. Installable
+starter templates for every role ship under `coworld/templates`.
 
 ## What Is A Complete Coworld?
 
