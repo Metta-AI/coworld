@@ -255,6 +255,13 @@ def build(
             help="Resolve mutable registry image refs such as ghcr.io/name:latest to immutable digest refs.",
         ),
     ] = False,
+    source_context: Annotated[
+        list[Path] | None,
+        typer.Option(
+            "--source-context",
+            help="Local git checkout used to pin matching GitHub source_url refs to immutable commits.",
+        ),
+    ] = None,
 ) -> None:
     manifest_path = build_coworld_manifest(
         compose_file,
@@ -262,6 +269,7 @@ def build(
         version,
         output_path,
         resolve_mutable_image_refs=resolve_mutable_images,
+        source_contexts=tuple(source_context or ()),
     )
     typer.echo(f"Built Coworld manifest: {manifest_path}")
 
@@ -277,6 +285,13 @@ def resolve_and_upload(
     output_path: Annotated[Path, typer.Argument(help="Output path for the resolved coworld_manifest.json.")],
     server: Annotated[str, typer.Option("--server", help="Observatory API server URL.")] = DEFAULT_SUBMIT_SERVER,
     timeout_seconds: Annotated[float, typer.Option("--timeout-seconds", min=1.0)] = 60.0,
+    source_context: Annotated[
+        list[Path] | None,
+        typer.Option(
+            "--source-context",
+            help="Local git checkout used to pin matching GitHub source_url refs to immutable commits.",
+        ),
+    ] = None,
 ) -> None:
     manifest_path = build_coworld_manifest(
         compose_file,
@@ -284,6 +299,7 @@ def resolve_and_upload(
         version,
         output_path,
         resolve_mutable_image_refs=True,
+        source_contexts=tuple(source_context or ()),
     )
     typer.echo(f"Built Coworld manifest: {manifest_path}")
     upload_coworld_cmd(

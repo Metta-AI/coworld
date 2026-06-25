@@ -8,7 +8,7 @@ from pathlib import Path
 import pytest
 from typer.testing import CliRunner
 
-from coworld.bundle import build_coworld_manifest
+from coworld.bundle import _github_source_contexts, _pinned_source_url, build_coworld_manifest
 from coworld.cli import app
 
 
@@ -306,7 +306,7 @@ def test_build_coworld_manifest_resolves_mutable_registry_image_refs(
         role_images={
             "commissioner": "{{COMMISSIONER_IMAGE}}",
             "reporter": "{{REPORTER_IMAGE}}",
-            "grader": "{{GRADER_IMAGE}}",
+            "grader": "ghcr.io/metta-ai/graders-default:latest",
         },
     )
     (tmp_path / "compose.yaml").write_text("services: {}\n", encoding="utf-8")
@@ -319,14 +319,22 @@ def test_build_coworld_manifest_resolves_mutable_registry_image_refs(
                 "player": "player-runtime:latest",
                 "commissioner": "ghcr.io/metta-ai/commissioners-default:latest",
                 "reporter": "ghcr.io/metta-ai/reporters-default@sha256:cccc",
-                "grader": "ghcr.io/metta-ai/graders-default@sha256:dddd",
+                "grader": "grader-runtime:latest",
             },
             {
                 "game-runtime:latest": "sha256:111111111111",
                 "player-runtime:latest": "sha256:222222222222",
                 "ghcr.io/metta-ai/commissioners-default:latest": "sha256:333333333333",
+                "ghcr.io/metta-ai/graders-default:latest": "sha256:444444444444",
             },
             calls,
+            service_platforms={
+                "game": "linux/amd64",
+                "player": "linux/amd64",
+                "commissioner": "linux/amd64",
+                "reporter": "linux/amd64",
+                "grader": "linux/amd64",
+            },
         ),
     )
 
@@ -343,7 +351,7 @@ def test_build_coworld_manifest_resolves_mutable_registry_image_refs(
     assert built_manifest["player"][0]["image"] == "player-runtime:coworld-222222222222"
     assert built_manifest["commissioner"][0]["image"] == "ghcr.io/metta-ai/commissioners-default@sha256:333333333333"
     assert built_manifest["reporter"][0]["image"] == "ghcr.io/metta-ai/reporters-default@sha256:cccc"
-    assert built_manifest["grader"][0]["image"] == "ghcr.io/metta-ai/graders-default@sha256:dddd"
+    assert built_manifest["grader"][0]["image"] == "ghcr.io/metta-ai/graders-default@sha256:444444444444"
     commands = [command for command, _kwargs in calls]
     assert [
         "docker",
@@ -361,6 +369,39 @@ def test_build_coworld_manifest_resolves_mutable_registry_image_refs(
         "linux/amd64",
         "ghcr.io/metta-ai/commissioners-default@sha256:333333333333",
     ] in commands
+    assert [
+        "docker",
+        "pull",
+        "--platform",
+        "linux/amd64",
+        "ghcr.io/metta-ai/graders-default@sha256:444444444444",
+    ] in commands
+
+
+def test_source_url_pinning_uses_checked_out_source_contexts(tmp_path: Path) -> None:
+    game_context = tmp_path / "example-game"
+    _init_git_repo(game_context, "git@github.com:Metta-AI/example-game.git", "master")
+    game_base = _commit_file(game_context, "game.txt", "base\n")
+    _git(game_context, "update-ref", "refs/remotes/origin/master", game_base)
+    game_head = _commit_file(game_context, "game.txt", "head\n")
+
+    commissioner_context = tmp_path / "commissioners"
+    _init_git_repo(commissioner_context, "https://github.com/Metta-AI/commissioners.git", "main")
+    commissioner_stale_head = _commit_file(commissioner_context, "commissioner.txt", "base\n")
+    commissioner_main = _commit_file(commissioner_context, "commissioner.txt", "head\n")
+    _git(commissioner_context, "update-ref", "refs/remotes/origin/main", commissioner_main)
+    _git(commissioner_context, "switch", "-c", "stale", commissioner_stale_head)
+
+    contexts = _github_source_contexts((game_context, commissioner_context))
+
+    assert (
+        _pinned_source_url("https://github.com/Metta-AI/example-game/tree/master/players/reference", contexts)
+        == f"https://github.com/Metta-AI/example-game/tree/{game_head}/players/reference"
+    )
+    assert (
+        _pinned_source_url("https://github.com/Metta-AI/commissioners/tree/main/commissioners/default", contexts)
+        == f"https://github.com/Metta-AI/commissioners/tree/{commissioner_main}/commissioners/default"
+    )
 
 
 def test_build_command_writes_hydrated_manifest(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -411,7 +452,7 @@ def test_resolve_and_upload_command_builds_resolved_manifest_then_uploads(
     output_path = tmp_path / "dist" / "coworld_manifest.json"
     compose_path.write_text("services: {}\n", encoding="utf-8")
     template_path.write_text('{"game": {"name": "unit"}}\n', encoding="utf-8")
-    build_calls: list[tuple[Path, Path, str, Path, bool]] = []
+    build_calls: list[tuple[Path, Path, str, Path, bool, tuple[Path, ...]]] = []
     upload_calls: list[tuple[Path, str, float]] = []
 
     def fake_build(
@@ -421,8 +462,11 @@ def test_resolve_and_upload_command_builds_resolved_manifest_then_uploads(
         manifest_output: Path,
         *,
         resolve_mutable_image_refs: bool = False,
+        source_contexts: tuple[Path, ...] = (),
     ) -> Path:
-        build_calls.append((compose_file, template_file, version, manifest_output, resolve_mutable_image_refs))
+        build_calls.append(
+            (compose_file, template_file, version, manifest_output, resolve_mutable_image_refs, source_contexts)
+        )
         return manifest_output.resolve()
 
     def fake_upload(manifest_path: Path, *, server: str, timeout_seconds: float) -> None:
@@ -443,11 +487,13 @@ def test_resolve_and_upload_command_builds_resolved_manifest_then_uploads(
             "http://localhost:3102/api",
             "--timeout-seconds",
             "17",
+            "--source-context",
+            str(tmp_path / "source"),
         ],
     )
 
     assert result.exit_code == 0, result.output
-    assert build_calls == [(compose_path, template_path, "0.2.0", output_path, True)]
+    assert build_calls == [(compose_path, template_path, "0.2.0", output_path, True, (tmp_path / "source",))]
     assert upload_calls == [(output_path.resolve(), "http://localhost:3102/api", 17.0)]
 
 
@@ -572,16 +618,38 @@ def _write_manifest(
     return manifest_path
 
 
+def _init_git_repo(path: Path, remote_url: str, branch: str) -> None:
+    path.mkdir()
+    _git(path, "init", "-b", branch)
+    _git(path, "config", "user.email", "coworld-test@example.com")
+    _git(path, "config", "user.name", "Coworld Test")
+    _git(path, "remote", "add", "origin", remote_url)
+
+
+def _commit_file(repo: Path, filename: str, content: str) -> str:
+    (repo / filename).write_text(content, encoding="utf-8")
+    _git(repo, "add", filename)
+    _git(repo, "commit", "-m", f"Update {filename}")
+    return _git(repo, "rev-parse", "HEAD").stdout.strip()
+
+
+def _git(repo: Path, *args: str) -> subprocess.CompletedProcess[str]:
+    return subprocess.run(["git", "-C", str(repo), *args], check=True, capture_output=True, text=True)
+
+
 def _fake_docker_run(
     service_images: Mapping[str, str],
     image_ids: Mapping[str, str],
     calls: list[tuple[list[str], dict[str, object]]] | None = None,
+    service_platforms: Mapping[str, str] | None = None,
 ) -> Callable[..., subprocess.CompletedProcess[str]]:
     def fake_run(command: list[str], **kwargs: object) -> subprocess.CompletedProcess[str]:
         if calls is not None:
             calls.append((command, kwargs))
         if command[:3] == ["docker", "compose", "-f"] and command[-3:] == ["config", "--format", "json"]:
             services = {service: {"image": image} for service, image in service_images.items()}
+            for service, platform in (service_platforms or {}).items():
+                services[service]["platform"] = platform
             return subprocess.CompletedProcess(command, 0, stdout=json.dumps({"services": services}))
         if command[:4] == ["docker", "buildx", "imagetools", "inspect"]:
             return subprocess.CompletedProcess(command, 0, stdout=json.dumps({"digest": image_ids[command[4]]}))

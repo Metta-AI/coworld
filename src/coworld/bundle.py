@@ -1,16 +1,19 @@
 from __future__ import annotations
 
 import json
+import re
 import subprocess
-from collections.abc import Iterable
+from collections.abc import Mapping
 from pathlib import Path
 from typing import Any
+from urllib.parse import urlparse, urlunparse
 
 from coworld.image_refs import image_ref_without_tag, is_digest_pinned_image_ref, is_mutable_registry_image_ref
 from coworld.schema_validation import load_json_object
-from coworld.types import CoworldManifest
+from coworld.types import CoworldManifest, CoworldRunnableSpec
 
 ROLE_SECTIONS = ("player", "reporter", "commissioner", "grader", "diagnoser", "optimizer")
+FULL_SHA_PATTERN = re.compile(r"^[0-9a-f]{40}$")
 
 
 def build_coworld_manifest(
@@ -20,6 +23,7 @@ def build_coworld_manifest(
     output_path: Path,
     *,
     resolve_mutable_image_refs: bool = False,
+    source_contexts: tuple[Path, ...] = (),
 ) -> Path:
     compose_file = compose_file.resolve()
     template_path = template_path.resolve()
@@ -32,7 +36,10 @@ def build_coworld_manifest(
     if isinstance(game, dict) and "version" in game and template_path.name != "coworld_manifest.json":
         raise RuntimeError(f"Coworld manifest templates must not set game.version: {template_path}")
 
-    manifest = _load_template_manifest(manifest_json, version, _compose_image_placeholders(compose_file))
+    compose_services = _compose_services(compose_file)
+    manifest = _load_template_manifest(manifest_json, version, _compose_image_placeholders(compose_services))
+    if source_contexts:
+        manifest = _with_pinned_source_urls(manifest, _github_source_contexts(source_contexts))
     # Pull image-only services before building; buildable services are produced locally below.
     subprocess.run(
         ["docker", "compose", "-f", str(compose_file), "pull", "--ignore-buildable", "--ignore-pull-failures"],
@@ -52,7 +59,11 @@ def build_coworld_manifest(
     if resolve_mutable_image_refs:
         resolved_image_refs = _resolved_mutable_image_refs(manifest)
         manifest = _with_image_tags(manifest, resolved_image_refs)
-        _pull_image_refs(resolved_image_refs.values())
+        _pull_image_refs(
+            resolved_image_refs,
+            _compose_image_platforms(compose_services),
+            _compose_default_platform(compose_services),
+        )
     manifest = _with_image_tags(manifest, _built_image_tags(manifest))
 
     output_path.parent.mkdir(parents=True, exist_ok=True)
@@ -81,7 +92,7 @@ def _load_template_manifest(
     return CoworldManifest.model_validate(manifest_json)
 
 
-def _compose_image_placeholders(compose_file: Path) -> dict[str, str]:
+def _compose_services(compose_file: Path) -> dict[str, dict[str, Any]]:
     completed = subprocess.run(
         ["docker", "compose", "-f", str(compose_file), "config", "--format", "json"],
         cwd=compose_file.parent,
@@ -89,11 +100,120 @@ def _compose_image_placeholders(compose_file: Path) -> dict[str, str]:
         capture_output=True,
         text=True,
     )
-    services = json.loads(completed.stdout)["services"]
+    return json.loads(completed.stdout)["services"]
+
+
+def _compose_image_placeholders(services: Mapping[str, Mapping[str, Any]]) -> dict[str, str]:
     return {
         f"{{{{{service_name.upper().replace('-', '_')}_IMAGE}}}}": service["image"]
         for service_name, service in services.items()
     }
+
+
+def _compose_image_platforms(services: Mapping[str, Mapping[str, Any]]) -> dict[str, str]:
+    image_platforms: dict[str, str] = {}
+    for service in services.values():
+        image = service.get("image")
+        platform = service.get("platform")
+        if isinstance(image, str) and isinstance(platform, str):
+            image_platforms[image] = platform
+    return image_platforms
+
+
+def _compose_default_platform(services: Mapping[str, Mapping[str, Any]]) -> str | None:
+    platforms = {service["platform"] for service in services.values() if isinstance(service.get("platform"), str)}
+    if len(platforms) == 1:
+        return next(iter(platforms))
+    return None
+
+
+def _github_source_contexts(source_contexts: tuple[Path, ...]) -> dict[str, Path]:
+    contexts: dict[str, Path] = {}
+    for source_context in source_contexts:
+        repo_root = Path(_git_stdout(source_context, "rev-parse", "--show-toplevel"))
+        repo = _github_repo_from_remote(_git_stdout(repo_root, "remote", "get-url", "origin"))
+        if repo is not None:
+            contexts[repo] = repo_root
+    return contexts
+
+
+def _github_repo_from_remote(remote_url: str) -> str | None:
+    if remote_url.startswith("git@github.com:"):
+        repo = remote_url.removeprefix("git@github.com:")
+    else:
+        parsed = urlparse(remote_url)
+        if parsed.netloc != "github.com":
+            return None
+        repo = parsed.path.removeprefix("/")
+    return repo.removesuffix(".git")
+
+
+def _with_pinned_source_urls(manifest: CoworldManifest, source_contexts: Mapping[str, Path]) -> CoworldManifest:
+    game = manifest.game.model_copy(
+        update={"runnable": _with_pinned_runnable_source_url(manifest.game.runnable, source_contexts)}
+    )
+    updates: dict[str, object] = {"game": game}
+    for section in ROLE_SECTIONS:
+        updates[section] = [
+            _with_pinned_runnable_source_url(runnable, source_contexts) for runnable in getattr(manifest, section)
+        ]
+    return manifest.model_copy(update=updates)
+
+
+def _with_pinned_runnable_source_url(
+    runnable: CoworldRunnableSpec, source_contexts: Mapping[str, Path]
+) -> CoworldRunnableSpec:
+    if runnable.source_url is None:
+        return runnable
+    source_url = _pinned_source_url(runnable.source_url, source_contexts)
+    if source_url == runnable.source_url:
+        return runnable
+    return runnable.model_copy(update={"source_url": source_url})
+
+
+def _pinned_source_url(source_url: str, source_contexts: Mapping[str, Path]) -> str:
+    parsed = urlparse(source_url)
+    if parsed.netloc != "github.com":
+        return source_url
+    parts = parsed.path.removeprefix("/").split("/")
+    if len(parts) < 4 or parts[2] not in {"tree", "blob"}:
+        return source_url
+    ref = parts[3]
+    if FULL_SHA_PATTERN.fullmatch(ref):
+        return source_url
+    repo_root = source_contexts.get(f"{parts[0]}/{parts[1]}")
+    if repo_root is None:
+        return source_url
+    parts[3] = _source_context_ref_sha(repo_root, ref)
+    return urlunparse(parsed._replace(path="/" + "/".join(parts)))
+
+
+def _source_context_ref_sha(repo_root: Path, ref: str) -> str:
+    head_sha = _git_stdout(repo_root, "rev-parse", "HEAD")
+    ref_completed = subprocess.run(
+        ["git", "-C", str(repo_root), "rev-parse", "--verify", "--quiet", f"origin/{ref}^{{commit}}"],
+        capture_output=True,
+        text=True,
+    )
+    if ref_completed.returncode != 0:
+        return head_sha
+    ref_sha = ref_completed.stdout.strip()
+    ancestor_completed = subprocess.run(
+        ["git", "-C", str(repo_root), "merge-base", "--is-ancestor", ref_sha, head_sha]
+    )
+    if ancestor_completed.returncode == 0:
+        return head_sha
+    return ref_sha
+
+
+def _git_stdout(repo_path: Path, *args: str) -> str:
+    completed = subprocess.run(
+        ["git", "-C", str(repo_path), *args],
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+    return completed.stdout.strip()
 
 
 def _built_image_tags(manifest: CoworldManifest) -> dict[str, str]:
@@ -138,14 +258,16 @@ def resolve_registry_image_ref(image: str) -> str:
     return f"{image_ref_without_tag(image)}@{digest}"
 
 
-def _pull_image_refs(images: Iterable[str]) -> None:
-    for image in sorted(set(images)):
-        # Coworld images are linux/amd64, and a resolved mutable ref is an amd64-only
-        # manifest index, so a bare `docker pull` fails host-platform selection on an
-        # arm64 host ("no matching manifest for linux/arm64"). Pin the platform so the
-        # pull works on any host; the compose pull above already does this via each
-        # service's `platform:` field, but the resolved digests are pulled directly here.
-        subprocess.run(["docker", "pull", "--platform", "linux/amd64", image], check=True)
+def _pull_image_refs(
+    image_refs: Mapping[str, str], image_platforms: Mapping[str, str], default_platform: str | None
+) -> None:
+    for source_image, resolved_image in sorted(image_refs.items()):
+        command = ["docker", "pull"]
+        platform = image_platforms.get(source_image, default_platform)
+        if platform:
+            command.extend(["--platform", platform])
+        command.append(resolved_image)
+        subprocess.run(command, check=True)
 
 
 def _manifest_images(manifest: CoworldManifest) -> tuple[str, ...]:

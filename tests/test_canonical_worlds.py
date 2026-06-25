@@ -379,6 +379,22 @@ def test_cue_n_woo_upload_defaults_to_cue_n_woo_commissioner() -> None:
     assert "ghcr.io/metta-ai/commissioners-cue-n-woo:latest" in readme_text
 
 
+def test_crewrift_upload_defaults_to_manifest_commissioner() -> None:
+    upload_text = (WORLDS / "upload.sh").read_text(encoding="utf-8")
+    readme_text = (WORLDS / "crewrift" / "README.md").read_text(encoding="utf-8")
+
+    assert (
+        'COMMISSIONER_IMAGE="${COMMISSIONER_IMAGE:-ghcr.io/metta-ai/commissioners-among-them-commissioner:latest}"'
+        in upload_text
+    )
+    assert 'COMMISSIONER_CONTEXT="${COMMISSIONER_CONTEXT:-${WORKSPACE_DIR}/commissioners}"' in upload_text
+    assert 'check_source_checkout "Crewrift commissioner source" "${COMMISSIONER_CONTEXT}"' in upload_text
+    assert "--source-context" in upload_text
+    assert '"COMMISSIONER_IMAGE=${COMMISSIONER_IMAGE}"' in upload_text
+    assert "ghcr.io/metta-ai/commissioners-among-them-commissioner:latest" in readme_text
+    assert "COMMISSIONER_CONTEXT=/path/to/commissioners" in readme_text
+
+
 def test_paintarena_template_declares_all_viability_role_sections() -> None:
     paintarena = json.loads((PAINTARENA_EXAMPLE / "coworld_manifest_template.json").read_text(encoding="utf-8"))
     assert set(VIABILITY_ROLE_SECTIONS).issubset(paintarena)
