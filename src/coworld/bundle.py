@@ -140,7 +140,12 @@ def resolve_registry_image_ref(image: str) -> str:
 
 def _pull_image_refs(images: Iterable[str]) -> None:
     for image in sorted(set(images)):
-        subprocess.run(["docker", "pull", image], check=True)
+        # Coworld images are linux/amd64, and a resolved mutable ref is an amd64-only
+        # manifest index, so a bare `docker pull` fails host-platform selection on an
+        # arm64 host ("no matching manifest for linux/arm64"). Pin the platform so the
+        # pull works on any host; the compose pull above already does this via each
+        # service's `platform:` field, but the resolved digests are pulled directly here.
+        subprocess.run(["docker", "pull", "--platform", "linux/amd64", image], check=True)
 
 
 def _manifest_images(manifest: CoworldManifest) -> tuple[str, ...]:

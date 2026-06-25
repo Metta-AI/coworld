@@ -354,7 +354,13 @@ def test_build_coworld_manifest_resolves_mutable_registry_image_refs(
         "--format",
         "{{json .Manifest}}",
     ] in commands
-    assert ["docker", "pull", "ghcr.io/metta-ai/commissioners-default@sha256:333333333333"] in commands
+    assert [
+        "docker",
+        "pull",
+        "--platform",
+        "linux/amd64",
+        "ghcr.io/metta-ai/commissioners-default@sha256:333333333333",
+    ] in commands
 
 
 def test_build_command_writes_hydrated_manifest(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
