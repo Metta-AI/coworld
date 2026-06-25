@@ -1,3 +1,4 @@
+from datetime import datetime, timezone
 from uuid import uuid4
 
 import pytest
@@ -33,6 +34,7 @@ from coworld.commissioner.protocol import (
     PolicyMembershipEventChange,
     RankDivisionResponse,
     RankingEntry,
+    RecentResult,
     RoundComplete,
     RoundCompletedResponse,
     RoundConfig,
@@ -488,6 +490,21 @@ def test_unknown_commissioner_message_type_fails() -> None:
 def test_round_complete_rejects_oversized_state() -> None:
     with pytest.raises(ValidationError, match="state must not exceed 10 MB"):
         RoundComplete(state={"payload": "x" * (10 * 1024 * 1024)})
+
+
+def test_recent_result_completed_at_requires_serialized_string() -> None:
+    # completed_at is a wire field typed `str | None`: callers must pre-serialize the
+    # round's completion timestamp (e.g. datetime.isoformat()). Passing a raw datetime
+    # is rejected by Pydantic, which is what broke every tournament round when the field
+    # was added while a construction site still passed Round.completed_at unconverted.
+    base = dict(round_id=uuid4(), division_id=uuid4(), round_number=1, policy_version_id=uuid4(), rank=1, score=1.0)
+    completed_at = datetime(2026, 6, 25, 17, 0, tzinfo=timezone.utc)
+
+    with pytest.raises(ValidationError, match="completed_at"):
+        RecentResult(**base, completed_at=completed_at)
+
+    assert RecentResult(**base, completed_at=completed_at.isoformat()).completed_at == "2026-06-25T17:00:00+00:00"
+    assert RecentResult(**base, completed_at=None).completed_at is None
 
 
 def test_rank_division_response_fills_rankings_from_default_view() -> None:
