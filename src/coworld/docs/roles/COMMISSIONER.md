@@ -525,6 +525,24 @@ The `state` field is an opaque JSON blob (max 10 MB) stored by the platform and 
 `round_start`. This lets a commissioner maintain ratings, bracket progress, Swiss pairings, etc. across rounds without
 external storage.
 
+#### Observability report (`observability`)
+
+`round_complete` may carry an optional `observability` field: a `CommissionerRoundReport` (see
+`coworld.commissioner.protocol`) that explains, in a game-agnostic schema, HOW the round was scored. The platform
+persists it per round and the Observatory renders it so every scoring decision is inspectable end to end. It is additive
+— a commissioner that omits it loses no behavior.
+
+- `rule_id` / `rule_description`: the scoring rule in effect this round.
+- `entrants[]`: per-entrant calculation. Beyond `outcome` / `score` / `steps` / `summary`, each entrant can carry the
+  placement decision so the UI can show why an entrant moved: `decision` (e.g. `promoted`, `relegated`, `held`,
+  `disqualified`, `ranked`), `from_division` / `to_division` (human names), and `reason_detail` (long-form reason).
+- `render_html` (optional): self-contained HTML the commissioner authors to render its OWN view of the round — a
+  game-specific standings table, MMR board, bracket, etc. — in place of the platform's generic structured view. The
+  platform embeds it in a sandboxed, **script-disabled** iframe under a strict CSP, so it MUST obey the safe-render
+  profile in [../artifacts/RENDER.md](../artifacts/RENDER.md): no scripts or event handlers, no external resource loads
+  (inline `data:` / same-document only), no embedding or navigation sinks. Validate authored HTML with
+  `coworld.report.assert_safe_render_html` (the same check `coworld certify` applies to reporter renders).
+
 ### State persistence
 
 The `round_complete` `state` blob is passed back in the next round's `round_start.state`. The blob is opaque to the
@@ -604,20 +622,20 @@ Current examples include:
 - Reusable default commissioner: `id: "default-commissioner"` with image
   `ghcr.io/metta-ai/commissioners-default:latest`.
 
-Prefer the mutable `:latest` tag in your source (`compose.yaml` / `commissioner.Dockerfile`), like the canonical
-worlds (paintarena, tribal_village, ...) do. `coworld build --resolve-mutable-images` resolves `:latest` to the
-intended immutable digest **at upload time** and writes that digest into the uploaded manifest, so each upload picks up
-the newest published commissioner while the runner still gets an exact, pinned image. Hardcoding a digest in source
-instead freezes the game on whatever was current when the digest was written, which is how coworlds silently ran a
-months-stale commissioner.
+Prefer the mutable `:latest` tag in your source (`compose.yaml` / `commissioner.Dockerfile`), like the canonical worlds
+(paintarena, tribal_village, ...) do. `coworld build --resolve-mutable-images` resolves `:latest` to the intended
+immutable digest **at upload time** and writes that digest into the uploaded manifest, so each upload picks up the
+newest published commissioner while the runner still gets an exact, pinned image. Hardcoding a digest in source instead
+freezes the game on whatever was current when the digest was written, which is how coworlds silently ran a months-stale
+commissioner.
 
 ## The reusable config-driven commissioner (`ruleset_strategy`)
 
 Most Coworlds do not write their own commissioner. They reuse the **config-driven `ruleset_strategy` commissioner**
 (images `ghcr.io/metta-ai/commissioners-*`, source
-[`Metta-AI/coworld-tools/commissioners`](https://github.com/Metta-AI/coworld-tools/tree/main/commissioners)). Its
-entire behavior — how many episodes a round runs, how entrants fill slots, how policies are promoted/disqualified —
-comes from a **YAML config file baked into the image**.
+[`Metta-AI/coworld-tools/commissioners`](https://github.com/Metta-AI/coworld-tools/tree/main/commissioners)). Its entire
+behavior — how many episodes a round runs, how entrants fill slots, how policies are promoted/disqualified — comes from
+a **YAML config file baked into the image**.
 
 The config is selected by a runtime environment variable the commissioner reads at startup:
 
@@ -699,12 +717,13 @@ Three options, cheapest first:
          dockerfile: commissioner.Dockerfile
    ```
 
-   This keeps your scheduling config in your own repo instead of editing the shared `coworld-tools` configs.
-   **Build `FROM …commissioners-default:latest`** so each build picks up the newest published commissioner; `coworld
-   build --resolve-mutable-images` resolves the tag to an immutable digest at upload time, so the uploaded image is still
-   exactly pinned. (The build/upload runs on linux/amd64 — where the `:latest` manifest list pulls fine — so the old
-   arm64 caveat about pinning a platform-specific digest no longer applies on the build host.) cognames is the in-tree
-   reference for this: `games/cognames/coworld/{cognames-commissioner.yaml,commissioner.Dockerfile,compose.yaml}`.
+   This keeps your scheduling config in your own repo instead of editing the shared `coworld-tools` configs. **Build
+   `FROM …commissioners-default:latest`** so each build picks up the newest published commissioner;
+   `coworld build --resolve-mutable-images` resolves the tag to an immutable digest at upload time, so the uploaded
+   image is still exactly pinned. (The build/upload runs on linux/amd64 — where the `:latest` manifest list pulls fine —
+   so the old arm64 caveat about pinning a platform-specific digest no longer applies on the build host.) cognames is
+   the in-tree reference for this:
+   `games/cognames/coworld/{cognames-commissioner.yaml,commissioner.Dockerfile,compose.yaml}`.
 
 ## How it fits with other roles
 

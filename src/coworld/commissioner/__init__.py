@@ -4,7 +4,10 @@ from coworld.commissioner.protocol import (
     POLICY_MEMBERSHIP_STATUS_COMPETING,
     POLICY_MEMBERSHIP_SUBSTATUS_ACTIVE,
     POLICY_MEMBERSHIP_SUBSTATUS_BENCHED,
+    CommissionerCalcStep,
+    CommissionerEntrantReport,
     CommissionerMessage,
+    CommissionerRoundReport,
     DescribeDivisionRequest,
     DescribeDivisionResponse,
     DivisionConfig,
@@ -61,7 +64,10 @@ from coworld.commissioner.protocol import (
 )
 
 __all__ = [
+    "CommissionerCalcStep",
+    "CommissionerEntrantReport",
     "CommissionerMessage",
+    "CommissionerRoundReport",
     "DescribeDivisionRequest",
     "DescribeDivisionResponse",
     "DivisionConfig",

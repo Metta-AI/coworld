@@ -5,7 +5,10 @@ import pytest
 from pydantic import ValidationError
 
 from coworld.commissioner.protocol import (
+    CommissionerCalcStep,
+    CommissionerEntrantReport,
     CommissionerMessage,
+    CommissionerRoundReport,
     DescribeDivisionResponse,
     DivisionConfig,
     DivisionDescription,
@@ -47,6 +50,7 @@ from coworld.commissioner.protocol import (
     default_competing_entrants,
     default_competing_membership_events,
 )
+from coworld.report import assert_safe_render_html
 
 
 def test_round_start_serializes_with_message_type() -> None:
@@ -623,3 +627,58 @@ def test_round_complete_preserves_explicit_leaderboards() -> None:
     complete = RoundComplete(leaderboards=[leaderboard])
 
     assert complete.leaderboards == [leaderboard]
+
+
+def test_round_complete_carries_structured_observability_report() -> None:
+    pv = uuid4()
+    report = CommissionerRoundReport(
+        rule_id="best_episode_score",
+        rule_description="Round score = best episode score.",
+        entrants=[
+            CommissionerEntrantReport(
+                policy_version_id=pv,
+                player_id="ply_x",
+                outcome="42 pts",
+                score=42.0,
+                steps=[CommissionerCalcStep(label="best episode score", value=42.0, inputs={"episodes_scored": 3})],
+                summary="best of 3 episodes",
+            )
+        ],
+        notes=["scored 3 episodes"],
+    )
+    complete = RoundComplete(observability=report)
+
+    # Round-trips through the wire encoding the platform uses.
+    rehydrated = RoundComplete.model_validate({k: v for k, v in complete.to_json().items() if k != "type"})
+    assert rehydrated.observability is not None
+    assert rehydrated.observability.rule_id == "best_episode_score"
+    assert rehydrated.observability.entrants[0].policy_version_id == pv
+    assert rehydrated.observability.entrants[0].steps[0].value == 42.0
+
+
+def test_round_complete_observability_defaults_to_none() -> None:
+    assert RoundComplete().observability is None
+
+
+def test_round_report_render_html_round_trips_and_is_safe() -> None:
+    html = (
+        "<!doctype html><html><head><style>td{padding:4px}</style></head>"
+        "<body><table><tr><td>p1</td><td>42</td></tr></table></body></html>"
+    )
+    report = CommissionerRoundReport(
+        rule_id="best_episode_score",
+        rule_description="best of N",
+        render_html=html,
+    )
+    rehydrated = RoundComplete.model_validate(
+        {k: v for k, v in RoundComplete(observability=report).to_json().items() if k != "type"}
+    )
+    assert rehydrated.observability is not None
+    assert rehydrated.observability.render_html == html
+    # The authored sample obeys the safe-render profile the platform enforces.
+    assert_safe_render_html(html)
+
+
+def test_round_report_render_html_defaults_to_none() -> None:
+    report = CommissionerRoundReport(rule_id="r", rule_description="d")
+    assert report.render_html is None
