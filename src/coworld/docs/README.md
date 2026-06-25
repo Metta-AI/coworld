@@ -6,6 +6,8 @@ manifest describes those roles, and how an episode turns into artifacts that pla
 For usage-oriented guidance, use the package [README](../../../README.md) and the [Coworld cookbook](../../../COOKBOOK.md).
 The package documentation uses [Paint Arena](../examples/paintarena/README.md) as its canonical example. Installable
 starter templates for every role ship under `coworld/templates`.
+When rebuilding an existing Coworld after the June 2026 repo consolidation, use
+[Rebuilding Coworlds After The Role Repo Move](REBUILDING_COWORLDS.md).
 
 ## What Is A Complete Coworld?
 
@@ -199,6 +201,7 @@ These boundaries are useful when deciding where a new feature, artifact, or debu
 
 - Package usage and starting guide: [README](../../../README.md).
 - Workflow recipes: [Coworld cookbook](../../../COOKBOOK.md).
+- Rebuild/source ownership guide: [REBUILDING_COWORLDS.md](REBUILDING_COWORLDS.md).
 - Manifest reference: [COWORLD_MANIFEST.md](COWORLD_MANIFEST.md).
 - Bedrock for players: [BEDROCK.md](BEDROCK.md).
 - Lifecycle overview: [LIFECYCLE.md](LIFECYCLE.md).
@@ -210,8 +213,6 @@ These boundaries are useful when deciding where a new feature, artifact, or debu
 - Per-role contracts: [GAME.md](roles/GAME.md), [PLAYER.md](roles/PLAYER.md), [COMMISSIONER.md](roles/COMMISSIONER.md),
   [REPORTER.md](roles/REPORTER.md), [GRADER.md](roles/GRADER.md), [DIAGNOSER.md](roles/DIAGNOSER.md),
   [OPTIMIZER.md](roles/OPTIMIZER.md).
-- Cross-repo role implementations: [Metta-AI/players](https://github.com/Metta-AI/players),
-  [Metta-AI/commissioners](https://github.com/Metta-AI/commissioners),
-  [Metta-AI/reporters](https://github.com/Metta-AI/reporters), [Metta-AI/graders](https://github.com/Metta-AI/graders),
-  [Metta-AI/diagnosers](https://github.com/Metta-AI/diagnosers), and
-  [Metta-AI/optimizers](https://github.com/Metta-AI/optimizers).
+- Shared role implementations: [Metta-AI/coworld-tools](https://github.com/Metta-AI/coworld-tools) for imported
+  players, commissioners, reporters, graders, diagnosers, and games; [Metta-AI/optimizers](https://github.com/Metta-AI/optimizers)
+  for the active optimizer workbench.

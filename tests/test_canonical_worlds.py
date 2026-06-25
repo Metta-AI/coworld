@@ -23,11 +23,11 @@ COWORLD_SRC = COWORLD_PACKAGE_ROOT / "src" / "coworld"
 WORLDS = REPO_ROOT / "worlds"
 PAINTARENA_EXAMPLE = COWORLD_SRC / "examples" / "paintarena"
 VIABILITY_ROLE_SECTIONS = ("player", "optimizer", "commissioner", "reporter", "grader", "diagnoser")
-SUPPORTING_ROLE_REPOS = {
-    "commissioner": "https://github.com/Metta-AI/commissioners",
-    "reporter": "https://github.com/Metta-AI/reporters",
-    "grader": "https://github.com/Metta-AI/graders",
-    "diagnoser": "https://github.com/Metta-AI/diagnosers",
+SUPPORTING_ROLE_SOURCE_OWNERS = {
+    "commissioner": "https://github.com/Metta-AI/coworld-tools",
+    "reporter": "https://github.com/Metta-AI/coworld-tools",
+    "grader": "https://github.com/Metta-AI/coworld-tools",
+    "diagnoser": "https://github.com/Metta-AI/coworld-tools",
     "optimizer": "https://github.com/Metta-AI/optimizers",
 }
 IN_TREE_EXAMPLE_SOURCE_PREFIX = (
@@ -122,10 +122,10 @@ def test_canonical_among_them_build_declares_role_starter_contexts() -> None:
     assert "players/ivotewell/Dockerfile" in compose_text
     assert "COMMISSIONER_CONTEXT" not in compose_text
     assert "ghcr.io/metta-ai/commissioners-default:latest" not in compose_text
-    assert "reporters/reporters" in compose_text
+    assert "coworld-tools/reporters/reporters" in compose_text
     assert "among_them/among_them_summarizer/Dockerfile" in compose_text
-    assert "graders/graders/among_them/among_them_grader" in compose_text
-    assert "diagnosers/diagnosers/among_them/among_them_diagnoser" in compose_text
+    assert "coworld-tools/graders/graders/among_them/among_them_grader" in compose_text
+    assert "coworld-tools/diagnosers/diagnosers/among_them/among_them_diagnoser" in compose_text
     assert "optimizers" in compose_text
     assert "coworld-among-them-summarizer:latest" in compose_text
     assert "coworld-among-them-grader:latest" in compose_text
@@ -147,12 +147,13 @@ def test_canonical_cogs_vs_clips_build_declares_role_contexts() -> None:
     assert "COMMISSIONER_CONTEXT" in compose_text
     assert "METTASCOPE_CONTEXT" in compose_text
     assert "coworld-cogs-vs-clips" in compose_text
-    assert "reporters/reporters" in compose_text
-    assert "commissioners" in compose_text
+    assert "coworld-tools/reporters/reporters" in compose_text
+    assert "coworld-tools/commissioners" in compose_text
     assert "Dockerfile.game" in compose_text
     assert "Dockerfile.player" in compose_text
     assert "cogs_vs_clips/cogs_vs_clips_summarizer/Dockerfile" in compose_text
-    assert "commissioners/cogs_vs_clips/cogs_vs_clips_commissioner/Dockerfile" in compose_text
+    assert "commissioners/Dockerfile" in compose_text
+    assert "RULESET_STRATEGY_CONFIG_NAME: cogs_vs_clips" in compose_text
     assert "cogs_src:" in compose_text
     assert "mettascope_src:" in compose_text
     assert "../../packages/mettagrid/nim/mettascope" in compose_text
@@ -172,7 +173,7 @@ def test_canonical_four_score_build_declares_role_contexts() -> None:
     assert "METTASCOPE_CONTEXT" in compose_text
     assert "COMMISSIONER_CONTEXT" in compose_text
     assert "coworld-four-score" in compose_text
-    assert "reporters/reporters" in compose_text
+    assert "coworld-tools/reporters/reporters" in compose_text
     assert "commissioners/Dockerfile" in compose_text
     assert "RULESET_STRATEGY_CONFIG_NAME" in compose_text
     assert "four_score" in compose_text
@@ -235,7 +236,7 @@ def test_canonical_cue_n_woo_upload_adds_default_commissioner() -> None:
 
     assert "REPORTER_CONTEXT" in compose_text
     assert "OPTIMIZER_CONTEXT" in compose_text
-    assert "reporters/reporters" in compose_text
+    assert "coworld-tools/reporters/reporters" in compose_text
     assert "optimizers" in compose_text
     assert "coworld-default-reporter:latest" in compose_text
     assert "coworld-optimizer:latest" in compose_text
@@ -250,6 +251,7 @@ def test_canonical_cue_n_woo_upload_adds_default_commissioner() -> None:
     assert '"type": "commissioner"' in upload_text
     assert '"image": "{{COMMISSIONER_IMAGE}}"' in upload_text
     assert 'COMMISSIONER_IMAGE="ghcr.io/metta-ai/commissioners-default:latest"' in upload_text
+    assert "https://github.com/Metta-AI/coworld-tools/tree/main/" in upload_text
 
 
 def test_canonical_world_compose_files_build_manifest_images() -> None:
@@ -298,10 +300,10 @@ def test_canonical_world_templates_use_role_types_as_contracts() -> None:
                 assert runnable["type"] == section
 
 
-def test_canonical_world_supporting_roles_point_to_role_repos() -> None:
+def test_canonical_world_supporting_roles_point_to_source_owners() -> None:
     for template_path in _repo_manifest_templates():
         template = json.loads(template_path.read_text(encoding="utf-8"))
-        for section, repo_url in SUPPORTING_ROLE_REPOS.items():
+        for section, repo_url in SUPPORTING_ROLE_SOURCE_OWNERS.items():
             for runnable in template[section]:
                 source_url = runnable["source_url"]
                 if source_url.startswith(IN_TREE_EXAMPLE_SOURCE_PREFIX):
@@ -322,23 +324,35 @@ def test_external_canonical_manifests_live_with_source_repos() -> None:
     expected_readme_references = {
         "among_them": (
             "GAME_CONTEXT=/path/to/coworld-among-them",
+            "REPORTER_CONTEXT=/path/to/coworld-tools/reporters/reporters",
+            "GRADER_CONTEXT=/path/to/coworld-tools/graders/graders/among_them/among_them_grader",
+            "DIAGNOSER_CONTEXT=/path/to/coworld-tools/diagnosers/diagnosers/among_them/among_them_diagnoser",
             "../coworld-among-them/coworld_manifest.json",
         ),
         "cogs_vs_clips": (
             "GAME_CONTEXT=/path/to/coworld-cogs-vs-clips",
+            "REPORTER_CONTEXT=/path/to/coworld-tools/reporters/reporters",
+            "COMMISSIONER_CONTEXT=/path/to/coworld-tools/commissioners",
             "../coworld-cogs-vs-clips/coworld_manifest_template.json",
         ),
         "cue_n_woo": (
             "GAME_CONTEXT=/path/to/cue-n-woo/v2",
+            "REPORTER_CONTEXT=/path/to/coworld-tools/reporters/reporters",
             "../cue-n-woo/v2/coworld/coworld_manifest_template.json",
             "worlds/cue_n_woo/upload.sh",
         ),
         "four_score": (
             "GAME_CONTEXT=/path/to/coworld-cogs-vs-clips",
+            "REPORTER_CONTEXT=/path/to/coworld-tools/reporters/reporters",
+            "COMMISSIONER_CONTEXT=/path/to/coworld-tools/commissioners",
             "../coworld-cogs-vs-clips/coworld_four_score_manifest_template.json",
         ),
         "crewrift": (
             "GAME_CONTEXT=/path/to/coworld-crewrift",
+            "REPORTER_CONTEXT=/path/to/coworld-tools/reporters/reporters",
+            "GRADER_CONTEXT=/path/to/coworld-tools/graders",
+            "DIAGNOSER_CONTEXT=/path/to/coworld-tools/diagnosers/diagnosers/crewrift/crewrift_diagnoser",
+            "COMMISSIONER_CONTEXT=/path/to/coworld-tools/commissioners",
             "../coworld-crewrift/coworld_manifest.json",
         ),
         "diplomacog": (
@@ -387,12 +401,12 @@ def test_crewrift_upload_defaults_to_manifest_commissioner() -> None:
         'COMMISSIONER_IMAGE="${COMMISSIONER_IMAGE:-ghcr.io/metta-ai/commissioners-among-them-commissioner:latest}"'
         in upload_text
     )
-    assert 'COMMISSIONER_CONTEXT="${COMMISSIONER_CONTEXT:-${WORKSPACE_DIR}/commissioners}"' in upload_text
+    assert 'COMMISSIONER_CONTEXT="${COMMISSIONER_CONTEXT:-${COWORLD_TOOLS_CONTEXT}/commissioners}"' in upload_text
     assert 'check_source_checkout "Crewrift commissioner source" "${COMMISSIONER_CONTEXT}"' in upload_text
     assert "--source-context" in upload_text
     assert '"COMMISSIONER_IMAGE=${COMMISSIONER_IMAGE}"' in upload_text
     assert "ghcr.io/metta-ai/commissioners-among-them-commissioner:latest" in readme_text
-    assert "COMMISSIONER_CONTEXT=/path/to/commissioners" in readme_text
+    assert "COMMISSIONER_CONTEXT=/path/to/coworld-tools/commissioners" in readme_text
 
 
 def test_paintarena_template_declares_all_viability_role_sections() -> None:

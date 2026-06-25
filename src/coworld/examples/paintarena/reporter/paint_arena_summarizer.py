@@ -12,8 +12,8 @@ replay's ``config``. PaintArena's replay format is defined by its game
 server in coworld (``examples/paintarena/game/server.py::_replay_payload``).
 
 The richer production summarizer (HTML, SVG heatmap, parquet event log,
-back-and-forth highlights) lives in the ``Metta-AI/reporters`` repo at
-``reporters/paint_arena/paint_arena_summarizer``. This in-repo reference
+back-and-forth highlights) lives in ``Metta-AI/coworld-tools`` at
+``reporters/reporters/paint_arena/paint_arena_summarizer``. This in-repo reference
 intentionally stays markdown-only so the example tree exercises the
 contract surface without taking on the production reporter's dependency
 surface (pyarrow on the markdown path is optional).

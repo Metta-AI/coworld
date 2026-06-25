@@ -615,9 +615,9 @@ months-stale commissioner.
 
 Most Coworlds do not write their own commissioner. They reuse the **config-driven `ruleset_strategy` commissioner**
 (images `ghcr.io/metta-ai/commissioners-*`, source
-[`Metta-AI/commissioners`](https://github.com/Metta-AI/commissioners)). Its entire behavior — how many episodes a round
-runs, how entrants fill slots, how policies are promoted/disqualified — comes from a **YAML config file baked into the
-image**.
+[`Metta-AI/coworld-tools/commissioners`](https://github.com/Metta-AI/coworld-tools/tree/main/commissioners)). Its
+entire behavior — how many episodes a round runs, how entrants fill slots, how policies are promoted/disqualified —
+comes from a **YAML config file baked into the image**.
 
 The config is selected by a runtime environment variable the commissioner reads at startup:
 
@@ -699,7 +699,7 @@ Three options, cheapest first:
          dockerfile: commissioner.Dockerfile
    ```
 
-   This keeps your scheduling config in your own repo instead of editing the shared `Metta-AI/commissioners` configs.
+   This keeps your scheduling config in your own repo instead of editing the shared `coworld-tools` configs.
    **Build `FROM …commissioners-default:latest`** so each build picks up the newest published commissioner; `coworld
    build --resolve-mutable-images` resolves the tag to an immutable digest at upload time, so the uploaded image is still
    exactly pinned. (The build/upload runs on linux/amd64 — where the `:latest` manifest list pulls fine — so the old
@@ -792,9 +792,10 @@ Before relying on an independent commissioner for a daily league:
 
 ## See Also
 
-- [`Metta-AI/commissioners`](https://github.com/Metta-AI/commissioners) — the reusable config-driven
-  (`ruleset_strategy`) commissioner: per-game configs under `configs/`, the
+- [`Metta-AI/coworld-tools/commissioners`](https://github.com/Metta-AI/coworld-tools/tree/main/commissioners) — the
+  reusable config-driven (`ruleset_strategy`) commissioner: per-game configs under `configs/`, the
   `episodes`/`min_episodes_per_entrant`/`seating` schema, and the image build matrix.
+- [`REBUILDING_COWORLDS.md`](../REBUILDING_COWORLDS.md) — source-owner rules after the role repo consolidation.
 - [`commissioner/protocol.py`](../../commissioner/protocol.py) — Pydantic models for every protocol message.
 - [`artifacts/EPISODE_BUNDLE.md`](../artifacts/EPISODE_BUNDLE.md) — post-episode artifact package that commissioner
   protocol messages do not directly carry.

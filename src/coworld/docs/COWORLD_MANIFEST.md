@@ -196,6 +196,7 @@ the resolved mappings back into the game container as `COWORLD_LOCAL_PORT_<conta
 GitHub `source_url` must pin a full 40-hex commit SHA in the ref position; branch names, tags, and implicit default
 branches fail certification. The pinned source must have non-empty contents and a Dockerfile at that path or an ancestor
 build root. Point it at the repository, directory, or file that implements the runnable, not just a documentation page.
+See [REBUILDING_COWORLDS.md](REBUILDING_COWORLDS.md) for the current repo map and source-owner rules.
 
 `repository_url` is an optional, machine-readable field used by `coworld optimize`: on an `optimizer[]` entry it names
 the Git repository the command clones and runs locally (falling back to `Metta-AI/optimizers` when unset). Unlike
@@ -206,19 +207,23 @@ the Git repository the command clones and runs locally (falling back to `Metta-A
 Coworld runtime ownership and role implementation ownership are separate:
 
 - Metta/Coworld owns the manifest schema, runtime env vars, runner behavior, upload flow, and CLI.
-- The per-role repositories own reusable role implementations:
-  [`Metta-AI/players`](https://github.com/Metta-AI/players),
-  [`Metta-AI/commissioners`](https://github.com/Metta-AI/commissioners),
-  [`Metta-AI/reporters`](https://github.com/Metta-AI/reporters),
-  [`Metta-AI/graders`](https://github.com/Metta-AI/graders),
-  [`Metta-AI/diagnosers`](https://github.com/Metta-AI/diagnosers), and
-  [`Metta-AI/optimizers`](https://github.com/Metta-AI/optimizers).
+- [`Metta-AI/coworld-tools`](https://github.com/Metta-AI/coworld-tools) owns imported shared implementations from the
+  archived `players`, `commissioners`, `reporters`, `graders`, `diagnosers`, and `games` repositories. Treat it as the
+  source library for reusable pieces and for starting a game-local copy.
+- A `Metta-AI/coworld-<slug>` game repo owns game-local runnables that should move with that game.
+- [`Metta-AI/optimizers`](https://github.com/Metta-AI/optimizers) remains the active optimizer workbench unless a
+  specific optimizer has moved beside its game.
 
 At episode or round runtime, the runner does not clone those repositories. It executes the image, command, and env
-already recorded in the manifest. Role catalogs are an authoring/provenance source: when a role repo has a
-`CATALOG.yaml`, manifest authors should copy the catalog entry's `image` and `source_url` into the runnable. Game-local
-starter players and in-tree examples may keep game-repo or package-repo `source_url` values until those implementations
-are promoted into the corresponding role repo with build metadata.
+already recorded in the manifest. Catalogs are an authoring/provenance source: manifest authors copy the selected
+implementation's `image` and `source_url` into the runnable, then `coworld build` pins the source ref when the matching
+source context is provided.
+
+Each runnable should have one source owner. The canonical workflow is to start from `packages/coworld` templates, the
+Paint Arena example, or `coworld-tools`, then copy Coworld-specific code into the owning game repo and point the
+manifest at that game-local source. Shared pieces point at `coworld-tools` only when the implementation is meant to
+remain shared across Coworlds. Game-local starter players, game-specific commissioners, and in-tree examples point at
+the game or package repo that owns them.
 
 Backend storage, ECR publishing, public mirrors for bundled images, and private submitted-policy images are backend
 mechanics; see [`COWORLD_MECHANICS.md`](../../../../../app_backend/src/metta/app_backend/v2/COWORLD_MECHANICS.md).

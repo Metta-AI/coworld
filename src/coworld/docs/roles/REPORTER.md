@@ -249,7 +249,7 @@ reporters are one of its sensory organs, alongside graders and diagnosers.
 The paintarena example reporters (`paint_arena_summarizer.py`, `stats_reporter.py`) run on the
 `COGAME_REPORT_REQUEST` process contract and write an in-zip `manifest.json` flagging their `render` / `event_log`
 outputs. That manifest is reporter-owned metadata, not a platform requirement. Richer production reporters live in
-[`Metta-AI/reporters`](https://github.com/Metta-AI/reporters).
+[`Metta-AI/coworld-tools/reporters`](https://github.com/Metta-AI/coworld-tools/tree/main/reporters).
 
 ## Future directions
 

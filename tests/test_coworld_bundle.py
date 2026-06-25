@@ -385,8 +385,8 @@ def test_source_url_pinning_uses_checked_out_source_contexts(tmp_path: Path) -> 
     _git(game_context, "update-ref", "refs/remotes/origin/master", game_base)
     game_head = _commit_file(game_context, "game.txt", "head\n")
 
-    commissioner_context = tmp_path / "commissioners"
-    _init_git_repo(commissioner_context, "https://github.com/Metta-AI/commissioners.git", "main")
+    commissioner_context = tmp_path / "coworld-tools"
+    _init_git_repo(commissioner_context, "https://github.com/Metta-AI/coworld-tools.git", "main")
     commissioner_stale_head = _commit_file(commissioner_context, "commissioner.txt", "base\n")
     commissioner_main = _commit_file(commissioner_context, "commissioner.txt", "head\n")
     _git(commissioner_context, "update-ref", "refs/remotes/origin/main", commissioner_main)
@@ -399,8 +399,10 @@ def test_source_url_pinning_uses_checked_out_source_contexts(tmp_path: Path) -> 
         == f"https://github.com/Metta-AI/example-game/tree/{game_head}/players/reference"
     )
     assert (
-        _pinned_source_url("https://github.com/Metta-AI/commissioners/tree/main/commissioners/default", contexts)
-        == f"https://github.com/Metta-AI/commissioners/tree/{commissioner_main}/commissioners/default"
+        _pinned_source_url(
+            "https://github.com/Metta-AI/coworld-tools/tree/main/commissioners/commissioners/default", contexts
+        )
+        == f"https://github.com/Metta-AI/coworld-tools/tree/{commissioner_main}/commissioners/commissioners/default"
     )
 
 
@@ -596,7 +598,7 @@ def _write_manifest(
                         "name": "Unit Test Default Grader",
                         "type": "grader",
                         "image": "ghcr.io/metta-ai/graders-default:latest",
-                        "source_url": "https://github.com/Metta-AI/graders/tree/ec741c91bb08c8f5aca024218ff122a8d1ae85f9/graders/default/default_grader",
+                        "source_url": "https://github.com/Metta-AI/coworld-tools/tree/e6b7863c2619d260bb29f14364baf09c578c9f30/graders/graders/default/default_grader",
                         "description": "Default grader stub.",
                     }
                 ],

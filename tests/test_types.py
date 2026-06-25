@@ -430,7 +430,7 @@ def _manifest_data(game_type: str = "game", player_type: str = "player") -> dict
                 "description": "Default grader stub for unit tests.",
                 "type": "grader",
                 "image": "ghcr.io/metta-ai/graders-default:latest",
-                "source_url": "https://github.com/Metta-AI/graders/tree/ec741c91bb08c8f5aca024218ff122a8d1ae85f9/graders/default/default_grader",
+                "source_url": "https://github.com/Metta-AI/coworld-tools/tree/e6b7863c2619d260bb29f14364baf09c578c9f30/graders/graders/default/default_grader",
             }
         ],
         "variants": [{"id": "default", "name": "Default", "description": "Default.", "game_config": {}}],

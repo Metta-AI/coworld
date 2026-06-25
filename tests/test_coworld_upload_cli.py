@@ -1930,7 +1930,7 @@ def _manifest() -> dict[str, object]:
                 "description": "Default grader stub.",
                 "type": "grader",
                 "image": "ghcr.io/metta-ai/graders-default@sha256:graderdigest",
-                "source_url": "https://github.com/Metta-AI/graders/tree/ec741c91bb08c8f5aca024218ff122a8d1ae85f9/graders/default/default_grader",
+                "source_url": "https://github.com/Metta-AI/coworld-tools/tree/e6b7863c2619d260bb29f14364baf09c578c9f30/graders/graders/default/default_grader",
             }
         ],
         "variants": [

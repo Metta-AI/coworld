@@ -18,8 +18,9 @@ layered in front of it.
 The vendored Paint Arena reporter SDK validates the *producer* side (manifest
 extensions) at zip-build time. This module is the *consumer* side: it
 re-validates the manifest and adds the render safety check. The two are
-intentionally separate — the SDK is a snapshot of ``Metta-AI/reporters`` and
-does not know about this package's certification policy.
+intentionally separate — the SDK is a snapshot of the reporter SDK now housed
+under ``Metta-AI/coworld-tools/reporters`` and does not know about this
+package's certification policy.
 """
 
 from __future__ import annotations

@@ -46,8 +46,13 @@ game-specific policy, and game-specific FAQs. Shared protocol docs belong in `ga
 policy upload, league submission, standings, logs, and replay instructions belong in the platform `play_*.md` guide.
 
 The Coworld development user guide is still under construction. For now, start with the
-[Paint Arena example](src/coworld/examples/paintarena/README.md) and use the [Documentation Map](#documentation-map) for
-the current reference docs.
+[starter templates](src/coworld/templates/README.md), compare against the
+[Paint Arena example](src/coworld/examples/paintarena/README.md), and use
+[Rebuilding Coworlds After The Role Repo Move](src/coworld/docs/REBUILDING_COWORLDS.md) when updating an existing
+Coworld or fixing a supporting role.
+
+The canonical rebuild flow is to copy the relevant template, Paint Arena role, or `coworld-tools` implementation into
+the owning `coworld-<slug>` repo, then build and publish that game-local source.
 
 ## Main Workflows
 
@@ -59,6 +64,7 @@ the current reference docs.
 | Inspect league status, logs, results, and replays | [Cookbook: Watch Results And Find Episodes](COOKBOOK.md#watch-results-and-find-episodes) |
 | Save per-player debugging files after an episode | [Player artifact](src/coworld/docs/artifacts/PLAYER_ARTIFACT.md) and `uv run coworld episode-logs --help` |
 | Build, certify, and upload a Coworld | [Cookbook: Certify And Upload A Coworld](COOKBOOK.md#certify-and-upload-a-coworld) |
+| Rebuild an existing Coworld after a role/source move | [Rebuilding Coworlds After The Role Repo Move](src/coworld/docs/REBUILDING_COWORLDS.md) |
 | Improve a policy in the optimizer workbench | `uv run coworld optimize` and [Optimizer role](src/coworld/docs/roles/OPTIMIZER.md) |
 | Understand package structure and manifest fields | [Manifest reference](src/coworld/docs/COWORLD_MANIFEST.md) |
 
@@ -94,6 +100,7 @@ progress:
 | Implement or submit a player | [Player role](src/coworld/docs/roles/PLAYER.md) and [Coworld cookbook](COOKBOOK.md) |
 | Implement supporting roles | [Reporter](src/coworld/docs/roles/REPORTER.md), [Commissioner](src/coworld/docs/roles/COMMISSIONER.md), [Grader](src/coworld/docs/roles/GRADER.md), [Diagnoser](src/coworld/docs/roles/DIAGNOSER.md), and [Optimizer](src/coworld/docs/roles/OPTIMIZER.md) |
 | Start from installable templates | `coworld/templates` in the installed package |
+| Rebuild with the current role source layout | [Rebuilding Coworlds After The Role Repo Move](src/coworld/docs/REBUILDING_COWORLDS.md) |
 | Understand artifact contracts | [Artifact reference](src/coworld/docs/artifacts/README.md) |
 | Consume episode artifacts as a unit | [Episode bundle reference](src/coworld/docs/artifacts/EPISODE_BUNDLE.md) |
 | Understand the episode lifecycle | [Lifecycle overview](src/coworld/docs/LIFECYCLE.md) |

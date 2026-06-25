@@ -1,14 +1,14 @@
-"""Vendored copy of the reporter SDK from ``Metta-AI/reporters``.
+"""Vendored copy of the reporter SDK now housed in ``Metta-AI/coworld-tools``.
 
 This directory is a direct copy of the ``reporter_sdk`` package from the
-``Metta-AI/reporters`` repo, pinned to a specific commit so the
+historical ``Metta-AI/reporters`` repo, pinned to a specific commit so the
 paintarena reference reporters in this directory
 (``paint_arena_summarizer``, ``stats_reporter``) can run on the canonical
 Coworld reporter contract without taking a cross-repo dependency.
 
 **Source of truth (do not edit here):**
 
-- Repo: ``https://github.com/Metta-AI/reporters``
+- Repo: ``https://github.com/Metta-AI/coworld-tools/tree/main/reporters``
 - Path: ``reporters/reporter_sdk/reporter_sdk``
 - Base commit: ``f9cc98760aac059e1e21e32c05e21dd2442d2362`` (branch
   ``at-summ-09-reporter-sdk-extraction`` at vendor time; the post-F2
@@ -20,12 +20,12 @@ Coworld reporter contract without taking a cross-repo dependency.
 prevents an editable install into ``packages/coworld`` (Python
 3.11-3.12). The SDK source itself uses no 3.13-specific syntax, so the
 pin is incidental and is expected to be loosened upstream. Once that
-lands and is merged to ``reporters`` main, this vendored directory
+lands and is merged to ``coworld-tools`` main, this vendored directory
 should be deleted and the import switched to a normal dependency:
 
 .. code-block:: toml
 
-    "reporter-sdk @ git+https://github.com/Metta-AI/reporters.git#subdirectory=reporters/reporter_sdk"
+    "reporter-sdk @ git+https://github.com/Metta-AI/coworld-tools.git#subdirectory=reporters/reporters/reporter_sdk"
 
 **Why scoped under the paintarena reporter dir rather than at
 ``coworld.``-root:** keeping the SDK inside ``examples/paintarena/reporter/``
