@@ -1143,6 +1143,7 @@ def test_create_player_pod_with_bedrock_sidecar_inverts_bedrock_access(monkeypat
     monkeypatch.setenv("COWORLD_BEDROCK_REGION", "us-west-2")
     monkeypatch.setenv("BEDROCK_SIDECAR_ENABLED", "true")
     monkeypatch.setenv("BEDROCK_SIDECAR_IMAGE", "ghcr.io/metta-ai/bedrock-sidecar:latest")
+    monkeypatch.setenv("BEDROCK_SIDECAR_ROLE_ARN", "arn:aws:iam::583928386201:role/episode-runner-bedrock")
     monkeypatch.setenv("BEDROCK_SIDECAR_PORT", "19191")
     monkeypatch.setenv("BEDROCK_SIDECAR_UPSTREAM_ENDPOINT", "http://bedrock.local")
     player = PlayerLaunchSpec(
@@ -1185,7 +1186,7 @@ def test_create_player_pod_with_bedrock_sidecar_inverts_bedrock_access(monkeypat
     pod: Any = created["body"]
     assert pod.metadata.annotations == {
         "karpenter.sh/do-not-disrupt": "true",
-        "eks.amazonaws.com/skip-containers": "player",
+        "eks.amazonaws.com/skip-containers": "player,bedrock-sidecar",
     }
     assert pod.spec.service_account_name == "episode-runner"
     assert pod.spec.automount_service_account_token is False
@@ -1228,6 +1229,8 @@ def test_create_player_pod_with_bedrock_sidecar_inverts_bedrock_access(monkeypat
     assert sidecar_env["BEDROCK_SIDECAR_EPISODE_REQUEST_ID"] == "job-id"
     assert sidecar_env["BEDROCK_SIDECAR_ROLE"] == "player"
     assert sidecar_env["BEDROCK_SIDECAR_SLOT"] == "0"
+    # Self-provisioned IRSA on the sidecar (not webhook-dependent).
+    assert sidecar_env["AWS_ROLE_ARN"] == "arn:aws:iam::583928386201:role/episode-runner-bedrock"
     assert sidecar_env["AWS_WEB_IDENTITY_TOKEN_FILE"] == BEDROCK_SIDECAR_TOKEN_FILE
 
     token_projection = volumes[BEDROCK_SIDECAR_TOKEN_VOLUME_NAME].projected.sources[0].service_account_token

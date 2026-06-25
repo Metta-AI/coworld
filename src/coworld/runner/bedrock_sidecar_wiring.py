@@ -53,6 +53,7 @@ def build_bedrock_sidecar(
     listen_port: int,
     upstream_endpoint: str | None,
     image: str,
+    role_arn: str,
 ) -> client.V1Container:
     upstream = upstream_endpoint or BEDROCK_RUNTIME_ENDPOINT_TEMPLATE.format(region=region)
     return client.V1Container(
@@ -70,6 +71,11 @@ def build_bedrock_sidecar(
             client.V1EnvVar(name="BEDROCK_SIDECAR_EPISODE_REQUEST_ID", value=attribution.episode_request_id),
             client.V1EnvVar(name="BEDROCK_SIDECAR_ROLE", value=attribution.role),
             client.V1EnvVar(name="BEDROCK_SIDECAR_SLOT", value=attribution.slot),
+            # Self-provide the full IRSA web-identity env (see the app_backend mirror): botocore's
+            # default credential chain needs BOTH AWS_ROLE_ARN and AWS_WEB_IDENTITY_TOKEN_FILE to
+            # assume the role from the projected token, and the EKS webhook can't be relied on for
+            # an initContainer / skip-listed container.
+            client.V1EnvVar(name="AWS_ROLE_ARN", value=role_arn),
             client.V1EnvVar(name="AWS_WEB_IDENTITY_TOKEN_FILE", value=BEDROCK_SIDECAR_TOKEN_FILE),
         ],
         ports=[client.V1ContainerPort(container_port=listen_port, name="bedrock")],

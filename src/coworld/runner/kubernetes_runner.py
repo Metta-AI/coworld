@@ -20,6 +20,7 @@ from kubernetes.client.rest import ApiException
 
 from coworld.runner.bedrock_enablement import BedrockEnablement, resolve_player_bedrock
 from coworld.runner.bedrock_sidecar_wiring import (
+    BEDROCK_SIDECAR_CONTAINER_NAME,
     RESERVED_SIDECAR_APP_ENV,
     BedrockSidecarAttribution,
     bedrock_app_endpoint_env,
@@ -391,7 +392,9 @@ def _create_player_pod(
     # Running after the player exits instead of letting it reach a terminal phase.
     init_containers: list[client.V1Container] | None = None
     if bedrock_sidecar_enabled:
-        pod_annotations["eks.amazonaws.com/skip-containers"] = "player"
+        # Skip the player app AND the sidecar: the sidecar self-provides its full IRSA env, so
+        # the webhook must not also inject a conflicting token path.
+        pod_annotations["eks.amazonaws.com/skip-containers"] = f"player,{BEDROCK_SIDECAR_CONTAINER_NAME}"
         pod_volumes = [bedrock_sidecar_token_volume()]
         init_containers = [
             build_bedrock_sidecar(
@@ -405,6 +408,7 @@ def _create_player_pod(
                 listen_port=bedrock_sidecar_port,
                 upstream_endpoint=os.environ.get("BEDROCK_SIDECAR_UPSTREAM_ENDPOINT") or None,
                 image=os.environ["BEDROCK_SIDECAR_IMAGE"],
+                role_arn=os.environ["BEDROCK_SIDECAR_ROLE_ARN"],
             )
         ]
     pod = client.V1Pod(
