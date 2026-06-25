@@ -59,7 +59,10 @@ def build_bedrock_sidecar(
     return client.V1Container(
         name=BEDROCK_SIDECAR_CONTAINER_NAME,
         image=image,
-        command=["python", "-m", "metta.app_backend.job_runner.bedrock_sidecar"],
+        # Run through `uv run` to use the image's workspace virtualenv (see the app_backend
+        # mirror): the sidecar image installs metta.app_backend into a uv venv, so a bare
+        # `python` can't import it (ModuleNotFoundError -> crash loop).
+        command=["uv", "run", "--no-sync", "python", "-m", "metta.app_backend.job_runner.bedrock_sidecar"],
         # Native sidecar: added to the pod's initContainers with restartPolicy=Always so it is
         # auto-terminated when the player container exits and never holds the pod open.
         restart_policy="Always",
