@@ -2,11 +2,11 @@ from __future__ import annotations
 
 from collections.abc import Iterable
 from datetime import datetime
-from typing import Any, Self
+from typing import Any, Literal, Self
 from uuid import UUID
 
 import httpx
-from pydantic import BaseModel, ConfigDict, TypeAdapter, computed_field
+from pydantic import BaseModel, ConfigDict, Field, TypeAdapter, computed_field
 
 
 class CoworldAPIModel(BaseModel):
@@ -172,6 +172,45 @@ class LeaderboardEntryPublic(CoworldAPIModel):
     score: float
     rounds_played: int
     recent_rounds: list[LeaderboardRecentRoundPublic] | None = None
+
+
+LeaderboardValuePublic = str | int | float | bool | None
+
+
+class LeaderboardAxisPublic(CoworldAPIModel):
+    key: str
+    label: str | None = None
+
+
+class LeaderboardColumnPublic(CoworldAPIModel):
+    key: str
+    label: str | None = None
+    value_type: Literal["number", "integer", "string", "boolean"] = "number"
+    sort: Literal["asc", "desc"] | None = None
+
+
+class LeaderboardRowPublic(CoworldAPIModel):
+    subject_type: str = "player"
+    subject_id: str
+    subject_name: str | None = None
+    values: dict[str, LeaderboardValuePublic]
+    policy_version_ids: set[UUID] = Field(default_factory=set)
+    recent_rounds: list[LeaderboardRecentRoundPublic] | None = None
+
+
+class LeaderboardViewPublic(CoworldAPIModel):
+    key: str
+    title: str | None = None
+    description: str | None = None
+    axis_values: dict[str, str]
+    columns: list[LeaderboardColumnPublic]
+    rows: list[LeaderboardRowPublic]
+
+
+class DivisionLeaderboardsPublic(CoworldAPIModel):
+    default_view_key: str
+    axes: list[LeaderboardAxisPublic]
+    views: list[LeaderboardViewPublic]
 
 
 class V2EpisodeRequestParticipant(CoworldAPIModel):
@@ -404,6 +443,30 @@ class CoworldApiClient:
             params={"include_recent_rounds": include_recent_rounds},
         )
         return rows or []
+
+    def get_division_leaderboards(
+        self,
+        division_id: str,
+        *,
+        include_recent_rounds: int = 0,
+    ) -> DivisionLeaderboardsPublic | None:
+        return self._get(
+            f"/v2/divisions/{division_id}/leaderboards",
+            DivisionLeaderboardsPublic | None,
+            params={"include_recent_rounds": include_recent_rounds},
+        )
+
+    def get_division_leaderboard_tables(
+        self,
+        division_id: str,
+        *,
+        include_recent_rounds: int = 0,
+    ) -> DivisionLeaderboardsPublic | None:
+        # TODO: delete compatibility shim after callers stop using table terminology.
+        return self.get_division_leaderboards(
+            division_id,
+            include_recent_rounds=include_recent_rounds,
+        )
 
     def list_rounds(
         self,

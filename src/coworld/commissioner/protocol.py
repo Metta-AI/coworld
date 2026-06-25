@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import json
-from typing import Any
+from typing import Any, Literal
 from uuid import UUID
 
 from pydantic import BaseModel, Field, field_validator, model_validator
@@ -51,6 +51,10 @@ class RecentResult(BaseModel):
     policy_version_id: UUID
     rank: int
     score: float
+    player_id: str | None = None
+    player_name: str | None = None
+    result_metadata: dict[str, Any] = Field(default_factory=dict)
+    completed_at: str | None = None
 
 
 class VariantInfo(BaseModel):
@@ -75,6 +79,13 @@ class EpisodeScore(BaseModel):
     policy_version_id: UUID
     player_id: str | None = None
     score: float
+    scores: dict[str, float] = Field(default_factory=dict)
+
+    @model_validator(mode="after")
+    def include_primary_score(self) -> "EpisodeScore":
+        if "score" not in self.scores:
+            self.scores = {"score": self.score, **self.scores}
+        return self
 
 
 class RankingEntry(BaseModel):
@@ -172,6 +183,164 @@ class DivisionLeaderboardEntry(BaseModel):
     recent_rounds: list[dict[str, Any]] | None = None
 
 
+LeaderboardValue = str | int | float | bool | None
+
+
+class DivisionLeaderboardAxis(BaseModel):
+    key: str
+    label: str | None = None
+
+
+class DivisionLeaderboardColumn(BaseModel):
+    key: str
+    label: str | None = None
+    value_type: Literal["number", "integer", "string", "boolean"] = "number"
+    sort: Literal["asc", "desc"] | None = None
+
+
+class DivisionLeaderboardRow(BaseModel):
+    subject_type: str = "player"
+    subject_id: str
+    subject_name: str | None = None
+    values: dict[str, LeaderboardValue] = Field(default_factory=dict)
+    policy_version_ids: set[UUID] = Field(default_factory=set)
+    recent_rounds: list[dict[str, Any]] | None = None
+
+
+class DivisionLeaderboardView(BaseModel):
+    key: str = "score"
+    title: str | None = None
+    description: str | None = None
+    axis_values: dict[str, str] = Field(default_factory=dict)
+    columns: list[DivisionLeaderboardColumn] = Field(default_factory=list)
+    rows: list[DivisionLeaderboardRow] = Field(default_factory=list)
+
+
+class DivisionLeaderboard(BaseModel):
+    division_id: UUID
+    default_view_key: str = "score"
+    axes: list[DivisionLeaderboardAxis] = Field(default_factory=list)
+    views: list[DivisionLeaderboardView] = Field(default_factory=list)
+
+
+class DivisionLeaderboardTable(BaseModel):
+    # TODO: delete compatibility model after all commissioners publish DivisionLeaderboardView.
+    # Stable table identifier used by primary_table_id and clients; usually the metric key.
+    id: str = "score"
+    # Human-facing table/tab title, e.g. "Winrate 24h".
+    label: str = "Score"
+    description: str | None = None
+    # Human-facing label for entry.score in this table, e.g. "Winrate".
+    score_label: str = "Score"
+    rankings: list[DivisionLeaderboardEntry] = Field(default_factory=list)
+
+
+def _legacy_score_column_key(view: DivisionLeaderboardView) -> str:
+    for column in view.columns:
+        if column.key != "rank" and column.sort == "desc" and column.value_type in {"number", "integer"}:
+            return column.key
+    for column in view.columns:
+        if column.key != "rank" and column.value_type in {"number", "integer"}:
+            return column.key
+    return "score"
+
+
+def _entry_from_row(row: DivisionLeaderboardRow, rank: int, score_axis_key: str) -> DivisionLeaderboardEntry:
+    score = row.values.get(score_axis_key)
+    row_rank = row.values.get("rank", rank)
+    rounds_played = row.values.get("rounds_played", 0)
+    return DivisionLeaderboardEntry(
+        player_id=row.subject_id,
+        player_name=row.subject_name,
+        rank=int(row_rank) if isinstance(row_rank, (int, float)) else rank,
+        score=float(score) if isinstance(score, (int, float)) else 0.0,
+        rounds_played=int(rounds_played) if isinstance(rounds_played, (int, float)) else 0,
+        policy_version_ids=row.policy_version_ids,
+        recent_rounds=row.recent_rounds,
+    )
+
+
+def _row_from_entry(entry: DivisionLeaderboardEntry) -> DivisionLeaderboardRow:
+    return DivisionLeaderboardRow(
+        subject_type="player",
+        subject_id=entry.player_id,
+        subject_name=entry.player_name,
+        values={"rank": entry.rank, "score": entry.score, "rounds_played": entry.rounds_played},
+        policy_version_ids=entry.policy_version_ids,
+        recent_rounds=entry.recent_rounds,
+    )
+
+
+def _row_from_ranking_entry(entry: RankingEntry) -> DivisionLeaderboardRow:
+    subject_type = "player" if entry.player_id else "policy_version"
+    subject_id = entry.player_id or str(entry.policy_version_id)
+    return DivisionLeaderboardRow(
+        subject_type=subject_type,
+        subject_id=subject_id,
+        values={"rank": entry.rank, "score": entry.score},
+        policy_version_ids={entry.policy_version_id},
+    )
+
+
+def _axis_defs_from_views(views: list[DivisionLeaderboardView]) -> list[DivisionLeaderboardAxis]:
+    axis_keys: list[str] = []
+    for view in views:
+        for key in view.axis_values:
+            if key not in axis_keys:
+                axis_keys.append(key)
+    return [DivisionLeaderboardAxis(key=key, label=key.replace("_", " ").title()) for key in axis_keys]
+
+
+def _leaderboard_from_division_ranking(result: DivisionRanking) -> DivisionLeaderboard:
+    # TODO: delete compatibility shim after commissioners publish RoundComplete.leaderboards directly.
+    view = DivisionLeaderboardView(
+        key="score",
+        title="Score",
+        axis_values={"metric": "score", "timeframe": "legacy"},
+        columns=[
+            DivisionLeaderboardColumn(key="rank", label="Rank", value_type="integer", sort="asc"),
+            DivisionLeaderboardColumn(key="score", label="Score", value_type="number", sort="desc"),
+        ],
+        rows=[_row_from_ranking_entry(entry) for entry in result.rankings],
+    )
+    return DivisionLeaderboard(
+        division_id=result.division_id,
+        default_view_key=view.key,
+        axes=_axis_defs_from_views([view]),
+        views=[view],
+    )
+
+
+def _view_from_table(table: DivisionLeaderboardTable) -> DivisionLeaderboardView:
+    # TODO: delete compatibility shim after table-shaped commissioner responses are gone.
+    return DivisionLeaderboardView(
+        key=table.id,
+        title=table.label,
+        description=table.description,
+        columns=[
+            DivisionLeaderboardColumn(key="rank", label="Rank", value_type="integer", sort="asc"),
+            DivisionLeaderboardColumn(key="score", label=table.score_label, value_type="number", sort="desc"),
+            DivisionLeaderboardColumn(key="rounds_played", label="Rounds Played", value_type="integer"),
+        ],
+        rows=[_row_from_entry(entry) for entry in table.rankings],
+    )
+
+
+def _table_from_view(view: DivisionLeaderboardView) -> DivisionLeaderboardTable:
+    # TODO: delete compatibility shim after callers stop reading table-shaped rank responses.
+    score_column_key = _legacy_score_column_key(view)
+    score_column = next((column for column in view.columns if column.key == score_column_key), None)
+    return DivisionLeaderboardTable(
+        id=view.key,
+        label=view.title or view.key,
+        description=view.description,
+        score_label=(
+            score_column.label if score_column is not None and score_column.label is not None else score_column_key
+        ),
+        rankings=[_entry_from_row(row, rank, score_column_key) for rank, row in enumerate(view.rows, start=1)],
+    )
+
+
 class DivisionDescription(BaseModel):
     round_schedule: str | None = None
     next_round: str | None = None
@@ -266,10 +435,18 @@ class ScheduleEpisodes(BaseModel):
 
 class RoundComplete(BaseModel):
     results: list[DivisionRanking] = Field(default_factory=list)
+    leaderboards: list[DivisionLeaderboard] = Field(default_factory=list)
     policy_membership_events: list[PolicyMembershipEventChange] = Field(default_factory=list)
     membership_changes: list[MembershipChange] = Field(default_factory=list)
     round_display: dict[str, Any] | None = None
     state: Any = None
+
+    @model_validator(mode="after")
+    def fill_compatibility_leaderboards(self) -> "RoundComplete":
+        # TODO: delete compatibility shim after old commissioners stop sending only results.
+        if not self.leaderboards and self.results:
+            self.leaderboards = [_leaderboard_from_division_ranking(result) for result in self.results]
+        return self
 
     @field_validator("state")
     @classmethod
@@ -362,7 +539,49 @@ class RankDivisionRequest(BaseModel):
 
 
 class RankDivisionResponse(BaseModel):
+    default_view_key: str = "score"
+    axes: list[DivisionLeaderboardAxis] = Field(default_factory=list)
+    views: list[DivisionLeaderboardView] = Field(default_factory=list)
+    # TODO: delete compatibility fields after platform and clients read generic `views`.
+    primary_table_id: str | None = None
+    tables: list[DivisionLeaderboardTable] = Field(default_factory=list)
     rankings: list[DivisionLeaderboardEntry] = Field(default_factory=list)
+
+    @model_validator(mode="after")
+    def fill_compatibility_fields(self) -> "RankDivisionResponse":
+        if not self.views and self.tables:
+            self.default_view_key = self.primary_table_id or self.tables[0].id
+            self.views = [_view_from_table(table) for table in self.tables]
+        if not self.views and self.rankings:
+            self.views = [
+                DivisionLeaderboardView(
+                    key=self.default_view_key,
+                    title="Score",
+                    columns=[
+                        DivisionLeaderboardColumn(key="rank", label="Rank", value_type="integer", sort="asc"),
+                        DivisionLeaderboardColumn(key="score", label="Score", value_type="number", sort="desc"),
+                        DivisionLeaderboardColumn(key="rounds_played", label="Rounds Played", value_type="integer"),
+                    ],
+                    rows=[_row_from_entry(entry) for entry in self.rankings],
+                )
+            ]
+        if not self.views:
+            self.views = [DivisionLeaderboardView(key=self.default_view_key)]
+        if not any(view.key == self.default_view_key for view in self.views):
+            self.default_view_key = self.views[0].key
+        if not self.axes:
+            self.axes = _axis_defs_from_views(self.views)
+        if self.primary_table_id is None:
+            self.primary_table_id = self.default_view_key
+        if not self.tables:
+            self.tables = [_table_from_view(view) for view in self.views]
+        if not self.rankings:
+            default_view = next((view for view in self.views if view.key == self.default_view_key), self.views[0])
+            score_axis_key = _legacy_score_column_key(default_view)
+            self.rankings = [
+                _entry_from_row(row, rank, score_axis_key) for rank, row in enumerate(default_view.rows, start=1)
+            ]
+        return self
 
     def to_json(self) -> dict[str, Any]:
         data = self.model_dump(mode="json")

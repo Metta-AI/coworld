@@ -9,6 +9,13 @@ from coworld.commissioner.protocol import (
     DivisionConfig,
     DivisionDescription,
     DivisionInfo,
+    DivisionLeaderboard,
+    DivisionLeaderboardAxis,
+    DivisionLeaderboardColumn,
+    DivisionLeaderboardEntry,
+    DivisionLeaderboardRow,
+    DivisionLeaderboardTable,
+    DivisionLeaderboardView,
     DivisionRanking,
     EpisodeCompletedRequest,
     EpisodeCompletedResponse,
@@ -24,6 +31,7 @@ from coworld.commissioner.protocol import (
     MembershipChange,
     MembershipInfo,
     PolicyMembershipEventChange,
+    RankDivisionResponse,
     RankingEntry,
     RoundComplete,
     RoundCompletedResponse,
@@ -480,3 +488,121 @@ def test_unknown_commissioner_message_type_fails() -> None:
 def test_round_complete_rejects_oversized_state() -> None:
     with pytest.raises(ValidationError, match="state must not exceed 10 MB"):
         RoundComplete(state={"payload": "x" * (10 * 1024 * 1024)})
+
+
+def test_rank_division_response_fills_rankings_from_default_view() -> None:
+    response = RankDivisionResponse(
+        default_view_key="winrate_24h",
+        views=[
+            DivisionLeaderboardView(key="score", title="Score"),
+            DivisionLeaderboardView(
+                key="winrate_24h",
+                title="Winrate 24h",
+                axis_values={"metric": "winrate", "timeframe": "24h"},
+                columns=[
+                    DivisionLeaderboardColumn(key="rank", label="Rank", value_type="integer", sort="asc"),
+                    DivisionLeaderboardColumn(key="winrate", label="Winrate", value_type="number", sort="desc"),
+                ],
+                rows=[
+                    DivisionLeaderboardRow(
+                        subject_id="player_1",
+                        values={"rank": 1, "winrate": 0.75, "rounds_played": 3},
+                    )
+                ],
+            ),
+        ],
+    )
+
+    assert response.rankings[0].player_id == "player_1"
+    assert response.rankings[0].score == 0.75
+    assert response.axes == [
+        DivisionLeaderboardAxis(key="metric", label="Metric"),
+        DivisionLeaderboardAxis(key="timeframe", label="Timeframe"),
+    ]
+    assert response.to_json()["views"][1]["rows"][0]["values"]["winrate"] == 0.75
+
+
+def test_rank_division_response_fills_view_from_legacy_rankings() -> None:
+    entry = DivisionLeaderboardEntry(
+        player_id="player_1",
+        rank=1,
+        score=2.0,
+        rounds_played=1,
+    )
+
+    response = RankDivisionResponse(rankings=[entry])
+
+    assert response.views[0].key == "score"
+    assert response.views[0].columns[1].key == "score"
+    assert response.views[0].rows[0].values["score"] == 2.0
+    assert response.rankings == [entry]
+
+
+def test_rank_division_response_fills_view_from_legacy_table() -> None:
+    entry = DivisionLeaderboardEntry(
+        player_id="player_1",
+        rank=1,
+        score=0.75,
+        rounds_played=3,
+    )
+
+    response = RankDivisionResponse(
+        primary_table_id="winrate_24h",
+        tables=[
+            DivisionLeaderboardTable(id="score", label="Score", score_label="Score", rankings=[]),
+            DivisionLeaderboardTable(
+                id="winrate_24h",
+                label="Winrate 24h",
+                score_label="Winrate",
+                rankings=[entry],
+            ),
+        ],
+    )
+
+    assert response.default_view_key == "winrate_24h"
+    assert response.views[1].key == "winrate_24h"
+    assert response.views[1].columns[1].label == "Winrate"
+    assert response.rankings == [entry]
+
+
+def test_round_complete_fills_leaderboards_from_legacy_results() -> None:
+    division_id = uuid4()
+    policy_version_id = uuid4()
+
+    complete = RoundComplete(
+        results=[
+            DivisionRanking(
+                division_id=division_id,
+                rankings=[
+                    RankingEntry(
+                        policy_version_id=policy_version_id,
+                        player_id="player_1",
+                        rank=1,
+                        score=4.0,
+                    )
+                ],
+            )
+        ]
+    )
+
+    assert complete.leaderboards[0].division_id == division_id
+    assert complete.leaderboards[0].axes == [
+        DivisionLeaderboardAxis(key="metric", label="Metric"),
+        DivisionLeaderboardAxis(key="timeframe", label="Timeframe"),
+    ]
+    assert complete.leaderboards[0].views[0].axis_values == {"metric": "score", "timeframe": "legacy"}
+    assert complete.leaderboards[0].views[0].rows[0].values == {"rank": 1, "score": 4.0}
+
+
+def test_round_complete_preserves_explicit_leaderboards() -> None:
+    division_id = uuid4()
+    leaderboard = DivisionLeaderboard(
+        division_id=division_id,
+        default_view_key="score_1h",
+        axes=[DivisionLeaderboardAxis(key="timeframe", label="Timeframe")],
+        views=[DivisionLeaderboardView(key="score_1h", axis_values={"timeframe": "1h"})],
+    )
+
+    complete = RoundComplete(leaderboards=[leaderboard])
+
+    assert complete.leaderboards == [leaderboard]
