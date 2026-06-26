@@ -368,8 +368,9 @@ def _create_player_pod(
     if bedrock_sidecar_enabled:
         bedrock_sidecar_port = int(os.environ["BEDROCK_SIDECAR_PORT"])
         # Strip both the direct-access env and the reserved sidecar keys from the user's
-        # policy/secret env, then apply the sidecar endpoint env LAST so it wins. Otherwise a
-        # policy that pinned AWS_ENDPOINT_URL_BEDROCK_RUNTIME would bypass the sidecar.
+        # policy/secret env, then apply platform-owned Bedrock app env LAST so it wins.
+        # USE_BEDROCK remains as the public enablement contract; endpoint/credential env
+        # routes the actual call through the sidecar.
         player_env = {
             key: value
             for key, value in player_env.items()
@@ -379,7 +380,7 @@ def _create_player_pod(
             ev.name: ev.value
             for ev in bedrock_app_endpoint_env(bedrock_sidecar_port, os.environ["COWORLD_BEDROCK_REGION"])
         }
-        player_env = player_env | endpoint_env
+        player_env = player_env | {"USE_BEDROCK": "true"} | endpoint_env
     elif bedrock_enablement.enabled:
         bedrock_region = os.environ["COWORLD_BEDROCK_REGION"]
         player_env = {"AWS_REGION": bedrock_region, "AWS_DEFAULT_REGION": bedrock_region} | player_env

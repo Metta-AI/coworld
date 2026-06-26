@@ -1256,8 +1256,9 @@ def test_create_player_pod_with_bedrock_sidecar_inverts_bedrock_access(monkeypat
     assert env["AWS_BEARER_TOKEN_BEDROCK"] == "bedrock-sidecar"
     assert env["AWS_REGION"] == "us-west-2"
     assert env["AWS_DEFAULT_REGION"] == "us-west-2"
-    # Direct-access / real-identity keys the policy supplied are stripped from the app entirely.
-    assert "USE_BEDROCK" not in env
+    # The public enablement flag remains readable for player SDKs, while real-identity keys
+    # the policy supplied are stripped from the app entirely.
+    assert env["USE_BEDROCK"] == "true"
     assert "AWS_SESSION_TOKEN" not in env
     assert "AWS_WEB_IDENTITY_TOKEN_FILE" not in env
     assert "AWS_ROLE_ARN" not in env
