@@ -1173,6 +1173,7 @@ def test_create_player_pod_with_bedrock_sidecar_inverts_bedrock_access(monkeypat
             "AWS_DEFAULT_REGION": "from-policy-secret",
             "AWS_SECRET_ACCESS_KEY": "from-policy-secret",
             "AWS_SESSION_TOKEN": "from-policy-secret",
+            "AWS_BEARER_TOKEN_BEDROCK": "from-policy-secret",
             "AWS_WEB_IDENTITY_TOKEN_FILE": "/tmp/token",
             "AWS_ROLE_ARN": "arn:aws:iam::123456789012:role/direct",
         },
@@ -1207,6 +1208,8 @@ def test_create_player_pod_with_bedrock_sidecar_inverts_bedrock_access(monkeypat
     assert env["AWS_ENDPOINT_URL_BEDROCK_RUNTIME"] == "http://127.0.0.1:19191"
     assert env["AWS_ACCESS_KEY_ID"] == "bedrock-sidecar"
     assert env["AWS_SECRET_ACCESS_KEY"] == "bedrock-sidecar"
+    # Bearer-token (Bedrock API key) auth: the policy's own token is overridden by the placeholder.
+    assert env["AWS_BEARER_TOKEN_BEDROCK"] == "bedrock-sidecar"
     assert env["AWS_REGION"] == "us-west-2"
     assert env["AWS_DEFAULT_REGION"] == "us-west-2"
     # Direct-access / real-identity keys the policy supplied are stripped from the app entirely.

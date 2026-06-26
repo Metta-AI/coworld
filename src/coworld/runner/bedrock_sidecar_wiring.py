@@ -25,6 +25,10 @@ RESERVED_SIDECAR_APP_ENV = frozenset(
         "AWS_SESSION_TOKEN",
         "AWS_REGION",
         "AWS_DEFAULT_REGION",
+        # Bedrock API-key (bearer) auth: reserve both so a policy's own token/file can't override
+        # the placeholder; the sidecar strips the bearer header and re-signs with IRSA regardless.
+        "AWS_BEARER_TOKEN_BEDROCK",
+        "AWS_BEARER_TOKEN_BEDROCK_FILE",
     }
 )
 
@@ -111,13 +115,16 @@ def _healthz_probe_command(listen_port: int) -> list[str]:
 def bedrock_app_endpoint_env(listen_port: int, region: str) -> list[client.V1EnvVar]:
     """App-container env to reach Bedrock only via the localhost sidecar.
 
-    Includes placeholder credentials + region: the AWS SDK needs both to build/sign a request
-    before sending. They are non-functional (the sidecar re-signs with the real identity).
+    Includes placeholder credentials + region (the AWS SDK needs both to build/sign a request)
+    and a placeholder Bedrock API key (so bearer-token apps pass their "token configured?"
+    precondition and actually call). All non-functional — the sidecar strips the client auth
+    header (SigV4 or Bearer) and re-signs with the real identity.
     """
     return [
         client.V1EnvVar(name="AWS_ENDPOINT_URL_BEDROCK_RUNTIME", value=f"http://127.0.0.1:{listen_port}"),
         client.V1EnvVar(name="AWS_ACCESS_KEY_ID", value=_DUMMY_APP_CREDENTIAL),
         client.V1EnvVar(name="AWS_SECRET_ACCESS_KEY", value=_DUMMY_APP_CREDENTIAL),
+        client.V1EnvVar(name="AWS_BEARER_TOKEN_BEDROCK", value=_DUMMY_APP_CREDENTIAL),
         client.V1EnvVar(name="AWS_REGION", value=region),
         client.V1EnvVar(name="AWS_DEFAULT_REGION", value=region),
     ]
