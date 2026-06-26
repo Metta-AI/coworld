@@ -56,14 +56,37 @@ class CoworldResourceRequests(BaseModel):
     )
 
 
+class CoworldResourceLimits(BaseModel):
+    model_config = ConfigDict(extra="forbid", populate_by_name=True)
+
+    cpu: str | None = Field(
+        default=None,
+        description=(
+            "Kubernetes CPU limit quantity, e.g. '8'. Caps the container's compute regardless of how many cores "
+            "the node has, so the runnable behaves the same on every node size. The backend also pins the "
+            "container's math-library thread pools (OMP/MKL/OpenBLAS/NumExpr) to this many cores. Omit for no "
+            "limit (the container may burst to the whole node)."
+        ),
+    )
+
+
 class CoworldRunnableResources(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     requests: CoworldResourceRequests = Field(
+        default_factory=CoworldResourceRequests,
         description=(
             "Scheduler reservation for this runnable. The backend clamps each field to the role's bounds and "
-            "rejects an upload whose request exceeds a role maximum. Limits are derived by the backend, not "
-            "declared here."
+            "rejects an upload whose request exceeds a role maximum. Omit to take the role defaults — e.g. a "
+            "limits-only profile that just caps CPU."
+        ),
+    )
+    limits: CoworldResourceLimits | None = Field(
+        default=None,
+        description=(
+            "Optional hard compute ceiling. Today only the player role honors a CPU limit; declaring one caps "
+            "every player pod at that many cores and pins its thread pools to match. Clamped to the role's "
+            "limit bounds by the backend."
         ),
     )
 

@@ -28,6 +28,14 @@ Hosted deployments pass player requests through `COWORLD_PLAYER_CPU_REQUEST` and
 those env vars are omitted in a direct runner invocation, the coordinator falls back to 2 CPU and 2Gi memory per player
 pod.
 
+A player pod gets **no CPU limit by default**, so it may burst to every core on the node it lands on — meaning a policy
+that reads `os.cpu_count()`/`nproc` sees 8/12/16 cores depending on placement. A Coworld that wants deterministic,
+node-size-independent player compute declares `player.resources.limits.cpu` in its manifest. The backend forwards it as
+`COWORLD_PLAYER_CPU_LIMIT`, and the worker then (a) sets that as the player container's CPU limit and (b) pins the
+player's math-library thread pools (`OMP_NUM_THREADS`/`MKL_NUM_THREADS`/`OPENBLAS_NUM_THREADS`/`NUMEXPR_NUM_THREADS`) to
+`floor(limit)` cores so the player behaves like an N-core box on any node. The player image's own thread-env wins if it
+sets these explicitly.
+
 Per-player resource requests are configurable per job via `COWORLD_PLAYER_CPU_REQUEST` and
 `COWORLD_PLAYER_MEMORY_REQUEST` (see [Optional Inputs](#optional-inputs)).
 
@@ -165,6 +173,7 @@ COWORLD_WORKLOAD_TYPE=coworld-jobs
 COWORLD_CAPACITY_TYPE=on-demand
 COWORLD_PLAYER_CPU_REQUEST=250m
 COWORLD_PLAYER_MEMORY_REQUEST=256Mi
+COWORLD_PLAYER_CPU_LIMIT=8
 LOG_LEVEL=...
 ```
 
@@ -172,8 +181,9 @@ LOG_LEVEL=...
 backend also applies the same workload-type selector and toleration to the parent Job. `COWORLD_CAPACITY_TYPE`
 optionally adds a Karpenter capacity-type node selector, such as `on-demand`, to the parent Job and child player pods.
 `COWORLD_PLAYER_CPU_REQUEST` and `COWORLD_PLAYER_MEMORY_REQUEST` override the resource requests applied to each child
-player pod. `COWORLD_TIMEOUT_SECONDS` controls coordinator waits inside the Job; the hosted parent Job also has its own
-20 minute Kubernetes active deadline.
+player pod. `COWORLD_PLAYER_CPU_LIMIT` (empty/unset means no limit) sets a hard CPU ceiling on each child player pod and
+pins its math-library thread pools to `floor(limit)` cores. `COWORLD_TIMEOUT_SECONDS` controls coordinator waits inside
+the Job; the hosted parent Job also has its own 20 minute Kubernetes active deadline.
 
 ## Output URIs
 

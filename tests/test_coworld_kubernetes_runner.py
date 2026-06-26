@@ -1061,9 +1061,10 @@ def test_run_kubernetes_episode_defaults_player_resource_requests(monkeypatch, t
         _service_name,
         player_cpu_request,
         player_memory_request,
+        player_cpu_limit,
         _owner_references,
     ):
-        created.append((player_cpu_request, player_memory_request))
+        created.append((player_cpu_request, player_memory_request, player_cpu_limit))
 
     monkeypatch.setattr(kubernetes_runner, "_create_player_pod", create_player_pod)
     job = SimpleNamespace(
@@ -1073,7 +1074,7 @@ def test_run_kubernetes_episode_defaults_player_resource_requests(monkeypatch, t
 
     kubernetes_runner._run_kubernetes_episode(job, artifacts, timeout_seconds=1.0)
 
-    assert created == [("2", "2Gi")]
+    assert created == [("2", "2Gi", "")]
 
 
 def test_create_player_pod_injects_policy_secret_env(monkeypatch):
@@ -1111,6 +1112,7 @@ def test_create_player_pod_injects_policy_secret_env(monkeypatch):
         "game-service",
         "2",
         "2Gi",
+        "",
         [],
     )
 
@@ -1135,6 +1137,47 @@ def test_create_player_pod_injects_policy_secret_env(monkeypatch):
     assert pod.spec.service_account_name == "episode-runner"
     assert pod.spec.volumes is None
     assert pod.spec.automount_service_account_token is None
+
+
+def test_create_player_pod_applies_cpu_limit_and_pins_thread_pools(monkeypatch):
+    created: dict[str, object] = {}
+    core_v1 = SimpleNamespace(create_namespaced_pod=lambda *, namespace, body: created.update({"body": body}))
+    monkeypatch.delenv("BEDROCK_SIDECAR_ENABLED", raising=False)
+    # An author who pins their own thread count keeps it; the limit only fills the unset knobs.
+    player = PlayerLaunchSpec(image="paintbot:latest", run=(), env={"OMP_NUM_THREADS": "3"})
+
+    kubernetes_runner._create_player_pod(
+        core_v1, "jobs", "job-player-0", 0, "slot-token", player, {}, "job-id", "game-service", "250m", "256Mi", "8", []
+    )
+
+    pod: Any = created["body"]
+    container: Any = pod.spec.containers[0]
+    assert container.resources.requests == {"cpu": "250m", "memory": "256Mi"}
+    assert container.resources.limits == {"cpu": "8"}
+    env = {ev.name: ev.value for ev in container.env}
+    assert env["MKL_NUM_THREADS"] == "8"
+    assert env["OPENBLAS_NUM_THREADS"] == "8"
+    assert env["NUMEXPR_NUM_THREADS"] == "8"
+    # The author's explicit thread pin wins over the limit-derived default.
+    assert env["OMP_NUM_THREADS"] == "3"
+
+
+def test_create_player_pod_without_cpu_limit_omits_limit_and_thread_env(monkeypatch):
+    created: dict[str, object] = {}
+    core_v1 = SimpleNamespace(create_namespaced_pod=lambda *, namespace, body: created.update({"body": body}))
+    monkeypatch.delenv("BEDROCK_SIDECAR_ENABLED", raising=False)
+    player = PlayerLaunchSpec(image="paintbot:latest", run=(), env={})
+
+    kubernetes_runner._create_player_pod(
+        core_v1, "jobs", "job-player-0", 0, "slot-token", player, {}, "job-id", "game-service", "250m", "256Mi", "", []
+    )
+
+    pod: Any = created["body"]
+    container: Any = pod.spec.containers[0]
+    assert container.resources.limits is None
+    env = {ev.name: ev.value for ev in container.env}
+    assert "OMP_NUM_THREADS" not in env
+    assert "MKL_NUM_THREADS" not in env
 
 
 def test_create_player_pod_with_bedrock_sidecar_inverts_bedrock_access(monkeypatch):
@@ -1181,6 +1224,7 @@ def test_create_player_pod_with_bedrock_sidecar_inverts_bedrock_access(monkeypat
         "game-service",
         "2",
         "2Gi",
+        "",
         [],
     )
 
@@ -1262,6 +1306,7 @@ def test_create_player_pod_forwards_artifact_upload_url_for_its_slot(monkeypatch
         "game-service",
         "2",
         "2Gi",
+        "",
         [],
     )
 
@@ -1279,7 +1324,7 @@ def test_create_player_pod_tags_bedrock_request_metadata_with_slot(monkeypatch):
     player = PlayerLaunchSpec(image="paintbot:latest", run=(), env={})
 
     kubernetes_runner._create_player_pod(
-        core_v1, "jobs", "job-player-1", 1, "slot-token", player, {}, "job-id", "game-service", "2", "2Gi", []
+        core_v1, "jobs", "job-player-1", 1, "slot-token", player, {}, "job-id", "game-service", "2", "2Gi", "", []
     )
 
     env = {env_var.name: env_var.value for env_var in created["body"].spec.containers[0].env}
@@ -1299,7 +1344,7 @@ def test_create_player_pod_omits_bedrock_request_metadata_when_unset(monkeypatch
     player = PlayerLaunchSpec(image="paintbot:latest", run=(), env={})
 
     kubernetes_runner._create_player_pod(
-        core_v1, "jobs", "job-player-0", 0, "slot-token", player, {}, "job-id", "game-service", "2", "2Gi", []
+        core_v1, "jobs", "job-player-0", 0, "slot-token", player, {}, "job-id", "game-service", "2", "2Gi", "", []
     )
 
     env = {env_var.name: env_var.value for env_var in created["body"].spec.containers[0].env}
@@ -1400,6 +1445,7 @@ def test_create_player_pod_keeps_default_service_account_without_bedrock():
         "game-service",
         "2",
         "2Gi",
+        "",
         [],
     )
 

@@ -17,6 +17,7 @@ from typing import Mapping
 import httpx
 from kubernetes import client, config
 from kubernetes.client.rest import ApiException
+from kubernetes.utils import parse_quantity
 
 from coworld.runner.bedrock_enablement import BedrockEnablement, resolve_player_bedrock
 from coworld.runner.bedrock_sidecar_wiring import (
@@ -69,6 +70,28 @@ _PLAYER_WAITING_POLICY_FAILURE_REASONS = {
     "ImagePullBackOff",
     "InvalidImageName",
 }
+# Standard math-library thread-pool knobs. PyTorch reads OMP_NUM_THREADS for its default
+# intra-op thread count, so pinning these covers the common ML player stack.
+_PLAYER_THREAD_POOL_ENV_VARS = (
+    "OMP_NUM_THREADS",
+    "MKL_NUM_THREADS",
+    "OPENBLAS_NUM_THREADS",
+    "NUMEXPR_NUM_THREADS",
+)
+
+
+def _player_thread_pool_env(cpu_limit: str) -> dict[str, str]:
+    """Thread-pool env pinned to a player's CPU limit; empty limit -> no pinning.
+
+    A CPU *limit* throttles compute but leaves os.cpu_count()/nproc reporting the node's core
+    count, so NumPy/PyTorch/etc. would still size their pools to one-thread-per-node-core and
+    thrash against the quota. Pinning these to floor(limit cores) makes the player behave like an
+    N-core box regardless of which node size it lands on.
+    """
+    if not cpu_limit:
+        return {}
+    threads = max(1, int(parse_quantity(cpu_limit)))
+    return {name: str(threads) for name in _PLAYER_THREAD_POOL_ENV_VARS}
 
 
 class PlayerPodFailure(RunnerEpisodeError):
@@ -210,6 +233,9 @@ def _run_kubernetes_episode(
     policy_secrets = _policy_secrets_from_env()
     player_cpu_request = os.environ.get("COWORLD_PLAYER_CPU_REQUEST", DEFAULT_PLAYER_CPU_REQUEST)
     player_memory_request = os.environ.get("COWORLD_PLAYER_MEMORY_REQUEST", DEFAULT_PLAYER_MEMORY_REQUEST)
+    # Empty (the default) means no CPU limit: a player pod may burst to the whole node, so it
+    # sees 8/12/16 cores depending on placement. A declared limit caps every player pod here.
+    player_cpu_limit = os.environ.get("COWORLD_PLAYER_CPU_LIMIT", "")
     child_names: list[str] = []
 
     try:
@@ -236,6 +262,7 @@ def _run_kubernetes_episode(
                 service_name,
                 player_cpu_request,
                 player_memory_request,
+                player_cpu_limit,
                 owner_references,
             )
         players_launched = time.monotonic()
@@ -326,11 +353,17 @@ def _create_player_pod(
     service_name: str,
     player_cpu_request: str,
     player_memory_request: str,
+    player_cpu_limit: str,
     owner_references: list[client.V1OwnerReference],
 ) -> None:
     command, args = _command_args(player.run)
     bedrock_enablement = resolve_player_bedrock(policy_secret_env)
-    player_env = dict(player.env) | dict(policy_secret_env)
+    # A CPU limit caps compute but does NOT change what os.cpu_count()/nproc report (those read
+    # the host's /proc/cpuinfo), so a policy that sizes its math-library thread pools off the CPU
+    # count would still spawn one-per-node-core and thrash against the quota. Pin the standard
+    # thread-pool env to the limit so the player behaves like an N-core box on any node size; the
+    # author's own env still wins if they set these explicitly.
+    player_env = _player_thread_pool_env(player_cpu_limit) | dict(player.env) | dict(policy_secret_env)
     bedrock_sidecar_enabled = os.environ.get("BEDROCK_SIDECAR_ENABLED") == "true" and bedrock_enablement.enabled
     if bedrock_sidecar_enabled:
         bedrock_sidecar_port = int(os.environ["BEDROCK_SIDECAR_PORT"])
@@ -383,7 +416,9 @@ def _create_player_pod(
                 *metadata_env_vars,
             ],
             resources=client.V1ResourceRequirements(
-                requests={"cpu": player_cpu_request, "memory": player_memory_request}
+                requests={"cpu": player_cpu_request, "memory": player_memory_request},
+                # CPU limit only: a memory limit would risk OOM-killing existing players.
+                limits={"cpu": player_cpu_limit} if player_cpu_limit else None,
             ),
         )
     ]

@@ -440,6 +440,26 @@
       "title": "CoworldProtocolDocs",
       "type": "object"
     },
+    "CoworldResourceLimits": {
+      "additionalProperties": false,
+      "properties": {
+        "cpu": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Kubernetes CPU limit quantity, e.g. '8'. Caps the container's compute regardless of how many cores the node has, so the runnable behaves the same on every node size. The backend also pins the container's math-library thread pools (OMP/MKL/OpenBLAS/NumExpr) to this many cores. Omit for no limit (the container may burst to the whole node).",
+          "title": "Cpu"
+        }
+      },
+      "title": "CoworldResourceLimits",
+      "type": "object"
+    },
     "CoworldResourceRequests": {
       "additionalProperties": false,
       "properties": {
@@ -491,10 +511,21 @@
       "properties": {
         "requests": {
           "$ref": "#/$defs/CoworldResourceRequests",
-          "description": "Scheduler reservation for this runnable. The backend clamps each field to the role's bounds and rejects an upload whose request exceeds a role maximum. Limits are derived by the backend, not declared here."
+          "description": "Scheduler reservation for this runnable. The backend clamps each field to the role's bounds and rejects an upload whose request exceeds a role maximum. Omit to take the role defaults \u2014 e.g. a limits-only profile that just caps CPU."
+        },
+        "limits": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/CoworldResourceLimits"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Optional hard compute ceiling. Today only the player role honors a CPU limit; declaring one caps every player pod at that many cores and pins its thread pools to match. Clamped to the role's limit bounds by the backend."
         }
       },
-      "required": ["requests"],
       "title": "CoworldRunnableResources",
       "type": "object"
     },
