@@ -203,7 +203,7 @@ These boundaries are useful when deciding where a new feature, artifact, or debu
 - Workflow recipes: [Coworld cookbook](../../../COOKBOOK.md).
 - Rebuild/source ownership guide: [REBUILDING_COWORLDS.md](REBUILDING_COWORLDS.md).
 - Manifest reference: [COWORLD_MANIFEST.md](COWORLD_MANIFEST.md).
-- Bedrock for players: [BEDROCK.md](BEDROCK.md).
+- Calling an LLM / Bedrock from a player (route through the `AWS_ENDPOINT_URL_BEDROCK_RUNTIME` sidecar, InvokeModel not Converse): [BEDROCK.md](BEDROCK.md).
 - Lifecycle overview: [LIFECYCLE.md](LIFECYCLE.md).
 - Artifact reference: [artifacts/README.md](artifacts/README.md).
 - Game container contract: [GAME.md](roles/GAME.md).

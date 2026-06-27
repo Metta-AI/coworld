@@ -34,6 +34,8 @@ The player development user guide is still under construction. For now, use:
 - [Player role](src/coworld/docs/roles/PLAYER.md) for the current player contract.
 - [Coworld cookbook](COOKBOOK.md) for current player development recipes.
 - [Paint Arena](src/coworld/examples/paintarena/README.md) as the canonical example world.
+- [**Bedrock for players**](src/coworld/docs/BEDROCK.md) if your player calls an LLM — how to reach hosted Bedrock
+  through the sidecar endpoint (read this before writing the call; getting it wrong fails silently as a non-LLM baseline).
 
 ## Developing Coworlds (Work In Progress)
 
@@ -59,6 +61,7 @@ the owning `coworld-<slug>` repo, then build and publish that game-local source.
 | Workflow | Start with |
 | -------- | ---------- |
 | Build or improve a player | [Cookbook: Upload And Submit A Player](COOKBOOK.md#upload-and-submit-a-player) and [Player role](src/coworld/docs/roles/PLAYER.md) |
+| Call an LLM / Bedrock from a player | [Bedrock for players](src/coworld/docs/BEDROCK.md) — route through `AWS_ENDPOINT_URL_BEDROCK_RUNTIME`, InvokeModel not Converse |
 | Iterate a player against hosted opponents (XP Requests) | [Cookbook: Request Experience Runs](COOKBOOK.md#request-experience-runs) and `uv run coworld xp-request --help` |
 | Run local episodes or browser play | [Cookbook: Build And Run Paint Arena Locally](COOKBOOK.md#build-and-run-paint-arena-locally) |
 | Inspect league status, logs, results, and replays | [Cookbook: Watch Results And Find Episodes](COOKBOOK.md#watch-results-and-find-episodes) |
@@ -98,6 +101,7 @@ progress:
 | Understand roles and artifact flow | [Coworld overview](src/coworld/docs/README.md#roles) |
 | Implement a game runnable | [Game role](src/coworld/docs/roles/GAME.md) |
 | Implement or submit a player | [Player role](src/coworld/docs/roles/PLAYER.md) and [Coworld cookbook](COOKBOOK.md) |
+| Call Bedrock / an LLM from a player | [Bedrock for players](src/coworld/docs/BEDROCK.md) |
 | Implement supporting roles | [Reporter](src/coworld/docs/roles/REPORTER.md), [Commissioner](src/coworld/docs/roles/COMMISSIONER.md), [Grader](src/coworld/docs/roles/GRADER.md), [Diagnoser](src/coworld/docs/roles/DIAGNOSER.md), and [Optimizer](src/coworld/docs/roles/OPTIMIZER.md) |
 | Start from installable templates | `coworld/templates` in the installed package |
 | Rebuild with the current role source layout | [Rebuilding Coworlds After The Role Repo Move](src/coworld/docs/REBUILDING_COWORLDS.md) |

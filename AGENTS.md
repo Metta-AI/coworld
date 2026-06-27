@@ -4,6 +4,14 @@ Public CLI and Python package for Softmax v2 tournaments ("Coworlds"). This pack
 entrypoint, local episode/play tooling, Coworld uploads, policy uploads/submission helpers, the Paint Arena reference
 Coworld, and the public Coworld docs shipped with the package. It depends on `softmax-cli` for auth-backed commands.
 
+## ⚠️ Building a player that calls an LLM / Bedrock? Read [`src/coworld/docs/BEDROCK.md`](src/coworld/docs/BEDROCK.md) FIRST.
+
+The one rule: in a hosted episode, **send every Bedrock call to the `AWS_ENDPOINT_URL_BEDROCK_RUNTIME` endpoint** (the
+per-pod sidecar that signs with the runner identity), using **`InvokeModel`, not `Converse`**. Hitting the real AWS host
+instead → HTTP 403 with the injected placeholder creds, and a silent fall back to a non-LLM baseline. Standard SDKs
+(boto3, `AnthropicBedrock`, AWS SDK for JS, `@cogweb/llm`) honor that env var automatically; hand-rolled HTTP must read
+it. Full contract, copy-paste examples, and the 403 troubleshooting table: [`BEDROCK.md`](src/coworld/docs/BEDROCK.md).
+
 ## Coworlds Expert Agent
 
 A distributable Claude Code agent for coworld developers is available at
@@ -91,8 +99,9 @@ source of truth. They are generated docs and `$schema` targets; `test_types.py` 
   cross-links.
 - [src/coworld/docs/COWORLD_MANIFEST.md](src/coworld/docs/COWORLD_MANIFEST.md) - manifest semantics and schema source
   of truth.
-- [src/coworld/docs/BEDROCK.md](src/coworld/docs/BEDROCK.md) - hosted Bedrock upload contract for player policies and
-  robustness to shared-quota throttling.
+- [src/coworld/docs/BEDROCK.md](src/coworld/docs/BEDROCK.md) - **how a player calls Bedrock at runtime** (the
+  `AWS_ENDPOINT_URL_BEDROCK_RUNTIME` sidecar endpoint, InvokeModel-not-Converse, 403 troubleshooting), the hosted
+  Bedrock upload contract, and robustness to shared-quota throttling. Required reading before building an LLM player.
 - [src/coworld/docs/LIFECYCLE.md](src/coworld/docs/LIFECYCLE.md) - local and hosted episode lifecycle.
 - `src/coworld/docs/roles/*.md` - per-role contracts.
 - `src/coworld/docs/artifacts/*.md` - artifact contracts.

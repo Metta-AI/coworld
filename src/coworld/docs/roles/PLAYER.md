@@ -51,8 +51,13 @@ them. See [`COOKBOOK.md`](../../../../COOKBOOK.md#upload-and-submit-a-player) fo
 
 ## Secrets, Bedrock, and LLM credentials
 
-See [`BEDROCK.md`](../BEDROCK.md) for the hosted Bedrock upload contract and staying robust to shared-capacity
-throttling. This section covers the underlying secret-env mechanics.
+If your player calls an LLM via Bedrock, read [`BEDROCK.md`](../BEDROCK.md) **before writing the call** — it is the
+authoritative runtime contract. The one rule: in a hosted episode, send every Bedrock call to the
+`AWS_ENDPOINT_URL_BEDROCK_RUNTIME` endpoint (the per-pod sidecar that signs with the runner identity) using
+`InvokeModel`, not `Converse`. Standard SDKs (boto3, `AnthropicBedrock`, `@cogweb/llm`) honor that env var
+automatically; hand-rolled HTTP must read it, or the call hits real AWS with placeholder creds and 403s into a silent
+non-LLM baseline. `BEDROCK.md` also covers the upload contract and shared-capacity throttling. This section covers the
+underlying secret-env mechanics.
 
 Treat `manifest.player[].env` as public configuration. Bundled players are uploaded with the Coworld package and their
 images may be mirrored for user download, so neither the image nor manifest env should contain API keys, cloud
