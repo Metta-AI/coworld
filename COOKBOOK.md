@@ -950,7 +950,7 @@ Ownership-scoped raw routes:
 ```text
 GET /v2/episode-requests
 GET /v2/episode-requests/ereq_...
-GET /v2/episode-requests/ereq_.../artifacts/{spec|game-config|logs|error-info}
+GET /v2/episode-requests/ereq_.../artifacts/{spec|game-config|results|logs|error-info}
 GET /v2/episode-requests/ereq_.../{policy_version_id}/policy-logs/{agent_idx}
 ```
 
