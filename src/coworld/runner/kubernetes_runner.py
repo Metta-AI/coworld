@@ -286,6 +286,11 @@ def _run_kubernetes_episode(
         )
         gameplay_done = time.monotonic()
         _validate_results_file(artifacts.results_path, job.results_schema)
+        # A game that tolerates absent seats (connect-timeout auto-start) still writes a normal
+        # results.json when its player pods never came up — producing a silent, blank, zero-progress
+        # episode that the platform would otherwise record as a success. The orchestrator owns the
+        # truth here (it scheduled the pods), so fail loudly with a typed error instead.
+        _raise_if_no_players_started(core_v1, namespace, child_names)
         core_timings = {
             "game_boot_s": game_ready - worker_start,
             "player_launch_s": players_launched - game_ready,
@@ -574,6 +579,48 @@ def _wait_for_episode_artifacts(
         f"Timed out waiting for game container to finish writing episode artifact(s): {expected_list}",
         error_type="episode_timeout",
     )
+
+
+def _raise_if_no_players_started(core_v1, namespace: str, player_pod_names: tuple[str, ...] | list[str]) -> None:
+    """Fail a degenerate episode where the game wrote results but no player ever joined.
+
+    Connect-timeout-tolerant games auto-start and write a normal results.json even when every
+    player pod failed to come up (e.g. a cold image pull lost the race against the connect
+    deadline), yielding a blank, zero-progress episode with no error trail. The orchestrator
+    scheduled these pods, so it can tell "the policies never started" from k8s state alone —
+    independent of any game-specific results shape. Only fires when there are seats to fill and
+    not one of them started; a partially-filled episode is left to the game's own scoring.
+    """
+    if not player_pod_names:
+        return
+    waiting_reasons: list[str] = []
+    for slot, player_pod_name in enumerate(player_pod_names):
+        try:
+            player_pod = core_v1.read_namespaced_pod(name=player_pod_name, namespace=namespace)
+        except ApiException as exc:
+            if exc.status == 404:
+                waiting_reasons.append(f"slot {slot}: pod {player_pod_name} not found")
+                continue
+            raise
+        if _container_has_started(player_pod, "player"):
+            return
+        reason = _player_waiting_reason(player_pod) or "never scheduled"
+        waiting_reasons.append(f"slot {slot}: {reason}")
+    raise RunnerEpisodeError(
+        "No player pods started for any seat before the episode ended; "
+        "policies never joined the game (" + "; ".join(waiting_reasons) + ")",
+        error_type="no_players_connected",
+    )
+
+
+def _player_waiting_reason(pod) -> str | None:
+    for status in pod.status.container_statuses or []:
+        if status.name != "player":
+            continue
+        waiting = status.state.waiting
+        if waiting is not None:
+            return waiting.reason or "waiting"
+    return None
 
 
 def _raise_if_player_pod_failed(core_v1, namespace: str, player_pod_names: tuple[str, ...] | list[str]) -> None:

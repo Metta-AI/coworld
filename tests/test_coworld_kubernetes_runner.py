@@ -833,6 +833,49 @@ def test_wait_for_episode_artifacts_reports_failed_player_on_timeout(tmp_path, p
     assert expected_message in str(exc_info.value)
 
 
+def test_raise_if_no_players_started_fails_when_no_player_ever_ran():
+    # Every seat's player container is stuck waiting (e.g. a cold ImagePullBackOff): the game may
+    # still have written a tolerant zero-progress result, but the orchestrator knows nobody joined.
+    core_v1 = _FakeLogCoreV1(
+        statuses={
+            "player-0": [_container_status("player", waiting=True, reason="ImagePullBackOff")],
+            "player-1": [_container_status("player", waiting=True, reason="ImagePullBackOff")],
+        }
+    )
+
+    with pytest.raises(runner_io.RunnerEpisodeError) as exc_info:
+        kubernetes_runner._raise_if_no_players_started(core_v1, "default", ["player-0", "player-1"])
+
+    assert exc_info.value.error_type == "no_players_connected"
+    assert "ImagePullBackOff" in str(exc_info.value)
+
+
+def test_raise_if_no_players_started_passes_when_any_player_started():
+    # A single started seat means the policies could join; partial fills are left to game scoring.
+    core_v1 = _FakeLogCoreV1(
+        statuses={
+            "player-0": [_container_status("player", running=True)],
+            "player-1": [_container_status("player", waiting=True, reason="ImagePullBackOff")],
+        }
+    )
+
+    kubernetes_runner._raise_if_no_players_started(core_v1, "default", ["player-0", "player-1"])
+
+
+def test_raise_if_no_players_started_noop_without_player_pods():
+    # Self-play / player-less episodes have no seats to gate on.
+    kubernetes_runner._raise_if_no_players_started(_FakeLogCoreV1(statuses={}), "default", [])
+
+
+def test_raise_if_no_players_started_treats_missing_pod_as_not_started():
+    core_v1 = _FakeLogCoreV1(statuses={}, missing_pods={"player-0"})
+
+    with pytest.raises(runner_io.RunnerEpisodeError) as exc_info:
+        kubernetes_runner._raise_if_no_players_started(core_v1, "default", ["player-0"])
+
+    assert exc_info.value.error_type == "no_players_connected"
+
+
 def test_wait_for_episode_artifacts_ignores_clean_player_exit_on_timeout(tmp_path):
     artifacts = EpisodeArtifacts.create(tmp_path)
     core_v1 = _FakeCoreV1(
@@ -1038,6 +1081,7 @@ def test_run_kubernetes_episode_defaults_player_resource_requests(monkeypatch, t
     monkeypatch.setattr(kubernetes_runner, "_require_global_message", noop_async)
     monkeypatch.setattr(kubernetes_runner, "_wait_for_episode_artifacts", lambda *_args, **_kwargs: None)
     monkeypatch.setattr(kubernetes_runner, "_validate_results_file", lambda *_args: None)
+    monkeypatch.setattr(kubernetes_runner, "_raise_if_no_players_started", lambda *_args, **_kwargs: None)
     monkeypatch.setattr(kubernetes_runner, "_collect_logs", lambda *_args: None)
     monkeypatch.setattr(kubernetes_runner, "_delete_child_resources", lambda *_args: None)
     monkeypatch.setattr(kubernetes_runner, "_policy_secrets_from_env", lambda: {})
