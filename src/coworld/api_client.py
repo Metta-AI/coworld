@@ -360,9 +360,9 @@ class PolicyVersionsResponse(CoworldAPIModel):
 
 class CoworldApiClient:
     def __init__(self, *, server_url: str, token: str | None = None):
-        self._http_client = httpx.Client(
-            base_url=f"{server_url.rstrip('/')}/observatory", timeout=30.0, follow_redirects=True
-        )
+        root = server_url.rstrip("/")
+        base_url = f"{root}/observatory"
+        self._http_client = httpx.Client(base_url=base_url, timeout=30.0, follow_redirects=True)
         self._token = token
 
     @classmethod
@@ -397,13 +397,13 @@ class CoworldApiClient:
     def _post(self, path: str, response_type: Any, **kwargs: Any) -> Any:
         return self._request("POST", path, response_type, **kwargs)
 
-    def get_bytes(self, path: str) -> bytes:
-        response = self._http_client.get(path, headers=self._headers())
+    def get_bytes(self, path: str, *, timeout: float | None = None) -> bytes:
+        response = self._http_client.get(path, headers=self._headers(), timeout=timeout)
         _raise_for_status(response)
         return response.content
 
-    def get_text(self, path: str) -> str:
-        response = self._http_client.get(path, headers=self._headers())
+    def get_text(self, path: str, *, timeout: float | None = None) -> str:
+        response = self._http_client.get(path, headers=self._headers(), timeout=timeout)
         _raise_for_status(response)
         return response.text
 

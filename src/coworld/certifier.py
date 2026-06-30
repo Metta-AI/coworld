@@ -126,6 +126,28 @@ class CoworldPackage:
     protocols: CoworldProtocolDocs
 
 
+# Verifies every declared image is reachable. The Local flow checks via the Docker CLI
+# (assert_docker_image_reachable); the Observatory flow injects a checker that asks the backend
+# (which holds the registry state), since the daemonless certifier pod has no Docker CLI. Raises on
+# an unreachable image so the certifier maps the raise to the images-reachable step failure.
+CertifierImageReachabilityChecker = Callable[[CoworldPackage], None]
+# Verifies the just-produced replay loads in the game's replay server. Local flow runs the game in
+# replay mode via Docker (verify_replay_loadable); Observatory flow injects a checker that asks the
+# backend to boot and probe a one-shot replay runtime for the smoke episode job.
+CertifierReplayLoadableChecker = Callable[[CoworldPackage, EpisodeArtifacts], None]
+# Runs the supporting roles (reporters + commissioner). Local flow runs them via Docker
+# (run_certification_supporting_roles); Observatory flow injects a runner that asks the backend to
+# probe them as one-shot k8s containers. Returns (reports, feedback); a failure raises
+# ReporterCertificationError / CommissionerProbeError so the step attributes it correctly.
+CertifierSupportingRolesRunner = Callable[
+    [CoworldPackage, EpisodeArtifacts, float], tuple[list["ReportCertification"], str]
+]
+
+
+def _local_image_reachability_checker(package: CoworldPackage) -> None:
+    validate_image_references(package)
+
+
 @dataclass(frozen=True)
 class ReportCertification:
     reporter_id: str
@@ -344,10 +366,22 @@ def certify_coworld(
     timeout_seconds: float = 60.0,
     on_step: Callable[[StepResult, TranscriptStep], None] | None = None,
     episode_runner: CertifierEpisodeRunner | None = None,
+    image_reachability_checker: CertifierImageReachabilityChecker | None = None,
+    replay_loadable_checker: CertifierReplayLoadableChecker | None = None,
+    supporting_roles_runner: CertifierSupportingRolesRunner | None = None,
 ) -> CertificationResult:
     transcript = load_executable_transcript()
     step_results: list[StepResult] = []
     run_episode = episode_runner or _run_local_certifier_episode
+    check_images_reachable = image_reachability_checker or _local_image_reachability_checker
+    check_replay_loadable = replay_loadable_checker or (
+        lambda package, artifacts: verify_replay_loadable(package.game, artifacts, timeout_seconds=timeout_seconds)
+    )
+    run_supporting_roles = supporting_roles_runner or (
+        lambda package, artifacts, timeout: run_certification_supporting_roles(
+            package, artifacts, timeout_seconds=timeout
+        )
+    )
 
     def announce(step: TranscriptStep) -> None:
         if on_step is None:
@@ -401,7 +435,7 @@ def certify_coworld(
         return "Pinned source refs validated:\n- " + "\n- ".join(sources)
 
     run_step("source-resolves", lambda: validate_source_references(package), source_refs_feedback)
-    run_step("images-reachable", lambda: validate_image_references(package), "All declared images are reachable.")
+    run_step("images-reachable", lambda: check_images_reachable(package), "All declared images are reachable.")
     run_step(
         "fixture-conforms",
         lambda: validate_coworld_manifest_game_configs(package.manifest),
@@ -442,7 +476,7 @@ def certify_coworld(
     )
     run_step(
         "replay-loadable",
-        lambda: verify_replay_loadable(package.game, artifacts, timeout_seconds=timeout_seconds),
+        lambda: check_replay_loadable(package, artifacts),
         "Replay loads through /client/replay and /replay.",
     )
     run_step("players-run", lambda: validate_players_ran(package, artifacts), "Game and declared players started.")
@@ -451,7 +485,7 @@ def certify_coworld(
         tuple[list[ReportCertification], str],
         run_step(
             "supporting-roles",
-            lambda: run_certification_supporting_roles(package, artifacts, timeout_seconds=timeout_seconds),
+            lambda: run_supporting_roles(package, artifacts, timeout_seconds),
             lambda value: cast(tuple[list[ReportCertification], str], value)[1],
         ),
     )
@@ -597,7 +631,7 @@ def run_certification_commissioner(
             return asyncio.run(
                 request_commissioner_once(
                     ws_url=f"ws://127.0.0.1:{port}/round",
-                    request=_certification_schedule_rounds_request(),
+                    request=certification_schedule_rounds_request(),
                     response_type=ScheduleRoundsResponse,
                     timeout_seconds=timeout_seconds,
                 )
@@ -628,7 +662,7 @@ async def request_commissioner_once(
             return message
 
 
-def _certification_schedule_rounds_request() -> ScheduleRoundsRequest:
+def certification_schedule_rounds_request() -> ScheduleRoundsRequest:
     division = DivisionInfo(id=_CERTIFICATION_DIVISION_ID, name="Certification", level=1)
     return ScheduleRoundsRequest(
         league=LeagueInfo(id=_CERTIFICATION_LEAGUE_ID, commissioner_key="container"),
