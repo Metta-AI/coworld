@@ -2,14 +2,17 @@ import json
 from pathlib import Path
 from types import SimpleNamespace
 from typing import Callable, cast
+from urllib.parse import urlparse
+from urllib.request import url2pathname
 
 from pytest import MonkeyPatch
 from pytest_httpserver import HTTPServer
 from typer.testing import CliRunner
 
+from coworld.certifier import load_executable_transcript
 from coworld.cli import app
 from coworld.runner.runner import EpisodeArtifacts
-from coworld.types import CoworldEpisodeJobSpec
+from coworld.types import CoworldEpisodeJobSpec, StepResult
 
 COWORLD_ID = "cow_00000000-0000-0000-0000-000000000001"
 COWORLD_PATH = f"/v2/coworlds/{COWORLD_ID}"
@@ -131,31 +134,142 @@ def test_coworld_replay_respects_no_open_browser(monkeypatch: MonkeyPatch, tmp_p
 def test_coworld_certify_prints_replay_liveness_and_inspection_command(
     monkeypatch: MonkeyPatch, tmp_path: Path
 ) -> None:
+    opened_urls: list[str] = []
     manifest_path = tmp_path / "coworld_manifest.json"
     manifest_path.write_text('{"game": {"name": "unit"}}\n', encoding="utf-8")
+    workspace = tmp_path / "workspace"
     artifacts = SimpleNamespace(
-        workspace=Path("/tmp/workspace"),
-        results_path=Path("/tmp/results.json"),
-        replay_path=Path("/tmp/replay.json"),
-        logs_dir=Path("/tmp/logs"),
+        workspace=workspace,
+        results_path=workspace / "results.json",
+        replay_path=workspace / "replay.json",
+        logs_dir=workspace / "logs",
     )
+    transcript = load_executable_transcript()
+    step_results = [StepResult(id=step.id, kind=step.kind, status="pass") for step in transcript.steps]
 
     def fake_certify_coworld(_manifest_path: Path, **_kwargs: object) -> SimpleNamespace:
         return SimpleNamespace(
-            transcript=SimpleNamespace(name="coworld-executable"),
-            step_results=list(range(10)),
+            transcript=transcript,
+            step_results=step_results,
             artifacts=artifacts,
             reports=[],
         )
 
     monkeypatch.setattr("coworld.cli.certify_coworld", fake_certify_coworld)
+    monkeypatch.setattr("coworld.cli.webbrowser.open", opened_urls.append)
 
     result = CliRunner().invoke(app, ["certify", str(manifest_path)])
+    report_path = workspace / "certification_report.html"
 
     assert result.exit_code == 0, result.output
     assert "Replay liveness: verified /client/replay and /replay" in result.output
-    assert f"Inspect replay: uv run coworld replay {manifest_path} /tmp/replay.json" in result.output
-    assert "Inspect logs: ls /tmp/logs" in result.output
+    assert f"Inspect replay: uv run coworld replay {manifest_path} {workspace / 'replay.json'}" in result.output
+    assert f"Inspect logs: ls {workspace / 'logs'}" in result.output
+    assert f"Transcript report: {report_path.as_uri()}" in result.output
+    assert opened_urls == [report_path.as_uri()]
+    html = report_path.read_text(encoding="utf-8")
+    assert "Coworld certification" in html
+    assert "Passed" in html
+    assert "matriculate" in html
+    assert "<details" in html
+
+
+def test_coworld_certify_failure_writes_report_and_suppresses_traceback(
+    monkeypatch: MonkeyPatch, tmp_path: Path
+) -> None:
+    opened_urls: list[str] = []
+    manifest_path = tmp_path / "coworld_manifest.json"
+    manifest_path.write_text('{"game": {"name": "unit"}}\n', encoding="utf-8")
+    transcript = load_executable_transcript()
+    step_by_id = {step.id: step for step in transcript.steps}
+
+    def fake_certify_coworld(_manifest_path: Path, **kwargs: object) -> SimpleNamespace:
+        on_step = cast(Callable[[StepResult, object], None], kwargs["on_step"])
+        on_step(
+            StepResult(id="matriculate", kind=step_by_id["matriculate"].kind, status="pass"),
+            step_by_id["matriculate"],
+        )
+        on_step(
+            StepResult(
+                id="images-reachable",
+                kind=step_by_id["images-reachable"].kind,
+                status="fail",
+                failure_reason="image_unreachable",
+                feedback="missing image ghcr.io/example/missing:latest\ncheck registry credentials",
+            ),
+            step_by_id["images-reachable"],
+        )
+        raise RuntimeError("image validation failed")
+
+    monkeypatch.setattr("coworld.cli.certify_coworld", fake_certify_coworld)
+    monkeypatch.setattr("coworld.cli.webbrowser.open", opened_urls.append)
+
+    result = CliRunner().invoke(app, ["certify", str(manifest_path)])
+
+    assert result.exit_code == 1, result.output
+    assert "Certification failed" in result.output
+    assert "Failed step: images-reachable" in result.output
+    assert "Failure reason: image_unreachable" in result.output
+    assert "missing image ghcr.io/example/missing:latest" in result.output
+    assert "check registry credentials" in result.output
+    assert "Traceback" not in result.output
+    assert len(opened_urls) == 1
+    report_path = Path(url2pathname(urlparse(opened_urls[0]).path))
+    html = report_path.read_text(encoding="utf-8")
+    assert "Failed" in html
+    assert "image_unreachable" in html
+    assert "missing image ghcr.io/example/missing:latest" in html
+    assert "check registry credentials" in html
+    assert html.count('class="detail-line"') >= 2
+    assert "not run" in html
+
+
+def test_coworld_certify_error_without_failed_step_marks_report_failed(
+    monkeypatch: MonkeyPatch, tmp_path: Path
+) -> None:
+    opened_urls: list[str] = []
+    manifest_path = tmp_path / "coworld_manifest.json"
+    manifest_path.write_text('{"game": {"name": "unit"}}\n', encoding="utf-8")
+    transcript = load_executable_transcript()
+    step_by_id = {step.id: step for step in transcript.steps}
+
+    def fake_certify_coworld(_manifest_path: Path, **kwargs: object) -> SimpleNamespace:
+        on_step = cast(Callable[[StepResult, object], None], kwargs["on_step"])
+        on_step(
+            StepResult(id="matriculate", kind=step_by_id["matriculate"].kind, status="pass"),
+            step_by_id["matriculate"],
+        )
+        raise RuntimeError("runner crashed before verdict")
+
+    monkeypatch.setattr("coworld.cli.certify_coworld", fake_certify_coworld)
+    monkeypatch.setattr("coworld.cli.webbrowser.open", opened_urls.append)
+
+    result = CliRunner().invoke(app, ["certify", str(manifest_path)])
+
+    assert result.exit_code == 1, result.output
+    assert "Details: runner crashed before verdict" in result.output
+    assert len(opened_urls) == 1
+    report_path = Path(url2pathname(urlparse(opened_urls[0]).path))
+    html = report_path.read_text(encoding="utf-8")
+    assert "<title>Coworld certification failed</title>" in html
+    assert "<h1>Failed</h1>" in html
+    assert "Certification stopped" in html
+    assert "runner crashed before verdict" in html
+
+
+def test_coworld_certify_schema_failure_prints_actionable_detail(monkeypatch: MonkeyPatch, tmp_path: Path) -> None:
+    manifest_path = tmp_path / "coworld_manifest.json"
+    manifest_path.write_text("{}\n", encoding="utf-8")
+    monkeypatch.chdir(tmp_path)
+
+    result = CliRunner().invoke(app, ["certify", str(manifest_path), "--no-open-report"])
+
+    assert result.exit_code == 1, result.output
+    assert "Failed step: matriculate" in result.output
+    assert "Failure reason: manifest_invalid" in result.output
+    assert "Details: $: 'game' is a required property" in result.output
+    assert "Failed validating" not in result.output
+    assert "Traceback" not in result.output
 
 
 def test_coworld_play_prefers_cached_coworld_id_manifest(tmp_path: Path, monkeypatch: MonkeyPatch) -> None:
@@ -251,15 +365,17 @@ def test_coworld_certify_downloads_missing_coworld_id_cache(tmp_path: Path, monk
     def fake_certify_coworld(resolved_manifest_path: Path, **_kwargs: object) -> SimpleNamespace:
         captured["manifest_path"] = resolved_manifest_path
         captured["manifest"] = json.loads(resolved_manifest_path.read_text())
+        workspace = tmp_path / "certify-workspace"
         artifacts = SimpleNamespace(
-            workspace=Path("/tmp/workspace"),
-            results_path=Path("/tmp/results.json"),
-            replay_path=Path("/tmp/replay.json"),
-            logs_dir=Path("/tmp/logs"),
+            workspace=workspace,
+            results_path=workspace / "results.json",
+            replay_path=workspace / "replay.json",
+            logs_dir=workspace / "logs",
         )
+        transcript = load_executable_transcript()
         return SimpleNamespace(
-            transcript=SimpleNamespace(name="coworld-executable"),
-            step_results=list(range(10)),
+            transcript=transcript,
+            step_results=[StepResult(id=step.id, kind=step.kind, status="pass") for step in transcript.steps],
             artifacts=artifacts,
             reports=[],
         )
@@ -268,7 +384,10 @@ def test_coworld_certify_downloads_missing_coworld_id_cache(tmp_path: Path, monk
     monkeypatch.setattr("coworld.cli.download_coworld_cmd", fake_download_coworld_cmd)
     monkeypatch.setattr("coworld.cli.certify_coworld", fake_certify_coworld)
 
-    result = CliRunner().invoke(app, ["certify", COWORLD_ID, "--server", "http://example.test"])
+    result = CliRunner().invoke(
+        app,
+        ["certify", COWORLD_ID, "--server", "http://example.test", "--no-open-report"],
+    )
 
     assert result.exit_code == 0, result.output
     assert downloads == [(COWORLD_ID, Path("./coworld"), "http://example.test", False)]

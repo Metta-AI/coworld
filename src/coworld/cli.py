@@ -14,10 +14,12 @@ from rich import box
 from rich.table import Table
 
 from coworld.bundle import build_coworld_manifest
+from coworld.certification_report import write_certification_report
 from coworld.certifier import (
     build_manifest_episode_job_spec,
     certify_coworld,
     load_coworld_package,
+    load_executable_transcript,
     load_manifest_episode_job_spec,
 )
 from coworld.cli_support import console, emit_json, observatory_web_url, validate_run_argv
@@ -218,16 +220,65 @@ def certify(
     manifest_uri: Annotated[str, typer.Argument(help="Path, URI, or Coworld ID for coworld_manifest.json.")],
     server: Annotated[str, typer.Option("--server", help="Observatory API server URL.")] = DEFAULT_SUBMIT_SERVER,
     timeout_seconds: Annotated[float, typer.Option("--timeout-seconds", min=1.0)] = 60.0,
+    open_report: Annotated[
+        bool,
+        typer.Option(
+            "--open-report/--no-open-report",
+            help="Open the generated certification transcript report in the browser.",
+        ),
+    ] = True,
 ) -> None:
+    transcript = load_executable_transcript()
+    step_results: list[StepResult] = []
+    artifacts = EpisodeArtifacts.create()
+
     def on_step(result: StepResult, step: TranscriptStep) -> None:
         marker = "run " if result.status == "running" else result.status
         typer.echo(f"  [{marker}] {result.id}: {step.checks}")
+        if result.status in ("pass", "fail"):
+            step_results.append(result)
 
     with _materialized_manifest_path(manifest_uri, server=server) as manifest_path:
         typer.echo(f"Certifying {manifest_uri} against transcript coworld-executable")
-        result = certify_coworld(manifest_path, timeout_seconds=timeout_seconds, on_step=on_step)
+        try:
+            result = certify_coworld(
+                manifest_path,
+                workspace=artifacts.workspace,
+                timeout_seconds=timeout_seconds,
+                on_step=on_step,
+            )
+        except Exception as exc:
+            report = write_certification_report(
+                manifest_uri=str(manifest_uri),
+                transcript=transcript,
+                step_results=step_results,
+                artifacts=artifacts,
+                error=str(exc) or exc.__class__.__name__,
+            )
+            typer.echo(f"Certification failed for {manifest_uri}")
+            failed_step = next((step for step in reversed(step_results) if step.status == "fail"), None)
+            if failed_step is not None:
+                typer.echo(f"Failed step: {failed_step.id}")
+                typer.echo(f"Failure reason: {failed_step.failure_reason or 'step_failed'}")
+                if failed_step.feedback:
+                    typer.echo(f"Details: {failed_step.feedback}")
+            else:
+                typer.echo(f"Details: {exc}")
+            typer.echo(f"Transcript report: {report.uri}")
+            typer.echo(f"Artifacts: {artifacts.workspace}")
+            if open_report:
+                webbrowser.open(report.uri)
+            raise typer.Exit(1) from exc
+    transcript_report = write_certification_report(
+        manifest_uri=str(manifest_uri),
+        transcript=result.transcript,
+        step_results=result.step_results,
+        artifacts=result.artifacts,
+        reports=result.reports,
+    )
     typer.echo(f"Certified {manifest_uri}")
     typer.echo(f"Transcript: {result.transcript.name} ({len(result.step_results)} steps passed)")
+    typer.echo(f"Transcript report: {transcript_report.uri}")
     typer.echo(f"Artifacts: {result.artifacts.workspace}")
     typer.echo(f"Results: {result.artifacts.results_path}")
     _echo_replay_paths(result.artifacts)
@@ -237,6 +288,8 @@ def certify(
         render = report.manifest.render or "(no render entry)"
         typer.echo(f"Reporter {report.reporter_id}: render={render} -> {report.report_path}")
     _echo_feedback_commands(manifest_uri, result.artifacts, server=server)
+    if open_report:
+        webbrowser.open(transcript_report.uri)
 
 
 @app.command("build")

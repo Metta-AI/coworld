@@ -17,6 +17,7 @@ from uuid import UUID
 
 import httpx
 import websockets
+from jsonschema.exceptions import ValidationError as JsonSchemaValidationError
 
 from coworld.commissioner.protocol import (
     CommissionerMessage,
@@ -415,7 +416,7 @@ def certify_coworld(
                 step,
                 status="fail",
                 failure_reason=_step_failure_reason(step_id, exc),
-                feedback=str(exc),
+                feedback=_certification_failure_feedback(exc),
             )
             raise
         feedback = pass_feedback(value) if callable(pass_feedback) else pass_feedback
@@ -553,6 +554,15 @@ def _step_failure_reason(step_id: str, exc: Exception) -> str:
         "players-run": "players_missing",
         "supporting-roles": "supporting_roles_failed",
     }.get(step_id, "step_failed")
+
+
+def _certification_failure_feedback(exc: Exception) -> str:
+    if isinstance(exc, JsonSchemaValidationError):
+        path = "$"
+        for part in exc.absolute_path:
+            path += f"[{part}]" if isinstance(part, int) else f".{part}"
+        return f"{path}: {exc.message}"
+    return str(exc)
 
 
 def run_certification_supporting_roles(

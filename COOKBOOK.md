@@ -1016,6 +1016,10 @@ it then waits for a frame from the `/replay` WebSocket. Reporters run against th
 are probed over `/healthz` and `/round`. `upload-coworld` certifies again before uploading the manifest and runnable
 images.
 
+`certify` also writes `certification_report.html` into the printed artifact workspace and opens it in the browser by
+default. The report is a local transcript view with each step's pass/fail status, failure reason, artifact paths, and
+expandable details about what the step checks. Use `--no-open-report` for CI or other non-interactive runs.
+
 After certification, open the printed replay command and watch the replay once before upload. The automated probe proves
 the replay route is alive; the visual check proves the game-specific viewer shows the expected state, controls, and
 looping behavior.
