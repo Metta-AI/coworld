@@ -35,27 +35,36 @@ certificate. The certificate is the summary fact: *this thing reached this stand
 ## 3. The certificate
 
 A certificate is an **immutable, content-addressed fact**. It is not a mutable status; it never "expires" or
-"invalidates." It is the tuple:
+"invalidates." It asserts:
 
-> Certifier ⟨authority **@hash**, **date**⟩ attests that the certified ⟨Coworld **@hash**, **date**⟩ met
-> ⟨transcript **@hash**⟩ — **matriculated @ T₁**, **graduated @ T₂** conferring ⟨degree-file **@hash**⟩ (or
-> *did not graduate*).
+> Certifier ⟨authority **@digest**⟩ attests that the certified ⟨Coworld **@hash**⟩ met ⟨transcript **@hash**⟩ —
+> **matriculated @ T₁**, **graduated @ T₂** (or *did not graduate*).
+
+**The certification job *is* the certificate.** Rather than serialize this as a standalone fat record, the
+attestation lives in the immutable certification `JobRequest` and its result: the job pins the certifier image
+digest and the resolved `@sha256:` digest of every Coworld image it ran (it must, to launch them), and its result
+holds the transcript — the ordered `StepResult`s plus the matriculation and graduation timestamps. The thin
+`certification_requests` row points at that job (`certification_job_id`) and caches the result in `results`; a
+Coworld's *current* certified standing is the `coworlds.latest_certification_request_id` pointer, set to its
+latest graduated attempt. The fields below are therefore *reachable from the job*, not columns of a certificate
+object.
 
 Field by field:
 
-| Field | Meaning |
+| Field | Where it lives |
 | --- | --- |
-| **Certifier identity** | Not just "Softmax" — the *specific certifying authority* within Softmax, as `⟨hash, date⟩`. The version of the certifier that ran the process. |
-| **Certified identity** | Not just "this Coworld" — the Coworld *at a content hash, on a date*. A changed Coworld is a *different* certified identity. |
-| **Transcript** | *What was checked* — the certifier's ordered procedure for the degree plus its per-step grades/run records, referenced by hash ([§6](#6-transcript-and-degree-files)). |
-| **Matriculation time T₁** | When the static admission check passed. |
-| **Graduation time T₂** | When a degree was conferred — or a marker that it was not. |
+| **Certifier identity (authority)** | The certifier **image digest** the job pinned — the exact code + exam (transcript) that ran. Stronger than a module hash, and recorded on the job by construction. |
+| **Certified identity** | The Coworld at a content hash on a date — reachable via the job's `coworld_id` and the resolved image digests it ran. A changed Coworld is a *different* certified identity (a new attempt). |
+| **Transcript** | *What was checked* — the certifier's ordered procedure plus its per-step `StepResult`s (§6.1), in the job result (cached in `certification_requests.results`). |
+| **Matriculation time T₁** | Recorded in the job result when the `matriculate` step passes. |
+| **Graduation time T₂** | Recorded in the job result when the degree is conferred — or absent if it was not. |
 | **Category + degree** | The category and degree level reached ([§5](#5-category-and-degrees)). |
-| **Degree file** | *What was earned* — the conferred credential, produced at graduation (§6.4). Absent if the Coworld did not graduate. |
 
 **Expiration and good standing are properties of the *reader*, not the certificate.** A certificate is simply
 true. Whether you accept an Optimizable cert that is 90 days old, or one on a hash the Coworld has since
-superseded, is *your* policy. The certifier emits true facts; the market decides what is still relevant.
+superseded, is *your* policy — and the `coworlds.latest_certification_request_id` pointer makes "what is this
+Coworld's current standing" a single lookup. The certifier emits true facts; the market decides what is still
+relevant.
 
 ## 4. Lifecycle: matriculation → grading → graduation
 
@@ -97,15 +106,17 @@ automated check can stand in for the human attestation that the loop closed.
 
 ## 6. Transcript and degree files
 
-A graduation produces two content-addressed artifacts, both referenced by hash from the certificate
-([§3](#3-the-certificate)):
+Two things matter at graduation, but they live differently:
 
 - the **transcript file** — *what was checked*: the certifier's procedure for one degree in one mode, the ordered
-  list of steps (1, 2, 3, …) it runs, plus the per-step results once it has run. It is frozen into a hostable,
-  URL-addressable, hashable artifact, and hashing it is what gives a degree a **fixed, citable meaning** that
-  survives even as the certifier's code evolves.
+  list of declared steps (1, 2, 3, …) it runs. It is frozen into a hostable, URL-addressable, hashable artifact,
+  and hashing it is what gives a degree a **fixed, citable meaning** that survives even as the certifier's code
+  evolves. The transcript's *declared* form is hashed for meaning; the *run record* — the per-step `StepResult`s
+  (§6.1) — is recorded in the certification job's result, not stored as a separate hashed file.
 - the **degree file** — *what was earned*: the short conferred credential (§6.4), the diploma that names the
-  degree a graduation confers.
+  degree a graduation confers. It is a **human-readable rendering of the attestation, regenerated on demand** from
+  the job result + the `coworlds` pointer ([§3](#3-the-certificate)) — there is one degree per category named by
+  the contract version, so the credential is derivable, not a separately-stored content-addressed artifact.
 
 This section specifies the transcript file's format (§6.1) with two illustrative transcripts (§6.2–§6.3), then
 the degree file (§6.4).
@@ -118,7 +129,10 @@ everything else (§4.3 of the schema PRD): a human reads it cold to understand w
 certifier executes it. A program would be opaque to the human; a bare schema would be opaque to the reader. Markdown
 with stable step ids is both, and it hashes and hosts as-is.
 
-Each step carries:
+Each step has two halves: the **declaration** (frozen in the markdown, part of the hashed meaning) and the
+**result** the certifier records when it runs the step.
+
+**Declared fields** (in the transcript markdown):
 
 | Field | Purpose |
 | --- | --- |
@@ -128,26 +142,55 @@ Each step carries:
 | `pass` | The pass criterion — what counts as satisfied. |
 | `how` | How to run/perform it, written so a cold agent or human can do it unaided ([§7](#7-self-bootstrapping)). |
 
+**Result fields** (the `StepResult` the certifier records per step at run time):
+
+| Field | Purpose |
+| --- | --- |
+| `id` | The declared step this result is for. |
+| `kind` | Carried from the declaration. |
+| `status` | `running` (announced, in progress), `pass` (the step's `pass` criterion was met), or `fail` (it was not). |
+| `failure_reason` | On `fail`: a typed, machine-readable reason the step did not pass. For the runtime steps that wrap a dispatched episode, this is the episode error taxonomy (`player_error`, `game_unhealthy`, `results_malformed`, `replay_unloadable`, …); for the static steps it is the step's own failure class. Absent on `pass`. |
+| `feedback` | On `fail`: a human-readable explanation — *what* failed and, where the certifier can tell, *how to fix it* — written for the Coworld developer reading the transcript to understand why their Coworld did not graduate. Absent on `pass`. |
+
 The certifier maps each `id` to its executor; the markdown is the source of truth for *meaning*, the code is the
-*implementation*. When the steps change, the file's hash changes, and that is a new definition of what the degree
-requires — old certificates still point at the old hash and stay true.
+*implementation*. When the **declared** fields change, the file's hash changes, and that is a new definition of
+what the degree requires — old certificates still point at the old hash and stay true. The **result** fields are
+not part of the hashed meaning; they are the run record, and a transcript with a `fail` step is itself the
+attestation that the Coworld did not graduate — the failing step, its `failure_reason`, and its `feedback` say
+exactly where and why.
+
+Executable is still **binary**: a degree is conferred only when every step's result is `pass`. Recording a `fail`
+result does not soften that — it makes the *non*-graduation legible. The certifier records the failing step's
+result, then stops; later steps that never ran simply have no result.
 
 ### 6.2 `coworld-executable.transcript.md` (Executable) — illustrative
 
 ```text
-1. matriculate     [auto]  manifest conforms to the Coworld schema       pass: schema validates
-2. source-resolves [auto]  every source_url resolves + has a Dockerfile  pass: all resolve
-3. images-reachable[auto]  every declared image is pullable/inspectable  pass: all reachable
-4. smoke-episode   [auto]  game + certification players run one episode  pass: episode completes
-5. results-conform [auto]  results validate against results_schema       pass: schema validates
-6. replay-present  [auto]  a replay artifact was produced                pass: file exists
-7. purposes-run    [auto]  every required-purpose runnable actually       pass: each required purpose
-                           starts on the smoke episode (not just declared)     runs, not just resolves
+ 1. matriculate       [auto]  manifest conforms to the Coworld schema        pass: schema validates
+ 2. source-resolves   [auto]  every source_url resolves + has a Dockerfile   pass: all resolve
+ 3. images-reachable  [auto]  every declared image is pullable/inspectable   pass: all reachable
+ 4. fixture-conforms  [auto]  certification game_config validates against    pass: schema validates
+                              config_schema (before any container launches)
+ 5. smoke-episode     [auto]  game + certification players run one episode   pass: episode completes
+ 6. results-conform   [auto]  results validate against results_schema        pass: schema validates
+ 7. replay-present    [auto]  a replay artifact was produced                 pass: file exists
+ 8. replay-loadable   [auto]  the game re-loads the replay and serves it     pass: /replay emits a
+                              over /replay (a second game-only launch)            non-empty message
+ 9. players-run       [auto]  every declared player actually starts on the   pass: each declared player
+                              smoke episode (not just declared/resolved)         ran, not just resolved
+10. supporting-roles  [auto]  each declared supporting runnable runs and     pass: every declared
+                              honors its contract (per-runnable)                  supporting role passes
 ```
 
-Steps 1–6 are exactly today's automated path ([§9](#9-what-exists-today)); step 7 — proving every *required
-purpose* actually runs, not merely that its image resolves — is the one near-term addition. Executable is
-otherwise not new work: the existing checks named, ordered, and frozen as a hashable transcript file.
+The split into independently-attributable steps is deliberate: `smoke-episode` only *runs* the episode, and
+`results-conform` / `replay-present` / `replay-loadable` are separate gates, so a transcript `fail` names the
+exact contract that broke rather than collapsing every runtime problem into "episode failed" (§6.1
+`failure_reason`). `players-run` proves the player role actually launched (the game is already proven by the
+episode completing). `supporting-roles` (step 10) is per-runnable: today it certifies the **reporter** (run
+against the smoke-episode bundle, report zip validated) and a **commissioner** protocol probe; **grader** and
+**diagnoser** have no run harness yet, so a Coworld declaring them is not failed on their account until those
+harnesses exist (their slots in this step are inert, logged, not graded). The **optimizer** is never exercised
+here — it belongs to Optimizable (§6.3).
 
 ### 6.3 `coworld-optimizable.transcript.md` (Optimizable) — illustrative
 
@@ -216,28 +259,49 @@ and the authority is correct by definition within the ecosystem.
 
 ## 9. What exists today
 
-`coworld.certifier.certify_coworld()` already runs the **Executable** procedure end-to-end:
+`coworld.certifier.certify_coworld()` runs the **Executable** procedure end-to-end, transcript-driven: it parses
+`coworld-executable.transcript.md`, executes an executor per step id in order, records a `StepResult` per step,
+and asserts the executed ids equal the declared ids. The step machinery (`TranscriptStep`, `StepResult`,
+`CoworldTranscript`, `load_executable_transcript`) and the executors for `matriculate`, `source-resolves`,
+`images-reachable`, `smoke-episode`, `results-conform`, `replay-present`, and `players-run` exist today.
 
-- `load_coworld_package` — schema + game-config validation = **matriculation** (step 1).
-- `validate_source_references` — GitHub sources resolve + carry a Dockerfile (step 2).
-- `validate_image_references` — declared images reachable (step 3).
-- `run_coworld_episode` — game + certification players run a smoke episode (step 4).
-- `load_results` + replay existence check — results conform, replay produced (steps 5–6).
+The supporting schema and shared contracts are also in place:
 
-So Executable's **steps 1–6 are already implemented**; this PRD's near-term job is to (a) name that procedure as a
-hashed transcript file, (b) emit an actual certificate object (the §3 tuple) plus a degree file rather than just a
-`CertificationResult`, (c) add **step 7** — actually *run* every required-purpose runnable on the smoke episode,
-where today only its image is checked for reachability — and (d) add the human-in-the-loop Optimizable examination
-on top. Optimizable has no automated implementation today, by design.
+- **Schema (merged).** The certification attestation is the job + a thin `certification_requests` row + the
+  `coworlds.latest_certification_request_id` pointer (§3); the certifier image digest a contract version points at
+  is the authority.
+- **Episode error taxonomy (merged).** The episode runner raises typed errors — `player_error`, `game_unhealthy`,
+  `game_contract_violation`, `results_missing`, `results_malformed`, `replay_missing`, `replay_unloadable`,
+  `episode_timeout`, `crash` — which become the `failure_reason` on a failing runtime step (§6.1).
+
+The near-term job from here:
+
+- **(a)** split the fused smoke-episode call into the independently-attributable steps 5–8 (`smoke-episode` runs
+  only; `results-conform` / `replay-present` / `replay-loadable` are their own gates), add `fixture-conforms`
+  (step 4) and generalize `supporting-roles` (step 10) to the reporter + commissioner probe;
+- **(b)** record per-step `fail` results with `failure_reason` + `feedback` (§6.1) instead of raising raw, and
+  drop the vestigial standalone certificate/degree-file objects in favor of the job-as-attestation (§3);
+- **(c)** wire the Observatory path — dispatch the smoke episode as a `coworld_episode` job, read back its run
+  digests, and on graduation set the `coworlds` pointer;
+- **(d)** add the human-in-the-loop Optimizable examination on top. Optimizable has no automated implementation
+  today, by design.
+
+Grader and diagnoser run harnesses do not exist yet, so step 10 certifies the reporter and commissioner only
+until they do.
 
 ## 10. Open questions
 
-- **Certificate artifact + transcript shape.** The concrete serialization of the §3 tuple and how the transcript
-  (grades, run records, examiner session) is attached by reference. (Deliberately *not* a fully formal schema —
-  the schema-first attempt is what we are explicitly avoiding.)
-- **Authority identity.** How a "Softmax certifying authority @hash, date" is represented and rotated.
-- **Hosting + hashing.** Where transcript and degree files live, and the canonical hashing of a markdown
-  step-list transcript.
+- **Certificate artifact + transcript shape.** *Resolved:* the attestation is the certification job + the
+  `certification_requests` row + the `coworlds` pointer (§3); the transcript run record (the `StepResult`s, §6.1)
+  is carried in the job result. Still open: the exact serialization of `StepResult.feedback` (free text vs. a
+  small structured shape per `failure_reason`).
+- **Authority identity.** *Resolved:* authority is the certifier **image digest** a contract version points at
+  (§3). Still open: how that version → image mapping is rotated when a new certifier ships (rollout policy, a
+  separate doc).
+- **Hosting + hashing.** Where the transcript markdown lives and the canonical hashing of a markdown step-list
+  transcript (so a degree's meaning is citable). The degree file is regenerated, not hosted (§6).
+- **Grader / diagnoser harnesses.** Step 10 cannot certify grader or diagnoser until a single-container run
+  harness for each exists; what those harnesses are (and the diagnoser's target-policy input) is unsettled.
 - **Higher viability degrees.** What stronger-than-floor viability degrees would require, when we get there.
 
 ## See also
