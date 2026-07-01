@@ -166,6 +166,18 @@
         "docs": {
           "$ref": "#/$defs/CoworldDocs",
           "description": "Game-authored documentation surfaced through Coworld tools and UIs."
+        },
+        "promo": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/CoworldPromo"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Optional promotional material for the game. When set, product UIs (e.g. the Observatory league page) surface a Video Promo tab for the promo video."
         }
       },
       "required": [
@@ -271,6 +283,20 @@
       },
       "required": ["type", "image", "id", "name", "description"],
       "title": "CoworldManifestRoleSpec",
+      "type": "object"
+    },
+    "CoworldPromo": {
+      "additionalProperties": false,
+      "properties": {
+        "video_url": {
+          "description": "Public HTTP(S) URL for a promotional video. Product UIs (e.g. the Observatory league page) surface a Video Promo tab that embeds this URL.",
+          "pattern": "^https?://",
+          "title": "Video Url",
+          "type": "string"
+        }
+      },
+      "required": ["video_url"],
+      "title": "CoworldPromo",
       "type": "object"
     },
     "CoworldProtocolDocs": {

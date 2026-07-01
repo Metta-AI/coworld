@@ -165,6 +165,35 @@ def test_episode_job_rejects_non_player_runnable() -> None:
         )
 
 
+def test_manifest_allows_missing_promo() -> None:
+    assert CoworldManifest.model_validate(_manifest_data()).game.promo is None
+
+
+def test_manifest_accepts_promo_video_url() -> None:
+    manifest = _manifest_data()
+    manifest["game"]["promo"] = {"video_url": "https://example.com/promo.mp4"}
+
+    promo = CoworldManifest.model_validate(manifest).game.promo
+    assert promo is not None
+    assert promo.video_url == "https://example.com/promo.mp4"
+
+
+def test_manifest_rejects_non_http_promo_video_url() -> None:
+    manifest = _manifest_data()
+    manifest["game"]["promo"] = {"video_url": "ftp://example.com/promo.mp4"}
+
+    with pytest.raises(ValidationError, match="video_url"):
+        CoworldManifest.model_validate(manifest)
+
+
+def test_manifest_rejects_promo_without_video_url() -> None:
+    manifest = _manifest_data()
+    manifest["game"]["promo"] = {}
+
+    with pytest.raises(ValidationError, match="video_url"):
+        CoworldManifest.model_validate(manifest)
+
+
 def test_manifest_rejects_null_game_docs() -> None:
     manifest = _manifest_data()
     manifest["game"]["docs"] = None

@@ -198,6 +198,18 @@ class CoworldDocs(BaseModel):
     )
 
 
+class CoworldPromo(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    video_url: str = Field(
+        pattern=HTTP_URL_PATTERN,
+        description=(
+            "Public HTTP(S) URL for a promotional video. Product UIs (e.g. the Observatory league page) surface a "
+            "Video Promo tab that embeds this URL."
+        ),
+    )
+
+
 class CoworldGameManifest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -227,6 +239,13 @@ class CoworldGameManifest(BaseModel):
     ]
     protocols: CoworldProtocolDocs = Field(description="Protocol documentation for game-owned WebSocket surfaces.")
     docs: CoworldDocs = Field(description="Game-authored documentation surfaced through Coworld tools and UIs.")
+    promo: CoworldPromo | None = Field(
+        default=None,
+        description=(
+            "Optional promotional material for the game. When set, product UIs (e.g. the Observatory league page) "
+            "surface a Video Promo tab for the promo video."
+        ),
+    )
 
     @model_validator(mode="after")
     def validate_version(self) -> "CoworldGameManifest":
