@@ -110,7 +110,7 @@ def league_create(
         f"[green]Created league seed[/green] for [bold]{seed.coworld_name}[/bold] (template: {seed.template})"
     )
     if seed.league_id is not None:
-        league_url = observatory_web_url(server, f"/observatory/v2#tab=leagues&detail=league:{seed.league_id}")
+        league_url = observatory_web_url(server, f"/observatory/v2?tab=leagues&detail=league:{seed.league_id}")
         console.print(f"[dim]League:[/dim] {seed.league_id}")
         console.print(f"[dim]League page:[/dim] {league_url}", soft_wrap=True)
     else:

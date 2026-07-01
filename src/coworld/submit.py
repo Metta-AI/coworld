@@ -54,7 +54,7 @@ def submit_policy_to_league_cmd(
 
     policy_url = observatory_web_url(
         server,
-        f"/observatory/v2#tab=uploads&detail=policy-version:{policy_version.id}",
+        f"/observatory/v2?tab=uploads&detail=policy-version:{policy_version.id}",
     )
     console.print("[green]Submitted to league[/green]")
     console.print(f"[dim]League:[/dim] {league_id}")
