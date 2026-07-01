@@ -181,6 +181,15 @@ class DivisionLeaderboardEntry(BaseModel):
     rounds_played: int
     policy_version_ids: set[UUID] = Field(default_factory=set)
     recent_rounds: list[dict[str, Any]] | None = None
+    # All-time episode win/played totals carried through the rank_division wire path so the
+    # scheduling-tick board (synthesized below by `_row_from_entry`) surfaces the same Competition
+    # Win %/EPISODES columns as the round-complete board, instead of clobbering it with a 3-column
+    # view. `episode_wins`/`episodes_played` are the Win % numerator/denominator; `win_rate` is the
+    # clamped ratio (commissioners may send it directly, else it is derived from the totals). All
+    # default to None for backward compatibility / non-competition divisions that omit them.
+    episode_wins: float | None = None
+    episodes_played: int | None = None
+    win_rate: float | None = None
 
 
 LeaderboardValue = str | int | float | bool | None
@@ -236,6 +245,12 @@ class DivisionLeaderboardTable(BaseModel):
 
 
 def _legacy_score_column_key(view: DivisionLeaderboardView) -> str:
+    # Prefer an explicit "score" column when present: a competition board also carries a "win_rate"
+    # column with sort="desc" that precedes "score", and the heuristic below would otherwise pick
+    # win_rate as the legacy score (collapsing Score onto the Win % rate). Mirrors the backend's
+    # `commissioners._legacy_score_column_key`.
+    if any(column.key == "score" for column in view.columns):
+        return "score"
     for column in view.columns:
         if column.key != "rank" and column.sort == "desc" and column.value_type in {"number", "integer"}:
             return column.key
@@ -249,6 +264,16 @@ def _entry_from_row(row: DivisionLeaderboardRow, rank: int, score_axis_key: str)
     score = row.values.get(score_axis_key)
     row_rank = row.values.get("rank", rank)
     rounds_played = row.values.get("rounds_played", 0)
+    episode_wins = row.values.get("episode_wins", row.values.get("wins"))
+    episodes_played = row.values.get("episodes_played")
+    win_rate = row.values.get("win_rate")
+
+    def _as_float(value: LeaderboardValue) -> float | None:
+        return float(value) if isinstance(value, (int, float)) and not isinstance(value, bool) else None
+
+    def _as_int(value: LeaderboardValue) -> int | None:
+        return int(value) if isinstance(value, (int, float)) and not isinstance(value, bool) else None
+
     return DivisionLeaderboardEntry(
         player_id=row.subject_id,
         player_name=row.subject_name,
@@ -257,18 +282,86 @@ def _entry_from_row(row: DivisionLeaderboardRow, rank: int, score_axis_key: str)
         rounds_played=int(rounds_played) if isinstance(rounds_played, (int, float)) else 0,
         policy_version_ids=row.policy_version_ids,
         recent_rounds=row.recent_rounds,
+        episode_wins=_as_float(episode_wins),
+        episodes_played=_as_int(episodes_played),
+        win_rate=_as_float(win_rate),
     )
 
 
+def _entry_has_episode_metrics(entry: DivisionLeaderboardEntry) -> bool:
+    return entry.episodes_played is not None or entry.episode_wins is not None or entry.win_rate is not None
+
+
+def _entry_win_rate(entry: DivisionLeaderboardEntry) -> float | None:
+    """Clamped Competition Win % for the entry.
+
+    Prefer the commissioner-provided ``win_rate`` when present; otherwise derive it from the
+    all-time episode totals (``episode_wins / episodes_played``) and clamp to ``[0, 1]`` to mirror
+    the commissioner's ``_clamped_win_rate``. Returns None when the entry carries no episode metrics
+    (older / non-competition entries) so the synthesized view stays 3-column.
+    """
+    if entry.win_rate is not None:
+        return entry.win_rate
+    if entry.episodes_played is None or entry.episode_wins is None:
+        return None
+    if entry.episodes_played <= 0:
+        return 0.0
+    return max(0.0, min(1.0, entry.episode_wins / entry.episodes_played))
+
+
 def _row_from_entry(entry: DivisionLeaderboardEntry) -> DivisionLeaderboardRow:
+    values: dict[str, LeaderboardValue] = {
+        "rank": entry.rank,
+        "score": entry.score,
+        "rounds_played": entry.rounds_played,
+    }
+    # Carry the Competition Win %/EPISODES metrics into the synthesized row WHEN PRESENT so the
+    # scheduling-tick board matches the round-complete board's column/value shape (and the read path
+    # `legacy_entries` picks them up from `win_rate`/`wins`/`episodes_played`). When the entry omits
+    # them (non-competition / older commissioners) the row stays the legacy 3 values.
+    if _entry_has_episode_metrics(entry):
+        win_rate = _entry_win_rate(entry)
+        if win_rate is not None:
+            values["win_rate"] = win_rate
+        if entry.episode_wins is not None:
+            # `wins` is the read-path key; `episode_wins` mirrors the round-complete board verbatim.
+            values["wins"] = entry.episode_wins
+            values["episode_wins"] = entry.episode_wins
+        if entry.episodes_played is not None:
+            values["episodes_played"] = entry.episodes_played
     return DivisionLeaderboardRow(
         subject_type="player",
         subject_id=entry.player_id,
         subject_name=entry.player_name,
-        values={"rank": entry.rank, "score": entry.score, "rounds_played": entry.rounds_played},
+        values=values,
         policy_version_ids=entry.policy_version_ids,
         recent_rounds=entry.recent_rounds,
     )
+
+
+def _columns_for_entries(entries: list[DivisionLeaderboardEntry]) -> list[DivisionLeaderboardColumn]:
+    """Column set for a synthesized `rankings` view.
+
+    Competition entries (those carrying episode metrics) get the full Win %/EPISODES layout that
+    matches the round-complete board so the two writers persist identical board shapes; everything
+    else keeps the legacy 3-column board so nothing regresses.
+    """
+    columns = [
+        DivisionLeaderboardColumn(key="rank", label="Rank", value_type="integer", sort="asc"),
+        DivisionLeaderboardColumn(key="score", label="Score", value_type="number", sort="desc"),
+        DivisionLeaderboardColumn(key="rounds_played", label="Rounds Played", value_type="integer"),
+    ]
+    if not any(_entry_has_episode_metrics(entry) for entry in entries):
+        return columns
+    return [
+        DivisionLeaderboardColumn(key="rank", label="Rank", value_type="integer", sort="asc"),
+        DivisionLeaderboardColumn(key="win_rate", label="Win %", value_type="number", sort="desc"),
+        DivisionLeaderboardColumn(key="score", label="Score", value_type="number", sort="desc"),
+        DivisionLeaderboardColumn(key="wins", label="Wins", value_type="number"),
+        DivisionLeaderboardColumn(key="episodes_played", label="Episodes Played", value_type="integer"),
+        DivisionLeaderboardColumn(key="rounds_played", label="Rounds Played", value_type="integer"),
+        DivisionLeaderboardColumn(key="episode_wins", label="Episode Wins", value_type="number"),
+    ]
 
 
 def _row_from_ranking_entry(entry: RankingEntry) -> DivisionLeaderboardRow:
@@ -313,15 +406,19 @@ def _leaderboard_from_division_ranking(result: DivisionRanking) -> DivisionLeade
 
 def _view_from_table(table: DivisionLeaderboardTable) -> DivisionLeaderboardView:
     # TODO: delete compatibility shim after table-shaped commissioner responses are gone.
+    if any(_entry_has_episode_metrics(entry) for entry in table.rankings):
+        columns = _columns_for_entries(table.rankings)
+    else:
+        columns = [
+            DivisionLeaderboardColumn(key="rank", label="Rank", value_type="integer", sort="asc"),
+            DivisionLeaderboardColumn(key="score", label=table.score_label, value_type="number", sort="desc"),
+            DivisionLeaderboardColumn(key="rounds_played", label="Rounds Played", value_type="integer"),
+        ]
     return DivisionLeaderboardView(
         key=table.id,
         title=table.label,
         description=table.description,
-        columns=[
-            DivisionLeaderboardColumn(key="rank", label="Rank", value_type="integer", sort="asc"),
-            DivisionLeaderboardColumn(key="score", label=table.score_label, value_type="number", sort="desc"),
-            DivisionLeaderboardColumn(key="rounds_played", label="Rounds Played", value_type="integer"),
-        ],
+        columns=columns,
         rows=[_row_from_entry(entry) for entry in table.rankings],
     )
 
@@ -636,11 +733,7 @@ class RankDivisionResponse(BaseModel):
                 DivisionLeaderboardView(
                     key=self.default_view_key,
                     title="Score",
-                    columns=[
-                        DivisionLeaderboardColumn(key="rank", label="Rank", value_type="integer", sort="asc"),
-                        DivisionLeaderboardColumn(key="score", label="Score", value_type="number", sort="desc"),
-                        DivisionLeaderboardColumn(key="rounds_played", label="Rounds Played", value_type="integer"),
-                    ],
+                    columns=_columns_for_entries(self.rankings),
                     rows=[_row_from_entry(entry) for entry in self.rankings],
                 )
             ]

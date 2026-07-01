@@ -557,6 +557,80 @@ def test_rank_division_response_fills_view_from_legacy_rankings() -> None:
     assert response.views[0].columns[1].key == "score"
     assert response.views[0].rows[0].values["score"] == 2.0
     assert response.rankings == [entry]
+    # Non-competition / pre-episode entries keep the legacy 3-column board (no episode columns leak).
+    assert [column.key for column in response.views[0].columns] == ["rank", "score", "rounds_played"]
+    assert "win_rate" not in response.views[0].rows[0].values
+    assert "episodes_played" not in response.views[0].rows[0].values
+
+
+def test_rank_division_response_carries_episode_columns_for_competition_entries() -> None:
+    # The scheduling-tick clobber root cause: a competition rank_division response whose entries
+    # carry episode totals must synthesize a board with the SAME win_rate/wins/episodes_played/
+    # episode_wins columns as the round-complete board, so the tick does not overwrite the good
+    # board with a 3-column one. win_rate is derived from the totals (1 win / 100 played = 0.01).
+    entry = DivisionLeaderboardEntry(
+        player_id="player_1",
+        player_name="Aaron",
+        rank=1,
+        score=1.0,
+        rounds_played=12,
+        episode_wins=1.0,
+        episodes_played=100,
+    )
+
+    response = RankDivisionResponse(rankings=[entry])
+    view = response.views[0]
+
+    assert [column.key for column in view.columns] == [
+        "rank",
+        "win_rate",
+        "score",
+        "wins",
+        "episodes_played",
+        "rounds_played",
+        "episode_wins",
+    ]
+    values = view.rows[0].values
+    # win_rate = episode_wins / episodes_played, clamped to [0, 1].
+    assert values["win_rate"] == 0.01
+    # Read-path key `wins` mirrors episode_wins; episode_wins is carried verbatim too.
+    assert values["wins"] == 1.0
+    assert values["episode_wins"] == 1.0
+    assert values["episodes_played"] == 100
+    # Score stays the cumulative win score, NOT collapsed onto win_rate.
+    assert values["score"] == 1.0
+    assert values["rounds_played"] == 12
+    # Round-trips through JSON unchanged (the pipeline persists model_dump(mode="json")).
+    rebuilt = RankDivisionResponse.model_validate(response.model_dump(mode="json"))
+    assert rebuilt.views[0].rows[0].values["win_rate"] == 0.01
+    assert rebuilt.views[0].rows[0].values["episodes_played"] == 100
+
+
+def test_rank_division_response_prefers_explicit_win_rate_and_clamps_derived() -> None:
+    # An explicit commissioner win_rate is surfaced verbatim; a derived rate with zero episodes is 0.
+    explicit = DivisionLeaderboardEntry(
+        player_id="player_1",
+        rank=1,
+        score=3.0,
+        rounds_played=4,
+        episode_wins=2.0,
+        episodes_played=10,
+        win_rate=0.5,
+    )
+    zero_played = DivisionLeaderboardEntry(
+        player_id="player_2",
+        rank=2,
+        score=0.0,
+        rounds_played=0,
+        episode_wins=0.0,
+        episodes_played=0,
+    )
+
+    response = RankDivisionResponse(rankings=[explicit, zero_played])
+    rows = response.views[0].rows
+    assert rows[0].values["win_rate"] == 0.5
+    assert rows[1].values["win_rate"] == 0.0
+    assert rows[1].values["episodes_played"] == 0
 
 
 def test_rank_division_response_fills_view_from_legacy_table() -> None:
