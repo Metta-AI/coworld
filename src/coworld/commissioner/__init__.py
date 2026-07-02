@@ -5,6 +5,7 @@ from coworld.commissioner.protocol import (
     POLICY_MEMBERSHIP_SUBSTATUS_ACTIVE,
     POLICY_MEMBERSHIP_SUBSTATUS_BENCHED,
     CommissionerCalcStep,
+    CommissionerChangelogEntry,
     CommissionerEntrantReport,
     CommissionerMessage,
     CommissionerRoundReport,
@@ -65,6 +66,7 @@ from coworld.commissioner.protocol import (
 
 __all__ = [
     "CommissionerCalcStep",
+    "CommissionerChangelogEntry",
     "CommissionerEntrantReport",
     "CommissionerMessage",
     "CommissionerRoundReport",

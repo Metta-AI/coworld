@@ -203,7 +203,8 @@ class DivisionLeaderboardAxis(BaseModel):
 class DivisionLeaderboardColumn(BaseModel):
     key: str
     label: str | None = None
-    value_type: Literal["number", "integer", "string", "boolean"] = "number"
+    # "percent" renders a [0, 1] fraction as a whole-number percentage (0.2 -> "20%").
+    value_type: Literal["number", "integer", "string", "boolean", "percent"] = "number"
     sort: Literal["asc", "desc"] | None = None
 
 
@@ -220,6 +221,11 @@ class DivisionLeaderboardView(BaseModel):
     key: str = "score"
     title: str | None = None
     description: str | None = None
+    # The column whose value/label/value_type drives the compact Standings board (the
+    # headline metric shown next to each player). Defaults to the view's score column
+    # (see `_primary_column_key`); a commissioner sets it to e.g. "win_rate" to make the
+    # Standings headline Win % instead of the raw score.
+    primary_column: str | None = None
     axis_values: dict[str, str] = Field(default_factory=dict)
     columns: list[DivisionLeaderboardColumn] = Field(default_factory=list)
     rows: list[DivisionLeaderboardRow] = Field(default_factory=list)
@@ -245,17 +251,21 @@ class DivisionLeaderboardTable(BaseModel):
 
 
 def _legacy_score_column_key(view: DivisionLeaderboardView) -> str:
-    # Prefer an explicit "score" column when present: a competition board also carries a "win_rate"
-    # column with sort="desc" that precedes "score", and the heuristic below would otherwise pick
-    # win_rate as the legacy score (collapsing Score onto the Win % rate). Mirrors the backend's
-    # `commissioners._legacy_score_column_key`.
+    # The commissioner's explicit `primary_column` wins: it names the column whose value is the
+    # Standings headline (and, for the compat `score` field, the value we surface). Mirrors the
+    # backend's `commissioners._primary_column_key`.
+    if view.primary_column and any(column.key == view.primary_column for column in view.columns):
+        return view.primary_column
+    # Otherwise prefer an explicit "score" column when present: a competition board also carries a
+    # "win_rate" column with sort="desc" that precedes "score", and the heuristic below would
+    # otherwise pick win_rate as the legacy score (collapsing Score onto the Win % rate).
     if any(column.key == "score" for column in view.columns):
         return "score"
     for column in view.columns:
-        if column.key != "rank" and column.sort == "desc" and column.value_type in {"number", "integer"}:
+        if column.key != "rank" and column.sort == "desc" and column.value_type in {"number", "integer", "percent"}:
             return column.key
     for column in view.columns:
-        if column.key != "rank" and column.value_type in {"number", "integer"}:
+        if column.key != "rank" and column.value_type in {"number", "integer", "percent"}:
             return column.key
     return "score"
 
@@ -438,12 +448,35 @@ def _table_from_view(view: DivisionLeaderboardView) -> DivisionLeaderboardTable:
     )
 
 
+class CommissionerChangelogEntry(BaseModel):
+    """One dated entry in a commissioner's self-authored changelog.
+
+    The commissioner is a black box to the platform, so the only way operators and
+    players learn *how it works* and *what functionality changed* is if the
+    commissioner tells them. Each entry is a human-readable note the Observatory
+    renders verbatim in the division's League Overview, newest first.
+    """
+
+    # ISO date the change took effect, e.g. "2026-07-02". Free-form; rendered verbatim.
+    date: str
+    # Short headline of the change, e.g. "Standings use a 6-hour recency window".
+    title: str
+    # Optional longer description of what changed and why.
+    detail: str | None = None
+    # Optional bucket so the Observatory can badge entries, e.g. "scoring",
+    # "scheduling", "matchmaking", "eligibility". Free-form; rendered verbatim.
+    category: str | None = None
+
+
 class DivisionDescription(BaseModel):
     round_schedule: str | None = None
     next_round: str | None = None
     round_structure: str | None = None
     leaderboard_rules: str | None = None
     scoring_mechanics: str | None = None
+    # Newest-first log of how the commissioner works and what functionality changed.
+    # Optional and additive: a commissioner that omits it loses no existing behavior.
+    changelog: list[CommissionerChangelogEntry] = Field(default_factory=list)
 
 
 class RoundStart(BaseModel):
