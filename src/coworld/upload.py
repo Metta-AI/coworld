@@ -231,9 +231,19 @@ class CoworldStatusResult:
 
 
 class CoworldUploadClient:
+    # Process-scoped elevation flag, set by the top-level `coworld --elevated` Typer
+    # callback so every upload/manage command in this invocation carries the header.
+    # Kept as a class attribute mirroring CoworldApiClient — the two clients are used
+    # side by side and must not diverge on elevation state.
+    _elevated = False
+
     def __init__(self, server_url: str, token: str):
         self._http_client = httpx.Client(base_url=f"{server_url.rstrip('/')}/observatory", timeout=30.0)
         self._token = token
+
+    @classmethod
+    def set_elevated(cls, elevated: bool) -> None:
+        cls._elevated = elevated
 
     @classmethod
     def from_login(cls, *, server_url: str) -> Self:
@@ -252,7 +262,16 @@ class CoworldUploadClient:
         self.close()
 
     def _headers(self) -> dict[str, str]:
-        return {"Authorization": f"Bearer {self._token}"}
+        headers = {"Authorization": f"Bearer {self._token}"}
+        if type(self)._elevated:
+            if self._token.startswith("ply_"):
+                raise RuntimeError(
+                    "--elevated cannot be used with a player-subject token. Player sessions "
+                    "are not eligible for Softmax team access. Run `softmax player unset` to "
+                    "revert to your user credential, or omit --elevated."
+                )
+            headers["X-Use-Elevated-Privileges"] = "true"
+        return headers
 
     def upload_manifest(self, manifest: dict[str, object]) -> CoworldUploadResponse:
         response = self._http_client.post(

@@ -359,11 +359,22 @@ class PolicyVersionsResponse(CoworldAPIModel):
 
 
 class CoworldApiClient:
+    # Process-scoped: set by the top-level Typer `--elevated` callback in `coworld/cli.py`
+    # so it applies to every client constructed later in the same invocation. Client-side
+    # code that instantiates the client outside the CLI can flip this too, but the flag is
+    # only ever sent on user-owned tokens (see _headers() — player-subject tokens are
+    # refused because their elevation would be a no-op at the backend anyway).
+    _elevated = False
+
     def __init__(self, *, server_url: str, token: str | None = None):
         root = server_url.rstrip("/")
         base_url = f"{root}/observatory"
         self._http_client = httpx.Client(base_url=base_url, timeout=30.0, follow_redirects=True)
         self._token = token
+
+    @classmethod
+    def set_elevated(cls, elevated: bool) -> None:
+        cls._elevated = elevated
 
     @classmethod
     def from_login(cls, *, server_url: str) -> Self:
@@ -384,7 +395,16 @@ class CoworldApiClient:
     def _headers(self) -> dict[str, str]:
         if self._token is None:
             return {}
-        return {"Authorization": f"Bearer {self._token}"}
+        headers = {"Authorization": f"Bearer {self._token}"}
+        if type(self)._elevated:
+            if self._token.startswith("ply_"):
+                raise RuntimeError(
+                    "--elevated cannot be used with a player-subject token. Player sessions "
+                    "are not eligible for Softmax team access. Run `softmax player unset` to "
+                    "revert to your user credential, or omit --elevated."
+                )
+            headers["X-Use-Elevated-Privileges"] = "true"
+        return headers
 
     def _request(self, method: str, path: str, response_type: Any, **kwargs: Any) -> Any:
         response = self._http_client.request(method, path, headers=self._headers(), **kwargs)

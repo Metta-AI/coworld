@@ -211,8 +211,30 @@ app.add_typer(player_app, name="player")
 
 
 @app.callback()
-def main() -> None:
+def main(
+    elevated: Annotated[
+        bool,
+        typer.Option(
+            "--elevated",
+            # Hidden from `coworld --help`: this flag only functions for Softmax team
+            # members, and shipping it in the public help surface would be noise for the
+            # much larger external-user population. Employees learn about it through
+            # internal docs. Matches how team-only subapps like `coworld league` are
+            # public in name but understood internally.
+            hidden=True,
+            help=(
+                "Attach X-Use-Elevated-Privileges to every backend call. Softmax team members "
+                "need this for team-only endpoints (private leagues, cross-user artifacts, "
+                "SQL access). No-op for external users. Rejected for player-subject tokens."
+            ),
+        ),
+    ] = False,
+) -> None:
     """Validate, certify, and play Coworld packages."""
+    from coworld.api_client import CoworldApiClient  # noqa: PLC0415
+
+    CoworldApiClient.set_elevated(elevated)
+    CoworldUploadClient.set_elevated(elevated)
 
 
 @app.command("certify")
