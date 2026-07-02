@@ -4,6 +4,7 @@ This page is the conceptual home for Coworld documentation: what a complete Cowo
 manifest describes those roles, and how an episode turns into artifacts that player builders can learn from.
 
 For usage-oriented guidance, use the package [README](../../../README.md) and the [Coworld cookbook](../../../COOKBOOK.md).
+For the end-to-end guide to building and testing a new Coworld, use [Authoring A Coworld](AUTHORING.md).
 The package documentation uses [Paint Arena](../examples/paintarena/README.md) as its canonical example. Installable
 starter templates for every role ship under `coworld/templates`.
 When rebuilding an existing Coworld after the June 2026 repo consolidation, use
@@ -200,6 +201,7 @@ These boundaries are useful when deciding where a new feature, artifact, or debu
 ## See Also
 
 - Package usage and starting guide: [README](../../../README.md).
+- End-to-end Coworld authoring guide: [AUTHORING.md](AUTHORING.md).
 - Workflow recipes: [Coworld cookbook](../../../COOKBOOK.md).
 - Rebuild/source ownership guide: [REBUILDING_COWORLDS.md](REBUILDING_COWORLDS.md).
 - Manifest reference: [COWORLD_MANIFEST.md](COWORLD_MANIFEST.md).

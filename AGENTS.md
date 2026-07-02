@@ -97,6 +97,8 @@ source of truth. They are generated docs and `$schema` targets; `test_types.py` 
   Coworld upload.
 - [src/coworld/docs/README.md](src/coworld/docs/README.md) - Coworld concept map, role statuses, artifact flow, and
   cross-links.
+- [src/coworld/docs/AUTHORING.md](src/coworld/docs/AUTHORING.md) - end-to-end guide for building and testing a new
+  Coworld (design, game/player implementation, packaging, local testing, certification, upload, hosted verification).
 - [src/coworld/docs/COWORLD_MANIFEST.md](src/coworld/docs/COWORLD_MANIFEST.md) - manifest semantics and schema source
   of truth.
 - [src/coworld/docs/BEDROCK.md](src/coworld/docs/BEDROCK.md) - **how a player calls Bedrock at runtime** (the

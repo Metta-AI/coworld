@@ -21,7 +21,7 @@ used for local development and hosted league competition.
 Most readers are here to build a player for an existing Coworld. If that is you, start with
 [Developing Players](#developing-players-work-in-progress).
 
-If you are building a complete Coworld, start with [Developing Coworlds](#developing-coworlds-work-in-progress).
+If you are building a complete Coworld, start with [Developing Coworlds](#developing-coworlds).
 
 ## Developing Players (Work In Progress)
 
@@ -37,21 +37,22 @@ The player development user guide is still under construction. For now, use:
 - [**Bedrock for players**](src/coworld/docs/BEDROCK.md) if your player calls an LLM — how to reach hosted Bedrock
   through the sidecar endpoint (read this before writing the call; getting it wrong fails silently as a non-LLM baseline).
 
-## Developing Coworlds (Work In Progress)
+## Developing Coworlds
 
 Coworld builders create the worlds that player developers target. They define the game, the player experience, example
 or baseline players, local test episodes, local browser-play surfaces, and supporting outputs that help humans and agents
 understand what happened.
 
+Start with [Authoring A Coworld](src/coworld/docs/AUTHORING.md) — the end-to-end guide from design through local
+testing, certification, upload, and hosted verification. It leans on the
+[starter templates](src/coworld/templates/README.md) and the
+[Paint Arena example](src/coworld/examples/paintarena/README.md) as its worked references. Use
+[Rebuilding Coworlds After The Role Repo Move](src/coworld/docs/REBUILDING_COWORLDS.md) when updating an existing
+Coworld or fixing a supporting role.
+
 For uploaded games, `game.docs.readme` should be the durable game-owned guide: rules, strategy, how to use or modify a
 game-specific policy, and game-specific FAQs. Shared protocol docs belong in `game.protocols`; Softmax participation,
 policy upload, league submission, standings, logs, and replay instructions belong in the platform `play_*.md` guide.
-
-The Coworld development user guide is still under construction. For now, start with the
-[starter templates](src/coworld/templates/README.md), compare against the
-[Paint Arena example](src/coworld/examples/paintarena/README.md), and use
-[Rebuilding Coworlds After The Role Repo Move](src/coworld/docs/REBUILDING_COWORLDS.md) when updating an existing
-Coworld or fixing a supporting role.
 
 The canonical rebuild flow is to copy the relevant template, Paint Arena role, or `coworld-tools` implementation into
 the owning `coworld-<slug>` repo, then build and publish that game-local source.
@@ -66,6 +67,7 @@ the owning `coworld-<slug>` repo, then build and publish that game-local source.
 | Run local episodes or browser play | [Cookbook: Build And Run Paint Arena Locally](COOKBOOK.md#build-and-run-paint-arena-locally) |
 | Inspect league status, logs, results, and replays | [Cookbook: Watch Results And Find Episodes](COOKBOOK.md#watch-results-and-find-episodes) |
 | Save per-player debugging files after an episode | [Player artifact](src/coworld/docs/artifacts/PLAYER_ARTIFACT.md) and `uv run coworld episode-logs --help` |
+| Author a new Coworld end to end | [Authoring A Coworld](src/coworld/docs/AUTHORING.md) |
 | Build, certify, and upload a Coworld | [Cookbook: Certify And Upload A Coworld](COOKBOOK.md#certify-and-upload-a-coworld) |
 | Rebuild an existing Coworld after a role/source move | [Rebuilding Coworlds After The Role Repo Move](src/coworld/docs/REBUILDING_COWORLDS.md) |
 | Improve a policy in the optimizer workbench | `uv run coworld optimize` and [Optimizer role](src/coworld/docs/roles/OPTIMIZER.md) |
@@ -96,6 +98,7 @@ progress:
 | Need | Current doc |
 | ---- | ----------- |
 | Understand what a complete Coworld is | [Coworld overview](src/coworld/docs/README.md) |
+| Build and test a new Coworld end to end | [Authoring A Coworld](src/coworld/docs/AUTHORING.md) |
 | Build or operate from recipes | [Coworld cookbook](COOKBOOK.md) |
 | Understand manifest fields | [Manifest reference](src/coworld/docs/COWORLD_MANIFEST.md) |
 | Understand roles and artifact flow | [Coworld overview](src/coworld/docs/README.md#roles) |
