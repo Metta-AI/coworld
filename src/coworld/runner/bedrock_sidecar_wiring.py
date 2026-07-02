@@ -58,10 +58,26 @@ def build_bedrock_sidecar(
     upstream_endpoint: str | None,
     image: str,
     role_arn: str,
+    completions_bucket: str | None,
+    completions_prefix: str,
+    flush_records: int,
+    flush_seconds: float,
     spend_limit_usd: str | None = None,
     pricing_json: str | None = None,
 ) -> client.V1Container:
     upstream = upstream_endpoint or BEDROCK_RUNTIME_ENDPOINT_TEMPLATE.format(region=region)
+    # Optional S3 sink for completion records (latency/errors); unset bucket keeps the sidecar
+    # log-only. Mirrors the app_backend wiring — the sidecar proxy image is the same single source.
+    completion_env = (
+        [
+            client.V1EnvVar(name="BEDROCK_SIDECAR_COMPLETIONS_BUCKET", value=completions_bucket),
+            client.V1EnvVar(name="BEDROCK_SIDECAR_COMPLETIONS_PREFIX", value=completions_prefix),
+            client.V1EnvVar(name="BEDROCK_SIDECAR_FLUSH_RECORDS", value=str(flush_records)),
+            client.V1EnvVar(name="BEDROCK_SIDECAR_FLUSH_SECONDS", value=str(flush_seconds)),
+        ]
+        if completions_bucket
+        else []
+    )
     return client.V1Container(
         name=BEDROCK_SIDECAR_CONTAINER_NAME,
         image=image,
@@ -80,6 +96,13 @@ def build_bedrock_sidecar(
             client.V1EnvVar(name="BEDROCK_SIDECAR_EPISODE_REQUEST_ID", value=attribution.episode_request_id),
             client.V1EnvVar(name="BEDROCK_SIDECAR_ROLE", value=attribution.role),
             client.V1EnvVar(name="BEDROCK_SIDECAR_SLOT", value=attribution.slot),
+            *completion_env,
+            client.V1EnvVar(
+                name="POD_NAME",
+                value_from=client.V1EnvVarSource(
+                    field_ref=client.V1ObjectFieldSelector(field_path="metadata.name")
+                ),
+            ),
             # League-configured per-episode per-player-pod LLM spend ceiling (estimated USD),
             # enforced by the sidecar. Absent means no limit.
             *(

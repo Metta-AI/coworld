@@ -450,6 +450,13 @@ def _create_player_pod(
                 upstream_endpoint=os.environ.get("BEDROCK_SIDECAR_UPSTREAM_ENDPOINT") or None,
                 image=os.environ["BEDROCK_SIDECAR_IMAGE"],
                 role_arn=os.environ["BEDROCK_SIDECAR_ROLE_ARN"],
+                # Player-side sidecars persist completion records to the same S3 sink as the
+                # game sidecar; the dispatcher forwards these into the worker env (which this
+                # runner inherits). Unset bucket keeps the sidecar log-only.
+                completions_bucket=os.environ.get("BEDROCK_SIDECAR_COMPLETIONS_BUCKET") or None,
+                completions_prefix=os.environ.get("BEDROCK_SIDECAR_COMPLETIONS_PREFIX", "sidecar-completions"),
+                flush_records=int(os.environ.get("BEDROCK_SIDECAR_FLUSH_RECORDS", "200")),
+                flush_seconds=float(os.environ.get("BEDROCK_SIDECAR_FLUSH_SECONDS", "30.0")),
                 # League-configured per-episode per-player-pod LLM spend limit, forwarded
                 # by the dispatcher; the sidecar enforces it.
                 spend_limit_usd=os.environ.get("BEDROCK_SIDECAR_SPEND_LIMIT_USD") or None,

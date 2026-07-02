@@ -1335,6 +1335,48 @@ def test_create_player_pod_with_bedrock_sidecar_inverts_bedrock_access(monkeypat
     assert token_projection.path == "token"
 
 
+def test_create_player_pod_sidecar_forwards_completion_s3_env(monkeypatch):
+    """When the dispatcher forwards the S3 completions env into the worker, the player
+    sidecar carries it (so player-side Bedrock latency lands in S3) plus a POD_NAME field-ref."""
+    created: dict[str, object] = {}
+    core_v1 = SimpleNamespace(create_namespaced_pod=lambda *, namespace, body: created.update({"body": body}))
+    monkeypatch.setenv("COWORLD_BEDROCK_REGION", "us-west-2")
+    monkeypatch.setenv("BEDROCK_SIDECAR_ENABLED", "true")
+    monkeypatch.setenv("BEDROCK_SIDECAR_IMAGE", "ghcr.io/metta-ai/bedrock-sidecar:latest")
+    monkeypatch.setenv("BEDROCK_SIDECAR_ROLE_ARN", "arn:aws:iam::583928386201:role/episode-runner-bedrock")
+    monkeypatch.setenv("BEDROCK_SIDECAR_PORT", "19191")
+    monkeypatch.delenv("BEDROCK_SIDECAR_UPSTREAM_ENDPOINT", raising=False)
+    monkeypatch.setenv("BEDROCK_SIDECAR_COMPLETIONS_BUCKET", "softmax-bedrock-logs-583928386201")
+    monkeypatch.setenv("BEDROCK_SIDECAR_COMPLETIONS_PREFIX", "sidecar-completions")
+    monkeypatch.setenv("BEDROCK_SIDECAR_FLUSH_RECORDS", "200")
+    monkeypatch.setenv("BEDROCK_SIDECAR_FLUSH_SECONDS", "30.0")
+
+    kubernetes_runner._create_player_pod(
+        core_v1,
+        "jobs",
+        "job-player-0",
+        0,
+        "slot-token",
+        PlayerLaunchSpec(image="ghcr.io/metta-ai/players/paintbot@sha256:player123", run=(), env={}),
+        {"USE_BEDROCK": "true"},
+        "job-id",
+        "game-service",
+        "2",
+        "2Gi",
+        "",
+        [],
+    )
+
+    sidecar: Any = created["body"].spec.init_containers[0]
+    sidecar_values = {env_var.name: env_var.value for env_var in sidecar.env}
+    assert sidecar_values["BEDROCK_SIDECAR_COMPLETIONS_BUCKET"] == "softmax-bedrock-logs-583928386201"
+    assert sidecar_values["BEDROCK_SIDECAR_COMPLETIONS_PREFIX"] == "sidecar-completions"
+    assert sidecar_values["BEDROCK_SIDECAR_FLUSH_RECORDS"] == "200"
+    assert sidecar_values["BEDROCK_SIDECAR_FLUSH_SECONDS"] == "30.0"
+    pod_name_env = next(env_var for env_var in sidecar.env if env_var.name == "POD_NAME")
+    assert pod_name_env.value_from.field_ref.field_path == "metadata.name"
+
+
 def test_create_player_pod_forwards_artifact_upload_url_for_its_slot(monkeypatch):
     created: dict[str, object] = {}
     core_v1 = SimpleNamespace(create_namespaced_pod=lambda *, namespace, body: created.update({"body": body}))
