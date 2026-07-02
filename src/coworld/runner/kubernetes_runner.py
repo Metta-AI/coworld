@@ -450,6 +450,12 @@ def _create_player_pod(
                 upstream_endpoint=os.environ.get("BEDROCK_SIDECAR_UPSTREAM_ENDPOINT") or None,
                 image=os.environ["BEDROCK_SIDECAR_IMAGE"],
                 role_arn=os.environ["BEDROCK_SIDECAR_ROLE_ARN"],
+                # League-configured per-episode per-player-pod LLM spend limit, forwarded
+                # by the dispatcher; the sidecar enforces it.
+                spend_limit_usd=os.environ.get("BEDROCK_SIDECAR_SPEND_LIMIT_USD") or None,
+                # Server-snapshotted per-model USD rates, forwarded by the dispatcher so
+                # the sidecar meters spend with the same rates the server reports.
+                pricing_json=os.environ.get("BEDROCK_SIDECAR_PRICING_JSON") or None,
             )
         ]
     pod = client.V1Pod(

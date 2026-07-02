@@ -1233,6 +1233,8 @@ def test_create_player_pod_with_bedrock_sidecar_inverts_bedrock_access(monkeypat
     monkeypatch.setenv("BEDROCK_SIDECAR_ROLE_ARN", "arn:aws:iam::583928386201:role/episode-runner-bedrock")
     monkeypatch.setenv("BEDROCK_SIDECAR_PORT", "19191")
     monkeypatch.setenv("BEDROCK_SIDECAR_UPSTREAM_ENDPOINT", "http://bedrock.local")
+    monkeypatch.setenv("BEDROCK_SIDECAR_SPEND_LIMIT_USD", "1.5")
+    monkeypatch.setenv("BEDROCK_SIDECAR_PRICING_JSON", '{"claude-sonnet-4-6":[3.0,15.0,0.3,3.75]}')
     player = PlayerLaunchSpec(
         image="ghcr.io/metta-ai/players/paintbot@sha256:player123",
         run=(),
@@ -1321,6 +1323,9 @@ def test_create_player_pod_with_bedrock_sidecar_inverts_bedrock_access(monkeypat
     assert sidecar_env["BEDROCK_SIDECAR_EPISODE_REQUEST_ID"] == "job-id"
     assert sidecar_env["BEDROCK_SIDECAR_ROLE"] == "player"
     assert sidecar_env["BEDROCK_SIDECAR_SLOT"] == "0"
+    # The dispatcher-forwarded league spend limit and server pricing snapshot reach the sidecar.
+    assert sidecar_env["BEDROCK_SIDECAR_SPEND_LIMIT_USD"] == "1.5"
+    assert sidecar_env["BEDROCK_SIDECAR_PRICING_JSON"] == '{"claude-sonnet-4-6":[3.0,15.0,0.3,3.75]}'
     # Self-provisioned IRSA on the sidecar (not webhook-dependent).
     assert sidecar_env["AWS_ROLE_ARN"] == "arn:aws:iam::583928386201:role/episode-runner-bedrock"
     assert sidecar_env["AWS_WEB_IDENTITY_TOKEN_FILE"] == BEDROCK_SIDECAR_TOKEN_FILE

@@ -58,6 +58,8 @@ def build_bedrock_sidecar(
     upstream_endpoint: str | None,
     image: str,
     role_arn: str,
+    spend_limit_usd: str | None = None,
+    pricing_json: str | None = None,
 ) -> client.V1Container:
     upstream = upstream_endpoint or BEDROCK_RUNTIME_ENDPOINT_TEMPLATE.format(region=region)
     return client.V1Container(
@@ -78,6 +80,21 @@ def build_bedrock_sidecar(
             client.V1EnvVar(name="BEDROCK_SIDECAR_EPISODE_REQUEST_ID", value=attribution.episode_request_id),
             client.V1EnvVar(name="BEDROCK_SIDECAR_ROLE", value=attribution.role),
             client.V1EnvVar(name="BEDROCK_SIDECAR_SLOT", value=attribution.slot),
+            # League-configured per-episode per-player-pod LLM spend ceiling (estimated USD),
+            # enforced by the sidecar. Absent means no limit.
+            *(
+                [client.V1EnvVar(name="BEDROCK_SIDECAR_SPEND_LIMIT_USD", value=spend_limit_usd)]
+                if spend_limit_usd is not None
+                else []
+            ),
+            # Per-model USD rates snapshotted from the server's DB-backed pricing at dispatch
+            # (forwarded by the dispatcher), so in-pod spend metering matches server-side
+            # reporting. Absent means the sidecar falls back to family estimates.
+            *(
+                [client.V1EnvVar(name="BEDROCK_SIDECAR_PRICING_JSON", value=pricing_json)]
+                if pricing_json is not None
+                else []
+            ),
             # Self-provide the full IRSA web-identity env (see the app_backend mirror): botocore's
             # default credential chain needs BOTH AWS_ROLE_ARN and AWS_WEB_IDENTITY_TOKEN_FILE to
             # assume the role from the projected token, and the EKS webhook can't be relied on for

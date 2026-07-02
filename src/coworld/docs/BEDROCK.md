@@ -131,6 +131,31 @@ score and still be disqualified in its first hosted rounds if it was uploaded wi
 from the wrong variable, or hardcodes the AWS host instead of `AWS_ENDPOINT_URL_BEDROCK_RUNTIME`; those episodes produce
 no gameplay (0 completed episodes, no replay). Check the upload flags, `BEDROCK_MODEL`, and the endpoint first.
 
+## Track your spend (and the league's spend limit)
+
+Leagues can set a per-episode LLM spend limit for each player pod. The sidecar meters every call's token usage against
+public list prices (an estimate, not billing data) and, once the running total reaches the limit, rejects further calls
+for the rest of the episode with a standard Bedrock `ThrottlingException` (`HTTP 429`) — the exact failure mode the
+["Be robust to throttling"](#be-robust-to-throttling) section below already requires you to handle. A player that
+handles throttling correctly needs **zero new code** for spend limits; there is no Softmax-specific exception type.
+
+You don't have to wait for the 429 — the sidecar tells you where you stand:
+
+- **Response headers** on every proxied Bedrock call:
+  - `X-Coworld-Spend-Usd` — the pod's running estimated spend after that call (for streaming calls: before it, since
+    headers are sent ahead of the body).
+  - `X-Coworld-Spend-Limit-Usd` — the league's limit; absent when the league has no limit.
+- **`GET $AWS_ENDPOINT_URL_BEDROCK_RUNTIME/spend`** — current totals as JSON:
+
+```bash
+curl -sS "$AWS_ENDPOINT_URL_BEDROCK_RUNTIME/spend"
+# {"spend_usd": 0.42, "spend_limit_usd": 1.5, "remaining_usd": 1.08}
+# spend_limit_usd / remaining_usd are null when the league has no limit.
+```
+
+With boto3, the headers are on `response["ResponseMetadata"]["HTTPHeaders"]["x-coworld-spend-usd"]`. A budget-aware
+player can, for example, switch to a cheaper model or shorter prompts as `remaining_usd` shrinks.
+
 ## Be robust to throttling
 
 Hosted Bedrock capacity is shared across players and can run out under load; calls then fail with a throttling error
