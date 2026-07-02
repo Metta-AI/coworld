@@ -1008,13 +1008,14 @@ uv run coworld certify tmp/paintarena/coworld_manifest.json
 uv run coworld upload-coworld tmp/paintarena/coworld_manifest.json
 ```
 
-`certify` runs the Executable transcript locally. It requires GitHub `source_url` refs to pin full commit SHAs, validates
-the manifest's certification fixture before launching containers, runs one smoke episode, validates results, verifies the
-replay artifact is present and loadable, confirms declared players launched, and checks implemented supporting-role
-probes. Replay-load verification starts the game image in replay mode with `COGAME_LOAD_REPLAY_URI` and verifies `GET /client/replay`;
-it then waits for a frame from the `/replay` WebSocket. Reporters run against the certification episode; commissioners
-are probed over `/healthz` and `/round`. `upload-coworld` certifies again before uploading the manifest and runnable
-images.
+`certify` runs the Executable transcript locally. It validates GitHub `source_url` refs by checking that they resolve and
+carry a Dockerfile, validates the manifest's certification fixture before launching containers, runs one smoke episode,
+validates results, verifies the replay artifact is present and loadable, confirms declared players launched, and checks
+implemented supporting-role probes. Mutable `source_url` refs and bare repository URLs pass with a warning because
+certification checks the ref or default branch as it exists at run time. Replay-load verification starts the game image
+in replay mode with `COGAME_LOAD_REPLAY_URI` and verifies `GET /client/replay`; it waits for a frame from the `/replay` WebSocket.
+Reporters run against the certification episode; commissioners are probed over `/healthz` and `/round`. `upload-coworld`
+certifies again before uploading the manifest and runnable images.
 
 `certify` also writes `certification_report.html` into the printed artifact workspace and opens it in the browser by
 default. The report is a local transcript view with each step's pass/fail status, failure reason, artifact paths, and

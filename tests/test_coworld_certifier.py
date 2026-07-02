@@ -360,6 +360,62 @@ def test_validate_source_references_accepts_github_sha_ref(tmp_path: Path, monke
     assert calls == [("https://api.github.com/repos/Metta-AI/optimizers/contents", {"ref": source_sha})]
 
 
+def test_validate_source_references_accepts_short_github_sha_ref(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    package = _package_with_player_source_url(tmp_path, "https://github.com/Metta-AI/optimizers/tree/a3d1547")
+    calls = []
+
+    def fake_get(url, **kwargs):
+        calls.append((url, kwargs["params"]))
+        return httpx.Response(
+            200,
+            json=[
+                {"type": "file", "name": "Dockerfile"},
+                {"type": "file", "name": "README.md"},
+            ],
+        )
+
+    monkeypatch.setattr("coworld.certifier.httpx.get", fake_get)
+
+    feedback = validate_source_references(package)
+
+    assert calls == [("https://api.github.com/repos/Metta-AI/optimizers/contents", {"ref": "a3d1547"})]
+    assert feedback == [
+        "Coworld player[0].source_url: a3d1547",
+        "WARNING: Coworld player[0].source_url resolves, but is not pinned to a full 40-character commit SHA "
+        "(a3d1547); certification checked that ref at run time.",
+    ]
+
+
+def test_validate_source_references_accepts_bare_github_repo_url(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    package = _package_with_player_source_url(tmp_path, "https://github.com/Metta-AI/optimizers")
+    calls = []
+
+    def fake_get(url, **kwargs):
+        calls.append((url, kwargs["params"]))
+        return httpx.Response(
+            200,
+            json=[
+                {"type": "file", "name": "Dockerfile"},
+                {"type": "file", "name": "README.md"},
+            ],
+        )
+
+    monkeypatch.setattr("coworld.certifier.httpx.get", fake_get)
+
+    feedback = validate_source_references(package)
+
+    assert calls == [("https://api.github.com/repos/Metta-AI/optimizers/contents", {})]
+    assert feedback == [
+        "Coworld player[0].source_url: <default branch>",
+        "WARNING: Coworld player[0].source_url resolves, but does not specify a commit; "
+        "certification checked the repository default branch at run time.",
+    ]
+
+
 def test_validate_source_references_accepts_ancestor_dockerfile(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -391,20 +447,75 @@ def test_validate_source_references_accepts_ancestor_dockerfile(
     ]
 
 
-def test_validate_source_references_rejects_mutable_github_refs(
+def test_validate_source_references_accepts_mutable_github_refs_with_warning(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    package = _package_with_player_source_url(tmp_path, "https://github.com/Metta-AI/optimizers/tree/main/workbench")
+    calls = []
+
+    def fake_get(url, **kwargs):
+        calls.append((url, kwargs["params"]))
+        if kwargs["params"] == {"ref": "main/workbench"}:
+            return httpx.Response(404)
+        return httpx.Response(
+            200,
+            json=[
+                {"type": "file", "name": "Dockerfile"},
+                {"type": "file", "name": "README.md"},
+            ],
+        )
+
+    monkeypatch.setattr("coworld.certifier.httpx.get", fake_get)
+
+    feedback = validate_source_references(package)
+
+    assert calls == [
+        ("https://api.github.com/repos/Metta-AI/optimizers/contents", {"ref": "main/workbench"}),
+        ("https://api.github.com/repos/Metta-AI/optimizers/contents/workbench", {"ref": "main"}),
+    ]
+    assert feedback == [
+        "Coworld player[0].source_url: main",
+        "WARNING: Coworld player[0].source_url resolves, but is not pinned to a full 40-character commit SHA "
+        "(main); certification checked that ref at run time.",
+    ]
+
+
+def test_validate_source_references_prefers_longest_matching_slashed_github_ref(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     package = _package_with_player_source_url(
-        tmp_path, "https://github.com/Metta-AI/optimizers/tree/feature/foo/workbench"
+        tmp_path,
+        "https://github.com/Metta-AI/optimizers/tree/release/v1/player",
     )
+    calls = []
 
-    def fail_get(*_args, **_kwargs):
-        raise AssertionError("mutable refs should fail before GitHub contents are fetched")
+    def fake_get(url, **kwargs):
+        calls.append((url, kwargs["params"]))
+        if kwargs["params"] == {"ref": "release/v1/player"}:
+            return httpx.Response(404)
+        if url.endswith("/contents/player") and kwargs["params"] == {"ref": "release/v1"}:
+            return httpx.Response(
+                200,
+                json=[
+                    {"type": "file", "name": "Dockerfile"},
+                    {"type": "file", "name": "README.md"},
+                ],
+            )
+        raise AssertionError((url, kwargs["params"]))
 
-    monkeypatch.setattr("coworld.certifier.httpx.get", fail_get)
+    monkeypatch.setattr("coworld.certifier.httpx.get", fake_get)
 
-    with pytest.raises(ValueError, match="source_url must pin a commit SHA"):
-        validate_source_references(package)
+    feedback = validate_source_references(package)
+
+    assert calls == [
+        ("https://api.github.com/repos/Metta-AI/optimizers/contents", {"ref": "release/v1/player"}),
+        ("https://api.github.com/repos/Metta-AI/optimizers/contents/player", {"ref": "release/v1"}),
+    ]
+    assert feedback == [
+        "Coworld player[0].source_url: release/v1",
+        "WARNING: Coworld player[0].source_url resolves, but is not pinned to a full 40-character commit SHA "
+        "(release/v1); certification checked that ref at run time.",
+    ]
 
 
 def test_certify_coworld_checks_source_references_before_images(
@@ -684,26 +795,33 @@ def test_certify_coworld_announces_running_before_pass(tmp_path: Path, monkeypat
     assert events == [(step.id, status) for step in transcript.steps for status in ("running", "pass")]
 
 
-def test_certify_coworld_records_source_not_pinned_failure(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_certify_coworld_records_source_resolution_warning(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     coworld_manifest_path = _write_package_files(tmp_path)
     manifest = json.loads(coworld_manifest_path.read_text(encoding="utf-8"))
     manifest["player"][0]["source_url"] = "https://github.com/Metta-AI/players/tree/main/player"
     manifest["grader"][0].pop("source_url")
     coworld_manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
-    monkeypatch.setattr("coworld.certifier.httpx.get", lambda *_args, **_kwargs: pytest.fail("fetched mutable ref"))
+    _stub_executable_pipeline(monkeypatch)
+
+    def fake_validate_source_references(package):
+        return [
+            "Coworld player[0].source_url: main",
+            "WARNING: Coworld player[0].source_url resolves, but is not pinned to a full 40-character commit SHA "
+            "(main); certification checked that ref at run time.",
+        ]
+
+    monkeypatch.setattr("coworld.certifier.validate_source_references", fake_validate_source_references)
     events: list[tuple[str, str, str | None, str | None]] = []
 
-    with pytest.raises(ValueError, match="source_url must pin a commit SHA"):
-        certify_coworld(
-            coworld_manifest_path,
-            workspace=tmp_path / "cert",
-            on_step=lambda result, step: events.append(
-                (result.id, result.status, result.failure_reason, result.feedback)
-            ),
-        )
+    certify_coworld(
+        coworld_manifest_path,
+        workspace=tmp_path / "cert",
+        on_step=lambda result, step: events.append((result.id, result.status, result.failure_reason, result.feedback)),
+    )
 
-    assert events[-1][0:3] == ("source-resolves", "fail", "source_not_pinned")
-    assert "not a branch/tag" in cast(str, events[-1][3])
+    source_event = next(event for event in events if event[0] == "source-resolves" and event[1] == "pass")
+    assert source_event[2] is None
+    assert "WARNING: Coworld player[0].source_url resolves" in cast(str, source_event[3])
 
 
 def test_certify_coworld_records_fixture_failure_before_episode(
@@ -954,7 +1072,8 @@ def test_load_coworld_package_uses_certification_players_as_token_count(tmp_path
     coworld_manifest_path.write_text(json.dumps(manifest))
     package = load_coworld_package(coworld_manifest_path)
 
-    assert len(game_config_with_tokens(package.manifest.certification.game_config, ["a", "b"])["tokens"]) == 2
+    tokens = cast(list[str], game_config_with_tokens(package.manifest.certification.game_config, ["a", "b"])["tokens"])
+    assert len(tokens) == 2
 
 
 def test_load_results_validates_against_cogame_results_schema(tmp_path: Path) -> None:

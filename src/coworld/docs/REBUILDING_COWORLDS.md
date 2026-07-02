@@ -56,9 +56,9 @@ Do not point new manifests at archived repos such as `Metta-AI/commissioners`, `
    customizing it.
 3. Edit the chosen owner repo and build from that checkout. Use `coworld-tools` as the owner only for pieces that are
    deliberately shared across Coworlds.
-4. Make the manifest `source_url` match the chosen owner. Release manifests must pin GitHub `source_url` values to a
-   full commit SHA. Manifest templates may use a branch ref only when the build command also passes the matching
-   `--source-context`, because `coworld build` will rewrite that ref to the checkout's commit.
+4. Make the manifest `source_url` match the chosen owner. Release manifests should prefer full commit SHAs for stable
+   provenance. Manifest templates may use a branch ref, short SHA, tag, or bare repository URL; certification accepts
+   those mutable refs with a warning after checking the GitHub source at run time.
 5. Rebuild with all relevant source contexts:
 
    ```bash

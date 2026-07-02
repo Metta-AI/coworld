@@ -91,10 +91,6 @@ _CERTIFICATION_POLICY_IDS = (
 CertifierEpisodeRunner = Callable[[CoworldEpisodeJobSpec, EpisodeArtifacts, float], None]
 
 
-class SourceNotPinnedError(ValueError):
-    pass
-
-
 class ReporterCertificationError(RuntimeError):
     pass
 
@@ -222,24 +218,13 @@ def validate_players_ran(package: CoworldPackage, artifacts: EpisodeArtifacts) -
 
 def validate_source_references(package: CoworldPackage) -> list[str]:
     issues = []
-    pinned_issues = []
     resolved_sources = []
     github_sources: list[tuple[str, str, GitHubSource]] = []
     for label, source_url in _source_references(package):
         source = _github_source(source_url)
         if source is None:
             continue
-        if source.ref is None or _FULL_COMMIT_SHA_RE.fullmatch(source.ref) is None:
-            ref = source.ref or "<default branch>"
-            pinned_issues.append(
-                f"{label}: source_url must pin a commit SHA, not a branch/tag ({ref}); "
-                "repoint to an immutable commit SHA"
-            )
-            continue
         github_sources.append((label, source_url, source))
-
-    if pinned_issues:
-        raise SourceNotPinnedError("\n".join(pinned_issues))
 
     for label, source_url, source in github_sources:
         resolved_source, contents = _github_contents(source)
@@ -247,7 +232,9 @@ def validate_source_references(package: CoworldPackage) -> list[str]:
             issues.append(f"{label}: Empty source directory ({source_url})")
         if not _source_or_ancestor_has_dockerfile(resolved_source, contents):
             issues.append(f"{label}: No Dockerfile found ({source_url})")
-        resolved_sources.append(f"{label}: {source.ref}")
+        resolved_sources.append(f"{label}: {resolved_source.ref or '<default branch>'}")
+        if warning := _source_ref_warning(label, resolved_source):
+            resolved_sources.append(warning)
 
     if issues:
         raise ValueError("Coworld source references are not certifiable:\n- " + "\n- ".join(issues))
@@ -433,7 +420,7 @@ def certify_coworld(
         sources = cast(list[str], resolved)
         if not sources:
             return "No GitHub source_url references declared."
-        return "Pinned source refs validated:\n- " + "\n- ".join(sources)
+        return "GitHub source_url references resolved:\n- " + "\n- ".join(sources)
 
     run_step("source-resolves", lambda: validate_source_references(package), source_refs_feedback)
     run_step("images-reachable", lambda: check_images_reachable(package), "All declared images are reachable.")
@@ -532,8 +519,6 @@ def _assert_replay_present(artifacts: EpisodeArtifacts) -> None:
 
 
 def _step_failure_reason(step_id: str, exc: Exception) -> str:
-    if isinstance(exc, SourceNotPinnedError):
-        return "source_not_pinned"
     if isinstance(exc, ReporterCertificationError):
         return "reporter_failed"
     if isinstance(exc, CommissionerProbeError):
@@ -863,6 +848,20 @@ def _github_source(source_url: str) -> GitHubSource | None:
     return None
 
 
+def _source_ref_warning(label: str, source: GitHubSource) -> str | None:
+    if source.ref is None:
+        return (
+            f"WARNING: {label} resolves, but does not specify a commit; "
+            "certification checked the repository default branch at run time."
+        )
+    if _FULL_COMMIT_SHA_RE.fullmatch(source.ref) is None:
+        return (
+            f"WARNING: {label} resolves, but is not pinned to a full 40-character commit SHA "
+            f"({source.ref}); certification checked that ref at run time."
+        )
+    return None
+
+
 def _github_contents(source: GitHubSource) -> tuple[GitHubSource, list[dict[str, object]]]:
     api_url = _github_contents_url(source)
     for candidate in _github_source_candidates(source):
@@ -916,20 +915,20 @@ def _github_contents_response(source: GitHubSource, api_url: str) -> httpx.Respo
 
 
 def _github_source_candidates(source: GitHubSource) -> list[GitHubSource]:
-    candidates = [source]
-    if source.ref is None or not source.path:
-        return candidates
+    if source.ref is None or not source.path or _FULL_COMMIT_SHA_RE.fullmatch(source.ref) is not None:
+        return [source]
 
     path_parts = source.path.split("/")
-    candidates.extend(
+    candidates = [
         GitHubSource(
             owner=source.owner,
             repo=source.repo,
             ref=f"{source.ref}/{'/'.join(path_parts[:index])}",
             path="/".join(path_parts[index:]),
         )
-        for index in range(1, len(path_parts) + 1)
-    )
+        for index in range(len(path_parts), 0, -1)
+    ]
+    candidates.append(source)
     return candidates
 
 

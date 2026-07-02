@@ -197,11 +197,14 @@ additional host TCP services beyond Coworld HTTP on container port 8080. Use com
 the resolved mappings back into the game container as `COWORLD_LOCAL_PORT_<container_port>` and
 `COWORLD_LOCAL_PORTS_JSON`. Hosted/Kubernetes runners do not support arbitrary extra host ports yet.
 
-`source_url` is informational for humans inspecting a runnable, but `coworld certify` also checks GitHub URLs. Any
-GitHub `source_url` must pin a full 40-hex commit SHA in the ref position; branch names, tags, and implicit default
-branches fail certification. The pinned source must have non-empty contents and a Dockerfile at that path or an ancestor
-build root. Point it at the repository, directory, or file that implements the runnable, not just a documentation page.
-See [REBUILDING_COWORLDS.md](REBUILDING_COWORLDS.md) for the current repo map and source-owner rules.
+`source_url` is provenance for humans inspecting a runnable, not a runtime input: runners do not clone or execute code
+from it. `coworld certify` checks GitHub URLs as a lightweight provenance test. A GitHub `source_url` may point at a
+full commit SHA, a short SHA, a branch, a tag, or the bare repository URL. The source must resolve through GitHub's
+contents API, have non-empty contents, and include a Dockerfile at that path or an ancestor build root. Full commit SHAs
+are preferred because they make provenance stable, but mutable refs and bare repository URLs pass certification with a
+warning because certification checked whatever the ref or default branch resolved to at run time. Point `source_url` at
+the repository, directory, or file that implements the runnable, not just a documentation page. See
+[REBUILDING_COWORLDS.md](REBUILDING_COWORLDS.md) for the current repo map and source-owner rules.
 
 `repository_url` is an optional, machine-readable field used by `coworld optimize`: on an `optimizer[]` entry it names
 the Git repository the command clones and runs locally (falling back to `Metta-AI/optimizers` when unset). Unlike
