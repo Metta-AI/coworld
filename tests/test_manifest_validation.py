@@ -155,6 +155,66 @@ def test_validate_manifest_allows_bounded_tokens_and_variant_specific_player_cou
     assert infer_token_count_for_game_config(schema, manifest.variants[1].game_config) == 4
 
 
+def test_infer_token_count_uses_game_config_players_when_schema_lacks_players_property() -> None:
+    schema = {
+        "type": "object",
+        "additionalProperties": False,
+        "required": ["tokens"],
+        "properties": {
+            "tokens": {"type": "array", "minItems": 0, "maxItems": 9, "items": {"type": "string"}},
+        },
+    }
+    game_config = {
+        "players": [
+            {"name": "Cybertank 1"},
+            {"name": "Cybertank 2"},
+            {"name": "Cybertank 3"},
+            {"name": "Cybertank 4"},
+        ]
+    }
+
+    assert infer_token_count_for_game_config(schema, game_config) == 4
+
+
+def test_infer_token_count_rejects_players_roster_outside_token_bounds() -> None:
+    schema = {
+        "type": "object",
+        "additionalProperties": False,
+        "required": ["tokens"],
+        "properties": {
+            "tokens": {"type": "array", "minItems": 0, "maxItems": 3, "items": {"type": "string"}},
+        },
+    }
+    game_config = {
+        "players": [
+            {"name": "Cybertank 1"},
+            {"name": "Cybertank 2"},
+            {"name": "Cybertank 3"},
+            {"name": "Cybertank 4"},
+        ]
+    }
+
+    with pytest.raises(
+        ValueError,
+        match="game_config.players length must fit game.config_schema.properties.tokens bounds",
+    ):
+        infer_token_count_for_game_config(schema, game_config)
+
+
+def test_infer_token_count_returns_none_for_variable_tokens_without_players() -> None:
+    schema = {
+        "type": "object",
+        "additionalProperties": False,
+        "required": ["tokens"],
+        "properties": {
+            "tokens": {"type": "array", "minItems": 0, "maxItems": 9, "items": {"type": "string"}},
+        },
+    }
+    game_config = {"seed": 1, "maxGames": 1, "maxTicks": 1200}
+
+    assert infer_token_count_for_game_config(schema, game_config) is None
+
+
 def test_validate_manifest_requires_token_bounds() -> None:
     schema = FIXED_NAMED_PLAYERS_SCHEMA | {
         "properties": FIXED_NAMED_PLAYERS_SCHEMA["properties"]

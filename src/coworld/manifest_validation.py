@@ -28,26 +28,29 @@ def _token_array_schema(config_schema: JsonSchema) -> dict[str, Any]:
     return tokens
 
 
-def infer_token_count_for_game_config(config_schema: JsonSchema, game_config: dict[str, Any]) -> int:
-    tokens = _token_array_schema(config_schema)
-    properties = config_schema.get("properties")
-    players_schema = properties.get("players") if isinstance(properties, dict) else None
-    if isinstance(players_schema, dict) and players_schema.get("type") == "array":
-        players = game_config.get("players")
-        if isinstance(players, list):
-            player_count = len(players)
-            min_items, max_items = _token_bounds(tokens)
-            if player_count < min_items:
-                raise ValueError("game_config.players length must fit game.config_schema.properties.tokens bounds")
-            if player_count > max_items:
-                raise ValueError("game_config.players length must fit game.config_schema.properties.tokens bounds")
-            return player_count
+def infer_token_count_for_game_config(
+    config_schema: JsonSchema,
+    game_config: dict[str, Any],
+) -> int | None:
+    """Infer a concrete seat count from the manifest or caller roster.
 
-    min_items, max_items = _token_bounds(tokens)
+    Returns the roster length from `game_config.players` when present, returns
+    the legacy fixed token count when the manifest pins `tokens` to a single
+    length, and returns `None` when the manifest is variable-length and the
+    caller must supply the seated roster size.
+    """
+    min_items, max_items = _token_bounds(_token_array_schema(config_schema))
+    players = game_config.get("players")
+    if isinstance(players, list):
+        player_count = len(players)
+        if player_count < min_items or player_count > max_items:
+            raise ValueError("game_config.players length must fit game.config_schema.properties.tokens bounds")
+        return player_count
+
     if min_items == max_items:
         return min_items
 
-    raise ValueError("player_count must be provided when tokens do not declare a legacy fixed length")
+    return None
 
 
 def game_config_with_tokens(game_config: dict[str, Any], tokens: list[str]) -> JsonObject:

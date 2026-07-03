@@ -268,11 +268,16 @@ def build_manifest_episode_job_spec(
 
     players_config = game_config.get("players")
     if isinstance(players_config, list):
-        slot_count = len(players_config)
+        slot_count: int | None = len(players_config)
     elif variant_id is None:
         slot_count = len(package.manifest.certification.players)
     else:
         slot_count = infer_token_count_for_game_config(package.config_schema, game_config)
+        if slot_count is None:
+            raise ValueError(
+                f"cannot infer player count for variant {variant_id!r}: "
+                "declare game_config.players or fixed game.config_schema.properties.tokens bounds"
+            )
     players = _certification_player_specs(package)
     if len(players) != slot_count:
         players = [players[index % len(players)].model_copy(deep=True) for index in range(slot_count)]

@@ -1156,6 +1156,26 @@ def test_build_manifest_episode_job_spec_uses_variant_player_count(tmp_path: Pat
     assert spec.game_config == {"players": [{"name": "A"}, {"name": "B"}, {"name": "C"}, {"name": "D"}]}
 
 
+def test_build_manifest_episode_job_spec_rejects_variants_without_inferable_player_count(tmp_path: Path) -> None:
+    coworld_manifest_path = _write_package_files(tmp_path)
+    manifest = json.loads(coworld_manifest_path.read_text(encoding="utf-8"))
+    manifest["game"]["config_schema"]["properties"]["tokens"] = {
+        "type": "array",
+        "minItems": 0,
+        "maxItems": 9,
+        "items": {"type": "string"},
+    }
+    manifest["game"]["config_schema"]["properties"]["seed"] = {"type": "integer"}
+    manifest["game"]["config_schema"]["properties"]["maxGames"] = {"type": "integer"}
+    manifest["game"]["config_schema"]["properties"]["maxTicks"] = {"type": "integer"}
+    manifest["variants"][0]["game_config"] = {"seed": 1, "maxGames": 1, "maxTicks": 1200}
+    coworld_manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
+    package = load_coworld_package(coworld_manifest_path)
+
+    with pytest.raises(ValueError, match="cannot infer player count for variant 'default'"):
+        build_manifest_episode_job_spec(package, variant_id="default")
+
+
 def test_build_manifest_episode_job_spec_defaults_to_certification_config(tmp_path: Path) -> None:
     package = _write_package(
         tmp_path,
