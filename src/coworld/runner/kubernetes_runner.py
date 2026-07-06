@@ -303,14 +303,12 @@ def _run_kubernetes_episode(
 
 
 def _load_incluster_config() -> None:
+    # kubernetes>=36.0.2 stores the service-account token under the
+    # 'BearerToken' api_key the generated client reads, and its refresh hook
+    # keeps that key current across kubelet token rotations. Normalizing the
+    # key ourselves here would fight that hook (it rewrites the value with a
+    # "bearer " prefix on refresh), so this must stay a plain load.
     config.load_incluster_config()
-    kube_config = client.Configuration.get_default_copy()
-    token_key = "BearerToken" if "BearerToken" in kube_config.api_key else "authorization"
-    scheme, token = kube_config.api_key[token_key].split(" ", 1)
-    assert scheme.lower() == "bearer"
-    kube_config.api_key = {"BearerToken": token}
-    kube_config.api_key_prefix["BearerToken"] = "Bearer"
-    client.Configuration.set_default(kube_config)
 
 
 def _owner_references() -> list[client.V1OwnerReference]:

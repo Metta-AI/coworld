@@ -10,7 +10,6 @@ from types import SimpleNamespace
 from typing import Any
 
 import pytest
-from kubernetes import client
 from kubernetes.client.rest import ApiException
 
 from coworld.runner import io as runner_io
@@ -31,24 +30,23 @@ from coworld.runner.phase_timings import EpisodePhaseTimings
 from coworld.runner.runner import EpisodeArtifacts, EpisodeRunSpec, PlayerLaunchSpec, RunnableLaunchSpec
 
 
-@pytest.mark.parametrize("token_key", ["authorization", "BearerToken"])
-def test_load_incluster_config_normalizes_bearer_token_key(token_key, monkeypatch):
-    kube_config = client.Configuration()
-    kube_config.api_key[token_key] = "bearer test-token"
-    kube_config.api_key_prefix = {}
-    captured_configs = []
+def test_load_incluster_config_does_not_rewrite_auth_config(monkeypatch):
+    # kubernetes>=36.0.2 owns bearer-token handling (api_key['BearerToken'] plus
+    # a refresh hook that rewrites it on token rotation). Rewriting the key or
+    # adding an api_key_prefix here breaks the refreshed header, so the loader
+    # must be invoked as-is. Regression test for the 2026-07-06 prod 401 outage.
+    load_calls = []
 
-    monkeypatch.setattr(kubernetes_runner.config, "load_incluster_config", lambda: None)
-    monkeypatch.setattr(kubernetes_runner.client.Configuration, "get_default_copy", lambda: kube_config)
-    monkeypatch.setattr(kubernetes_runner.client.Configuration, "set_default", captured_configs.append)
+    def _fail(*_args, **_kwargs):
+        raise AssertionError("_load_incluster_config must not touch the client Configuration")
+
+    monkeypatch.setattr(kubernetes_runner.config, "load_incluster_config", lambda: load_calls.append(True))
+    monkeypatch.setattr(kubernetes_runner.client.Configuration, "get_default_copy", _fail)
+    monkeypatch.setattr(kubernetes_runner.client.Configuration, "set_default", _fail)
 
     kubernetes_runner._load_incluster_config()
 
-    assert kube_config.api_key == {"BearerToken": "test-token"}
-    assert kube_config.api_key["BearerToken"] == "test-token"
-    assert kube_config.api_key_prefix["BearerToken"] == "Bearer"
-    assert kube_config.get_api_key_with_prefix("BearerToken") == "Bearer test-token"
-    assert captured_configs == [kube_config]
+    assert load_calls == [True]
 
 
 class _FakeCoreV1:
