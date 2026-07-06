@@ -260,6 +260,42 @@ def test_episodes_mine_division_uses_direct_episode_query(
     assert not any(request.path == "/observatory/v2/rounds" for request, _ in httpserver.log)
 
 
+def test_episodes_policy_uses_direct_episode_query(
+    httpserver: HTTPServer,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    httpserver.expect_request(
+        "/observatory/v2/episode-requests",
+        method="GET",
+        headers={"Authorization": "Bearer token"},
+    ).respond_with_json(
+        {
+            "entries": [_episode_request(episode_request_id=EPISODE_REQUEST_ID, replay_url="s3://replay")],
+            "total_count": 1,
+            "limit": 1000,
+            "offset": 0,
+        }
+    )
+
+    result = CliRunner().invoke(
+        app,
+        [
+            "episodes",
+            "--policy",
+            MY_POLICY_VERSION_ID,
+            "--server",
+            httpserver.url_for(""),
+            "--json",
+        ],
+    )
+
+    assert result.exit_code == 0, result.output
+    rows = json.loads(result.output)
+    assert [row["id"] for row in rows] == [EPISODE_REQUEST_ID]
+    episode_query = next(request for request, _ in httpserver.log if request.path == "/observatory/v2/episode-requests")
+    assert episode_query.args["policy_version_id"] == MY_POLICY_VERSION_ID
+
+
 def test_memberships_accepts_status_substatus_payload(
     httpserver: HTTPServer,
     monkeypatch: pytest.MonkeyPatch,

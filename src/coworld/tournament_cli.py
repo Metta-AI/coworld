@@ -382,10 +382,12 @@ def register_tournament_commands(app: typer.Typer) -> None:
                     return
                 _print_episode_detail(episode)
                 return
+            policy_version_id = _resolve_policy_filter(client, policy) if policy is not None else None
             rows = _collect_episode_requests(
                 client,
                 division_id=division_id,
                 round_id=round_id,
+                policy_version_id=policy_version_id,
                 limit=limit,
                 offset=offset,
             )
@@ -393,7 +395,7 @@ def register_tournament_commands(app: typer.Typer) -> None:
                 client,
                 rows,
                 division_id=division_id,
-                policy=policy,
+                policy_version_id=policy_version_id,
                 mine=mine,
                 with_replay=with_replay,
             )
@@ -584,10 +586,12 @@ def register_tournament_commands(app: typer.Typer) -> None:
         json_output: Annotated[bool, typer.Option("--json", help="Print raw JSON metadata.")] = False,
     ) -> None:
         with CoworldApiClient.from_login(server_url=server) as client:
+            policy_version_id = _resolve_policy_filter(client, policy) if policy is not None else None
             rows = _collect_episode_requests(
                 client,
                 division_id=division_id,
                 round_id=round_id,
+                policy_version_id=policy_version_id,
                 limit=limit,
                 offset=offset,
             )
@@ -595,7 +599,7 @@ def register_tournament_commands(app: typer.Typer) -> None:
                 client,
                 rows,
                 division_id=division_id,
-                policy=policy,
+                policy_version_id=policy_version_id,
                 mine=mine,
                 with_replay=True,
             )
@@ -904,12 +908,14 @@ def _collect_episode_requests(
     *,
     division_id: str | None,
     round_id: str | None,
+    policy_version_id: UUID | None,
     limit: int,
     offset: int,
 ) -> list[V2EpisodeRequestRow]:
     return client.list_episode_requests(
         division_id=division_id,
         round_id=round_id,
+        policy_version_id=policy_version_id,
         limit=limit,
         offset=offset,
     )
@@ -929,16 +935,17 @@ def _filter_episode_requests(
     rows: list[V2EpisodeRequestRow],
     *,
     division_id: str | None,
-    policy: str | None,
+    policy_version_id: UUID | None,
     mine: bool,
     with_replay: bool,
 ) -> list[V2EpisodeRequestRow]:
     allowed_policy_ids: set[UUID] | None = None
     if mine:
         allowed_policy_ids = _mine_policy_version_ids(client, division_id=division_id)
-    if policy is not None:
-        policy_id = _resolve_policy_filter(client, policy)
-        allowed_policy_ids = {policy_id} if allowed_policy_ids is None else allowed_policy_ids & {policy_id}
+    if policy_version_id is not None:
+        allowed_policy_ids = (
+            {policy_version_id} if allowed_policy_ids is None else allowed_policy_ids & {policy_version_id}
+        )
 
     filtered = []
     for row in rows:

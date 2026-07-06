@@ -579,6 +579,7 @@ class CoworldApiClient:
         division_id: str | None = None,
         round_id: str | None = None,
         player_id: str | None = None,
+        policy_version_id: UUID | None = None,
         limit: int = 200,
         offset: int = 0,
     ) -> list[V2EpisodeRequestRow]:
@@ -589,6 +590,8 @@ class CoworldApiClient:
             params["round_id"] = round_id
         if player_id is not None:
             params["player_id"] = player_id
+        if policy_version_id is not None:
+            params["policy_version_id"] = str(policy_version_id)
         response = self._http_client.get("/v2/episode-requests", headers=self._headers(), params=params)
         _raise_for_status(response)
         page = response.json()
