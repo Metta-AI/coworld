@@ -460,6 +460,20 @@
             }
           ],
           "title": "Global"
+        },
+        "engine_runtime": {
+          "anyOf": [
+            {
+              "enum": ["mettagrid", "cogweb", "bitworld", "nimgrid"],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Optional canonical engine runtime identifier for this game. Supported values are `mettagrid`, `cogweb`, `bitworld`, and `nimgrid`.",
+          "title": "Engine Runtime"
         }
       },
       "required": ["player", "global"],

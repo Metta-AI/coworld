@@ -352,6 +352,22 @@ def test_manifest_schema_accepts_required_game_docs_readme() -> None:
     validate_json_schema(_manifest_data(), coworld_manifest_schema())
 
 
+def test_manifest_schema_allows_engine_runtime_with_global_protocol() -> None:
+    manifest = _manifest_data()
+    manifest["game"]["protocols"]["engine_runtime"] = "nimgrid"
+
+    validate_json_schema(manifest, coworld_manifest_schema())
+
+
+def test_manifest_schema_requires_global_protocol_with_engine_runtime() -> None:
+    manifest = _manifest_data()
+    del manifest["game"]["protocols"]["global"]
+    manifest["game"]["protocols"]["engine_runtime"] = "nimgrid"
+
+    with pytest.raises(JsonSchemaValidationError, match="'global' is a required property"):
+        validate_json_schema(manifest, coworld_manifest_schema())
+
+
 def test_manifest_schema_documents_public_fields() -> None:
     schema = coworld_manifest_schema()
 

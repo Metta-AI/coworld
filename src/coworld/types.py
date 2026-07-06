@@ -10,6 +10,7 @@ HTTP_URL_PATTERN = r"^https?://"
 JsonSchema = dict[str, Any]
 CoworldRunnableRole = Literal["game", "player", "reporter", "commissioner", "grader", "diagnoser", "optimizer"]
 CoworldManifestRole = Literal["player", "reporter", "commissioner", "grader", "diagnoser", "optimizer"]
+CoworldEngineRuntime = Literal["mettagrid", "cogweb", "bitworld", "nimgrid"]
 MANIFEST_ROLE_SECTIONS = cast(tuple[CoworldManifestRole, ...], get_args(CoworldManifestRole))
 _FUTURE_REQUIRED_ROLE_COMMENT = "Optional in the current schema; intended to become required as this role stabilizes."
 
@@ -163,6 +164,13 @@ class CoworldProtocolDocs(BaseModel):
 
     player: CoworldDoc = Field(description="Public player WebSocket protocol documentation.")
     global_: CoworldDoc = Field(alias="global", description="Public global viewer protocol documentation.")
+    engine_runtime: CoworldEngineRuntime | None = Field(
+        default=None,
+        description=(
+            "Optional canonical engine runtime identifier for this game. "
+            "Supported values are `mettagrid`, `cogweb`, `bitworld`, and `nimgrid`."
+        ),
+    )
 
 
 class CoworldDocPage(BaseModel):

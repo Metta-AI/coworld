@@ -58,6 +58,8 @@ from coworld.runner.runner import (
 from coworld.schema_validation import validate_json_schema
 from coworld.types import CoworldEpisodeJobSpec, CoworldManifest, TranscriptStep
 
+CANONICAL_ENGINE_RUNTIMES = ("mettagrid", "cogweb", "bitworld", "nimgrid")
+
 
 def test_load_coworld_package_validates_inline_game_manifest(tmp_path: Path) -> None:
     coworld_manifest_path = _write_package_files(tmp_path)
@@ -108,6 +110,53 @@ def test_load_coworld_package_allows_explicit_text_protocol_docs(tmp_path: Path)
 
     assert package.protocols.player.type == "text"
     assert package.protocols.player.value.startswith("# Player Protocol")
+
+
+@pytest.mark.parametrize("engine_runtime", CANONICAL_ENGINE_RUNTIMES)
+def test_load_coworld_package_allows_canonical_engine_runtime(tmp_path: Path, engine_runtime: str) -> None:
+    coworld_manifest_path = _write_package_files(tmp_path)
+    manifest = json.loads(coworld_manifest_path.read_text())
+    manifest["game"]["protocols"]["engine_runtime"] = engine_runtime
+    coworld_manifest_path.write_text(json.dumps(manifest))
+
+    package = load_coworld_package(coworld_manifest_path)
+
+    assert package.protocols.engine_runtime == engine_runtime
+
+
+@pytest.mark.parametrize("engine_runtime", CANONICAL_ENGINE_RUNTIMES)
+def test_load_coworld_package_requires_global_protocol_with_engine_runtime(
+    tmp_path: Path,
+    engine_runtime: str,
+) -> None:
+    coworld_manifest_path = _write_package_files(tmp_path)
+    manifest = json.loads(coworld_manifest_path.read_text())
+    del manifest["game"]["protocols"]["global"]
+    manifest["game"]["protocols"]["engine_runtime"] = engine_runtime
+    coworld_manifest_path.write_text(json.dumps(manifest))
+
+    with pytest.raises(JsonSchemaValidationError, match="'global' is a required property"):
+        load_coworld_package(coworld_manifest_path)
+
+
+def test_load_coworld_package_rejects_unknown_engine_runtime(tmp_path: Path) -> None:
+    coworld_manifest_path = _write_package_files(tmp_path)
+    manifest = json.loads(coworld_manifest_path.read_text())
+    manifest["game"]["protocols"]["engine_runtime"] = "python-grid"
+    coworld_manifest_path.write_text(json.dumps(manifest))
+
+    with pytest.raises(JsonSchemaValidationError, match="not valid"):
+        load_coworld_package(coworld_manifest_path)
+
+
+def test_load_coworld_package_requires_global_protocol(tmp_path: Path) -> None:
+    coworld_manifest_path = _write_package_files(tmp_path)
+    manifest = json.loads(coworld_manifest_path.read_text())
+    del manifest["game"]["protocols"]["global"]
+    coworld_manifest_path.write_text(json.dumps(manifest))
+
+    with pytest.raises(JsonSchemaValidationError, match="'global' is a required property"):
+        load_coworld_package(coworld_manifest_path)
 
 
 def test_load_coworld_package_allows_named_game_docs(tmp_path: Path) -> None:

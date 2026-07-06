@@ -68,9 +68,9 @@ from coworld.schema_validation import (
     validate_json_schema,
 )
 from coworld.types import (
-    CoworldDoc,
     CoworldEpisodeJobSpec,
     CoworldManifest,
+    CoworldProtocolDocs,
     CoworldRunnableSpec,
     CoworldTranscript,
     StepResult,
@@ -97,12 +97,6 @@ class ReporterCertificationError(RuntimeError):
 
 class CommissionerProbeError(RuntimeError):
     pass
-
-
-@dataclass(frozen=True)
-class CoworldProtocolDocs:
-    player: CoworldDoc
-    global_: CoworldDoc
 
 
 @dataclass(frozen=True)
@@ -178,10 +172,7 @@ def load_coworld_package(manifest_path: Path) -> CoworldPackage:
         game=RunnableLaunchSpec.from_model(typed_manifest.game.runnable),
         config_schema=typed_manifest.game.config_schema,
         results_schema=typed_manifest.game.results_schema,
-        protocols=CoworldProtocolDocs(
-            player=typed_manifest.game.protocols.player,
-            global_=typed_manifest.game.protocols.global_,
-        ),
+        protocols=typed_manifest.game.protocols,
     )
     validate_certification_references(package)
     return package

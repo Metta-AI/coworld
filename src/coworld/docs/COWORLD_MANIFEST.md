@@ -174,6 +174,10 @@ rules.
 Protocol docs belong under `game.protocols`. If the game uses a shared protocol, point at the shared protocol document
 instead of copying it into the game repo.
 
+`game.protocols.engine_runtime` is an optional canonical engine family identifier, not a document URL. The supported
+values are `mettagrid`, `cogweb`, `bitworld`, and `nimgrid`. Use `nimgrid` for Nim grid Coworlds such as the Tribal
+games. `game.protocols.global` remains required; put supplemental runtime docs under `game.docs.pages`.
+
 `game.promo` is optional promotional material. Its `video_url` is a public HTTP(S) URL for a promotional video. When
 set, product UIs surface it: the Observatory league page shows a "Video Promo" tab that embeds the URL. Direct media
 URLs (`.mp4`, `.webm`, …) render in a native player; other URLs (YouTube/Vimeo embeds, etc.) render in an iframe. Host
