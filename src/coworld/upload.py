@@ -1147,15 +1147,7 @@ def _print_download_paths(coworld_id: str, manifest_path: Path, image_map_path: 
 
 
 def pull_and_tag_image(public_image_uri: str, local_tag: str) -> None:
-    if public_image_uri.startswith("public.ecr.aws/"):
-        with tempfile.TemporaryDirectory(prefix="coworld-docker-config-") as docker_config:
-            subprocess.run(
-                ["docker", "pull", public_image_uri],
-                check=True,
-                env={**os.environ, "DOCKER_CONFIG": docker_config},
-            )
-    else:
-        subprocess.run(["docker", "pull", public_image_uri], check=True)
+    subprocess.run(["docker", "pull", public_image_uri], check=True)
     subprocess.run(["docker", "tag", public_image_uri, local_tag], check=True)
 
 

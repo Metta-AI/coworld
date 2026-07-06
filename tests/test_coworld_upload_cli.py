@@ -1,7 +1,6 @@
 import hashlib
 import io
 import json
-import os
 import re
 import subprocess
 import tarfile
@@ -1417,9 +1416,7 @@ def test_download_coworld_command_writes_local_package(
         ["docker", "pull", public_image_uri],
         ["docker", "tag", public_image_uri, local_image],
     ]
-    assert docker_envs[0] is not None
-    assert docker_envs[0]["DOCKER_CONFIG"] != os.environ.get("DOCKER_CONFIG")
-    assert "coworld-docker-config-" in Path(docker_envs[0]["DOCKER_CONFIG"]).name
+    assert docker_envs[0] is None
     assert docker_envs[1] is None
     manifest = json.loads((output_dir / coworld_id / "coworld_manifest.json").read_text())
     assert manifest["game"]["runnable"]["image"] == local_image
