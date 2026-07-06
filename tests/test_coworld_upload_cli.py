@@ -17,6 +17,9 @@ from coworld.upload import (
     _REGISTRY_UPLOAD_TIMEOUT,
     ContainerImageResponse,
     CoworldUploadClient,
+    CoworldUploadResponse,
+    _certification_cache_key,
+    _certified_manifest_cache_path,
     _docker_archive_client_hash,
     _load_current_token,
     _local_image_client_hash,
@@ -30,9 +33,33 @@ from coworld.upload import (
 
 
 @pytest.fixture(autouse=True)
-def _fake_softmax_token(monkeypatch: pytest.MonkeyPatch) -> None:
+def _fake_softmax_token(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    monkeypatch.setenv("XDG_CACHE_HOME", str(tmp_path / "cache"))
     monkeypatch.setattr("softmax.auth.load_current_token", lambda *, server: "token")
     monkeypatch.setattr("softmax.auth.load_user_token", lambda *, server: "token")
+
+
+class _FakeCoworldUploadClient:
+    def __init__(self) -> None:
+        self.uploads: list[dict[str, object]] = []
+
+    def __enter__(self) -> "_FakeCoworldUploadClient":
+        return self
+
+    def __exit__(self, *_exc: object) -> None:
+        return None
+
+    def upload_manifest(self, manifest: dict[str, object]) -> CoworldUploadResponse:
+        self.uploads.append(manifest)
+        return CoworldUploadResponse(
+            id="cow_00000000-0000-0000-0000-000000000999",
+            name="unit-test-game",
+            version="0.1.0",
+            manifest=manifest,
+            manifest_hash="sha256:manifest-hash",
+            size_bytes=1234,
+            canonical=True,
+        )
 
 
 def test_upload_client_token_lookup_uses_server_url(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -233,7 +260,11 @@ def test_upload_coworld_posts_standalone_manifest(
     assert result.canonical is True
     assert certification_calls[0][0] == manifest_path.resolve()
     assert certification_calls[0][1] == 60.0
-    assert hashed_images == ["ghcr.io/metta-ai/graders-default@sha256:graderdigest", "unit-test-runtime:latest"]
+    assert hashed_images == [
+        "unit-test-runtime:latest",
+        "ghcr.io/metta-ai/graders-default@sha256:graderdigest",
+        "unit-test-runtime:latest",
+    ]
     assert pushed_images == [
         (
             "unit-test-runtime:latest",
@@ -334,6 +365,88 @@ def test_upload_coworld_command_certifies_before_uploading(
     assert "Manifest hash: sha256:manifest-hash" in result.output
     assert "Canonical: yes" in result.output
     assert certification_calls == [(manifest_path.resolve(), 60.0)]
+
+
+def test_upload_coworld_caches_successful_certification(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    manifest_path = _write_manifest(tmp_path)
+    certification_calls: list[tuple[Path, float]] = []
+    fake_client = _FakeCoworldUploadClient()
+
+    monkeypatch.setattr(
+        "coworld.upload.certify_coworld",
+        lambda manifest_path, *, timeout_seconds: certification_calls.append((manifest_path, timeout_seconds)),
+    )
+    monkeypatch.setattr("coworld.upload._local_image_client_hash", lambda image: "sha256:runtime")
+    monkeypatch.setattr("coworld.upload._manifest_with_softmax_image_ids", lambda _client, manifest: manifest)
+    monkeypatch.setattr(
+        CoworldUploadClient,
+        "from_login",
+        classmethod(lambda _cls, *, server_url: fake_client),
+    )
+
+    upload_coworld(manifest_path, server="https://example.com/api")
+    upload_coworld(manifest_path, server="https://example.com/api")
+
+    assert certification_calls == [(manifest_path.resolve(), 60.0)]
+    assert len(fake_client.uploads) == 2
+    assert json.loads(_certified_manifest_cache_path().read_text(encoding="utf-8")) == {
+        _certification_cache_key(manifest_path.resolve()): "certified"
+    }
+
+
+def test_upload_coworld_certification_cache_includes_local_image_content(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    manifest_path = _write_manifest(tmp_path)
+    certification_calls: list[tuple[Path, float]] = []
+    fake_client = _FakeCoworldUploadClient()
+    current_hash = "sha256:runtime-a"
+
+    def fake_hash(image: str) -> str:
+        assert image == "unit-test-runtime:latest"
+        return current_hash
+
+    monkeypatch.setattr(
+        "coworld.upload.certify_coworld",
+        lambda manifest_path, *, timeout_seconds: certification_calls.append((manifest_path, timeout_seconds)),
+    )
+    monkeypatch.setattr("coworld.upload._local_image_client_hash", fake_hash)
+    monkeypatch.setattr("coworld.upload._manifest_with_softmax_image_ids", lambda _client, manifest: manifest)
+    monkeypatch.setattr(
+        CoworldUploadClient,
+        "from_login",
+        classmethod(lambda _cls, *, server_url: fake_client),
+    )
+
+    upload_coworld(manifest_path, server="https://example.com/api")
+    upload_coworld(manifest_path, server="https://example.com/api")
+    current_hash = "sha256:runtime-b"
+    upload_coworld(manifest_path, server="https://example.com/api")
+
+    assert certification_calls == [(manifest_path.resolve(), 60.0), (manifest_path.resolve(), 60.0)]
+    assert len(fake_client.uploads) == 3
+
+
+def test_upload_coworld_does_not_cache_failed_certification(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    manifest_path = _write_manifest(tmp_path)
+
+    def fail_certification(_manifest_path: Path, *, timeout_seconds: float) -> None:
+        raise RuntimeError("certification failed")
+
+    monkeypatch.setattr("coworld.upload.certify_coworld", fail_certification)
+    monkeypatch.setattr("coworld.upload._local_image_client_hash", lambda image: "sha256:runtime")
+
+    with pytest.raises(RuntimeError, match="certification failed"):
+        upload_coworld(manifest_path, server="https://example.com/api")
+
+    assert not _certified_manifest_cache_path().exists()
 
 
 def test_upload_coworld_command_rejects_partial_options_without_base_manifest(tmp_path: Path) -> None:

@@ -24,10 +24,10 @@ import typer
 from pydantic import BaseModel
 
 from coworld.bundle import resolve_registry_image_ref
-from coworld.certifier import certify_coworld, load_coworld_package
+from coworld.certifier import EXECUTABLE_TRANSCRIPT_PATH, certify_coworld, load_coworld_package
 from coworld.cli_support import validate_run_argv
 from coworld.config import DEFAULT_SUBMIT_SERVER
-from coworld.image_refs import is_mutable_registry_image_ref
+from coworld.image_refs import is_digest_pinned_image_ref, is_mutable_registry_image_ref
 from coworld.manifest_validation import validate_coworld_manifest_game_configs
 from coworld.runner.runner import assert_docker_image_reachable
 from coworld.schema_validation import validate_json_schema
@@ -37,6 +37,7 @@ _LOCAL_TAG_SEPARATOR_RE = re.compile(r"[^a-z0-9._-]+")
 _IMAGE_ID_RE = re.compile(r"^img_[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$")
 _HOSTED_SMOKE_TERMINAL_STATUSES = {"completed", "failed", "canceled", "cancelled"}
 _HOSTED_SMOKE_SUCCESS_STATUSES = {"completed"}
+_CERTIFICATION_CACHE_VERSION = "coworld-certification-v1"
 DOWNLOAD_AGENTS_MD = """# AGENTS.md
 
 Guidance for coding agents working from this downloaded Coworld package.
@@ -583,7 +584,14 @@ def upload_coworld(
     package = load_coworld_package(manifest_path)
     manifest = package.manifest.model_dump(by_alias=True, exclude_none=True)
     _reject_mutable_registry_image_refs(manifest)
-    certify_coworld(package.manifest_path, timeout_seconds=timeout_seconds)
+
+    certification_key = _certification_cache_key(package.manifest_path, manifest=manifest)
+    certification_cache_path = _certified_manifest_cache_path()
+    certified_manifests = _load_string_cache(certification_cache_path)
+    if certification_key not in certified_manifests:
+        certify_coworld(package.manifest_path, timeout_seconds=timeout_seconds)
+        certified_manifests[certification_key] = "certified"
+        _write_string_cache(certification_cache_path, certified_manifests)
 
     with CoworldUploadClient.from_login(server_url=server) as client:
         upload_manifest = _manifest_with_softmax_image_ids(client, manifest)
@@ -1241,7 +1249,7 @@ def _local_image_client_hash(image: str) -> str:
         text=True,
     ).stdout.strip()
     cache_path = _client_hash_cache_path()
-    cache = _load_client_hash_cache(cache_path)
+    cache = _load_string_cache(cache_path)
     cached = cache.get(image_id)
     if cached is not None:
         return cached
@@ -1250,17 +1258,45 @@ def _local_image_client_hash(image: str) -> str:
         archive.seek(0)
         client_hash = _docker_archive_client_hash(archive, image=image)
     cache[image_id] = client_hash
-    _write_client_hash_cache(cache_path, cache)
+    _write_string_cache(cache_path, cache)
     return client_hash
 
 
 def _client_hash_cache_path() -> Path:
+    return _coworld_cache_path("image_client_hashes.json")
+
+
+def _certified_manifest_cache_path() -> Path:
+    return _coworld_cache_path("certified_manifest_hashes.json")
+
+
+def _coworld_cache_path(filename: str) -> Path:
     xdg = os.environ.get("XDG_CACHE_HOME")
     base = Path(xdg).expanduser() if xdg else Path.home() / ".cache"
-    return base / "coworld" / "image_client_hashes.json"
+    return base / "coworld" / filename
 
 
-def _load_client_hash_cache(cache_path: Path) -> dict[str, str]:
+def _certification_cache_key(manifest_path: Path, *, manifest: dict[str, object] | None = None) -> str:
+    manifest_data = manifest if manifest is not None else json.loads(manifest_path.read_text(encoding="utf-8"))
+    key = {
+        "cache_version": _CERTIFICATION_CACHE_VERSION,
+        "manifest": _sha256_digest(manifest_path.read_bytes()),
+        "transcript": _sha256_digest(EXECUTABLE_TRANSCRIPT_PATH.read_bytes()),
+        "local_images": _certification_local_image_hashes(manifest_data),
+    }
+    return _sha256_digest(json.dumps(key, sort_keys=True, separators=(",", ":")).encode())
+
+
+def _certification_local_image_hashes(manifest: dict[str, object]) -> dict[str, str]:
+    images = sorted({runnable["image"] for runnable in _manifest_image_fields(manifest)})
+    return {
+        image: _local_image_client_hash(image)
+        for image in images
+        if not _is_uploaded_image_id(image) and not is_digest_pinned_image_ref(image)
+    }
+
+
+def _load_string_cache(cache_path: Path) -> dict[str, str]:
     if not cache_path.is_file():
         return {}
     try:
@@ -1272,7 +1308,7 @@ def _load_client_hash_cache(cache_path: Path) -> dict[str, str]:
     return {key: value for key, value in cache.items() if isinstance(value, str)}
 
 
-def _write_client_hash_cache(cache_path: Path, cache: dict[str, str]) -> None:
+def _write_string_cache(cache_path: Path, cache: dict[str, str]) -> None:
     cache_path.parent.mkdir(parents=True, exist_ok=True)
     tmp_fd, tmp_name = tempfile.mkstemp(prefix=f".{cache_path.name}.", suffix=".tmp", dir=cache_path.parent)
     try:
