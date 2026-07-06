@@ -40,7 +40,7 @@ PLAY_GUIDE_URI_PREFIXES = (
     "https://github.com/Metta-AI/coworld-tribal-village/blob/main/docs/play_tribal_village.md",
 )
 SOURCE_MANIFEST_REFERENCE_COUNTS = {
-    "${GAME_CONTEXT}/coworld_manifest.json": 5,
+    "${GAME_CONTEXT}/coworld_manifest.json": 6,
     "${GAME_CONTEXT}/coworld_manifest_template.json": 3,
     "${GAME_CONTEXT}/coworld/coworld_manifest_template.json": 1,
     "${GAME_CONTEXT}/coworld_four_score_manifest_template.json": 1,
