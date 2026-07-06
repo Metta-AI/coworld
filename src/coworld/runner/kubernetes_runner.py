@@ -305,9 +305,10 @@ def _run_kubernetes_episode(
 def _load_incluster_config() -> None:
     config.load_incluster_config()
     kube_config = client.Configuration.get_default_copy()
-    scheme, token = kube_config.api_key["authorization"].split(" ", 1)
+    token_key = "BearerToken" if "BearerToken" in kube_config.api_key else "authorization"
+    scheme, token = kube_config.api_key[token_key].split(" ", 1)
     assert scheme.lower() == "bearer"
-    kube_config.api_key["BearerToken"] = token
+    kube_config.api_key = {"BearerToken": token}
     kube_config.api_key_prefix["BearerToken"] = "Bearer"
     client.Configuration.set_default(kube_config)
 

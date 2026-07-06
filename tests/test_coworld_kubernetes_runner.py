@@ -31,9 +31,10 @@ from coworld.runner.phase_timings import EpisodePhaseTimings
 from coworld.runner.runner import EpisodeArtifacts, EpisodeRunSpec, PlayerLaunchSpec, RunnableLaunchSpec
 
 
-def test_load_incluster_config_sets_bearer_token_key(monkeypatch):
+@pytest.mark.parametrize("token_key", ["authorization", "BearerToken"])
+def test_load_incluster_config_normalizes_bearer_token_key(token_key, monkeypatch):
     kube_config = client.Configuration()
-    kube_config.api_key["authorization"] = "bearer test-token"
+    kube_config.api_key[token_key] = "bearer test-token"
     kube_config.api_key_prefix = {}
     captured_configs = []
 
@@ -43,9 +44,10 @@ def test_load_incluster_config_sets_bearer_token_key(monkeypatch):
 
     kubernetes_runner._load_incluster_config()
 
-    assert kube_config.api_key["authorization"] == "bearer test-token"
+    assert kube_config.api_key == {"BearerToken": "test-token"}
     assert kube_config.api_key["BearerToken"] == "test-token"
     assert kube_config.api_key_prefix["BearerToken"] == "Bearer"
+    assert kube_config.get_api_key_with_prefix("BearerToken") == "Bearer test-token"
     assert captured_configs == [kube_config]
 
 
