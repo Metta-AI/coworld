@@ -7,6 +7,7 @@ import logging
 import os
 import re
 import shlex
+import shutil
 import subprocess
 import tarfile
 import tempfile
@@ -38,6 +39,7 @@ _IMAGE_ID_RE = re.compile(r"^img_[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}
 _HOSTED_SMOKE_TERMINAL_STATUSES = {"completed", "failed", "canceled", "cancelled"}
 _HOSTED_SMOKE_SUCCESS_STATUSES = {"completed"}
 _CERTIFICATION_CACHE_VERSION = "coworld-certification-v1"
+_DOCKER_AUTH_CONFIG_KEYS = {"auths", "credsStore", "credHelpers"}
 DOWNLOAD_AGENTS_MD = """# AGENTS.md
 
 Guidance for coding agents working from this downloaded Coworld package.
@@ -1155,8 +1157,35 @@ def _print_download_paths(coworld_id: str, manifest_path: Path, image_map_path: 
 
 
 def pull_and_tag_image(public_image_uri: str, local_tag: str) -> None:
-    subprocess.run(["docker", "pull", public_image_uri], check=True)
+    if public_image_uri.startswith("public.ecr.aws/"):
+        # Anonymous public pulls fail when the caller's Docker config carries stale
+        # public-ECR auth (ecr-public login tokens expire ~12h; ecr-login credHelpers
+        # break with expired AWS creds). Pull through a temp DOCKER_CONFIG that keeps
+        # the active Docker context (colima/OrbStack/Desktop) but drops auth material.
+        with tempfile.TemporaryDirectory(prefix="coworld-docker-config-") as docker_config:
+            _prepare_public_ecr_docker_config(Path(docker_config))
+            subprocess.run(
+                ["docker", "pull", public_image_uri],
+                check=True,
+                env={**os.environ, "DOCKER_CONFIG": docker_config},
+            )
+    else:
+        subprocess.run(["docker", "pull", public_image_uri], check=True)
     subprocess.run(["docker", "tag", public_image_uri, local_tag], check=True)
+
+
+def _prepare_public_ecr_docker_config(docker_config: Path) -> None:
+    source_config = Path(os.environ.get("DOCKER_CONFIG") or str(Path.home() / ".docker")).expanduser()
+    config_path = source_config / "config.json"
+    if config_path.is_file():
+        config = json.loads(config_path.read_text(encoding="utf-8"))
+        for key in _DOCKER_AUTH_CONFIG_KEYS:
+            config.pop(key, None)
+        (docker_config / "config.json").write_text(json.dumps(config, indent=2) + "\n", encoding="utf-8")
+
+    contexts_path = source_config / "contexts"
+    if contexts_path.exists():
+        shutil.copytree(contexts_path, docker_config / "contexts")
 
 
 def _manifest_with_softmax_image_ids(client: CoworldUploadClient, manifest: dict[str, object]) -> dict[str, object]:

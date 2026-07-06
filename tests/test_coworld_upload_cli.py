@@ -1,6 +1,7 @@
 import hashlib
 import io
 import json
+import os
 import re
 import subprocess
 import tarfile
@@ -27,6 +28,7 @@ from coworld.upload import (
     _manifest_image_fields,
     _manifest_with_local_images,
     _manifest_with_softmax_image_ids,
+    _prepare_public_ecr_docker_config,
     _push_archive_to_registry,
     upload_coworld,
 )
@@ -1487,15 +1489,43 @@ def test_download_coworld_command_writes_local_package(
     coworld_id = "cow_00000000-0000-0000-0000-000000000040"
     public_image_uri = "public.ecr.aws/softmax/coworld@sha256:public-digest"
     output_dir = tmp_path / "downloaded"
+    source_docker_config = tmp_path / "source-docker-config"
+    source_context_meta = source_docker_config / "contexts" / "meta" / "colima"
+    source_context_meta.mkdir(parents=True)
+    (source_context_meta / "meta.json").write_text('{"Name":"colima"}\n', encoding="utf-8")
+    (source_docker_config / "config.json").write_text(
+        json.dumps(
+            {
+                "auths": {"public.ecr.aws": {"auth": "stale-public-ecr-token"}},
+                "credHelpers": {"public.ecr.aws": "ecr-login"},
+                "credsStore": "desktop",
+                "currentContext": "colima",
+                "plugins": {"debug": "enabled"},
+            }
+        )
+        + "\n",
+        encoding="utf-8",
+    )
     docker_calls: list[list[str]] = []
     docker_envs: list[dict[str, str] | None] = []
+    docker_config_snapshots: list[dict[str, object]] = []
+    docker_context_snapshots: list[str] = []
 
     def fake_run(command: list[str], **kwargs: object) -> subprocess.CompletedProcess[str]:
         docker_calls.append(command)
-        docker_envs.append(cast(dict[str, str] | None, kwargs.get("env")))
+        env = cast(dict[str, str] | None, kwargs.get("env"))
+        docker_envs.append(env)
+        if command[:2] == ["docker", "pull"]:
+            assert env is not None
+            pull_config = Path(env["DOCKER_CONFIG"])
+            docker_config_snapshots.append(json.loads((pull_config / "config.json").read_text(encoding="utf-8")))
+            docker_context_snapshots.append(
+                (pull_config / "contexts" / "meta" / "colima" / "meta.json").read_text(encoding="utf-8")
+            )
         return subprocess.CompletedProcess(command, 0)
 
     monkeypatch.setattr("coworld.upload.subprocess.run", fake_run)
+    monkeypatch.setenv("DOCKER_CONFIG", str(source_docker_config))
     httpserver.expect_request(
         f"/observatory/v2/coworlds/{coworld_id}",
         method="GET",
@@ -1529,8 +1559,12 @@ def test_download_coworld_command_writes_local_package(
         ["docker", "pull", public_image_uri],
         ["docker", "tag", public_image_uri, local_image],
     ]
-    assert docker_envs[0] is None
+    assert docker_envs[0] is not None
+    assert docker_envs[0]["DOCKER_CONFIG"] != os.environ.get("DOCKER_CONFIG")
+    assert "coworld-docker-config-" in Path(docker_envs[0]["DOCKER_CONFIG"]).name
     assert docker_envs[1] is None
+    assert docker_config_snapshots == [{"currentContext": "colima", "plugins": {"debug": "enabled"}}]
+    assert docker_context_snapshots == ['{"Name":"colima"}\n']
     manifest = json.loads((output_dir / coworld_id / "coworld_manifest.json").read_text())
     assert manifest["game"]["runnable"]["image"] == local_image
     assert manifest["player"][0]["image"] == local_image
@@ -1541,6 +1575,36 @@ def test_download_coworld_command_writes_local_package(
     assert "Downloaded Coworld: unit-test-game:0.1.0" in result.output
     assert f"Agent guide: {agents_path}" in result.output
     assert f"Play: uv run coworld play {coworld_id}" in result.output
+
+
+def test_prepare_public_ecr_docker_config_uses_home_when_env_is_empty(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    home = tmp_path / "home"
+    source_config = home / ".docker"
+    (source_config / "contexts" / "meta" / "colima").mkdir(parents=True)
+    (source_config / "contexts" / "meta" / "colima" / "meta.json").write_text('{"Name":"colima"}\n', encoding="utf-8")
+    (source_config / "config.json").write_text(
+        json.dumps(
+            {
+                "auths": {"public.ecr.aws": {"auth": "stale-public-ecr-token"}},
+                "credsStore": "desktop",
+                "currentContext": "colima",
+            }
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    monkeypatch.setenv("HOME", str(home))
+    monkeypatch.setenv("DOCKER_CONFIG", "")
+
+    target = tmp_path / "target-docker-config"
+    target.mkdir()
+    _prepare_public_ecr_docker_config(target)
+
+    assert json.loads((target / "config.json").read_text(encoding="utf-8")) == {"currentContext": "colima"}
+    assert (target / "contexts" / "meta" / "colima" / "meta.json").read_text(encoding="utf-8") == '{"Name":"colima"}\n'
 
 
 def test_download_coworld_command_resolves_canonical_name(
