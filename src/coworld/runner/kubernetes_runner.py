@@ -17,6 +17,7 @@ import httpx
 from kubernetes import client, config
 from kubernetes.client.rest import ApiException
 from kubernetes.utils import parse_quantity
+from urllib3.util import Retry
 
 from coworld.runner.bedrock_enablement import BedrockEnablement, resolve_player_bedrock
 from coworld.runner.bedrock_sidecar_wiring import (
@@ -49,6 +50,12 @@ WORKDIR = Path(os.environ.get("COWORLD_WORKDIR", "/coworld"))
 STATE_PATH = WORKDIR / "state.json"
 GAME_PORT = int(os.environ.get("COGAME_PORT", "8080"))
 HEALTH_PORT = int(os.environ.get("COWORLD_WORKER_HEALTH_PORT", "9090"))
+# Poll cadence for the two in-pod wait loops. Each tick issues a read_namespaced_pod against
+# the API server; with many concurrent episodes the aggregate read rate contributes to API
+# Priority & Fairness 429s (etcd throttle). Episodes run seconds-to-minutes, so a 1s cadence
+# is latency-insensitive and cuts that steady read pressure.
+_HEALTH_POLL_SECONDS = 1.0
+_ARTIFACT_POLL_SECONDS = 1.0
 _BEDROCK_SERVICE_ACCOUNT = "episode-runner"
 _DIRECT_BEDROCK_APP_ENV = {
     "USE_BEDROCK",
@@ -309,6 +316,20 @@ def _load_incluster_config() -> None:
     # key ourselves here would fight that hook (it rewrites the value with a
     # "bearer " prefix on refresh), so this must stay a plain load.
     config.load_incluster_config()
+    # Back off on API Priority & Fairness 429s (etcd throttle) rather than failing the
+    # episode. Setting .retries on the default Configuration is orthogonal to the api_key
+    # the refresh hook manages. Kept self-contained here because this public package has no
+    # internal deps (the backend applies the same policy via runtime.kubernetes.k8s_retry).
+    default = client.Configuration.get_default_copy()
+    default.retries = Retry(  # type: ignore[assignment]
+        total=5,
+        backoff_factor=0.5,
+        backoff_max=10.0,
+        status_forcelist=(429, 500, 502, 503, 504),
+        respect_retry_after_header=True,
+        allowed_methods=None,
+    )
+    client.Configuration.set_default(default)
 
 
 def _owner_references() -> list[client.V1OwnerReference]:
@@ -537,7 +558,7 @@ def _wait_for_health(core_v1, namespace: str, pod_name: str, *, timeout_seconds:
                 return
         except httpx.HTTPError:
             pass
-        time.sleep(0.2)
+        time.sleep(_HEALTH_POLL_SECONDS)
     raise RunnerEpisodeError(f"Timed out waiting for {url}", error_type="game_unhealthy")
 
 
@@ -583,7 +604,7 @@ def _wait_for_episode_artifacts(
                 error_type="replay_missing",
             )
 
-        time.sleep(0.5)
+        time.sleep(_ARTIFACT_POLL_SECONDS)
     _raise_if_player_pod_failed(core_v1, namespace, player_pod_names or ())
     expected_list = ", ".join(str(path) for path in expected)
     raise RunnerEpisodeError(

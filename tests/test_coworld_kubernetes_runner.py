@@ -10,6 +10,7 @@ from types import SimpleNamespace
 from typing import Any
 
 import pytest
+from kubernetes.client import Configuration
 from kubernetes.client.rest import ApiException
 
 from coworld.runner import io as runner_io
@@ -30,23 +31,32 @@ from coworld.runner.phase_timings import EpisodePhaseTimings
 from coworld.runner.runner import EpisodeArtifacts, EpisodeRunSpec, PlayerLaunchSpec, RunnableLaunchSpec
 
 
-def test_load_incluster_config_does_not_rewrite_auth_config(monkeypatch):
+def test_load_incluster_config_sets_retries_without_rewriting_auth(monkeypatch):
     # kubernetes>=36.0.2 owns bearer-token handling (api_key['BearerToken'] plus
-    # a refresh hook that rewrites it on token rotation). Rewriting the key or
-    # adding an api_key_prefix here breaks the refreshed header, so the loader
-    # must be invoked as-is. Regression test for the 2026-07-06 prod 401 outage.
-    load_calls = []
+    # a refresh hook that rewrites it on token rotation). Setting .retries for 429
+    # backoff is fine, but rewriting api_key / api_key_prefix breaks the refreshed
+    # header. Regression test for the 2026-07-06 prod 401 outage.
+    loaded = Configuration()
+    loaded.api_key = {"BearerToken": "sa-token"}
+    loaded.api_key_prefix = {"BearerToken": "Bearer"}
 
-    def _fail(*_args, **_kwargs):
-        raise AssertionError("_load_incluster_config must not touch the client Configuration")
+    load_calls: list[bool] = []
+    saved: list[Configuration] = []
 
     monkeypatch.setattr(kubernetes_runner.config, "load_incluster_config", lambda: load_calls.append(True))
-    monkeypatch.setattr(kubernetes_runner.client.Configuration, "get_default_copy", _fail)
-    monkeypatch.setattr(kubernetes_runner.client.Configuration, "set_default", _fail)
+    monkeypatch.setattr(kubernetes_runner.client.Configuration, "get_default_copy", lambda: loaded)
+    monkeypatch.setattr(kubernetes_runner.client.Configuration, "set_default", lambda c: saved.append(c))
 
     kubernetes_runner._load_incluster_config()
 
     assert load_calls == [True]
+    assert saved == [loaded]
+    # Retries set for 429 backoff...
+    assert 429 in loaded.retries.status_forcelist
+    assert loaded.retries.respect_retry_after_header is True
+    # ...but the auth fields the refresh hook manages are untouched.
+    assert loaded.api_key == {"BearerToken": "sa-token"}
+    assert loaded.api_key_prefix == {"BearerToken": "Bearer"}
 
 
 class _FakeCoreV1:
