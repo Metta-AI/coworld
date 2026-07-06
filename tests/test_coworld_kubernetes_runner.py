@@ -4,7 +4,6 @@ import os
 import socket
 import subprocess
 import zipfile
-import zlib
 from io import BytesIO
 from pathlib import Path
 from types import SimpleNamespace
@@ -138,7 +137,7 @@ class _FailingCoreV1:
         raise RuntimeError("pod status read failed")
 
 
-def test_upload_outputs_zlib_compresses_replay_at_boundary(tmp_path, monkeypatch):
+def test_upload_outputs_uploads_raw_replay_bytes(tmp_path, monkeypatch):
     artifacts = EpisodeArtifacts.create(tmp_path)
     artifacts.results_path.write_text("{}", encoding="utf-8")
     replay_payload = b"\x00crewrift-replay-bytes\xff"
@@ -160,8 +159,8 @@ def test_upload_outputs_zlib_compresses_replay_at_boundary(tmp_path, monkeypatch
     replay_uploads = [upload for upload in uploads if upload[0] == "file:///tmp/replay-out.bin"]
     assert len(replay_uploads) == 1
     _, replay_bytes, content_type = replay_uploads[0]
-    assert content_type == "application/x-compress"
-    assert zlib.decompress(replay_bytes) == replay_payload
+    assert content_type == "application/octet-stream"
+    assert replay_bytes == replay_payload
     assert not (artifacts.workspace / "replay.z").exists()
 
 
@@ -558,7 +557,7 @@ def test_run_episode_containers_player_artifact_round_trips_to_workspace(tmp_pat
     assert artifact_path.read_bytes() == b"player-artifact-zip-bytes"
 
 
-def test_run_episode_containers_verifies_hosted_zlib_replay_uri(tmp_path, monkeypatch):
+def test_run_episode_containers_verifies_raw_replay_uri(tmp_path, monkeypatch):
     commands: list[list[str]] = []
     mounted_replay_bytes: list[bytes] = []
     free_ports = iter([12345, 3724, 41000])
@@ -587,7 +586,7 @@ def test_run_episode_containers_verifies_hosted_zlib_replay_uri(tmp_path, monkey
         if "coworld-run-replay-session-1" in command:
             replay_mount = next(arg for index, arg in enumerate(command) if index > 0 and command[index - 1] == "-v")
             mounted_replay_dir = Path(replay_mount.removesuffix(":/coworld-replay:ro"))
-            mounted_replay_bytes.append((mounted_replay_dir / "replay.z").read_bytes())
+            mounted_replay_bytes.append((mounted_replay_dir / "replay").read_bytes())
         return FakeProcess()
 
     monkeypatch.setattr(runner_module.subprocess, "Popen", fake_popen)
@@ -617,8 +616,8 @@ def test_run_episode_containers_verifies_hosted_zlib_replay_uri(tmp_path, monkey
         "127.0.0.1:41000:8080",
         "127.0.0.1:3724:3724",
     ]
-    assert f"{runner_module.REPLAY_LOAD_ENV_VAR}=file:///coworld-replay/replay.z" in replay_command
-    assert zlib.decompress(mounted_replay_bytes[0]) == replay_payload
+    assert f"{runner_module.REPLAY_LOAD_ENV_VAR}=file:///coworld-replay/replay" in replay_command
+    assert mounted_replay_bytes[0] == replay_payload
 
 
 def test_ensure_local_docker_network_reuses_existing_network(monkeypatch):

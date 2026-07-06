@@ -171,8 +171,7 @@ The hosted lifecycle is:
     slot and token.
 13. The game and players run the episode using the same game/player protocol as local execution.
 14. The game writes results and replay bytes into the shared workdir.
-15. The worker validates results, collects logs, compresses the replay for hosted storage, and uploads the configured
-    hosted artifacts.
+15. The worker validates results, collects logs, and uploads the configured hosted artifacts.
 16. The platform records episode status, results, logs, replay links, and round/leaderboard state. For container
     commissioner leagues, it streams completed or failed episode results back to the commissioner until
     `round_complete`, then persists commissioner rankings, membership changes, and state for the next round.
@@ -182,7 +181,7 @@ The hosted lifecycle is:
 Hosted output artifacts are uploaded separately rather than as one bundle:
 
 - [`RESULTS_URI`](artifacts/RESULTS.md): game-defined `results.json`, validated against `manifest.game.results_schema`.
-- [`REPLAY_URI`](artifacts/REPLAY.md): zlib-compressed replay uploaded as `replay.z`.
+- [`REPLAY_URI`](artifacts/REPLAY.md): raw replay uploaded as `replay.replay`.
 - [`DEBUG_URI`](artifacts/DEBUG_ARCHIVE.md): zip of runner logs, including game stdout/stderr and captured player logs.
 - [`ERROR_INFO_URI`](artifacts/ERROR_INFO.md): runner failure JSON if the coordinator fails before the episode
   completes.

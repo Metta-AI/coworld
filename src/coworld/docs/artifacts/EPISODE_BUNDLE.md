@@ -23,9 +23,8 @@ A bundle is a zip containing some subset of the following entries plus a `manife
 | `player_logs`     | `logs/policy_agent_{slot}.log` (subject to access control — see below)         | [Player logs](PLAYER_LOGS.md) from `POLICY_LOG_URLS` / local logs                          |
 | `player_artifact` | `artifacts/policy_artifact_{slot}.zip` (subject to access control — see below) | [Player artifact](PLAYER_ARTIFACT.md) from `PLAYER_ARTIFACT_UPLOAD_URLS` / local workspace |
 
-The bundle stores `replay` uncompressed since the outer zip already compresses. The runner's local workspace contains a
-single `replay` file with the exact bytes the game container wrote; the hosted upload path zlib-compresses those bytes
-in memory at the upload boundary for hosted upload and replay-viewing paths that consume the compressed form directly.
+The bundle stores `replay` uncompressed since the outer zip already compresses. The runner's local workspace and hosted
+artifact store both contain the exact bytes the game container wrote.
 
 ### `manifest.json`
 

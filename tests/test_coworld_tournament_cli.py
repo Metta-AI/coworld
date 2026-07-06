@@ -886,7 +886,7 @@ def test_replay_open_downloads_only_game_image_for_local_replay(
 
 def test_replay_open_hosted_opens_viewer_url(httpserver: HTTPServer, monkeypatch: pytest.MonkeyPatch) -> None:
     opened_urls: list[str] = []
-    replay_url = "https://storage.example/replay.z"
+    replay_url = "https://storage.example/replay.replay"
     viewer_url = "https://softmax.example/observatory/coworld-replays/session"
     httpserver.expect_request(
         f"/observatory/v2/episode-requests/{EPISODE_REQUEST_ID}",

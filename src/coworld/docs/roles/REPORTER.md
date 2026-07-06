@@ -140,9 +140,9 @@ Minimal request:
           "encoding": "identity"
         },
         "replay": {
-          "uri": "https://.../jobs/job_123/replay.z",
+          "uri": "https://.../jobs/job_123/replay.replay",
           "media_type": "application/octet-stream",
-          "encoding": "zlib"
+          "encoding": "identity"
         },
         "game_logs": {
           "combined": {
@@ -159,9 +159,9 @@ Minimal request:
 ```
 
 Each `episodes[]` entry carries the bundle-style manifest plus direct artifact refs. The platform presigns source
-artifacts in the eval artifact store; it does not assemble or upload an input zip. `replay` refs are zlib-compressed in
-hosted storage and declare `"encoding": "zlib"` so SDK readers can decompress on demand. Small synthesized JSON payloads
-such as `error_info` travel under `inline_json` instead of being uploaded as separate artifacts.
+artifacts in the eval artifact store; it does not assemble or upload an input zip. `replay` refs point at raw
+game-owned replay bytes. Small synthesized JSON payloads such as `error_info` travel under `inline_json` instead of
+being uploaded as separate artifacts.
 
 Reporter messages:
 

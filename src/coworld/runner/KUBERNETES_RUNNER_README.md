@@ -161,9 +161,8 @@ COGAME_SAVE_REPLAY_URI=file:///coworld/replay
 The game binds its HTTP and websocket server to `COGAME_HOST:COGAME_PORT`. `coworld-init-config` writes
 `COGAME_CONFIG_URI` before the game starts. The game writes results and the replay to the supplied URIs; the pod's
 `/coworld/replay` file holds the exact bytes the game wrote, with no runner-added extension. The worker validates
-`COGAME_RESULTS_URI`, reads `/coworld/replay`, zlib-compresses those bytes in memory, and uploads the hosted output
-artifacts listed below. The hosted upload artifact contract (key, content type) is unchanged; only the in-pod workspace
-filename is shorter and extensionless.
+`COGAME_RESULTS_URI`, reads `/coworld/replay`, and uploads the hosted output artifacts listed below. The hosted replay
+artifact stores the exact bytes the game wrote.
 
 ## Optional Inputs
 
@@ -205,8 +204,8 @@ PLAYER_ARTIFACT_UPLOAD_URLS
 Outputs:
 
 - `RESULTS_URI`: game-defined `results.json`, validated against `manifest.game.results_schema`.
-- `REPLAY_URI`: zlib-compressed replay uploaded as `replay.z`. Hosted upload and the hosted replay viewer both consume
-  the compressed form directly.
+- `REPLAY_URI`: raw replay uploaded as `replay.replay`. Hosted upload and the hosted replay viewer both consume the
+  game-owned bytes directly.
 - `DEBUG_URI`: zip of the runner's `logs/` directory, containing game container stdout/stderr (`game.stdout.log`,
   `game.stderr.log`) plus any per-player log files (`policy_agent_{slot}.log`) the coordinator captured. Game container
   stdout/stderr is **public** to anyone with episode access — game authors must not write secrets or private information

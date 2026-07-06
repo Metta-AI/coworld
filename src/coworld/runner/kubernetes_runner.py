@@ -9,7 +9,6 @@ import sys
 import threading
 import time
 import zipfile
-import zlib
 from io import BytesIO
 from pathlib import Path
 from typing import Mapping
@@ -189,8 +188,8 @@ def _upload_outputs(artifacts: EpisodeArtifacts) -> None:
     if replay_uri is not None:
         upload_data(
             replay_uri,
-            zlib.compress(artifacts.replay_path.read_bytes()),
-            content_type="application/x-compress",
+            artifacts.replay_path.read_bytes(),
+            content_type="application/octet-stream",
         )
 
     debug_uri = os.environ.get("DEBUG_URI")

@@ -9,7 +9,6 @@ import socket
 import subprocess
 import tempfile
 import time
-import zlib
 from contextlib import ExitStack
 from dataclasses import dataclass, field
 from json import JSONDecodeError
@@ -490,9 +489,9 @@ def verify_replay_loadable(
             game_stdout = stack.enter_context(artifacts.game_stdout_path.open("a"))
             game_stderr = stack.enter_context(artifacts.game_stderr_path.open("a"))
             replay_load_dir = Path(stack.enter_context(tempfile.TemporaryDirectory(prefix="coworld-replay-load-")))
-            replay_load_path = replay_load_dir / "replay.z"
-            replay_load_path.write_bytes(zlib.compress(artifacts.replay_path.read_bytes()))
-            replay_uri = "file:///coworld-replay/replay.z"
+            replay_load_path = replay_load_dir / artifacts.replay_path.name
+            replay_load_path.write_bytes(artifacts.replay_path.read_bytes())
+            replay_uri = f"file:///coworld-replay/{replay_load_path.name}"
             replay_process = subprocess.Popen(
                 [
                     "docker",

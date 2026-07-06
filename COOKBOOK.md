@@ -910,11 +910,9 @@ the Coworld package, pulls only the game image needed for replay mode, downloads
 it locally through Docker. With `--hosted`, it asks Observatory to create a hosted replay viewer session and opens the
 returned viewer URL.
 
-Treat `replay_url` as an opaque URL to game-owned replay bytes. Episodes executed on the k8s backend store them
-zlib-compressed under the storage name `replay.z` (a platform convention — the payload format is owned by the game);
-episodes executed on other backends are copied into the same hosted storage envelope when the platform publishes a
-replay URL. `coworld replay` and `replay-open` key decompression off the URL suffix (`.z` zlib, `.gz` gzip, anything
-else passed through raw) before handing the file to local Docker. Raw Docker replay mode should point
+Treat `replay_url` as an opaque URL to game-owned replay bytes. New hosted episodes publish raw replay bytes under a
+`.replay` URL. `coworld replay` and `replay-open` still understand legacy storage suffixes (`.z` zlib, `.gz` gzip,
+anything else passed through raw) before handing the file to local Docker. Raw Docker replay mode should point
 `COGAME_LOAD_REPLAY_URI` at a replay payload the game image can load.
 
 ### Non-CLI API
@@ -974,7 +972,7 @@ curl -X POST \
   -H "Authorization: Bearer ${TOKEN}" \
   -H "Content-Type: application/json" \
   "${API_BASE}/v2/coworlds/replays/session" \
-  -d '{"coworld_id":"cow_...","replay_uri":"https://.../replay.z"}'
+  -d '{"coworld_id":"cow_...","replay_uri":"https://.../replay.replay"}'
 ```
 
 For a local replay file without the CLI, use `replay_coworld`:
