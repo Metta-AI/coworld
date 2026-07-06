@@ -52,10 +52,13 @@ def submit_policy_to_league_cmd(
             auto_champion=auto_champion,
         )
 
-    policy_url = observatory_web_url(
-        server,
-        f"/observatory/v2?tab=uploads&detail=policy-version:{policy_version.id}",
+    placement_runs_async = submission.status in {"pending", "processing"}
+    policy_path = (
+        f"/observatory/v2?tab=uploads&detail=policy-version:{policy_version.id}"
+        if placement_runs_async
+        else f"/observatory/policies/versions/{policy_version.id}"
     )
+    policy_url = observatory_web_url(server, policy_path)
     console.print("[green]Submitted to league[/green]")
     console.print(f"[dim]League:[/dim] {league_id}")
     console.print(f"[dim]Submission:[/dim] {submission.id}")
@@ -63,8 +66,9 @@ def submit_policy_to_league_cmd(
     console.print(f"[dim]Auto champion:[/dim] {auto_champion.value}")
     if submission.league_policy_membership_id is not None:
         console.print(f"[dim]Membership:[/dim] {submission.league_policy_membership_id}")
-    elif submission.status in {"pending", "processing"}:
-        console.print("[dim]Placement runs asynchronously; check the policy page for status.[/dim]")
-    console.print(f"[dim]Policy page:[/dim] {policy_url}", soft_wrap=True)
+    elif placement_runs_async:
+        console.print("[dim]Placement runs asynchronously; check the status page for updates.[/dim]")
+    page_label = "Status page" if placement_runs_async else "Policy page"
+    console.print(f"[dim]{page_label}:[/dim] {policy_url}", soft_wrap=True)
     if open_browser:
         webbrowser.open(policy_url)

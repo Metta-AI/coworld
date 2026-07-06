@@ -55,7 +55,7 @@ def test_submit_policy_to_league_posts_v2_submission(
     assert "Status:" in result.output
     assert "placed" in result.output
     assert "lpm_00000000-0000-0000-0000-000000000061" in result.output
-    policy_path = f"/observatory/v2?tab=uploads&detail=policy-version:{POLICY_VERSION_ID}"
+    policy_path = f"/observatory/policies/versions/{POLICY_VERSION_ID}"
     assert policy_path in result.output
     assert opened == [policy_path]
     policy_query = next(
@@ -158,8 +158,39 @@ def test_submit_policy_no_open_browser_skips_launch(
     )
 
     assert result.exit_code == 0, result.output
-    assert f"/observatory/v2?tab=uploads&detail=policy-version:{POLICY_VERSION_ID}" in result.output
+    assert f"/observatory/policies/versions/{POLICY_VERSION_ID}" in result.output
     assert opened == []
+
+
+def test_submit_policy_pending_submission_opens_status_page(
+    httpserver: HTTPServer,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    opened: list[str] = []
+    monkeypatch.setattr("coworld.submit.webbrowser.open", lambda url: opened.append(url) or True)
+    _expect_policy_versions(httpserver, [_policy_version(version=3)])
+    httpserver.expect_request(
+        "/observatory/v2/league-submissions",
+        method="POST",
+    ).respond_with_json({"id": "sub_1", "status": "pending"})
+
+    result = CliRunner().invoke(
+        app,
+        [
+            "submit",
+            "paintbot:v3",
+            "--league",
+            LEAGUE_ID,
+            "--server",
+            httpserver.url_for(""),
+        ],
+    )
+
+    assert result.exit_code == 0, result.output
+    status_path = f"/observatory/v2?tab=uploads&detail=policy-version:{POLICY_VERSION_ID}"
+    assert status_path in result.output
+    assert "Status page:" in result.output
+    assert opened == [status_path]
 
 
 def test_submit_policy_requires_league_id_option() -> None:
