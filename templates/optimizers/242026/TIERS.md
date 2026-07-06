@@ -50,7 +50,7 @@ coherent methodology from tier 2 + tier 3 without any crewrift residue.
 - `MANIFEST.md` — per-file map + the universal sources each file generalizes.
 
 ### Tier 1 — `crewrift-specific/`
-- `AGENTS.md` — always-on crewrift facts (parity win model + `sim.nim checkWinCondition`, ~58–60 league mean, champion=`is_champion` + Competition division ID, "rival techniques already in notsus.nim", Bedrock pin, broken `upload-policy`, replay oracle, version-roll, Asana state, Monitor-not-Bash, roster body schema).
+- `AGENTS.md` — always-on crewrift facts (parity win model + `sim.nim checkWinCondition`, ~58–60 league mean, champion=`is_champion` + Competition division ID, "rival techniques already in notsus.nim", Bedrock pin, current `upload-policy`, replay oracle, version-roll, Asana state, Monitor-not-Bash, roster body schema).
 - `LOOP.md` — the concrete crewrift working loop end-to-end (exact commands, source paths, sub-loops, human steers); points to tier 2's loop shape.
 - `performance/LOG.md` — the appendable measured-result ledger (every A/B win and refutation with numbers).
 - `guides/notsus-bot-architecture.md` — the already-implemented notsus inventory + code map (read before any port).

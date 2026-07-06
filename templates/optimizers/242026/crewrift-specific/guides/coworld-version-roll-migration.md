@@ -188,5 +188,7 @@ From the `0.1.24 → 0.1.36` migration (session-derived, unverified):
 See `crux-loop-and-asana-state.md` for the resumable improvement loop you return to after a roll
 (and for the `participants[].position` seat-verification rule referenced in step 7); the
 refuted-levers guide for the measured-dead patches that step 3 must keep classified as known-dead;
-and `LOOP.md` for the operational narrative around all of this. If `coworld upload-policy` fails on
-the ECR push during a post-roll rebuild, use the manual `authorization_token` path.
+and `LOOP.md` for the operational narrative around all of this. Use current
+`coworld upload-policy` during post-roll rebuilds; reserve the manual
+`authorization_token` path for older pinned installs that still fail before
+parsing the server response.

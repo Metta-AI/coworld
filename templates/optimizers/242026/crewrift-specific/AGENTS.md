@@ -74,8 +74,9 @@ a rival's entire 41%-vs-18% edge was a single button press).
   ENV — the advisor's default opus model is not enabled in the runner account and dies silently
   (the bot becomes a pure skip-bot with a clean-looking results.json). See skill
   `diagnose-llm-advisor-health` and `build-and-upload-policy`.
-- **`coworld upload-policy` is broken** (0.1.16+: server moved ECR push to an `authorization_token`).
-  Use the manual ECR upload path in skill `build-and-upload-policy`.
+- **Use current `coworld upload-policy` for policy uploads.** The CLI now consumes the server's
+  `authorization_token` ECR push response; the manual ECR path in skill `build-and-upload-policy` is a legacy fallback
+  for older pinned installs.
 - **The authoritative death/movement/vote oracle is the decoded replay**, not telemetry: download the
   `.bitreplay` and re-simulate with `tools/replay_mine.nim`. Server `results.json` and crewborg's
   trace.db are matched observers, not ground truth. See skill `decode-replay-ground-truth`.

@@ -241,7 +241,8 @@ Anything externally visible beyond this private project needs explicit user conf
 - The league scheduler can stall; a frozen ladder is not a regression.
 - League-visible actions (submit, retire, champion swap, external bug filing) are gated on explicit
   user approval and done only by the lead agent, never a subagent.
-- If `coworld upload-policy` fails on the ECR push, use the manual `authorization_token` path.
+- Use current `coworld upload-policy`; reserve the manual `authorization_token` path for older pinned
+  installs that still fail before parsing the server response.
 
 ---
 

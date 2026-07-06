@@ -20,6 +20,6 @@ boto3 + Python runtime that env relies on.
 **Status: CURRENT.** The amd64-capable build for the deployed notsus policy
 (arch-branching covers amd64 and arm64; league/k8s runs need the amd64 image).
 Relevant memory: `libcurl4` is required because telemetry upload must use curly/
-libcurl, not std/httpclient (`crewrift-nim-artifact-curl-ssl`); and `coworld
-upload-policy` is broken (0.1.16), so the built image is pushed via the manual ECR
-authorization-token steps (`crewrift-ecr-upload-authtoken`).
+libcurl, not std/httpclient (`crewrift-nim-artifact-curl-ssl`); current `coworld
+upload-policy` is the default upload path, with manual ECR authorization-token
+steps only for older pinned installs (`crewrift-ecr-upload-authtoken`).

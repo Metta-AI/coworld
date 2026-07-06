@@ -13,7 +13,7 @@ Tier map: **generic** (`../generic`) = pure software-optimization discipline · 
 
 | Item | What it carries (crewrift-specific) | General principle it applies (tier 2/3) |
 | --- | --- | --- |
-| `AGENTS.md` | The keep-loaded crewrift facts: 6/8 crew + parity win model + `sim.nim checkWinCondition` + ~58–60 league mean; champion=`is_champion` slot + Competition division ID + `get_division_leaderboard`; "most rival techniques already in `notsus.nim`"; Bedrock pin, broken `upload-policy`, replay oracle, version-roll, Asana state, Monitor-not-Bash, roster body schema. | Win-model / slot-label / classify-before-porting / fail-loud → coworld-player AGENTS.md. Measurement & iteration discipline → generic AGENTS.md. |
+| `AGENTS.md` | The keep-loaded crewrift facts: 6/8 crew + parity win model + `sim.nim checkWinCondition` + ~58–60 league mean; champion=`is_champion` slot + Competition division ID + `get_division_leaderboard`; "most rival techniques already in `notsus.nim`"; Bedrock pin, current `upload-policy`, replay oracle, version-roll, Asana state, Monitor-not-Bash, roster body schema. | Win-model / slot-label / classify-before-porting / fail-loud → coworld-player AGENTS.md. Measurement & iteration discipline → generic AGENTS.md. |
 | `LOOP.md` | The concrete crewrift working loop end-to-end: exact commands, source paths (`notsus.nim`, `sim.nim`, `server.nim`), failure-handling sub-loops, observed human steers, superseded eval rungs. | Generalized loop SHAPE → coworld-player `guides/coworld-optimization-loop.md`; measure/fail-loud rationale → generic AGENTS.md. |
 
 ## Performance ledger
@@ -38,7 +38,7 @@ Tier map: **generic** (`../generic`) = pure software-optimization discipline · 
 | Item | What it carries (crewrift-specific) | General principle it applies (tier 2/3) |
 | --- | --- | --- |
 | `skills/run-league-ab-eval` | The standard candidate-vs-baseline (or crux/swap-arm) A/B on the hosted league via experience-requests, forced-role seat, Wilson verdict. | CI-verdict / extend-and-pool → generic; server-side eval + live-mix replica gate → coworld-player. |
-| `skills/build-and-upload-policy` | Compile a `notsus.nim` change to an amd64 image (build/validation ladder, local full-container gate) + the MANUAL ECR upload replacing the broken `coworld upload-policy`. | Minimal-change / one-variant-one-build → generic AGENTS.md. |
+| `skills/build-and-upload-policy` | Compile a `notsus.nim` change to an amd64 image (build/validation ladder, local full-container gate) and upload it with current `coworld upload-policy`; carries a manual ECR fallback only for older pinned installs. | Minimal-change / one-variant-one-build → generic AGENTS.md. |
 | `skills/resolve-live-roster-and-champion-state` | Resolve live pvids, audit the FULL roster, restore the `is_champion` flag before launch / after churn / on delist. | Re-resolve-live-state / slot-label-isn't-quality → coworld-player AGENTS.md. |
 | `skills/decode-replay-ground-truth` | Authoritative per-slot deaths/survival/movement/reward/role/tasks by re-simulating the S3 replay with `replay_mine`. | Terminal/ground-truth evidence over telemetry → coworld-player `guides/cross-coworld-craft.md`. |
 | `skills/generate-a-crux` | Hunt + Wilson-confirm a crewrift crux (config where a rival reproducibly out-scores you at a fixed role/seat), or rule it out as variance. | Reconstruct-before-you-believe / pool same-direction deficits → generic; crux construction → coworld-player. |

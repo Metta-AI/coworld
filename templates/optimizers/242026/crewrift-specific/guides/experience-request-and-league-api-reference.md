@@ -342,11 +342,10 @@ real lever: crewborg's per-tick sqlite trace.db exposes its beliefs/suspicion/vo
 ## Policies (upload / resolve)
 
 - Upload: `uv run coworld upload-policy <img> --name <name> [--use-bedrock]` — image **MUST** be
-  `linux/amd64`. **`coworld upload-policy` is broken in 0.1.16** (the server moved ECR push to an
-  `authorization_token`); use the manual path: request the upload, docker-login with the returned token,
-  push to the returned ECR repo, complete the policy create preserving `secret_env`. A null
-  `pre_signed_info` means that exact image hash was already pushed — **not** an error. An aliased policy
-  (same image, new name) registers without a rebuild.
+  `linux/amd64`. Current `coworld upload-policy` consumes the server's ECR `authorization_token`
+  response. Use the manual path only as a fallback for older pinned installs that still fail before
+  parsing the response. A null `pre_signed_info` means that exact image hash was already pushed —
+  **not** an error. An aliased policy (same image, new name) registers without a rebuild.
 - Resolve name → pvid: `client.lookup_policy_version(name=…)`.
 
 ---

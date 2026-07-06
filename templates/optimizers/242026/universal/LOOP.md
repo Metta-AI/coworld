@@ -184,10 +184,8 @@ action without the internal state that decides it?
 - Bake `CREWRIFT_BEDROCK_MODEL=us.anthropic.claude-sonnet-4-6` into the image ENV (the advisor's
   default opus model is not enabled in the runner account and dies silently); verify with
   `docker inspect`.
-- Upload: `coworld upload-policy` is broken (0.1.16; server moved ECR push to an
-  `authorization_token`). Use the manual path (kept as `/tmp/upload_policy.py`, driving
-  `coworld.upload` internals): request the upload, docker-login with the returned token, push to
-  the returned ECR repo, complete the policy create preserving `secret_env` (USE_BEDROCK=true).
+- Upload: use current `coworld upload-policy`; it consumes the server's `authorization_token` ECR push response. Keep
+  the manual path from skill `build-and-upload-policy` only as a fallback for older pinned installs.
   A null `pre_signed_info` means that exact image hash was already pushed — not an error. An
   aliased policy (same image, new name) registers without a rebuild.
 

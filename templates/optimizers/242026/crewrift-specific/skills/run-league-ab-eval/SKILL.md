@@ -34,9 +34,10 @@ in this package are `tools/league_eval.py` and `tools/eval.py`).
    ```
    coworld upload-policy <image> --name <name>
    ```
-   (Note: `coworld upload-policy` is reported broken in coworld 0.1.16 — the
-   server moved ECR push to an `authorization_token`. If it fails, the manual
-   ECR push steps are in the `crewrift-ecr-upload-authtoken` memory note.)
+   (Note: current `coworld upload-policy` consumes the server's ECR
+   `authorization_token` response. If an older pinned install fails before
+   upload, upgrade first; use the manual fallback in `build-and-upload-policy`
+   only if upgrade is impossible.)
 
 2. **Confirm the two arms are actually different builds** before launching. A
    prior run silently A/B'd a policy against ITSELF and produced a meaningless

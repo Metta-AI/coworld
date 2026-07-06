@@ -4,18 +4,19 @@ description: >-
   Compile a notsus.nim change into an amd64 Docker image and upload it as a new
   policy version. Load this when you need to ship a crewrift notsus edit to the
   league: it covers the cheap-to-expensive build/validation ladder, the local
-  full-container gate, and the MANUAL ECR upload that replaces the broken
-  `coworld upload-policy` CLI (0.1.16+). Triggers: "build the bot", "upload the
-  policy", "ship notsus", "make a new policy version", "rebuild and field this".
+  full-container gate, and current `coworld upload-policy` upload flow. Triggers:
+  "build the bot", "upload the policy", "ship notsus", "make a new policy
+  version", "rebuild and field this".
 ---
 
 # Build and upload a notsus policy
 
-The `coworld upload-policy` CLI is **broken** (see Gotcha U1). You must build the
-amd64 image yourself and push it via the manual ECR `authorization_token` path.
-Do not skip the validation ladder or the local gate — a green build and an
-accepted upload are NOT evidence the policy will score (or even start) in a
-hosted round.
+Build the amd64 image yourself, validate it locally, then upload it with current
+`coworld upload-policy`. Keep the manual ECR `authorization_token` path below
+only as a legacy fallback for older pinned installs that still fail before
+parsing the server response. Do not skip the validation ladder or the local gate
+— a green build and an accepted upload are NOT evidence the policy will score (or
+even start) in a hosted round.
 
 ## Repo map — know where the edit lives before you touch anything
 
@@ -83,9 +84,12 @@ Only once rungs 1–3 are clean do you build the amd64 artifact (Step 2).
 
 ```bash
 # From inside the bot-repo checkout. -f the LLM Dockerfile, tag with a fresh name.
+IMG="notsus-llm:$(date +%Y%m%d-%H%M%S)"
+NAME="daveey-notsus-<short-desc>"
+
 docker buildx build --platform linux/amd64 \
   -f players/notsus/Dockerfile.llm \
-  -t notsus-llm:$(date +%Y%m%d-%H%M%S) \
+  -t "$IMG" \
   --load .
 ```
 
@@ -141,22 +145,28 @@ slow to keep up with the 24fps realtime server, so the bot can drop the socket. 
 `game started players=8` → `draw: time limit reached` sequence with a written
 replay means the bot connected and played fine.
 
-## Step 4 — Manual ECR upload (the broken-CLI workaround)
+## Step 4 — Upload with `coworld upload-policy`
 
-**Gotcha U1 — `coworld upload-policy` is BROKEN.**
-`uv run coworld upload-policy <img> --name <n> --use-bedrock` FAILS (coworld
-0.1.16, pinned in `uv.lock`; `uv run` re-syncs so an ad-hoc `uv pip install`
-won't stick) with the Pydantic error:
-`ImageUploadResponse.pre_signed_info.credentials Field required`.
-Cause: the Observatory migrated ECR push auth (~2026-06) from temporary AWS
-`credentials` (access_key/secret/session) to a single `authorization_token` (the
-base64 `AWS:password` for HTTP `Authorization: Basic`) + `expires_at`. The
-installed client's `EcrPushInfo` model still requires `credentials`, which the
-server no longer returns. PyPI's newest (0.1.22) still has the old model — there
-is no working CLI version, so you must do this manually.
+**Gotcha U1 — use the current CLI first.** Current `coworld upload-policy`
+understands the server's ECR `authorization_token` response. Upload with:
 
-The manual upload reuses the client's own push helper. Run as a Python script
-with the bot repo's env (so `coworld` is importable):
+```bash
+uv run coworld upload-policy "$IMG" --name "$NAME" --use-bedrock
+```
+
+Omit `--use-bedrock` when the policy does not need Bedrock.
+`pre_signed_info: null` means the exact image hash was already pushed; it is not
+an error. An aliased policy (same image, new name) registers without a rebuild.
+
+**Legacy fallback.** If an older pinned install fails before upload with
+`ImageUploadResponse.pre_signed_info.credentials Field required`, upgrade the
+local Coworld package from the current metta checkout. Only if you cannot
+upgrade, use the manual `authorization_token` path below.
+
+### Legacy manual ECR fallback
+
+The legacy manual upload reuses the client's own push helper. Run as a Python
+script with the bot repo's env (so `coworld` is importable):
 
 ```python
 import subprocess, requests

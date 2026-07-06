@@ -114,10 +114,11 @@ Do **not** code from the hypothesis. First:
   without cache.
 - Bake any required runtime env (model ids, credentials flags) into the image and verify it; a
   default that the runner account can't honor dies **silently**.
-- **Upload as a NEW policy reference.** If the upload CLI is broken (it has been), use the manual
-  registry-push path. Re-uploading an identical image may report "already pushed" — that is not an
-  error; an aliased policy (same image, new name) registers without a rebuild. (The project tier has
-  the exact upload steps.)
+- **Upload as a NEW policy reference.** Use current `coworld upload-policy` first; reserve the
+  manual registry-push path for older pinned installs that still fail before parsing the server
+  response. Re-uploading an identical image may report "already pushed" — that is not an error; an
+  aliased policy (same image, new name) registers without a rebuild. (The project tier has the exact
+  upload steps.)
 
 ## [5] Server-side paired A/B + decode ground truth
 
