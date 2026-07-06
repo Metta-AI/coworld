@@ -38,6 +38,10 @@ _LOCAL_TAG_SEPARATOR_RE = re.compile(r"[^a-z0-9._-]+")
 _IMAGE_ID_RE = re.compile(r"^img_[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$")
 _HOSTED_SMOKE_TERMINAL_STATUSES = {"completed", "failed", "canceled", "cancelled"}
 _HOSTED_SMOKE_SUCCESS_STATUSES = {"completed"}
+# Matches SMOKE_TEST_EPISODE_TAGS["source"] on the backend: scopes hosted-smoke
+# polling to upload-smoke episodes so user/XP/tournament requests for the same
+# coworld can't masquerade as smoke results.
+_HOSTED_SMOKE_EPISODE_SOURCE = "coworld_upload"
 _CERTIFICATION_CACHE_VERSION = "coworld-certification-v1"
 _DOCKER_AUTH_CONFIG_KEYS = {"auths", "credsStore", "credHelpers"}
 DOWNLOAD_AGENTS_MD = """# AGENTS.md
@@ -311,11 +315,23 @@ class CoworldUploadClient:
         _raise_for_status(response)
         return CoworldUploadResponse.model_validate(response.json())
 
-    def list_episode_requests(self, *, limit: int = 1000, offset: int = 0) -> list[dict[str, Any]]:
+    def list_episode_requests(
+        self,
+        *,
+        coworld_id: str | None = None,
+        source: str | None = None,
+        limit: int = 1000,
+        offset: int = 0,
+    ) -> list[dict[str, Any]]:
+        params: dict[str, str | int] = {"limit": limit, "offset": offset}
+        if coworld_id is not None:
+            params["coworld_id"] = coworld_id
+        if source is not None:
+            params["source"] = source
         response = self._http_client.get(
             "/v2/episode-requests",
             headers=self._headers(),
-            params={"limit": limit, "offset": offset},
+            params=params,
             timeout=60.0,
         )
         _raise_for_status(response)
@@ -714,7 +730,10 @@ def get_hosted_smoke_episode_statuses(
     *,
     coworld_id: str,
 ) -> tuple[HostedSmokeEpisodeStatus, ...]:
-    return _hosted_smoke_episode_statuses_from_rows(client.list_episode_requests(limit=1000), coworld_id=coworld_id)
+    return _hosted_smoke_episode_statuses_from_rows(
+        client.list_episode_requests(coworld_id=coworld_id, source=_HOSTED_SMOKE_EPISODE_SOURCE, limit=1000),
+        coworld_id=coworld_id,
+    )
 
 
 def wait_for_hosted_smoke_certification(
