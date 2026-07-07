@@ -426,9 +426,7 @@ def register_tournament_commands(app: typer.Typer) -> None:
         server: Annotated[str, typer.Option("--server", help="Observatory API server URL.")] = DEFAULT_SUBMIT_SERVER,
     ) -> None:
         with CoworldApiClient.from_login(server_url=server) as client:
-            episode = client.get_episode_request(episode_request_id)
-            job_id = _require_job_id(episode)
-            content = client.get_job_artifact_bytes(job_id, "results")
+            content = client.get_episode_request_artifact_bytes(episode_request_id, "results")
         if output is None:
             typer.echo(json.dumps(json.loads(content.decode("utf-8")), indent=2))
             return

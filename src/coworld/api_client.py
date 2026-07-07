@@ -673,8 +673,8 @@ class CoworldApiClient:
     def get_job_artifact_bytes(self, job_id: UUID, artifact_type: str) -> bytes:
         return self.get_bytes(f"/jobs/{job_id}/artifacts/{artifact_type}")
 
-    def get_job_artifact_text(self, job_id: UUID, artifact_type: str) -> str:
-        return self.get_text(f"/jobs/{job_id}/artifacts/{artifact_type}")
+    def get_episode_request_artifact_bytes(self, episode_request_id: str, artifact_type: str) -> bytes:
+        return self.get_bytes(f"/v2/episode-requests/{episode_request_id}/artifacts/{artifact_type}")
 
     def list_job_policy_logs(self, job_id: UUID) -> list[str]:
         return self._get(f"/jobs/{job_id}/policy-logs", list[str])
