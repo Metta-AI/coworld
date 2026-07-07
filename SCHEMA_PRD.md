@@ -159,6 +159,10 @@ And the **coworld schema declares, per family, the set of REQUIRED purposes** a 
 developer supplies one runnable per required purpose (labeled accordingly), declares each one's output format, and
 **may add extra runnables with additional purposes** beyond the required set.
 
+> **Spec 0061 supersedes this reporter example:** reporters are references
+> `{"reporter": "owner/name@version"}` / `{"wasm": ..., "attributes": ...}`, not container runnables with an `image`.
+> They fetch evidence via tools and emit typed output parts, not a bundle-URI → report-URI container contract.
+
 ```jsonc
 // illustrative — reporter family with required purposes covered, plus one extra
 "reporter": [
@@ -290,6 +294,10 @@ shape in [`MANIFEST_README.md` § Runnable Shape](src/coworld/MANIFEST_README.md
   `COGAME_REPORT_URI`) and the `event_log` parquet schema (`ts, player, key, value`) — emitted by the game and
   exposed via the renderer surface (§7.2), consumed by diagnosers, graders, reporters, and the optimizer. See
   [`reporter.md`](src/coworld/docs/roles/reporter.md).
+
+  > **Spec 0061 supersedes this reporter contract:** a reporter is not a container with a bundle-URI → report-URI
+  > contract. It is a submitted wasm component (or an external self-hosted program) that fetches evidence via tools and
+  > emits typed output parts. See [`docs/roles/REPORTER.md`](src/coworld/docs/roles/REPORTER.md) for the shipped model.
 
 ### 6.5 grader (contract defined, runtime pending)
 

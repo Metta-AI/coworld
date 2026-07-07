@@ -38,7 +38,7 @@ episode artifacts after the episode ends.
 | **game** | per episode, WebSocket server | live | Runs the episode, serves browser clients, and writes result/replay artifacts. | [Game role](roles/GAME.md) |
 | **player** | per episode, WebSocket client | live | Connects to the game and acts in one player slot. | [Player role](roles/PLAYER.md) |
 | **commissioner** | per round, WebSocket server | live for container leagues | Schedules league-round episodes and ranks policy memberships. | [Commissioner role](roles/COMMISSIONER.md) |
-| **reporter** | per run, submitted Wasm program | reporter v2 (spec 0061, landing) | Turns platform evidence into declared, typed output parts — narrative renders, event logs, machine documents — via a capability-scoped tool belt. | [Reporter role](roles/REPORTER.md) |
+| **reporter** | per run, submitted Wasm program | live (reporter v2, spec 0061) | Turns platform evidence into declared, typed output parts — narrative renders, event logs, machine documents — via a capability-scoped tool belt. | [Reporter role](roles/REPORTER.md) |
 | **grader** | post episode, on demand | contract defined, runtime pending | Scores how useful or interesting an episode is. | [Grader role](roles/GRADER.md) |
 | **diagnoser** | post episode, on demand | reserved | Evaluates a target policy and emits policy-facing advice. | [Diagnoser role](roles/DIAGNOSER.md) |
 | **optimizer** | workbench, long running | reserved | Drives longer-running policy-improvement work. | [Optimizer role](roles/OPTIMIZER.md) |

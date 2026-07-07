@@ -30,7 +30,7 @@ exactly five; the catalog extends only when a real need arrives (additions are a
 | --- | --- | --- | --- |
 | `render-html` | self-contained HTML string | `.html`, `text/html` | Must pass the safe [render profile](RENDER.md) at submission time; inline assets as `data:` URIs. Platform UI surfaces embed this part. |
 | `render-markdown` | Markdown string | `.md`, `text/markdown` | |
-| `event-log` | list of events | `.parquet` | The fixed 4-column [event log](EVENT_LOG.md) schema (`ts, player, key, value`); the host writes the Parquet with pinned deterministic settings. |
+| `event-log` | list of events | `.parquet` | The fixed 4-column [event log](EVENT_LOG.md) schema (`ts, player, key, value`); on the Bureau `output.emit` path the host writes the Parquet with pinned deterministic settings, while external reporters submit their own Parquet, validated server-side against the schema. |
 | `json` | JSON string | `.json`, `application/json` | Validated against the schema URI declared for that part. |
 | `file` | media-type + bytes | raw object | The escape hatch for anything else. A reporter needing "a directory of stuff" emits multiple named `file` parts — still enumerated, described, and typed at the envelope level. |
 
@@ -66,8 +66,10 @@ submissions have no trace.
 ## Determinism
 
 Reporters are not required to be byte-identical across runs, but deterministic parts enable
-caching, reproducible tests, and easier agent debugging. Host-written encodings (`event-log`
-Parquet) are deterministic by construction.
+caching, reproducible tests, and easier agent debugging. On the Bureau `output.emit` path
+host-written encodings (`event-log` Parquet) are deterministic by construction; external reporters
+submit their own Parquet, so that determinism is the reporter's responsibility (the server
+validates it against the fixed schema).
 
 ## Relationship To Bundles
 

@@ -43,7 +43,7 @@ Record kinds:
 
 Arguments and results are **digested** with size-capped previews — the trace records what
 happened, not full payloads. A per-run `debug=true` flag (requester/team only) captures full LLM
-request/response bodies with a short retention TTL. `/scratch` filesystem I/O is deliberately not
+request/response bodies. `/scratch` filesystem I/O is deliberately not
 traced: it is guest-internal working state, not an external effect.
 
 ## Visibility

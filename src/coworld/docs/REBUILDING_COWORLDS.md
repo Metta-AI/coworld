@@ -7,10 +7,15 @@ This guide is for rebuilding or fixing an existing Coworld after the June 2026 r
 - `packages/coworld` contains the public Coworld package, starter templates under
   [`templates`](../templates/README.md), and the complete [Paint Arena example](../examples/paintarena/README.md).
 - [`Metta-AI/coworld-tools`](https://github.com/Metta-AI/coworld-tools) contains the imported shared implementation
-  trees from the old `players`, `commissioners`, `reporters`, `graders`, `diagnosers`, and `games` repositories. Those
+  trees from the old `players`, `commissioners`, `graders`, `diagnosers`, and `games` repositories. Those
   old role repos are archived pointers now; do not start new work there.
 - A `Metta-AI/coworld-<slug>` game repo owns game-specific pieces that only make sense for that game: the game server,
-  bundled starter players, local reporters or graders, and any commissioner that is intentionally coupled to that game.
+  bundled starter players, local graders, and any commissioner that is intentionally coupled to that game.
+
+> **Reporters are not container runnables.** Reporters v2 (spec 0061) are registered platform identities / wasm
+> references, so the container-image-copy/rebuild rules below do not apply to them. A manifest reporter entry is a
+> reference — `{"reporter": "owner/name@version"}` or `{"wasm": "./path.wasm", "id": ..., "attributes": ...}` — submitted
+> through the reporter API, not a Dockerfile build.
 - `Metta-AI/optimizers` is still the active optimizer workbench repository unless a specific optimizer has moved beside
   its game.
 
@@ -22,10 +27,10 @@ When you build or repair a Coworld piece, start from one of the shared sources:
 - copy the matching role from the Paint Arena example under `packages/coworld/src/coworld/examples/paintarena`; or
 - copy the closest existing implementation from `Metta-AI/coworld-tools`.
 
-Then put the Coworld-specific copy in the owning game repo, for example `Metta-AI/coworld-muster/commissioner/`,
-`Metta-AI/coworld-muster/reporter/`, or `Metta-AI/coworld-muster/players/<starter>/`. Update that game repo's
+Then put the Coworld-specific copy in the owning game repo, for example `Metta-AI/coworld-muster/commissioner/`
+or `Metta-AI/coworld-muster/players/<starter>/`. Update that game repo's
 `compose.yaml` and `coworld_manifest.json` so the runnable builds from the game-local folder and its `source_url` points
-at the game repo.
+at the game repo. (Reporters are the exception — see the note above; they are submitted as references, not built here.)
 
 Use `coworld-tools` directly only when the runnable is intentionally shared and should change for every Coworld that
 uses it. Most fixes for "the commissioner for this Coworld" are not shared fixes; copy from `coworld-tools` or the
@@ -49,8 +54,8 @@ Do not point new manifests at archived repos such as `Metta-AI/commissioners`, `
 
 ## Rebuild Workflow
 
-1. Identify every runnable in the manifest: `game`, `player`, `commissioner`, `reporter`, `grader`, `diagnoser`, and
-   `optimizer`.
+1. Identify every runnable in the manifest: `game`, `player`, `commissioner`, `grader`, `diagnoser`, and
+   `optimizer`. (`reporter` entries are references, not container runnables — see the note above.)
 2. Choose the source owner for each runnable. The default for a Coworld-specific piece is the game repo. Start from
    `packages/coworld` templates, Paint Arena, or `coworld-tools`, then copy the relevant piece into the game repo before
    customizing it.

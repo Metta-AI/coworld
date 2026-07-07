@@ -10,10 +10,15 @@ tick-aligned facts in a game-agnostic table shape.
 
 ## Producer
 
-A reporter declares an `event-log` part in its version attributes and emits it as a list of
-`{ts, player, key, value}` records via `output.emit(name, event-log(...))`. The host validates the
-records against the fixed schema below and writes the `.parquet` object itself — reporters never
-hand-serialize Parquet.
+A reporter declares an `event-log` part in its version attributes, then produces it one of two
+ways depending on hosting mode:
+
+- **Bureau (platform-hosted):** the reporter emits a list of `{ts, player, key, value}` records via
+  `output.emit(name, event-log(...))`. The host validates the records against the fixed schema below
+  and writes the `.parquet` object itself — a Bureau reporter never hand-serializes Parquet.
+- **Self-hosted (external):** the reporter serializes its **own** Parquet matching the fixed
+  4-column schema below and POSTs it to the outputs API; the server validates the submitted Parquet
+  against that schema. Getting the Parquet bytes right is the external reporter's responsibility.
 
 ## Schema
 
@@ -31,9 +36,11 @@ case.
 
 ## Determinism
 
-The host writer uses Snappy-compressed Parquet, a single row group, and a pinned writer version,
-so identical emitted records produce byte-identical Parquet — determinism is by construction, not
-reporter discipline.
+On the host-written (Bureau) path the host writer uses Snappy-compressed Parquet, a single row
+group, and a pinned writer version, so identical emitted records produce byte-identical Parquet —
+determinism is by construction, not reporter discipline. For external submissions the reporter
+writes its own Parquet, so Parquet-level determinism is the reporter's responsibility (the server
+validates the schema, not the byte layout).
 
 ## Consumers
 

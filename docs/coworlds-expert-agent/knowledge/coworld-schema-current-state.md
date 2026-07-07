@@ -48,7 +48,7 @@ Optional: `run`, `env`, `source_url`, `repository_url`
 - Player logs are included in the episode bundle
 
 ### Reporter
-- Not a container (spec 0061): the manifest `reporter[]` section holds references — `{"reporter": "name@version"}`
+- Not a container (spec 0061): the manifest `reporter[]` section holds references — `{"reporter": "owner/name@version"}`
   for a platform reporter version, or `{"wasm": "./path.wasm", "id": ..., "attributes": ...}` for a wasm component the
   package builds and submits at upload
 - Runs platform-side in the Bureau against the `softmax:reporter` wasm world; see `docs/roles/REPORTER.md`

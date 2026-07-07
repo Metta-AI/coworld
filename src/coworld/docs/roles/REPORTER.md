@@ -1,8 +1,7 @@
 # Reporter Role
 
-**Status:** Reporter v2 (spec 0061) — Wasm reporters, landing in the spec-0061 stack. This page
-describes the v2 contract; the container/WebSocket reporter path it replaces is deleted in the
-same stack.
+**Status:** Reporter v2 (spec 0061) — Wasm reporters. This is the reporter contract; the
+container/WebSocket reporter path it replaced has been deleted.
 
 ## What it does
 
@@ -42,9 +41,13 @@ identity:
   (identical bytes + attributes dedupe to the same version). Uploading a new name registers the
   reporter and issues its key — upload *is* registration for the hosted path.
 - **Written in your language.** Compile to a component targeting the published
-  `softmax:reporter` WIT world: Python via `componentize-py`, JavaScript/TypeScript via `jco`,
-  Rust via `cargo-component`, Go via TinyGo. SDKs wrap the raw WIT imports in idiomatic APIs —
-  Python first, JavaScript second; Rust/Go target the WIT directly.
+  `softmax:reporter` WIT world — the authoritative interface definition (exported `run`, the
+  `types`/`episodes`/`platform`/`reports`/`llm`/`output` tool interfaces, and the `tool-error`
+  variant) lives at
+  [`packages/coworld/src/coworld/wit/softmax-reporter/world.wit`](../../wit/softmax-reporter/world.wit).
+  Toolchains: Python via `componentize-py`, JavaScript/TypeScript via `jco`, Rust via
+  `cargo-component`, Go via TinyGo. SDKs wrap the raw WIT imports in idiomatic APIs — Python
+  first, JavaScript second; Rust/Go target the WIT directly.
 - **Capability-scoped.** The component exports one function, `run(request)`, and imports only the
   platform tool belt plus minimal WASI (clocks, random, and a private `/scratch` filesystem). No
   sockets, no environment, no ambient anything. If a reporter can do something, it is because a
@@ -55,10 +58,14 @@ identity:
 ### Self-hosted (external)
 
 An external reporter skips the wasm entirely: register, then run your program anywhere — a cron
-box, a notebook, someone else's cloud. When it has something to say, submit each output to
-`POST /v2/reporters/outputs` with the reporter key. The submission passes the same per-type
-validation as a Bureau emission, lands in the same `reporter_outputs` table, and is served by the
-same routes — it simply has no run attached and **no trace** (see [TRACE.md](../artifacts/TRACE.md)).
+box, a notebook, someone else's cloud. When it has something to say, `POST /v2/reporters/outputs`
+with the `X-Reporter-Key: <reporter key>` header, the part `name` and `type` (and `media_type` for
+`file` parts) as query parameters, and the part payload as the **raw request body**. The server
+validates name+type against your declared outputs and runs the per-type content check (safe-HTML
+for `render-html`, JSON well-formedness for `json`, the fixed Parquet schema for `event-log`). The
+submission passes the same per-type validation as a Bureau emission, lands in the same
+`reporter_outputs` table, and is served by the same routes — it simply has no run attached and
+**no trace** (see [TRACE.md](../artifacts/TRACE.md)).
 You read platform data with your own normal user credentials; the key is only for submitting. The
 platform's involvement begins and ends at the outputs API — no sandbox, no queue, no limits
 beyond output validation and size caps.

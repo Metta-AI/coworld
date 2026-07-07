@@ -186,8 +186,10 @@ The split into independently-attributable steps is deliberate: `smoke-episode` o
 `results-conform` / `replay-present` / `replay-loadable` are separate gates, so a transcript `fail` names the
 exact contract that broke rather than collapsing every runtime problem into "episode failed" (§6.1
 `failure_reason`). `players-run` proves the player role actually launched (the game is already proven by the
-episode completing). `supporting-roles` (step 10) is per-runnable: today it certifies the **reporter** (run
-against the smoke-episode bundle, report zip validated) and a **commissioner** protocol probe; **grader** and
+episode completing). `supporting-roles` (step 10) is per-runnable: today it validates the **reporter** references
+(updated for spec 0061: `validate_reporter_references` in `certifier.py` checks each manifest reporter reference
+statically — no Docker run, no report zip — and the server-side supporting-roles probe *resolves* the reference
+against the registry rather than running a container) and a **commissioner** protocol probe; **grader** and
 **diagnoser** have no run harness yet, so a Coworld declaring them is not failed on their account until those
 harnesses exist (their slots in this step are inert, logged, not graded). The **optimizer** is never exercised
 here — it belongs to Optimizable (§6.3).
@@ -278,7 +280,8 @@ The near-term job from here:
 
 - **(a)** split the fused smoke-episode call into the independently-attributable steps 5–8 (`smoke-episode` runs
   only; `results-conform` / `replay-present` / `replay-loadable` are their own gates), add `fixture-conforms`
-  (step 4) and generalize `supporting-roles` (step 10) to the reporter + commissioner probe;
+  (step 4) and generalize `supporting-roles` (step 10) to the reporter reference-validation
+  (updated for spec 0061: static reference validation, no container run) + commissioner probe;
 - **(b)** record per-step `fail` results with `failure_reason` + `feedback` (§6.1) instead of raising raw, and
   drop the vestigial standalone certificate/degree-file objects in favor of the job-as-attestation (§3);
 - **(c)** wire the Observatory path — dispatch the smoke episode as a `coworld_episode` job, read back its run
@@ -286,8 +289,8 @@ The near-term job from here:
 - **(d)** add the human-in-the-loop Optimizable examination on top. Optimizable has no automated implementation
   today, by design.
 
-Grader and diagnoser run harnesses do not exist yet, so step 10 certifies the reporter and commissioner only
-until they do.
+Grader and diagnoser run harnesses do not exist yet, so step 10 covers the reporter and commissioner only
+until they do (updated for spec 0061: the reporter check is static reference validation, not a container run).
 
 ## 10. Open questions
 

@@ -22,7 +22,7 @@ consumes something; artifact pages describe the thing itself.
 | --- | --- | --- |
 | [Report outputs](REPORT.md) | Reporter | Declared, typed output parts emitted via the `output` tool, stored per part (spec 0061) |
 | [Render](RENDER.md) | Reporter | Safe self-contained `render-html`/`render-markdown` output part the platform embeds |
-| [Event log](EVENT_LOG.md) | Reporter | `event-log` output part — host-written Parquet with the fixed 4-column schema |
+| [Event log](EVENT_LOG.md) | Reporter | `event-log` output part — fixed 4-column-schema Parquet, host-written for Bureau runs and schema-validated for external submissions |
 | [Trace](TRACE.md) | Platform host | Host-written `trace.jsonl` audit record beside a run's output parts |
 | [Grade](GRADE.md) | Grader | `COGAME_GRADE_URI` JSON |
 | [Diagnosis](DIAGNOSIS.md) | Diagnoser | `COGAME_DIAGNOSIS_URI` zip |
