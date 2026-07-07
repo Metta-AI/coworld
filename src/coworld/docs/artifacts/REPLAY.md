@@ -34,7 +34,8 @@ back to tick 0 and continues until a user pauses or seeks.
 Replays are consumed by:
 
 - replay viewers, either local or hosted;
-- reporters, graders, diagnosers, and optimizers through the [episode bundle](EPISODE_BUNDLE.md) `replay` token;
+- graders, diagnosers, and optimizers through the [episode bundle](EPISODE_BUNDLE.md) `replay` token; reporters
+  through their `episodes` tool (spec 0061);
 - humans and agents through `coworld replay` for local replay files and `coworld replays` / `coworld replay-open` for
   hosted episode artifacts.
 

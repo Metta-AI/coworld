@@ -2,8 +2,8 @@
 
 An **episode bundle** is a single `.zip` containing one Coworld episode's artifacts, assembled on demand for a consumer
 that needs them as a unit. Bundles are the input format for current graders, diagnosers, direct user downloads, and
-future tools that need to operate on a full episode rather than a single artifact. Hosted reporters use direct artifact
-refs instead of zip bundles.
+future tools that need to operate on a full episode rather than a single artifact. Reporters (v2, spec 0061) do not
+consume bundles; they read the same per-episode artifacts through their `episodes` tool.
 
 Bundling is deliberately a **consumption-time** concern, not a production-time one. The runner writes individual
 artifacts to separate URIs (see [KUBERNETES_RUNNER_README.md](../../runner/KUBERNETES_RUNNER_README.md) for hosted
@@ -58,9 +58,9 @@ Every bundle contains a `manifest.json` at the zip root describing its contents:
 ## Requesting a Bundle
 
 The current package defines the consumer-side bundle contract used by graders, diagnosers, and user-facing downloads,
-including `COGAME_EPISODE_BUNDLE_URI` for supporting runnables that still consume a zip. Reporters no longer receive
-episode bundles; they receive a `report_request` containing per-episode manifests, direct artifact refs, inline
-`error_info`, and a `report_uri` output destination.
+including `COGAME_EPISODE_BUNDLE_URI` for supporting runnables that still consume a zip. Reporters do not receive
+episode bundles; a running reporter fetches exactly the artifacts it wants — results, replay, logs, per-player logs,
+inline `error_info` — through its `episodes` tool (spec 0061).
 
 The hosted bundle-request API is implemented by the Observatory backend. A dedicated `coworld bundle` CLI command is
 still planned; until it lands, use the API directly or the per-artifact `coworld` commands below.
@@ -126,15 +126,14 @@ COGAME_EPISODE_BUNDLE_URI=https://.../ep.zip
 The runnable reads the zip, inspects its `manifest.json` to discover what's inside, and processes the files. The
 runnable does not need to know whether the bundle came from a local workspace or a hosted artifact store.
 
-Reporter integration is different: a persisted reporter service receives direct artifact refs and an output `report_uri`
-in a `/reporter` WebSocket request, writes a report zip to that URI, and sends a completion or failure message over the
-socket. Local process-style reporters receive the same request shape via `COGAME_REPORT_REQUEST`. The optimizer pulls
-artifacts through Coworld tooling rather than receiving a fixed bundle env var.
+Reporter integration is different: the platform instantiates the submitted Wasm reporter version in-process and it
+reads per-episode artifacts through its `episodes` tool — no bundle env var, no request payload of presigned refs.
+The optimizer pulls artifacts through Coworld tooling rather than receiving a fixed bundle env var.
 
 Supporting-role outputs are separate artifacts, not entries in the episode bundle today:
 
-- [Report](REPORT.md), optionally including an [event log](EVENT_LOG.md) or [trace](TRACE.md), for reporters. Report
-  zips are written to `report_uri`, and their contents must match the reporter's declared output format.
+- [Report outputs](REPORT.md) — declared, typed parts (optionally including an [event log](EVENT_LOG.md) part) stored
+  per part, with a host-written [trace](TRACE.md) beside them.
 - [Grade](GRADE.md).
 - [Diagnosis](DIAGNOSIS.md).
 - [Optimizer outputs](OPTIMIZER_OUTPUTS.md).

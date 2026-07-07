@@ -1,24 +1,19 @@
 # Event Log Artifact
 
-> **Reporter integration note.** This page describes the optional Parquet event-log entry inside the current one-shot
-> report zip. Target reporter services also write report zips; if their declared output format is time-series or
-> categorical-event data, the corresponding zip entry must match that declared MIME/schema. See the
-> [Reporter role](../roles/REPORTER.md).
+> **Reporter v2 (spec 0061).** The event log is the `event-log` typed
+> [output part](REPORT.md): the reporter emits a list of typed event records through the
+> `output` tool, and the platform host writes the Parquet file with pinned deterministic
+> settings. See the [Reporter role](../roles/REPORTER.md).
 
-An **event log** is an optional structured Parquet file inside a [report](REPORT.md) zip. It lets reporters expose
+An **event log** is a structured Parquet [output part](REPORT.md). It lets reporters expose
 tick-aligned facts in a game-agnostic table shape.
 
 ## Producer
 
-A reporter may include one event log in its report zip and point to it from the report's top-level `manifest.json`:
-
-```json
-{
-  "event_log": "events.parquet"
-}
-```
-
-The event log path must have a `.parquet` extension.
+A reporter declares an `event-log` part in its version attributes and emits it as a list of
+`{ts, player, key, value}` records via `output.emit(name, event-log(...))`. The host validates the
+records against the fixed schema below and writes the `.parquet` object itself — reporters never
+hand-serialize Parquet.
 
 ## Schema
 
@@ -36,8 +31,9 @@ case.
 
 ## Determinism
 
-The in-tree reference writer uses Snappy-compressed Parquet and a single row group. Byte-identical output depends on the
-reporter image's pinned Parquet writer version because Parquet footers include writer metadata.
+The host writer uses Snappy-compressed Parquet, a single row group, and a pinned writer version,
+so identical emitted records produce byte-identical Parquet — determinism is by construction, not
+reporter discipline.
 
 ## Consumers
 
@@ -46,7 +42,7 @@ to tie policy behavior, game events, and interesting moments back to concrete ep
 
 ## See Also
 
-- [Report](REPORT.md) for the containing zip and manifest.
-- [Trace](TRACE.md) for richer reporter-defined machine timelines.
+- [Report outputs](REPORT.md) for the part contract and output catalog.
+- [Trace](TRACE.md) for the host-written record of the run itself.
 - [Reporter role](../roles/REPORTER.md) for the producer.
 - [Diagnosis](DIAGNOSIS.md) and [optimizer outputs](OPTIMIZER_OUTPUTS.md) for likely downstream consumers.

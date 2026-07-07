@@ -33,7 +33,7 @@ This is the short lifecycle view of the roles. For details and status definition
 | Game         | Runs for `play`, `run-episode`, `certify`, and replay viewing.                   | Runs in the hosted Kubernetes episode job.                                       |
 | Player       | Runs one container per slot for certification, local episodes, and browser play. | Runs one child pod per player slot, using submitted policy versions.             |
 | Commissioner | `coworld certify` probes declared commissioners over `/healthz` and `/round`.    | Runs as a per-round container for leagues with `commissioner_key = "container"`. |
-| Reporter     | `coworld certify` runs declared reporters against the certification episode.     | MVP hosted runner starts a per-report `/reporter` service, passes bundle URI(s), and expects a report zip at `report_uri`. |
+| Reporter     | `coworld certify` statically validates manifest reporter references (spec 0061). | Reporter v2: the platform runs submitted Wasm reporter versions in-process against a capability-scoped tool belt; runs produce typed output parts + a trace. |
 | Grader       | Not auto-run by the local runner.                                                | Contract defined, runtime pending; consumes bundles on demand when invoked.      |
 | Diagnoser    | Reserved; not run by default.                                                    | Reserved; not run by default.                                                    |
 | Optimizer    | Workbench role; not an episode container.                                        | Workbench role; pulls artifacts and submits candidate policies separately.       |
@@ -68,8 +68,10 @@ Certification is a package smoke test, not a gameplay benchmark. It should be sh
 strong enough to prove that the manifest, game image, bundled players, HTTP routes, player-token rejection, results, and
 replay surface are wired correctly.
 
-Certification also verifies that each declared player runnable left a launch log. After the smoke episode, it runs
-declared reporters against the episode bundle and validates their report zips. It probes declared commissioners with a
+Certification also verifies that each declared player runnable left a launch log. After the smoke episode, it resolves
+every manifest reporter reference and runs the shared static validator against each (component parses, targets a
+supported `softmax:reporter` world, imports nothing outside it, exports `run`, declares well-formed outputs — spec
+0061). It probes declared commissioners with a
 single `schedule_rounds_request` over `/round`, proving protocol compatibility without attempting to judge scheduling
 quality. Graders and diagnosers are recorded as declared with no harness available yet; optimizers are skipped because
 they belong to the later Viability degree.
@@ -200,10 +202,10 @@ operation. A consumer asks for a bundle when it needs one episode's artifacts as
 assembles the zip on demand with the requested include filters and access checks.
 
 Grader and diagnoser runnables receive the bundle through `COGAME_EPISODE_BUNDLE_URI` when those supporting runnables
-are invoked, then produce [grades](artifacts/GRADE.md) or [diagnoses](artifacts/DIAGNOSIS.md). Current in-tree reporter
-examples also use that bundle-runner shape and produce [report zips](artifacts/REPORT.md), while the hosted reporter
-runner starts a persisted WebSocket service that receives episode bundle URI(s) and an output `report_uri`, writes a
-report zip whose contents match its purpose/output-format lane, and reports completion over `/reporter`. Optimizers
+are invoked, then produce [grades](artifacts/GRADE.md) or [diagnoses](artifacts/DIAGNOSIS.md). Reporters (v2, spec
+0061) do not consume bundles at all: the platform instantiates the submitted Wasm reporter version in-process and it
+reads episode evidence through the `episodes` tool, emitting declared, typed
+[output parts](artifacts/REPORT.md) and leaving a host-written [trace](artifacts/TRACE.md). Optimizers
 usually pull episode artifacts through Coworld tooling while operating as a longer-running workbench and produce
 [optimizer outputs](artifacts/OPTIMIZER_OUTPUTS.md).
 
@@ -221,7 +223,7 @@ See [EPISODE_BUNDLE.md](artifacts/EPISODE_BUNDLE.md) for the bundle shape, hoste
 | Artifact storage | Local workspace files.                                           | Uploaded artifact URIs recorded by the platform.                                                       |
 | Replay storage   | Exact local replay bytes.                                        | Replay bytes compressed for hosted storage and replay serving.                                         |
 | Episode deadline | CLI `--timeout-seconds` for local runner waits.                  | 20 minute Kubernetes Job active deadline; coordinator waits default to `COWORLD_TIMEOUT_SECONDS=3600`. |
-| Supporting roles | Not auto-run.                                                    | Commissioner is run for container leagues; reporter has an MVP hosted runner; grader runtime integration is pending. |
+| Supporting roles | Not auto-run.                                                    | Commissioner is run for container leagues; reporters run as Wasm programs via explicit bindings (on-demand, XP-attached, subscriptions); grader runtime integration is pending. |
 | Cleanup          | Local containers removed by the runner.                          | Child pods/service removed by coordinator; parent Job cleaned by TTL.                                  |
 
 ## See Also

@@ -38,7 +38,7 @@ episode artifacts after the episode ends.
 | **game** | per episode, WebSocket server | live | Runs the episode, serves browser clients, and writes result/replay artifacts. | [Game role](roles/GAME.md) |
 | **player** | per episode, WebSocket client | live | Connects to the game and acts in one player slot. | [Player role](roles/PLAYER.md) |
 | **commissioner** | per round, WebSocket server | live for container leagues | Schedules league-round episodes and ranks policy memberships. | [Commissioner role](roles/COMMISSIONER.md) |
-| **reporter** | per report request, WebSocket service | MVP hosted runner | Turns episode evidence into narrative, time-series, categorical-event, trace, or visualization outputs. | [Reporter role](roles/REPORTER.md) |
+| **reporter** | per run, submitted Wasm program | reporter v2 (spec 0061, landing) | Turns platform evidence into declared, typed output parts — narrative renders, event logs, machine documents — via a capability-scoped tool belt. | [Reporter role](roles/REPORTER.md) |
 | **grader** | post episode, on demand | contract defined, runtime pending | Scores how useful or interesting an episode is. | [Grader role](roles/GRADER.md) |
 | **diagnoser** | post episode, on demand | reserved | Evaluates a target policy and emits policy-facing advice. | [Diagnoser role](roles/DIAGNOSER.md) |
 | **optimizer** | workbench, long running | reserved | Drives longer-running policy-improvement work. | [Optimizer role](roles/OPTIMIZER.md) |
@@ -84,8 +84,8 @@ The short version:
 5. The episode produces per-episode artifacts: [results](artifacts/RESULTS.md), [replay bytes](artifacts/REPLAY.md),
    [logs](artifacts/GAME_LOGS.md), an optional per-player [artifact](artifacts/PLAYER_ARTIFACT.md), and
    [failure information](artifacts/ERROR_INFO.md) when applicable.
-6. Supporting roles consume episode evidence through bundles, service wakes, or workbench tooling and produce
-   [reports](artifacts/REPORT.md), [grades](artifacts/GRADE.md), [diagnoses](artifacts/DIAGNOSIS.md), or
+6. Supporting roles consume episode evidence through bundles, tool-belt reads, or workbench tooling and produce
+   [report outputs](artifacts/REPORT.md), [grades](artifacts/GRADE.md), [diagnoses](artifacts/DIAGNOSIS.md), or
    [optimizer outputs](artifacts/OPTIMIZER_OUTPUTS.md).
 7. Humans and coding agents inspect those outputs, improve the player or Coworld, and run the loop again.
 
@@ -105,22 +105,22 @@ The full lifecycle page is under construction: [Coworld lifecycle](LIFECYCLE.md)
 +----------------------------------------------------------------------------------+
 | ARTIFACT HANDOFF                                                                 |
 |                                                                                  |
-|  Per-episode artifacts  -->  Bundle/download API + direct reporter request refs  |
+|  Per-episode artifacts  -->  Bundle/download API + reporter tool-belt reads      |
 |  results, replay, logs, errors                 assembled or presigned on demand  |
 +-------------------------------------------|--------------------------------------+
                                             v
 +----------------------------------------------------------------------------------+
 | AFTER AN EPISODE                                                                 |
 |                                                                                  |
-|  bundles feed graders/diagnosers and user downloads; reporters receive direct    |
-|  artifact refs over /reporter or COGAME_REPORT_REQUEST and write report zips.    |
+|  bundles feed graders/diagnosers and user downloads; reporters read evidence     |
+|  through the episodes tool and emit typed output parts plus a run trace.         |
 |  +-------------+   +------------+   +----------------+   +------------------+    |
 |  |  Reporter   |   |   Grader   |   |   Diagnoser    |   |    Optimizer     |    |
-|  |   output    |   |   grade    |   |   diagnosis    |   |    workbench     |    |
+|  | typed parts |   |   grade    |   |   diagnosis    |   |    workbench     |    |
 |  +-------------+   +------------+   +----------------+   +------------------+    |
 |        ^                                  ^                                      |
 |        |                                  |                                      |
-|   /reporter request              COGAME_TARGET_POLICY_URI                        |
+|   Bureau run (Wasm)              COGAME_TARGET_POLICY_URI                        |
 +----------------------------------------------------------------------------------+
 ```
 
@@ -160,13 +160,11 @@ See the [episode bundle reference](artifacts/EPISODE_BUNDLE.md) for the bundle s
 `manifest.json` schema, access-control rules, hosted API, and planned CLI surface.
 
 Current grader and diagnoser runnables receive an episode bundle via `COGAME_EPISODE_BUNDLE_URI`, inspect its
-`manifest.json`, run their logic, and write or create their own artifact. Reporters receive a report request containing
-direct refs to the requested episode artifacts:
+`manifest.json`, run their logic, and write or create their own artifact:
 
-- a **reporter** hosted service accepts a `report_request` over `/reporter`, reads the requested source artifact refs,
-  writes a valid [report zip](artifacts/REPORT.md) to `report_uri`, and sends `report_finished` or `report_failed`.
-  Current in-tree reporter examples consume the same request shape from `COGAME_REPORT_REQUEST`, optionally including an
-  [event log](artifacts/EVENT_LOG.md) or [trace](artifacts/TRACE.md);
+- a **reporter** (v2, spec 0061) is a submitted Wasm program the platform instantiates per run; it reads episode
+  evidence through its `episodes` tool and emits declared, typed [output parts](artifacts/REPORT.md) — optionally
+  including an [event log](artifacts/EVENT_LOG.md) part — while the host records a [run trace](artifacts/TRACE.md);
 - a **grader** writes a [grade](artifacts/GRADE.md) to `COGAME_GRADE_URI`;
 - a **diagnoser** writes a [diagnosis](artifacts/DIAGNOSIS.md) to `COGAME_DIAGNOSIS_URI` and also receives
   `COGAME_TARGET_POLICY_URI` identifying the policy it is evaluating;
@@ -175,8 +173,9 @@ direct refs to the requested episode artifacts:
   evaluation runs.
 
 Grader and diagnoser runs are on-demand, not auto-triggered by the runner. The planned CLI surfaces are
-`coworld run-grader` and `coworld run-diagnoser`; exact shapes are still being settled. Hosted reporter integration is
-driven over `/reporter`, not a per-run env-var container launch.
+`coworld run-grader` and `coworld run-diagnoser`; exact shapes are still being settled. Reporter runs are created only
+by explicit bindings (on-demand requests, experience-request attachment, subscriptions) — never by episode execution
+itself.
 
 ## Role Boundaries
 
@@ -190,11 +189,11 @@ These boundaries are useful when deciding where a new feature, artifact, or debu
   and does not modify the game-owned episode artifacts. It may upload its own optional
   [artifact](artifacts/PLAYER_ARTIFACT.md), but it does not own episode truth.
 - **Bundle and reporter handoffs are consumption-time views.** Everything before handoff is game and runner output.
-  User downloads, graders, and diagnosers use bundle zips; reporters use direct artifact refs with the same token
-  filtering and access-control rules.
-- **Container supporting runnables do not all share one input shape.** Graders and diagnosers currently consume
-  `COGAME_EPISODE_BUNDLE_URI`. Reporters consume `COGAME_REPORT_REQUEST`, either over `/reporter` for hosted services or
-  as an env var for local process-style examples.
+  User downloads, graders, and diagnosers use bundle zips; reporters read through their `episodes` tool with the same
+  access-control rules (enforced under the run requester's permissions).
+- **Supporting runnables do not all share one input shape.** Graders and diagnosers currently consume
+  `COGAME_EPISODE_BUNDLE_URI`. Reporters (v2, spec 0061) are Wasm programs whose only inputs are the run request and
+  the tool belt.
 - **The optimizer is a workbench, not a one-shot artifact writer.** Final candidate policies leave an optimizer through
   the standard `coworld upload-policy` path.
 

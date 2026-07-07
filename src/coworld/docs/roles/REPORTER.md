@@ -1,279 +1,237 @@
 # Reporter Role
 
-**Status:** MVP hosted runner
+**Status:** Reporter v2 (spec 0061) — Wasm reporters, landing in the spec-0061 stack. This page
+describes the v2 contract; the container/WebSocket reporter path it replaces is deleted in the
+same stack.
 
 ## What it does
 
-The reporter role compresses sparse episode experience into dense review surfaces — narrative summaries, tick-aligned
-time series, categorical event streams, traces, visualizations, and other outputs that make an episode legible to humans,
-Observatory surfaces, diagnosers, optimizers, and coding agents.
+The reporter role compresses sparse episode experience into dense review surfaces — narrative
+summaries, tick-aligned time series, categorical event streams, visualizations, and other outputs
+that make platform activity legible to humans, Observatory surfaces, diagnosers, optimizers, and
+coding agents.
 
-Reporters are for "what happened?" Graders are for "how valuable or interesting was it?" Keeping that boundary sharp
-matters: reporters expose evidence; graders decide which evidence should drive ranking, learning, or attention.
+Reporters are for "what happened?" Graders are for "how valuable or interesting was it?" Keeping
+that boundary sharp matters: reporters expose evidence; graders decide which evidence should drive
+ranking, learning, or attention.
+
+## The shape of a reporter
+
+A reporter is a **registered platform identity** — first-class like a player policy, not a coworld
+appendage. Registration (`POST /v2/reporters/register`) is the front door: it takes a name, a
+description, and the declared outputs contract, and returns the permanent identity plus a
+**reporter key**.
+
+- **Named and owned.** A reporter's name is unique **per owner**, not globally — many people can
+  have a `round-recap`. The human-readable handle is `owner/name` (names cannot contain `/`); the
+  `rptr_` id is the unambiguous identity.
+- **Keyed.** The reporter key is a static secret, shown once at registration and rotatable via
+  `POST /v2/reporters/{id}/key/rotate`; the platform stores only its sha256 hash. Its sole power
+  is **submitting outputs as that reporter** — proof of authorship, not a data credential. A
+  leaked key forges bylines, nothing more; rotate and move on.
+- **Hosted either way, one identity.** Ask the platform to host a compiled wasm component (the
+  Bureau runs it — below), or host the reporter yourself: run it anywhere and `POST` outputs with
+  your key. Consumers see one kind of reporter and one kind of output.
+
+### Platform-hosted: the wasm component
+
+A platform-hosted reporter is a **WebAssembly component** uploaded against the registered
+identity:
+
+- **Immutably versioned.** Each upload creates an immutable, content-addressed **version**
+  (identical bytes + attributes dedupe to the same version). Uploading a new name registers the
+  reporter and issues its key — upload *is* registration for the hosted path.
+- **Written in your language.** Compile to a component targeting the published
+  `softmax:reporter` WIT world: Python via `componentize-py`, JavaScript/TypeScript via `jco`,
+  Rust via `cargo-component`, Go via TinyGo. SDKs wrap the raw WIT imports in idiomatic APIs —
+  Python first, JavaScript second; Rust/Go target the WIT directly.
+- **Capability-scoped.** The component exports one function, `run(request)`, and imports only the
+  platform tool belt plus minimal WASI (clocks, random, and a private `/scratch` filesystem). No
+  sockets, no environment, no ambient anything. If a reporter can do something, it is because a
+  tool exists for it — and every tool call is metered, budgeted, and recorded in the run's trace.
+- **Size-capped at 200 MB.** Generous headroom: Python components (bundled CPython) run
+  30–60 MB; JS ~10–20 MB; Rust a few MB.
+
+### Self-hosted (external)
+
+An external reporter skips the wasm entirely: register, then run your program anywhere — a cron
+box, a notebook, someone else's cloud. When it has something to say, submit each output to
+`POST /v2/reporters/outputs` with the reporter key. The submission passes the same per-type
+validation as a Bureau emission, lands in the same `reporter_outputs` table, and is served by the
+same routes — it simply has no run attached and **no trace** (see [TRACE.md](../artifacts/TRACE.md)).
+You read platform data with your own normal user credentials; the key is only for submitting. The
+platform's involvement begins and ends at the outputs API — no sandbox, no queue, no limits
+beyond output validation and size caps.
+
+### Declared outputs
+
+Every registration declares the outputs the reporter emits — each with a name, a type from the
+platform **output catalog**, and a natural-language `description` of what that output means.
+External submissions validate against this same contract; hosted versions additionally declare
+the sandbox limits they need:
+
+```json
+{
+  "purpose": "narrative",
+  "world": "softmax:reporter@0.1.0",
+  "outputs": [
+    { "name": "recap",  "type": "render-html",
+      "description": "A broadcast-style narrative recap of the round: standings movement, notable plays, one headline per division." },
+    { "name": "events", "type": "event-log",
+      "description": "Tick-aligned scoring and elimination events for every episode in the subject round." },
+    { "name": "stats",  "type": "json", "schema": "https://example.com/recap-stats.schema.json",
+      "description": "Per-player aggregates backing the recap: points, survival time, head-to-head records." }
+  ],
+  "requested_limits": { "memory_mib": 1024, "llm_usd": 5.00 }
+}
+```
+
+Consumers — UI surfaces, chained reporters, agents deciding which part to read — know the shape
+*and meaning* of a report before a single run exists. See
+[REPORT.md](../artifacts/REPORT.md) for the output catalog and part contract.
+
+### Requested limits
+
+Sandbox limits are defaults with per-version overrides: the upload's `requested_limits` asks, the
+platform records `granted_limits` (v1: automatic approval within hard ceilings). Defaults: 512 MiB
+memory, 120 s guest CPU, 15 min wall clock, 1 GiB `/scratch`, 2 000 tool calls, $2.00 LLM spend,
+2 GiB artifact reads, 256 MiB total output.
 
 ## Where it lives in the manifest
 
-`manifest.reporter[]`, with `type: "reporter"` on every entry. The section is optional; include reporter runnables when
-the Coworld has custom reporter containers or a default reporter is useful.
-
-The current enforced manifest schema uses the shared runnable shape for reporters: `id`, `type`, `name`, `description`,
-`image`, optional `run`, optional public `env`, optional `source_url`, and optional `repository_url`. Do **not** add
-reporter-only manifest fields yet; the current schema rejects extra fields.
-
-The reporter design vocabulary still expects each reporter to have two explicit concepts:
-
-- **Purpose** — what kind of signal the reporter produces. Current names are `narrative`, `timeseries`, and
-  `categorical_events`; the set is expected to grow.
-- **Output format** — the shape of the reporter's output. Human-terminal outputs should name a MIME type such as
-  `text/markdown`; machine-consumed outputs should pair a MIME type with a schema so downstream tools can parse the
-  content without out-of-band knowledge. Reporter services write a zip artifact; the declared output format describes
-  the primary content inside that zip, not the transport container itself.
-
-Until those concepts become schema fields, put them in the reporter's manifest `description`, implementation README, and
-report-output metadata. See [`COWORLD_MANIFEST.md`](../COWORLD_MANIFEST.md) for the full current manifest shape and
-[`coworld_manifest_schema.json`](../../coworld_manifest_schema.json) for the exact enforced contract.
-
-### Manifest Example
+Reporters are no longer bundled in coworld manifests — the manifest's optional `reporter[]`
+section holds **references**:
 
 ```json
 {
   "reporter": [
-    {
-      "id": "match-recap",
-      "type": "reporter",
-      "name": "Match Recap",
-      "description": "Purpose: narrative. Output: text/markdown episode recap.",
-      "image": "my-recap-reporter:latest",
-      "run": ["python", "reporter.py"]
-    }
+    { "reporter": "acme/match-recap@3" },
+    { "wasm": "./reporters/recap.wasm",
+      "id": "recap",
+      "attributes": { "purpose": "narrative", "outputs": [ … ] } }
   ]
 }
 ```
 
-## Contract
+- A **platform reference** (`"reporter": "owner/name@version"`) points at an existing submitted
+  reporter version. References are owner-qualified because reporter names are only unique per
+  owner.
+- A **wasm reference** points at a component your coworld build produces; `coworld publish`
+  submits it through the standard upload flow, auto-creating (or extending) a reporter named
+  `{coworld-name}-{id}` owned by you (reporter names cannot contain `/` — it is the owner
+  separator in handles). Republishing unchanged bytes+attributes dedupes to the existing version.
 
-A reporter's hosted runtime contract is a service container that the platform starts for a reporter run. The platform
-connects when there is something to report on, sends direct episode artifact refs and an output URI, the reporter writes a
-report zip to that URI, and the reporter sends lifecycle messages over the WebSocket. The MVP runner uses one
-Kubernetes reporter service per reporter run and cleans it up after the request finishes.
+The section is optional. There are **no default reporters** — nothing is injected, and a coworld
+with no reporters certifies unchanged.
 
-The Crewrift lab reporter implements this hosted shape as an external reference, while the in-tree Paint Arena reporters
-use the same request shape through the local process contract documented below.
+## The run contract
 
-### Hosted Service Contract
+Runs exist only for platform-hosted reporters — an external reporter has no runs, just output
+submissions. The platform (the Bureau, its capability-scoped runtime) instantiates your component
+per run — in milliseconds; there is no cold start to design around — and calls:
 
-The hosted reporter service mirrors the game and commissioner container conventions:
-
-- Listen on `0.0.0.0:8080`.
-- Serve `GET /healthz`, returning 200 when ready.
-- Serve `WEBSOCKET /reporter`, the control channel over which the runner requests a report and receives lifecycle
-  messages.
-
-The reporter is single-request-per-connection for v1. A runner connects, receives readiness, sends one report request,
-waits for completion or failure, and then the reporter closes the connection.
-
-Hosted reporters must finish before the platform deadline. The current hosted runner defaults to a six-hour maximum
-reporter lifetime and issues input/output presigned URLs with an eight-hour TTL.
-
-Reports may include an [event log](../artifacts/EVENT_LOG.md) for structured tick-aligned events and a
-[trace](../artifacts/TRACE.md) for richer reporter-defined machine timelines. A report's optional `render` entry — the
-file platform UI surfaces can embed — must follow the safe [render profile](../artifacts/RENDER.md) so it is safe to
-embed even though the reporter is author-supplied.
-
-### Wake Lifecycle
-
-1. The platform decides a report is due for an entity: an episode completed, a round closed, or a manual refresh was
-   requested.
-2. If the reporter container is not running, the platform starts it and waits for `/healthz`.
-3. The platform opens `WEBSOCKET /reporter`.
-4. The reporter accepts the socket and sends `reporter_ready`.
-5. The platform sends `report_request` with `request_id`, `report_uri`, and `episodes`.
-6. The reporter sends `report_started`, reads the requested artifact refs, builds the report, and writes a `.zip` to `report_uri`.
-7. The reporter sends `report_finished` with the `report_uri` and summary counts, or `report_failed` with a stage and
-   error.
-8. The reporter closes the WebSocket.
-
-### Hosted Protocol Messages
-
-All hosted protocol messages are JSON objects with a `type` discriminator. The episode-input models are mirrored in the
-Paint Arena vendored reporter SDK and in the backend reporter runner.
-
-Platform to reporter:
-
-- `report_request`: asks the reporter to produce one report zip.
-
-Reporter to platform:
-
-- `reporter_ready`: sent immediately after WebSocket accept.
-- `report_started`: acknowledgement that the request validated and work began.
-- `report_progress`: optional progress update for long work.
-- `report_finished`: report zip was written to `report_uri`.
-- `report_failed`: structured failure for one request.
-
-Minimal request:
-
-```json
-{
-  "type": "report_request",
-  "request_id": "req_001",
-  "report_uri": "https://.../round-report.zip",
-  "episodes": [
-    {
-      "episode_request_id": "ereq_abc",
-      "status": "success",
-      "manifest": {
-        "ereq_id": "ereq_abc",
-        "status": "success",
-        "include": ["results", "replay", "game_logs"],
-        "files": {
-          "results": "results.json",
-          "replay": "replay",
-          "game_logs": {
-            "combined": "logs/game.log"
-          }
-        }
-      },
-      "artifacts": {
-        "results": {
-          "uri": "https://.../jobs/job_123/results.json",
-          "media_type": "application/json",
-          "encoding": "identity"
-        },
-        "replay": {
-          "uri": "https://.../jobs/job_123/replay.replay",
-          "media_type": "application/octet-stream",
-          "encoding": "identity"
-        },
-        "game_logs": {
-          "combined": {
-            "uri": "https://.../jobs/job_123/logs.txt",
-            "media_type": "text/plain",
-            "encoding": "identity"
-          }
-        }
-      },
-      "inline_json": {}
-    }
-  ]
-}
+```
+run(request: run-request) -> result<run-summary, string>
 ```
 
-Each `episodes[]` entry carries the bundle-style manifest plus direct artifact refs. The platform presigns source
-artifacts in the eval artifact store; it does not assemble or upload an input zip. `replay` refs point at raw
-game-owned replay bytes. Small synthesized JSON payloads such as `error_info` travel under `inline_json` instead of
-being uploaded as separate artifacts.
+`run-request` carries the run id, the **subject** (a list of episode-request ids, a round, a
+league, a player, or `freeform`), and optional opaque JSON `params`. Your program then works the
+tool belt until it has emitted its declared outputs:
 
-Reporter messages:
+The data tools are thin clients of the **public platform API** — every `episodes`, `platform`,
+and `reports` call is an authenticated HTTP request to the same `/v2` routes any user could hit,
+presenting a short-lived run-scoped token. Only `llm` talks to a non-API backend.
 
-```json
-{ "type": "reporter_ready", "protocol_version": "coworld-reporter/v1" }
-```
+| Tool family | What it gives you |
+| --- | --- |
+| `episodes` | Episode artifacts by episode-request id: results, replay, game logs, per-player logs, error info — typed sugar over the public episode routes |
+| `platform` | `get(path, query)` over an allowlisted subset of public platform read APIs: leagues, rounds, standings, players, coworlds, experience requests |
+| `reports` | Other reporters' outputs, addressed by run id or by reporter id + part name — typed, described part listings and fetches over the outputs routes (chained reports, including external reporters' outputs) |
+| `llm` | Bedrock models (`converse`/`invoke`) — host-signed, metered against your run's budget, billed to the run's requester |
+| `output` | `emit(name, part-value)` for each declared output — submitted through the same outputs API external reporters use, authenticated by the run context; `progress(pct, note)`; `log(level, msg)` |
 
-```json
-{ "type": "report_started", "request_id": "req_001", "episode_count": 2 }
-```
+Key semantics:
 
-```json
-{
-  "type": "report_progress",
-  "request_id": "req_001",
-  "stage": "reading_bundles",
-  "completed": 1,
-  "total": 2
-}
-```
+- **You see with the requester's eyes.** At dispatch the platform mints a run-scoped token
+  carrying the run requester's (or subscription owner's) principal, snapshotted at enqueue; every
+  data read presents it, so the API enforces exactly that user's row-level visibility.
+- **`/scratch` is yours.** A private, empty, per-run filesystem (1 GiB default) for temp files —
+  ordinary `open()` works. It is destroyed at run end and never traced.
+- **Emit is validated synchronously, server-side.** Each emission lands as a row in the
+  `reporter_outputs` table via the outputs API; undeclared names, type mismatches, unsafe HTML,
+  or size overruns come back as typed errors you can react to, inside the run. External
+  submissions pass the identical validation.
+- **Budget exhaustion is a typed error**, not a kill: you may still emit partial declared outputs.
+- **Everything is traced.** The host records every tool call (digests, timings, LLM tokens/cost)
+  into the run's [trace](../artifacts/TRACE.md). The trace is visible to the run's requester and
+  the platform team — not to you as the author, unless you are the requester. Debug by running
+  your reporter yourself.
 
-```json
-{
-  "type": "report_finished",
-  "request_id": "req_001",
-  "report_uri": "https://.../round-report.zip",
-  "episode_count": 2,
-  "players": 8
-}
-```
+## How reporters get run
 
-```json
-{
-  "type": "report_failed",
-  "request_id": "req_001",
-  "stage": "rendering",
-  "error": "RuntimeError: ..."
-}
-```
+Uploading never causes execution. Runs come only from explicit bindings:
 
-### Report Zip Output
+- **On-demand** — anyone requests a run of any reporter over a subject via the platform API/CLI.
+- **Attached to an experience request** — opt-in: an XP request may name reporter versions to run
+  over its episodes when they finish.
+- **Subscriptions** — a standing binding: run this reporter on `round_closed`,
+  `episode_completed`, or `cron` within a scope (league/coworld). Anyone may subscribe a reporter
+  to any league — the subscriber pays for the runs.
 
-The reporter writes `application/zip` bytes to `report_uri`. The zip is the artifact envelope; the reporter's
-`output_format` describes the primary content inside the envelope. For example:
+Whoever causes a run pays for it (LLM spend included); the reporter author never does. External
+reporters are outside this machinery entirely — you run them on your own schedule, at your own
+cost, and only the output submissions touch the platform.
 
-- A `text/html` narrative reporter writes a zip containing an `.html` entry.
-- A `text/markdown` narrative reporter writes a zip containing a `.md` entry.
-- A machine-consumed JSON reporter writes a zip containing a JSON entry that validates against the reporter's declared
-  schema.
-- A time-series or categorical-event reporter may write Parquet, JSONL, or JSON entries.
+## Certification
 
-MVP platform orchestration only requires the reporter to upload a valid zip. Reporters may include a top-level
-`manifest.json` or any other metadata file to help downstream consumers find primary renderable, structured, or trace
-entries, but the platform does not require that file yet.
+Submission performs **static validation**, and `coworld certify` runs the same validator against
+every manifest reference: the component parses, targets a supported world version, imports nothing
+outside the world and the WASI 0.2 surface, exports `run`, declares well-formed outputs, and
+requests limits within ceilings. (Guest toolchains link the whole WASI surface, sockets included —
+isolation comes from the runtime, which never grants network authority, so every socket operation
+traps.) Behavioral
+certification (smoke runs against golden episodes, output conformance) is deferred to the unified
+certification effort.
 
-### Local Process Contract
+## Determinism
 
-The currently shipped Paint Arena reporters are short-lived process containers:
-
-- Input: `COGAME_REPORT_REQUEST`, containing the same `report_request` JSON shape as the hosted protocol.
-- Output: the `report_uri` inside that request, where the reporter writes a [report zip](../artifacts/REPORT.md).
-
-Local certification uses `file://` artifact refs in that request. Hosted orchestration uses presigned `https://` refs.
-
-### Certification
-
-`coworld certify` exercises the local process contract end-to-end. After the certification episode produces results and
-a replay, it builds a one-episode `COGAME_REPORT_REQUEST` with `file://` refs and runs **every** runnable in
-`manifest.reporter[]` against it. Each report zip is then validated: its `manifest.json` must parse, every declared
-`render` / `event_log` / `trace` entry must exist with an accepted extension, and an HTML `render` entry must satisfy the
-safe [render profile](../artifacts/RENDER.md). A reporter that crashes, writes no report, or emits an unsafe render entry
-fails certification. A Coworld with no reporters certifies unchanged.
-
-### Determinism
-
-Reporters are not required to produce byte-identical output across runs over identical inputs, but should do so when
-feasible. Deterministic outputs enable caching, reproducible tests, and easier agent debugging.
+Reporters are not required to produce byte-identical output across runs over identical inputs, but
+should when feasible (LLM-driven reporters naturally will not be). Deterministic outputs enable
+caching, reproducible tests, and easier agent debugging.
 
 ## How it fits with other roles
 
-Reporters live in the post-episode analysis layer. They turn episode evidence into narrative, time-series, categorical
-event, trace, or visualization signals that humans and downstream roles consume. The optimizer is the center of gravity:
-reporters are one of its sensory organs, alongside graders and diagnosers.
-
-The paintarena example reporters (`paint_arena_summarizer.py`, `stats_reporter.py`) run on the
-`COGAME_REPORT_REQUEST` process contract and write an in-zip `manifest.json` flagging their `render` / `event_log`
-outputs. That manifest is reporter-owned metadata, not a platform requirement. Richer production reporters live in
-[`Metta-AI/coworld-tools/reporters`](https://github.com/Metta-AI/coworld-tools/tree/main/reporters).
+Reporters live in the post-episode analysis layer. They turn episode evidence into narrative,
+time-series, categorical-event, or visualization signals that humans and downstream roles consume.
+The optimizer is the center of gravity: reporters are one of its sensory organs, alongside graders
+and diagnosers. Chained reports — a reporter consuming another reporter's typed outputs via the
+`reports` tool — are first-class in v2.
 
 ## Future directions
 
-The following are deliberately out of scope for v1; they are listed so future contributors know they have been
-considered but deferred until a real use case lands.
+Deliberately deferred until a real need lands:
 
-- **Schema-level purpose/output format.** The manifest should eventually carry reporter `purpose` and `output_format`
-  fields directly. That is not enforced today.
-- **Named-format registry.** A future `output_format` form can reference a named format so common machine-readable shapes
-  do not restate their schema inline.
-- **Default renderer.** A Coworld manifest could mark one reporter as its default renderer. Observatory would then run
-  that reporter and render its output alongside the episode page. The manifest-level marker is not yet defined.
-- **Chained reports.** A reporter could consume another reporter's output as part of its input. Chaining will be added
-  when a real chained reporter ships.
+- **WASI 0.3 world** — native async and `stream<u8>` results (replay streaming, LLM streaming).
+  Worlds are versioned and accepted side by side, so this is an additive release.
+- **Output catalog extensions** — `render-bundle` (multi-file HTML), `timeseries`, WIT-valued
+  machine parts. Additions are catalog version bumps.
+- **Certification-in-depth** — smoke runs, output conformance, behavioral checks.
+- **Broadening the reporter key to data reads** — single-credential headless external reporters.
+  Additive (key auth is its own branch in the outputs route) but needs a permission model first;
+  today external reporters read with their operator's normal user auth.
+- **Live reporting** over in-progress entities — out of scope; frequent scheduled runs cover the
+  near-term need.
 
 ## See Also
 
-- [`artifacts/EPISODE_BUNDLE.md`](../artifacts/EPISODE_BUNDLE.md) — episode bundle consumed by graders, diagnosers, and
-  user-facing downloads.
-- [`artifacts/REPORT.md`](../artifacts/REPORT.md) — report zip produced by process reporters and hosted reporter services.
-- [`artifacts/EVENT_LOG.md`](../artifacts/EVENT_LOG.md) — optional structured event log inside a report zip.
-- [`artifacts/TRACE.md`](../artifacts/TRACE.md) — optional machine-readable trace inside a report zip.
-- [`COWORLD_MANIFEST.md`](../COWORLD_MANIFEST.md) — manifest guide and generated-schema pointer.
-- [`README.md`](../README.md) — role status framework, runnable conventions, and artifact flow.
-- [`GRADER.md`](GRADER.md), [`DIAGNOSER.md`](DIAGNOSER.md), [`OPTIMIZER.md`](OPTIMIZER.md) — sibling supporting
-  runnables that may consume reporter output.
-- [`GAME.md`](GAME.md), [`PLAYER.md`](PLAYER.md) — the in-flight roles whose output reporters consume.
+- [`artifacts/REPORT.md`](../artifacts/REPORT.md) — typed output parts and the output catalog.
+- [`artifacts/TRACE.md`](../artifacts/TRACE.md) — the host-written run trace.
+- [`artifacts/EVENT_LOG.md`](../artifacts/EVENT_LOG.md) — the fixed Parquet schema behind the
+  `event-log` part type.
+- [`artifacts/RENDER.md`](../artifacts/RENDER.md) — the safe render profile behind `render-html`.
+- [`COWORLD_MANIFEST.md`](../COWORLD_MANIFEST.md) — manifest guide, including reporter references.
+- [`README.md`](../README.md) — role status framework and artifact flow.
+- [`GRADER.md`](GRADER.md), [`DIAGNOSER.md`](DIAGNOSER.md), [`OPTIMIZER.md`](OPTIMIZER.md) —
+  sibling roles that may consume reporter output.
+- [`GAME.md`](GAME.md), [`PLAYER.md`](PLAYER.md) — the in-flight roles whose output reporters
+  consume.

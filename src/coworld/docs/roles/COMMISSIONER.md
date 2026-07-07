@@ -735,9 +735,9 @@ hook; and the commissioner eventually closes the round with [round decisions](..
 
 Unlike grader, diagnoser, and optimizer — all of which consume _individual_ episode evidence after episodes finish — the
 commissioner consumes a stream of episode results in aggregate during a round and emits round-level decisions. The
-target [reporter](REPORTER.md) runtime is the other supporting role with a long-lived WebSocket service contract, but it
-is driven through one `/reporter` request per report, receives bundle URI(s) plus an output URI, and writes per-report
-zip artifacts rather than round decisions.
+[reporter](REPORTER.md) (v2, spec 0061) is likewise run-scoped rather than round-scoped: a submitted Wasm program the
+platform instantiates per run, which reads evidence through its tool belt and emits typed output parts rather than
+round decisions.
 
 See [`README.md`](../README.md) for the full artifact and control-flow diagram.
 

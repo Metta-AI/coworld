@@ -48,8 +48,10 @@ Optional: `run`, `env`, `source_url`, `repository_url`
 - Player logs are included in the episode bundle
 
 ### Reporter
-- Reads `COGAME_REPORT_REQUEST` (direct episode artifact refs), writes zip to request `report_uri`
-- Report zip: manifest.json + renderable files + optional event_log.parquet + optional trace
+- Not a container (spec 0061): the manifest `reporter[]` section holds references — `{"reporter": "name@version"}`
+  for a platform reporter version, or `{"wasm": "./path.wasm", "id": ..., "attributes": ...}` for a wasm component the
+  package builds and submits at upload
+- Runs platform-side in the Bureau against the `softmax:reporter` wasm world; see `docs/roles/REPORTER.md`
 
 ### Grader
 - Reads `COGAME_EPISODE_BUNDLE_URI`, writes JSON to `COGAME_GRADE_URI`

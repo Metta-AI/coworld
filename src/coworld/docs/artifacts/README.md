@@ -20,10 +20,10 @@ consumes something; artifact pages describe the thing itself.
 
 | Artifact | Producer | Where it appears |
 | --- | --- | --- |
-| [Report](REPORT.md) | Reporter | `/reporter` services and process reporters write a zip to request `report_uri` |
-| [Render](RENDER.md) | Reporter | Safe embeddable `.md`/`.html` entry the platform renders from a report zip |
-| [Event log](EVENT_LOG.md) | Reporter | Optional Parquet entry inside a report zip |
-| [Trace](TRACE.md) | Reporter | Optional JSON/JSONL entry inside a report zip |
+| [Report outputs](REPORT.md) | Reporter | Declared, typed output parts emitted via the `output` tool, stored per part (spec 0061) |
+| [Render](RENDER.md) | Reporter | Safe self-contained `render-html`/`render-markdown` output part the platform embeds |
+| [Event log](EVENT_LOG.md) | Reporter | `event-log` output part — host-written Parquet with the fixed 4-column schema |
+| [Trace](TRACE.md) | Platform host | Host-written `trace.jsonl` audit record beside a run's output parts |
 | [Grade](GRADE.md) | Grader | `COGAME_GRADE_URI` JSON |
 | [Diagnosis](DIAGNOSIS.md) | Diagnoser | `COGAME_DIAGNOSIS_URI` zip |
 | [Optimizer outputs](OPTIMIZER_OUTPUTS.md) | Optimizer | Workbench side effects and optional plan artifacts |

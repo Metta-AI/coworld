@@ -1012,8 +1012,8 @@ validates results, verifies the replay artifact is present and loadable, confirm
 implemented supporting-role probes. Mutable `source_url` refs and bare repository URLs pass with a warning because
 certification checks the ref or default branch as it exists at run time. Replay-load verification starts the game image
 in replay mode with `COGAME_LOAD_REPLAY_URI` and verifies `GET /client/replay`; it waits for a frame from the `/replay` WebSocket.
-Reporters run against the certification episode; commissioners are probed over `/healthz` and `/round`. `upload-coworld`
-certifies again before uploading the manifest and runnable images.
+Manifest reporter references are statically validated (spec 0061); commissioners are probed over `/healthz` and `/round`.
+`upload-coworld` certifies again before uploading the manifest and runnable images.
 
 `certify` also writes `certification_report.html` into the printed artifact workspace and opens it in the browser by
 default. The report is a local transcript view with each step's pass/fail status, failure reason, artifact paths, and
