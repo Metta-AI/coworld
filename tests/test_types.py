@@ -105,6 +105,39 @@ def test_manifest_rejects_wrong_role_section_type() -> None:
         _manifest(player_type="grader")
 
 
+def test_manifest_drops_legacy_container_reporter() -> None:
+    """Backward-compat: manifests stored before the spec-0061 cutover carry a
+    container-shaped reporter ({id,name,type,image,env,run,description}) that
+    matches neither reference arm. The parser must drop it, not 500 — this is
+    the Heartleaf xreq-500 regression."""
+    data = _manifest_data()
+    data["reporter"] = [
+        {
+            "id": "default-reporter",
+            "name": "Default Reporter",
+            "type": "reporter",
+            "image": "img_a711755f-fd27-4235-8d70-634dabecb470",
+            "env": {},
+            "run": [],
+            "description": "Default Coworld reporter for generic episode artifacts.",
+        }
+    ]
+    manifest = CoworldManifest.model_validate(data)
+    assert manifest.reporter == []
+
+
+def test_manifest_keeps_references_and_drops_only_legacy() -> None:
+    data = _manifest_data()
+    data["reporter"] = [
+        {"id": "legacy", "name": "L", "type": "reporter", "image": "img_x"},
+        {"reporter": "example/reporter@1"},
+        {"wasm": "reporters/recap.wasm", "id": "recap", "attributes": {"purpose": "p", "world": "w", "outputs": []}},
+    ]
+    manifest = CoworldManifest.model_validate(data)
+    kept = [r.reporter if hasattr(r, "reporter") else r.wasm for r in manifest.reporter]
+    assert kept == ["example/reporter@1", "reporters/recap.wasm"]
+
+
 def test_manifest_rejects_wrong_grader_section_type() -> None:
     manifest = _manifest_data()
     manifest["grader"][0]["type"] = "player"
@@ -153,14 +186,18 @@ def test_manifest_reporter_rejects_malformed_platform_references(reference: str)
         CoworldManifest.model_validate(manifest)
 
 
-def test_manifest_reporter_rejects_container_runnable_entries() -> None:
+def test_manifest_reporter_drops_container_runnable_entries() -> None:
+    # Spec 0061 retired container reporters, but manifests uploaded before the
+    # cutover still persist them. Rather than reject the whole manifest (which
+    # 500'd every backend re-parse — the Heartleaf xreq regression), legacy
+    # container-shaped reporter entries are dropped on parse. See
+    # CoworldManifest._drop_legacy_container_reporters.
     manifest = _manifest_data()
     manifest["reporter"] = [
         {"id": "reporter", "type": "reporter", "image": "reporter", "name": "R", "description": "R."}
     ]
 
-    with pytest.raises(ValidationError):
-        CoworldManifest.model_validate(manifest)
+    assert CoworldManifest.model_validate(manifest).reporter == []
 
 
 @pytest.mark.parametrize("section", ["reporter", "commissioner", "grader"])

@@ -398,6 +398,33 @@ class CoworldManifest(BaseModel):
         ),
     )
 
+    @field_validator("reporter", mode="before")
+    @classmethod
+    def _drop_legacy_container_reporters(cls, value: object) -> object:
+        """Backward-compat shim (spec 0061 cutover): tolerate manifests stored
+        before reporters became references.
+
+        Every Coworld uploaded before the cutover persisted its reporter as a
+        container runnable (``{id, name, type, image, env, run, ...}``), which
+        matches neither reference arm and trips ``extra="forbid"`` — so the
+        backend 500s the moment it re-parses any legacy manifest (experience
+        requests, episode dispatch, coworld detail, certification, …). Those
+        container reporters no longer run in any case, and the reporter section
+        is now optional, so drop legacy-shaped entries instead of rejecting the
+        whole manifest. A reference entry (carries ``reporter`` or ``wasm``) is
+        left untouched for the union to validate normally.
+
+        TODO(reporters): remove once stored manifests are migrated to reference
+        shape; tracked as the proper follow-up fix.
+        """
+        if not isinstance(value, list):
+            return value
+        return [
+            entry
+            for entry in value
+            if not (isinstance(entry, dict) and "reporter" not in entry and "wasm" not in entry)
+        ]
+
     @model_validator(mode="after")
     def validate_role_types(self) -> "CoworldManifest":
         for section in MANIFEST_ROLE_SECTIONS:
