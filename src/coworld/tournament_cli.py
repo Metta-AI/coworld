@@ -411,9 +411,7 @@ def register_tournament_commands(app: typer.Typer) -> None:
         json_output: Annotated[bool, typer.Option("--json", help="Print raw JSON.")] = False,
     ) -> None:
         with CoworldApiClient.from_login(server_url=server) as client:
-            episode = client.get_episode_request(episode_request_id)
-            job_id = _require_job_id(episode)
-            stats = client.get_job_episode_stats(job_id)
+            stats = client.get_episode_request_episode_stats(episode_request_id)
         if json_output:
             emit_json(stats.model_dump(mode="json"))
             return

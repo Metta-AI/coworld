@@ -948,19 +948,25 @@ Ownership-scoped raw routes:
 ```text
 GET /v2/episode-requests
 GET /v2/episode-requests/ereq_...
+GET /v2/episode-requests/ereq_.../episode-stats
 GET /v2/episode-requests/ereq_.../artifacts/{spec|game-config|results|logs|error-info}
 GET /v2/episode-requests/ereq_.../{policy_version_id}/policy-logs/{agent_idx}
 ```
 
-The `/jobs/{job_id}/...` helpers on the client (`get_job_episode_stats`, `get_job_artifact_bytes`,
-`list_job_policy_logs`, `get_job_policy_log`) hit team-only routes; non-team accounts get 403. Softmax team accounts can
-use them for raw `results`/`replay` bytes and per-agent logs by `job_id`:
+Stats and results go through ownership-scoped v2 client helpers keyed by `ereq_...` — a participant
+reads their own episode, the requester and Softmax team read any episode:
+
+```python
+    stats = client.get_episode_request_episode_stats(episode.id)                    # ownership-scoped
+    results_bytes = client.get_episode_request_artifact_bytes(episode.id, "results")  # ownership-scoped
+```
+
+Raw `replay` bytes and per-agent logs still come from the team-only `/jobs/{job_id}/...` routes
+(`get_job_artifact_bytes`, `list_job_policy_logs`, `get_job_policy_log`); non-team accounts get 403:
 
 ```python
     job_id = episode.job_id
     assert job_id is not None
-    stats = client.get_job_episode_stats(job_id)                                    # team-only
-    results_bytes = client.get_job_artifact_bytes(job_id, "results")                # team-only
     replay_bytes = client.get_job_artifact_bytes(job_id, "replay")                  # team-only
     player_logs = client.list_job_policy_logs(job_id)                               # team-only
 ```

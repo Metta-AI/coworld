@@ -667,11 +667,11 @@ class CoworldApiClient:
             params["policy_version_id"] = str(policy_version_id)
         return self._get("/v2/competition-events", list[CompetitionEventPublic], params=params)
 
-    def get_job_episode_stats(self, job_id: UUID) -> EpisodeStatsResponse:
-        return self._get(f"/jobs/{job_id}/episode-stats", EpisodeStatsResponse)
-
     def get_job_artifact_bytes(self, job_id: UUID, artifact_type: str) -> bytes:
         return self.get_bytes(f"/jobs/{job_id}/artifacts/{artifact_type}")
+
+    def get_episode_request_episode_stats(self, episode_request_id: str) -> EpisodeStatsResponse:
+        return self._get(f"/v2/episode-requests/{episode_request_id}/episode-stats", EpisodeStatsResponse)
 
     def get_episode_request_artifact_bytes(self, episode_request_id: str, artifact_type: str) -> bytes:
         return self.get_bytes(f"/v2/episode-requests/{episode_request_id}/artifacts/{artifact_type}")

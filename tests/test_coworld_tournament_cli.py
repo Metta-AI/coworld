@@ -119,12 +119,7 @@ def test_replays_downloads_mine_division_replays(
 
 def test_episode_stats_prints_job_stats_json(httpserver: HTTPServer, monkeypatch: pytest.MonkeyPatch) -> None:
     httpserver.expect_request(
-        f"/observatory/v2/episode-requests/{EPISODE_REQUEST_ID}",
-        method="GET",
-        headers={"Authorization": "Bearer token"},
-    ).respond_with_json(_episode_request(episode_request_id=EPISODE_REQUEST_ID, replay_url=None))
-    httpserver.expect_request(
-        f"/observatory/jobs/{JOB_ID}/episode-stats",
+        f"/observatory/v2/episode-requests/{EPISODE_REQUEST_ID}/episode-stats",
         method="GET",
         headers={"Authorization": "Bearer token"},
     ).respond_with_json(
