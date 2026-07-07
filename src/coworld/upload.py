@@ -43,6 +43,7 @@ _HOSTED_SMOKE_SUCCESS_STATUSES = {"completed"}
 # coworld can't masquerade as smoke results.
 _HOSTED_SMOKE_EPISODE_SOURCE = "coworld_upload"
 _CERTIFICATION_CACHE_VERSION = "coworld-certification-v1"
+_PACKAGE_ROOT = Path(__file__).parent
 _DOCKER_AUTH_CONFIG_KEYS = {"auths", "credsStore", "credHelpers"}
 DOWNLOAD_AGENTS_MD = """# AGENTS.md
 
@@ -1425,11 +1426,39 @@ def _certification_cache_key(manifest_path: Path, *, manifest: dict[str, object]
     manifest_data = manifest if manifest is not None else json.loads(manifest_path.read_text(encoding="utf-8"))
     key = {
         "cache_version": _CERTIFICATION_CACHE_VERSION,
+        "certifier_code": _certification_code_digest(),
         "manifest": _sha256_digest(manifest_path.read_bytes()),
         "transcript": _sha256_digest(EXECUTABLE_TRANSCRIPT_PATH.read_bytes()),
         "local_images": _certification_local_image_hashes(manifest_data),
     }
     return _sha256_digest(json.dumps(key, sort_keys=True, separators=(",", ":")).encode())
+
+
+def _certification_code_digest() -> str:
+    # Certification behavior lives in code, not just the transcript, and the certifier
+    # delegates across the package (report validation, runner helpers, schema files) —
+    # hash every source and schema file under the package root so any release that
+    # changes certification behavior invalidates cached certifications. Source hashing
+    # (vs package version) also invalidates for editable installs and works under
+    # bazel, where coworld is not an installed distribution. examples/ is excluded:
+    # certification never imports it, and it is a third of the package by bytes, so
+    # example churn would spuriously re-certify every manifest.
+    hasher = hashlib.sha256()
+    for source_path in sorted(_PACKAGE_ROOT.rglob("*")):
+        relative = source_path.relative_to(_PACKAGE_ROOT)
+        if relative.parts[0] == "examples":
+            continue
+        if source_path.suffix not in (".py", ".json") or not source_path.is_file():
+            continue
+        # Length-prefixed frames: without them, moving bytes across a path/content or
+        # file/file boundary could alias two different trees to the same digest.
+        path_bytes = relative.as_posix().encode()
+        content = source_path.read_bytes()
+        hasher.update(len(path_bytes).to_bytes(8, "big"))
+        hasher.update(path_bytes)
+        hasher.update(len(content).to_bytes(8, "big"))
+        hasher.update(content)
+    return f"sha256:{hasher.hexdigest()}"
 
 
 def _certification_local_image_hashes(manifest: dict[str, object]) -> dict[str, str]:
@@ -1446,7 +1475,9 @@ def _load_string_cache(cache_path: Path) -> dict[str, str]:
         return {}
     try:
         cache = json.loads(cache_path.read_text(encoding="utf-8"))
-    except (OSError, json.JSONDecodeError):
+    # ValueError covers every decode/parse corruption mode (UnicodeDecodeError and
+    # json.JSONDecodeError are both subclasses); a corrupt best-effort cache is a miss.
+    except (OSError, ValueError):
         return {}
     if not isinstance(cache, dict):
         return {}

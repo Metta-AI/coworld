@@ -15,14 +15,17 @@ from typer.testing import CliRunner
 
 from coworld.cli import app
 from coworld.upload import (
+    _PACKAGE_ROOT,
     _REGISTRY_UPLOAD_TIMEOUT,
     ContainerImageResponse,
     CoworldUploadClient,
     CoworldUploadResponse,
     _certification_cache_key,
+    _certification_code_digest,
     _certified_manifest_cache_path,
     _docker_archive_client_hash,
     _load_current_token,
+    _load_string_cache,
     _local_image_client_hash,
     _local_image_tag,
     _manifest_image_fields,
@@ -397,6 +400,84 @@ def test_upload_coworld_caches_successful_certification(
     assert json.loads(_certified_manifest_cache_path().read_text(encoding="utf-8")) == {
         _certification_cache_key(manifest_path.resolve()): "certified"
     }
+
+
+def test_certification_cache_key_changes_with_certifier_code(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    manifest_path = _write_manifest(tmp_path)
+    monkeypatch.setattr("coworld.upload._local_image_client_hash", lambda image: "sha256:runtime")
+
+    monkeypatch.setattr("coworld.upload._certification_code_digest", lambda: "sha256:certifier-v1")
+    key_v1 = _certification_cache_key(manifest_path)
+    key_v1_again = _certification_cache_key(manifest_path)
+    monkeypatch.setattr("coworld.upload._certification_code_digest", lambda: "sha256:certifier-v2")
+    key_v2 = _certification_cache_key(manifest_path)
+
+    assert key_v1 == key_v1_again
+    assert key_v1 != key_v2
+
+
+def test_certification_code_digest_covers_the_whole_package(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    covered = {
+        p.relative_to(_PACKAGE_ROOT).as_posix()
+        for p in _PACKAGE_ROOT.rglob("*")
+        if p.suffix in (".py", ".json") and p.is_file() and p.relative_to(_PACKAGE_ROOT).parts[0] != "examples"
+    }
+    # The certifier's dependency surface must be inside the digest: its own module,
+    # the manifest types, and the report/runner helpers it delegates to. examples/
+    # is deliberately excluded — certification never imports it.
+    assert {"certifier.py", "types.py", "report.py"} <= covered
+    assert "runner/runner.py" in covered
+    assert not any(path.startswith("examples/") for path in covered)
+
+    # The digest reflects file contents anywhere in the covered tree, and framing
+    # keeps distinct trees distinct even when bytes shift across boundaries.
+    fake_root = tmp_path / "coworld"
+    (fake_root / "runner").mkdir(parents=True)
+    (fake_root / "__init__.py").write_text("", encoding="utf-8")
+    (fake_root / "certifier.py").write_text("STEP = 1\n", encoding="utf-8")
+    (fake_root / "runner" / "runner.py").write_text("TIMEOUT = 5\n", encoding="utf-8")
+    monkeypatch.setattr("coworld.upload._PACKAGE_ROOT", fake_root)
+
+    baseline = _certification_code_digest()
+    assert _certification_code_digest() == baseline  # deterministic
+    (fake_root / "runner" / "runner.py").write_text("TIMEOUT = 6\n", encoding="utf-8")
+    changed = _certification_code_digest()
+    assert changed != baseline
+
+    (fake_root / "examples").mkdir()
+    (fake_root / "examples" / "demo.py").write_text("IGNORED = True\n", encoding="utf-8")
+    assert _certification_code_digest() == changed  # examples/ churn never invalidates
+
+
+def test_certification_code_digest_frames_path_and_content(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    # Two trees whose concatenated path+content bytes are identical must not collide.
+    root_a = tmp_path / "a" / "coworld"
+    root_a.mkdir(parents=True)
+    (root_a / "a.py").write_bytes(b"AAAb.pyBBB")
+    root_b = tmp_path / "b" / "coworld"
+    root_b.mkdir(parents=True)
+    (root_b / "a.py").write_bytes(b"AAA")
+    (root_b / "b.py").write_bytes(b"BBB")
+
+    monkeypatch.setattr("coworld.upload._PACKAGE_ROOT", root_a)
+    digest_a = _certification_code_digest()
+    monkeypatch.setattr("coworld.upload._PACKAGE_ROOT", root_b)
+    digest_b = _certification_code_digest()
+
+    assert digest_a != digest_b
+
+
+def test_load_string_cache_treats_corrupt_bytes_as_empty(tmp_path: Path) -> None:
+    cache_path = tmp_path / "cache.json"
+    cache_path.write_bytes(b"\xff\xfe\x00corrupt")
+
+    assert _load_string_cache(cache_path) == {}
 
 
 def test_upload_coworld_certification_cache_includes_local_image_content(
