@@ -40,7 +40,7 @@ PLAY_GUIDE_URI_PREFIXES = (
     "https://github.com/Metta-AI/coworld-tribal-village/blob/main/docs/play_tribal_village.md",
 )
 SOURCE_MANIFEST_REFERENCE_COUNTS = {
-    "${GAME_CONTEXT}/coworld_manifest.json": 6,
+    "${GAME_CONTEXT}/coworld_manifest.json": 7,
     "${GAME_CONTEXT}/coworld_manifest_template.json": 3,
     "${GAME_CONTEXT}/coworld/coworld_manifest_template.json": 1,
     "${GAME_CONTEXT}/coworld_four_score_manifest_template.json": 1,
@@ -363,6 +363,10 @@ def test_external_canonical_manifests_live_with_source_repos() -> None:
             "GAME_CONTEXT=/path/to/coworld-hungercog",
             "../coworld-hungercog/coworld_manifest.json",
         ),
+        "infinite_blocks": (
+            "GAME_CONTEXT=/path/to/coworld-infinite-blocks",
+            "../coworld-infinite-blocks/coworld_manifest.json",
+        ),
         "overcogged": (
             "GAME_CONTEXT=/path/to/coworld-overcogged",
             "../coworld-overcogged/coworld_manifest.json",
@@ -455,6 +459,7 @@ def _world_compose_files() -> tuple[Path, ...]:
         WORLDS / "four_score" / "compose.yaml",
         WORLDS / "crewrift" / "compose.yaml",
         WORLDS / "hungercog" / "compose.yaml",
+        WORLDS / "infinite_blocks" / "compose.yaml",
         WORLDS / "overcogged" / "compose.yaml",
         WORLDS / "paintarena" / "compose.yaml",
         WORLDS / "tribal_fortress" / "compose.yaml",
