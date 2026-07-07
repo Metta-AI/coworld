@@ -1,0 +1,158 @@
+// softmax:reporter — the reporter v2 authoring contract (spec 0061).
+//
+// A reporter is a wasm component that targets this world: it exports `run` and
+// imports only these tool interfaces plus minimal WASI (clocks, random, and a
+// preopened /scratch filesystem provided by the host). Static validation at
+// submission rejects components whose imports fall outside this world.
+//
+// Worlds are versioned and accepted side by side; signatures here are
+// request/response-shaped so a future WASI 0.3 world (async, stream<u8>) is an
+// additive re-release.
+package softmax:reporter@0.1.0;
+
+interface types {
+  /// One run's input, as passed to the exported `run`.
+  record run-request {
+    /// Platform run id (rrun_...), echoed in traces and outputs.
+    run-id: string,
+    /// What the report is about.
+    subject: subject,
+    /// Opaque per-run configuration, JSON-encoded. Reporter-defined.
+    params: option<string>,
+  }
+
+  /// The entity a run reports over. Resolved to terminal episodes by the
+  /// platform where applicable (e.g. a round resolves at claim time).
+  variant subject {
+    /// Explicit episode-request ids (ereq_...).
+    episodes(list<string>),
+    /// One round id (round_...).
+    round(string),
+    /// One league id.
+    league(string),
+    /// One player id (player_...).
+    player(string),
+    /// Reporter-defined: discover via tools, driven by params.
+    freeform,
+  }
+
+  record run-summary {
+    /// Number of output parts emitted.
+    parts-emitted: u32,
+  }
+
+  /// Uniform tool failure surface; every case carries a human-readable
+  /// message. budget-exhausted is recoverable: the reporter may still emit
+  /// already-computed declared outputs.
+  variant tool-error {
+    not-found(string),
+    forbidden(string),
+    budget-exhausted(string),
+    invalid(string),
+    internal(string),
+  }
+}
+
+/// Episode artifact access, by episode-request id. Typed sugar over the same
+/// platform read layer as `platform.get`, under the run's principal.
+interface episodes {
+  use types.{tool-error};
+
+  /// results.json bytes for a terminal episode.
+  results: func(ereq: string) -> result<list<u8>, tool-error>;
+  /// Decompressed replay bytes.
+  replay: func(ereq: string) -> result<list<u8>, tool-error>;
+  /// Combined game log text.
+  game-logs: func(ereq: string) -> result<string, tool-error>;
+  /// One player slot's log text.
+  player-logs: func(ereq: string, pos: u32) -> result<string, tool-error>;
+  /// Synthesized failure info JSON for failed episodes, if any.
+  error-info: func(ereq: string) -> result<option<string>, tool-error>;
+}
+
+/// Read-only platform queries: an allowlisted subset of the platform's v2
+/// read API. `path` is the route path (e.g. "/v2/leagues"), `query` the URL
+/// query string. Returns the JSON response body.
+interface platform {
+  use types.{tool-error};
+
+  get: func(path: string, query: string) -> result<string, tool-error>;
+}
+
+/// Other reporters' completed outputs — typed, described chained reports.
+interface reports {
+  use types.{tool-error};
+
+  /// JSON list of completed runs matching a query (reporter, subject, ...).
+  list-runs: func(query: string) -> result<string, tool-error>;
+  /// JSON part listing for one completed run: name, type, description,
+  /// size, content hash.
+  output: func(run-id: string) -> result<string, tool-error>;
+  /// One part's bytes.
+  fetch: func(run-id: string, part: string) -> result<list<u8>, tool-error>;
+}
+
+/// LLM access via the platform's metered Bedrock client. Calls are signed by
+/// the host, stamped with run attribution metadata, priced against the run's
+/// LLM budget, and recorded in the trace.
+interface llm {
+  use types.{tool-error};
+
+  /// Bedrock Converse. `messages` and the return value are the Bedrock
+  /// Converse JSON shapes; `opts` carries inference config JSON.
+  converse: func(model: string, messages: string, opts: option<string>) -> result<string, tool-error>;
+  /// Raw InvokeModel with a model-native JSON body.
+  invoke: func(model: string, body: string) -> result<string, tool-error>;
+}
+
+/// Typed output emission. Every part must be declared (name + catalog type +
+/// description) in the reporter version's attributes; emit validates
+/// synchronously and returns typed errors the reporter can react to.
+interface output {
+  use types.{tool-error};
+
+  /// One event-log row (the fixed 4-column schema; see EVENT_LOG.md).
+  record event {
+    ts: u64,
+    player: s64,
+    key: string,
+    value: string,
+  }
+
+  record file-payload {
+    media-type: string,
+    bytes: list<u8>,
+  }
+
+  /// The v1 output catalog (spec 0061). Additions are additive releases.
+  variant part-value {
+    /// Self-contained HTML; must pass the safe render profile.
+    render-html(string),
+    render-markdown(string),
+    /// Host writes the Parquet with pinned deterministic settings.
+    event-log(list<event>),
+    /// Validated against the schema URI declared for the part.
+    json(string),
+    /// Escape hatch: raw bytes with a declared media type.
+    file(file-payload),
+  }
+
+  /// Emit one declared part. Last write wins if a name is emitted twice.
+  emit: func(name: string, value: part-value) -> result<_, tool-error>;
+  /// Progress heartbeat, surfaced on the run row.
+  progress: func(pct: u8, note: string);
+  /// Guest log line, interleaved into the trace as an annotation.
+  log: func(level: string, msg: string);
+}
+
+world reporter {
+  use types.{run-request, run-summary};
+
+  import episodes;
+  import platform;
+  import reports;
+  import llm;
+  import output;
+
+  export run: func(request: run-request) -> result<run-summary, string>;
+}
