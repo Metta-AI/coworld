@@ -97,12 +97,12 @@ def write_data(uri: str, data: bytes) -> None:
 def build_plan(manifest: OptimizerCoworldManifest, inputs: OptimizerInputs) -> PaintArenaOptimizerPlan:
     recommendations = [
         "Run the bundled sweep-painter baseline and the target policy on the default PaintArena variant.",
-        "Compare painted_tiles and per-frame territory ownership from the parquet stats reporter.",
+        "Compare painted_tiles and per-frame territory ownership from episode results and replay stats.",
     ]
     if inputs.report_uris:
         recommendations.append("Use the supplied report artifacts to identify low-paint-share intervals.")
     else:
-        recommendations.append("Run Paint Arena Summarizer and Paint Arena Parquet Stats Reporter before iterating.")
+        recommendations.append("Run a platform reporter over recent PaintArena episodes before iterating.")
     if inputs.diagnoser_output_uris:
         recommendations.append("Apply supplied diagnoser advice before changing exploration or movement heuristics.")
     if inputs.grader_output_uris:

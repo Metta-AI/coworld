@@ -4,9 +4,8 @@ from dataclasses import dataclass
 from datetime import datetime, timezone
 from html import escape
 from pathlib import Path
-from typing import Protocol, Sequence
+from typing import Sequence
 
-from coworld.report import ReportManifest
 from coworld.runner.runner import EpisodeArtifacts
 from coworld.types import CoworldTranscript, StepResult, TranscriptStep
 
@@ -20,19 +19,13 @@ class CertificationReportFile:
         return self.path.as_uri()
 
 
-class CertificationReportReporter(Protocol):
-    reporter_id: str
-    manifest: ReportManifest
-    report_path: Path
-
-
 def write_certification_report(
     *,
     manifest_uri: str,
     transcript: CoworldTranscript,
     step_results: list[StepResult],
     artifacts: EpisodeArtifacts,
-    reports: Sequence[CertificationReportReporter] | None = None,
+    reporter_references: Sequence[str] | None = None,
     error: str | None = None,
 ) -> CertificationReportFile:
     path = artifacts.workspace / "certification_report.html"
@@ -43,7 +36,7 @@ def write_certification_report(
             transcript=transcript,
             step_results=step_results,
             artifacts=artifacts,
-            reports=reports or [],
+            reporter_references=reporter_references or [],
             error=error,
         ),
         encoding="utf-8",
@@ -57,7 +50,7 @@ def _render_certification_report(
     transcript: CoworldTranscript,
     step_results: list[StepResult],
     artifacts: EpisodeArtifacts,
-    reports: Sequence[CertificationReportReporter],
+    reporter_references: Sequence[str],
     error: str | None,
 ) -> str:
     result_by_id = {result.id: result for result in step_results if result.status in ("pass", "fail")}
@@ -72,7 +65,8 @@ def _render_certification_report(
 
     rows = "\n".join(_step_block(step, result_by_id.get(step.id)) for step in transcript.steps)
     reporter_rows = (
-        "\n".join(_reporter_row(report) for report in reports) or '<p class="muted">No reporter artifacts.</p>'
+        "\n".join(_reporter_reference_row(line) for line in reporter_references)
+        or '<p class="muted">No reporter references declared.</p>'
     )
     error_block = ""
     if failed_result is not None:
@@ -297,7 +291,7 @@ def _render_certification_report(
       </div>
     </section>
     <section class="reporters">
-      <h2>Reporter Artifacts</h2>
+      <h2>Reporter References</h2>
       {reporter_rows}
     </section>
     <div class="step-list">
@@ -336,13 +330,10 @@ def _step_block(step: TranscriptStep, result: StepResult | None) -> str:
     """
 
 
-def _reporter_row(report: CertificationReportReporter) -> str:
-    render = report.manifest.render or "(no render entry)"
+def _reporter_reference_row(line: str) -> str:
     return f"""
       <div class="reporter-row">
-        <div><strong>{escape(report.reporter_id)}</strong></div>
-        <div class="muted">render={escape(render)}</div>
-        <code class="path">{escape(str(report.report_path))}</code>
+        <code class="path">{escape(line)}</code>
       </div>
     """
 

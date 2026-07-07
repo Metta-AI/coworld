@@ -1,44 +1,26 @@
-"""Report-artifact consumer contract: parse and certify a reporter's output zip.
+"""The safe render profile: reject HTML that is unsafe for the platform to embed.
 
-A reporter writes one zip to the request's ``report_uri`` (see
-``docs/roles/REPORTER.md``). The zip's root holds a ``manifest.json`` that
-self-describes the report (``docs/artifacts/REPORT.md``); a ``render`` entry,
-if present, is the one file platform UI surfaces can embed.
-
-Because reporters are author-supplied and therefore untrusted, the render entry
-must be safe for the platform to embed. ``coworld certify`` enforces the
-**safe render profile** documented in ``docs/artifacts/RENDER.md``: Markdown is
-rendered with raw HTML disabled, and HTML must avoid external resource loads,
-event-handler script hooks, inline scripts, and navigation/embedding sinks.
+Author-supplied HTML renders (today: commissioner round reports; historically
+reporter report zips, retired by spec 0061) are untrusted, so anything a
+platform UI embeds must satisfy the **safe render profile** documented in
+``docs/artifacts/RENDER.md``: no external resource loads, no event-handler
+script hooks, no inline scripts, and no navigation/embedding sinks.
 Platform renderers must also serve the entry inside a sandboxed iframe under a
 strict Content-Security-Policy — that sandbox is the authoritative
 renderer-side boundary; this static check is fast author-facing feedback
 layered in front of it.
 
-The vendored Paint Arena reporter SDK validates the *producer* side (manifest
-extensions) at zip-build time. This module is the *consumer* side: it
-re-validates the manifest and adds the render safety check. The two are
-intentionally separate — the SDK is a snapshot of the reporter SDK now housed
-under ``Metta-AI/coworld-tools/reporters`` and does not know about this
-package's certification policy.
+Wasm reporter outputs (spec 0061) are checked platform-side by the Bureau's
+emit validator, which ports this profile; this module remains the coworld-side
+checker for commissioner round-report certification.
 """
 
 from __future__ import annotations
 
-import io
 import posixpath
-import zipfile
 from html.parser import HTMLParser
 from pathlib import PurePosixPath
 from urllib.parse import urlparse
-
-from pydantic import BaseModel, ConfigDict
-
-# Extensions accepted for each manifest pointer, matching the producer-side
-# contract in the reporter SDK's ``output_manifest.py``.
-RENDERABLE_EXTENSIONS = frozenset({".md", ".html"})
-EVENT_LOG_EXTENSIONS = frozenset({".parquet"})
-TRACE_EXTENSIONS = frozenset({".jsonl", ".json"})
 
 # HTML elements that embed foreign documents or redirect navigation. They have
 # no place in an embeddable report and are rejected outright. ``meta`` is
@@ -59,72 +41,8 @@ LINK_URL_ATTRS = frozenset({"href", "cite", "longdesc"})
 _SCRIPT_URL_SCHEMES = frozenset({"javascript", "vbscript"})
 
 
-class ReportManifest(BaseModel):
-    """The ``manifest.json`` at the root of a report zip.
-
-    Mirrors the producer-side ``OutputManifest`` in the reporter SDK.
-    ``reporter_id`` self-identifies the report; ``render`` / ``event_log`` /
-    ``trace`` are optional in-zip paths to the renderable, structured event
-    log, and machine-readable trace respectively.
-    """
-
-    model_config = ConfigDict(extra="forbid")
-
-    reporter_id: str
-    render: str | None = None
-    event_log: str | None = None
-    trace: str | None = None
-
-
 class ReportRenderError(ValueError):
-    """Raised when a report's ``render`` entry violates the safe render profile."""
-
-
-class ReportValidationError(ValueError):
-    """Raised when a report zip or its ``manifest.json`` is malformed."""
-
-
-def validate_report_zip(zip_bytes: bytes) -> ReportManifest:
-    """Parse and certify a report zip, returning its typed ``manifest.json``.
-
-    Checks that ``manifest.json`` exists and parses, that each declared pointer
-    (``render`` / ``event_log`` / ``trace``) names an in-zip entry with an
-    accepted extension, that a render entry is UTF-8 text, and that an HTML
-    ``render`` entry satisfies the safe render profile.
-    """
-    try:
-        archive = zipfile.ZipFile(io.BytesIO(zip_bytes))
-    except zipfile.BadZipFile as exc:
-        raise ReportValidationError(f"report is not a valid zip: {exc}") from exc
-
-    names = set(archive.namelist())
-    if "manifest.json" not in names:
-        raise ReportValidationError("report zip is missing a top-level manifest.json")
-
-    manifest = ReportManifest.model_validate_json(archive.read("manifest.json"))
-
-    _assert_pointer(manifest.render, "render", names, RENDERABLE_EXTENSIONS)
-    _assert_pointer(manifest.event_log, "event_log", names, EVENT_LOG_EXTENSIONS)
-    _assert_pointer(manifest.trace, "trace", names, TRACE_EXTENSIONS)
-
-    if manifest.render is not None:
-        render_text = archive.read(manifest.render).decode("utf-8")
-        if PurePosixPath(manifest.render).suffix.lower() == ".html":
-            assert_safe_render_html(render_text, source=manifest.render, zip_entries=names)
-
-    return manifest
-
-
-def _assert_pointer(value: str | None, field: str, names: set[str], extensions: frozenset[str]) -> None:
-    if value is None:
-        return
-    if value not in names:
-        raise ReportValidationError(f"manifest.{field}={value!r} is not present in the report zip")
-    ext = PurePosixPath(value).suffix.lower()
-    if ext not in extensions:
-        raise ReportValidationError(
-            f"manifest.{field}={value!r} has extension {ext!r}; expected one of {sorted(extensions)}"
-        )
+    """Raised when a render entry violates the safe render profile."""
 
 
 def assert_safe_render_html(html: str, *, source: str = "render", zip_entries: set[str] | None = None) -> None:

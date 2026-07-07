@@ -230,9 +230,16 @@
           "x-coworld-role-doc": "docs/roles/PLAYER.md"
         },
         "reporter": {
-          "description": "Reporter runnables. Optional; include entries when the Coworld ships reporter containers. Role docs: docs/roles/REPORTER.md.",
+          "description": "Reporter references (spec 0061): platform reporter versions, or wasm components this package builds and submits at upload. Optional; there are no default reporters. Role docs: docs/roles/REPORTER.md.",
           "items": {
-            "$ref": "#/$defs/CoworldManifestRoleSpec"
+            "anyOf": [
+              {
+                "$ref": "#/$defs/CoworldReporterPlatformReference"
+              },
+              {
+                "$ref": "#/$defs/CoworldReporterWasmReference"
+              }
+            ]
           },
           "markdownDescription": "See the [Reporter role](docs/roles/REPORTER.md) documentation for this role's contract.",
           "title": "Reporter",
@@ -320,7 +327,7 @@
       "properties": {
         "type": {
           "description": "Manifest role section this runnable belongs to.",
-          "enum": ["player", "reporter", "commissioner", "grader", "diagnoser", "optimizer"],
+          "enum": ["player", "commissioner", "grader", "diagnoser", "optimizer"],
           "title": "Type",
           "type": "string"
         },
@@ -480,6 +487,49 @@
       "title": "CoworldProtocolDocs",
       "type": "object"
     },
+    "CoworldReporterPlatformReference": {
+      "additionalProperties": false,
+      "description": "Reference to an already-submitted platform reporter version (spec 0061).",
+      "properties": {
+        "reporter": {
+          "description": "Platform reporter version reference, \"owner/name@version\". Reporter names are unique per owner, so the owner (the owning user's id) qualifies the name.",
+          "minLength": 1,
+          "pattern": "^[a-z0-9]+/[a-z0-9][a-z0-9_.-]*@[1-9][0-9]*$",
+          "title": "Reporter",
+          "type": "string"
+        }
+      },
+      "required": ["reporter"],
+      "title": "CoworldReporterPlatformReference",
+      "type": "object"
+    },
+    "CoworldReporterWasmReference": {
+      "additionalProperties": false,
+      "description": "A wasm component this package builds; `coworld upload-coworld` submits it\nthrough the standard reporter upload flow (creating or extending a platform\nreporter named `{coworld-name}-{id}` owned by the submitter \u2014 names cannot\ncontain \"/\", the owner separator) and rewrites the entry to an owner-qualified\nplatform reference before the manifest is uploaded (spec 0061).",
+      "properties": {
+        "wasm": {
+          "description": "Package-relative path to a wasm component targeting the softmax:reporter world.",
+          "minLength": 1,
+          "title": "Wasm",
+          "type": "string"
+        },
+        "id": {
+          "description": "Reporter id; the platform name becomes {coworld-name}-{id}.",
+          "minLength": 1,
+          "title": "Id",
+          "type": "string"
+        },
+        "attributes": {
+          "additionalProperties": true,
+          "description": "Reporter version attributes submitted with the component: purpose, world, outputs[] (name/type/description), requested_limits. Validated by the platform at submission.",
+          "title": "Attributes",
+          "type": "object"
+        }
+      },
+      "required": ["wasm", "id", "attributes"],
+      "title": "CoworldReporterWasmReference",
+      "type": "object"
+    },
     "CoworldResourceLimits": {
       "additionalProperties": false,
       "properties": {
@@ -574,7 +624,7 @@
       "properties": {
         "type": {
           "description": "Role contract implemented by this runnable.",
-          "enum": ["game", "player", "reporter", "commissioner", "grader", "diagnoser", "optimizer"],
+          "enum": ["game", "player", "commissioner", "grader", "diagnoser", "optimizer"],
           "title": "Type",
           "type": "string"
         },

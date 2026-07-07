@@ -8,8 +8,8 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator, model_valida
 SCHEMA_VERSION = "https://json-schema.org/draft/2020-12/schema"
 HTTP_URL_PATTERN = r"^https?://"
 JsonSchema = dict[str, Any]
-CoworldRunnableRole = Literal["game", "player", "reporter", "commissioner", "grader", "diagnoser", "optimizer"]
-CoworldManifestRole = Literal["player", "reporter", "commissioner", "grader", "diagnoser", "optimizer"]
+CoworldRunnableRole = Literal["game", "player", "commissioner", "grader", "diagnoser", "optimizer"]
+CoworldManifestRole = Literal["player", "commissioner", "grader", "diagnoser", "optimizer"]
 CoworldEngineRuntime = Literal["mettagrid", "cogweb", "bitworld", "nimgrid"]
 MANIFEST_ROLE_SECTIONS = cast(tuple[CoworldManifestRole, ...], get_args(CoworldManifestRole))
 _FUTURE_REQUIRED_ROLE_COMMENT = "Optional in the current schema; intended to become required as this role stabilizes."
@@ -140,6 +140,44 @@ class CoworldManifestRoleSpec(CoworldRunnableSpec):
             "informational for other roles."
         ),
     )
+
+
+class CoworldReporterPlatformReference(BaseModel):
+    """Reference to an already-submitted platform reporter version (spec 0061)."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    reporter: str = Field(
+        min_length=1,
+        pattern=r"^[a-z0-9]+/[a-z0-9][a-z0-9_.-]*@[1-9][0-9]*$",
+        description='Platform reporter version reference, "owner/name@version". Reporter names are '
+        "unique per owner, so the owner (the owning user's id) qualifies the name.",
+    )
+
+
+class CoworldReporterWasmReference(BaseModel):
+    """A wasm component this package builds; `coworld upload-coworld` submits it
+    through the standard reporter upload flow (creating or extending a platform
+    reporter named `{coworld-name}-{id}` owned by the submitter — names cannot
+    contain "/", the owner separator) and rewrites the entry to an owner-qualified
+    platform reference before the manifest is uploaded (spec 0061)."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    wasm: str = Field(
+        min_length=1,
+        description="Package-relative path to a wasm component targeting the softmax:reporter world.",
+    )
+    id: str = Field(min_length=1, description="Reporter id; the platform name becomes {coworld-name}-{id}.")
+    attributes: dict[str, Any] = Field(
+        description=(
+            "Reporter version attributes submitted with the component: purpose, world, "
+            "outputs[] (name/type/description), requested_limits. Validated by the platform at submission."
+        ),
+    )
+
+
+CoworldReporterReference = CoworldReporterPlatformReference | CoworldReporterWasmReference
 
 
 class CoworldTextDoc(BaseModel):
@@ -313,9 +351,10 @@ class CoworldManifest(BaseModel):
         description="Bundled player runnables. Role docs: docs/roles/PLAYER.md.",
         json_schema_extra=_role_doc_schema("player"),
     )
-    reporter: list[CoworldManifestRoleSpec] = Field(
+    reporter: list[CoworldReporterReference] = Field(
         default_factory=list,
-        description="Reporter runnables. Optional; include entries when the Coworld ships reporter containers. "
+        description="Reporter references (spec 0061): platform reporter versions, or wasm components this "
+        "package builds and submits at upload. Optional; there are no default reporters. "
         "Role docs: docs/roles/REPORTER.md.",
         json_schema_extra=_role_doc_schema("reporter"),
     )

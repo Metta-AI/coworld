@@ -296,7 +296,7 @@ def certify(
         transcript=result.transcript,
         step_results=result.step_results,
         artifacts=result.artifacts,
-        reports=result.reports,
+        reporter_references=result.reporter_references,
     )
     typer.echo(f"Certified {manifest_uri}")
     typer.echo(f"Transcript: {result.transcript.name} ({len(result.step_results)} steps passed)")
@@ -306,9 +306,8 @@ def certify(
     _echo_replay_paths(result.artifacts)
     typer.echo("Replay liveness: verified /client/replay and /replay")
     typer.echo(f"Logs: {result.artifacts.logs_dir}")
-    for report in result.reports:
-        render = report.manifest.render or "(no render entry)"
-        typer.echo(f"Reporter {report.reporter_id}: render={render} -> {report.report_path}")
+    for reference_line in result.reporter_references:
+        typer.echo(f"Reporter reference: {reference_line}")
     _echo_feedback_commands(manifest_uri, result.artifacts, server=server)
     if open_report:
         webbrowser.open(transcript_report.uri)

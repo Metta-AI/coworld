@@ -2,11 +2,9 @@ from __future__ import annotations
 
 import asyncio
 import importlib
-import io
 import json
 import subprocess
 import time
-import zipfile
 from pathlib import Path
 from types import SimpleNamespace
 from typing import Any, cast
@@ -29,14 +27,13 @@ from coworld.certifier import (
     load_manifest_episode_job_spec,
     load_results,
     request_commissioner_once,
-    run_certification_reporters,
     run_certification_supporting_roles,
+    validate_reporter_references,
     validate_source_references,
 )
 from coworld.commissioner.protocol import LeagueInfo, ScheduleRoundsRequest, ScheduleRoundsResponse
 from coworld.manifest_validation import game_config_with_tokens
 from coworld.play import BedrockAwsEnv, ReplaySession, build_play_links, play_coworld, replay_coworld
-from coworld.report import ReportRenderError
 from coworld.runner.io import RunnerEpisodeError
 from coworld.runner.runner import (
     CONFIG_ENV_VAR,
@@ -471,13 +468,13 @@ def test_validate_source_references_accepts_ancestor_dockerfile(
     source_sha = "0123456789abcdef0123456789abcdef01234567"
     package = _package_with_player_source_url(
         tmp_path,
-        f"https://github.com/Metta-AI/coworld/tree/{source_sha}/src/coworld/examples/paintarena/reporter",
+        f"https://github.com/Metta-AI/coworld/tree/{source_sha}/src/coworld/examples/paintarena/grader",
     )
     calls = []
 
     def fake_get(url, **kwargs):
         calls.append((url, kwargs["params"]))
-        if url.endswith("/contents/src/coworld/examples/paintarena/reporter"):
+        if url.endswith("/contents/src/coworld/examples/paintarena/grader"):
             return httpx.Response(200, json=[{"type": "file", "name": "paint_arena_summarizer.py"}])
         if url.endswith("/contents/src/coworld/examples/paintarena"):
             return httpx.Response(200, json=[{"type": "file", "name": "Dockerfile"}])
@@ -489,7 +486,7 @@ def test_validate_source_references_accepts_ancestor_dockerfile(
 
     assert calls == [
         (
-            "https://api.github.com/repos/Metta-AI/coworld/contents/src/coworld/examples/paintarena/reporter",
+            "https://api.github.com/repos/Metta-AI/coworld/contents/src/coworld/examples/paintarena/grader",
             {"ref": source_sha},
         ),
         ("https://api.github.com/repos/Metta-AI/coworld/contents/src/coworld/examples/paintarena", {"ref": source_sha}),
@@ -589,15 +586,6 @@ def test_certify_coworld_checks_source_references_before_images(
     assert calls == ["source"]
 
 
-def _report_zip(manifest: dict[str, object], entries: dict[str, bytes]) -> bytes:
-    buffer = io.BytesIO()
-    with zipfile.ZipFile(buffer, mode="w") as archive:
-        archive.writestr("manifest.json", json.dumps(manifest))
-        for name, payload in entries.items():
-            archive.writestr(name, payload)
-    return buffer.getvalue()
-
-
 def _seed_certification_artifacts(tmp_path: Path) -> EpisodeArtifacts:
     artifacts = EpisodeArtifacts.create(tmp_path / "cert")
     artifacts.results_path.write_text(json.dumps({"scores": [1.0]}), encoding="utf-8")
@@ -607,49 +595,94 @@ def _seed_certification_artifacts(tmp_path: Path) -> EpisodeArtifacts:
     return artifacts
 
 
-def test_run_certification_reporters_validates_each_report(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    package = _write_package(tmp_path)
-    artifacts = _seed_certification_artifacts(tmp_path)
-    episode_counts: list[int] = []
-
-    def fake_run_reporter(reporter, *, workspace, request_id, episodes, timeout_seconds):
-        episode_counts.append(len(episodes))
-        return _report_zip({"reporter_id": "unit-test-reporter", "render": "summary.md"}, {"summary.md": b"# ok\n"})
-
-    monkeypatch.setattr("coworld.certifier.run_reporter", fake_run_reporter)
-
-    reports = run_certification_reporters(package, artifacts, timeout_seconds=5.0)
-
-    assert [report.reporter_id for report in reports] == ["unit-test-reporter"]
-    assert reports[0].manifest.render == "summary.md"
-    assert episode_counts == [1]
+def _wasm_reporter_reference(wasm: str, **attribute_overrides: object) -> dict[str, object]:
+    attributes: dict[str, object] = {
+        "purpose": "Summarize certification episodes.",
+        "world": "softmax:reporter",
+        "outputs": [{"name": "summary", "type": "markdown", "description": "Episode summary."}],
+        **attribute_overrides,
+    }
+    return {"wasm": wasm, "id": "unit-test-reporter", "attributes": attributes}
 
 
-def test_run_certification_reporters_rejects_unsafe_render(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    package = _write_package(tmp_path)
-    artifacts = _seed_certification_artifacts(tmp_path)
-
-    def fake_run_reporter(reporter, *, workspace, request_id, episodes, timeout_seconds):
-        return _report_zip(
-            {"reporter_id": "unit-test-reporter", "render": "summary.html"},
-            {"summary.html": b"<script>alert(1)</script>"},
-        )
-
-    monkeypatch.setattr("coworld.certifier.run_reporter", fake_run_reporter)
-
-    with pytest.raises(ReportRenderError, match="<script>"):
-        run_certification_reporters(package, artifacts, timeout_seconds=5.0)
-
-
-def test_run_certification_reporters_noops_without_reporters(tmp_path: Path) -> None:
+def _package_with_reporters(tmp_path: Path, reporters: list[dict[str, object]]):
     coworld_manifest_path = _write_package_files(tmp_path)
     manifest = json.loads(coworld_manifest_path.read_text(encoding="utf-8"))
-    manifest["reporter"] = []
+    manifest["reporter"] = reporters
     coworld_manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
-    package = load_coworld_package(coworld_manifest_path)
-    artifacts = _seed_certification_artifacts(tmp_path)
+    return load_coworld_package(coworld_manifest_path)
 
-    assert run_certification_reporters(package, artifacts, timeout_seconds=5.0) == []
+
+def test_validate_reporter_references_records_platform_references(tmp_path: Path) -> None:
+    package = _package_with_reporters(tmp_path, [{"reporter": "paintarena/summarizer@3"}])
+
+    assert validate_reporter_references(package) == ["reporter[0]: platform reference paintarena/summarizer@3"]
+
+
+def test_validate_reporter_references_accepts_bundled_wasm_component(tmp_path: Path) -> None:
+    package = _package_with_reporters(tmp_path, [_wasm_reporter_reference("./reporters/summary.wasm")])
+    wasm_path = package.manifest_path.parent / "reporters" / "summary.wasm"
+    wasm_path.parent.mkdir(parents=True)
+    wasm_path.write_bytes(b"\x00asm")
+
+    assert validate_reporter_references(package) == [
+        "reporter[0]: wasm component ./reporters/summary.wasm (id unit-test-reporter)"
+    ]
+
+
+def test_validate_reporter_references_rejects_absolute_wasm_path(tmp_path: Path) -> None:
+    package = _package_with_reporters(tmp_path, [_wasm_reporter_reference("/etc/summary.wasm")])
+
+    with pytest.raises(ValueError, match="must be package-relative"):
+        validate_reporter_references(package)
+
+
+def test_validate_reporter_references_rejects_wasm_path_escaping_package(tmp_path: Path) -> None:
+    package = _package_with_reporters(tmp_path, [_wasm_reporter_reference("../outside.wasm")])
+    (tmp_path / "outside.wasm").write_bytes(b"\x00asm")
+
+    with pytest.raises(ValueError, match="escapes the package root"):
+        validate_reporter_references(package)
+
+
+def test_validate_reporter_references_rejects_missing_and_empty_wasm(tmp_path: Path) -> None:
+    package = _package_with_reporters(tmp_path, [_wasm_reporter_reference("./missing.wasm")])
+
+    with pytest.raises(ValueError, match="not found"):
+        validate_reporter_references(package)
+
+    (package.manifest_path.parent / "missing.wasm").write_bytes(b"")
+    with pytest.raises(ValueError, match="is empty"):
+        validate_reporter_references(package)
+
+
+def test_validate_reporter_references_requires_purpose_world_and_typed_outputs(tmp_path: Path) -> None:
+    package = _package_with_reporters(
+        tmp_path,
+        [
+            _wasm_reporter_reference(
+                "./summary.wasm",
+                purpose=" ",
+                world="",
+                outputs=[{"name": "summary", "type": "", "description": "Episode summary."}],
+            )
+        ],
+    )
+    (package.manifest_path.parent / "summary.wasm").write_bytes(b"\x00asm")
+
+    with pytest.raises(ValueError) as excinfo:
+        validate_reporter_references(package)
+
+    message = str(excinfo.value)
+    assert "attributes.purpose must be a non-empty string" in message
+    assert "attributes.world must be a non-empty string" in message
+    assert "attributes.outputs[0].type must be a non-empty string" in message
+
+
+def test_validate_reporter_references_noops_without_reporters(tmp_path: Path) -> None:
+    package = _package_with_reporters(tmp_path, [])
+
+    assert validate_reporter_references(package) == []
 
 
 def test_run_certification_supporting_roles_probes_commissioners(
@@ -679,11 +712,11 @@ def test_run_certification_supporting_roles_probes_commissioners(
 
     monkeypatch.setattr("coworld.certifier.run_certification_commissioner", fake_probe)
 
-    reports, feedback = run_certification_supporting_roles(package, artifacts, timeout_seconds=5.0)
+    reporter_references, feedback = run_certification_supporting_roles(package, artifacts, timeout_seconds=5.0)
 
-    assert reports == []
+    assert reporter_references == []
     assert calls == [("unit-test-commissioner", "unit-test-runtime:latest", 5.0)]
-    assert feedback == "reporters run: 0; commissioners probed: 1"
+    assert feedback == "reporter references validated: 0; commissioners probed: 1"
 
 
 def test_request_commissioner_once_accepts_schedule_rounds_response(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -2235,7 +2268,7 @@ def _materialized_template(tmp_path: Path, template_path: Path) -> Path:
         game_image = manifest["game"]["runnable"]["image"]
         if game_image in placeholders:
             manifest["game"]["runnable"]["image"] = placeholders[game_image]
-        for section in ("player", "commissioner", "reporter", "grader", "diagnoser", "optimizer"):
+        for section in ("player", "commissioner", "grader", "diagnoser", "optimizer"):
             if section in manifest:
                 for runnable in manifest[section]:
                     image = runnable["image"]
@@ -2271,15 +2304,7 @@ def _coworld_manifest(
                 "description": "Unit test player.",
             }
         ],
-        "reporter": [
-            {
-                "id": "unit-test-reporter",
-                "name": "Unit Test Reporter",
-                "type": "reporter",
-                "image": "ghcr.io/metta-ai/reporters-default:latest",
-                "description": "Default reporter stub for unit tests.",
-            }
-        ],
+        "reporter": [{"reporter": "softmax/default@1"}],
         "grader": [
             {
                 "id": "unit-test-grader",

@@ -30,15 +30,11 @@ def test_build_coworld_manifest_runs_compose_and_writes_hydrated_manifest(
             {
                 "game": "game-runtime:latest",
                 "player": "player-runtime:latest",
-                "reporter": "ghcr.io/metta-ai/reporters-default:latest",
                 "grader": "ghcr.io/metta-ai/graders-default:latest",
             },
             {
                 "game-runtime:latest": "sha256:1111111111112222222222222222222222222222222222222222222222222222",
                 "player-runtime:latest": "sha256:aaaaaaaaaaaabbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
-                "ghcr.io/metta-ai/reporters-default:latest": (
-                    "sha256:ccccccccccccddddddddddddddddddddddddddddddddddddddddddddddddddddd"
-                ),
                 "ghcr.io/metta-ai/graders-default:latest": (
                     "sha256:eeeeeeeeeeeefffffffffffffffffffffffffffffffffffffffffffffffffffff"
                 ),
@@ -59,6 +55,7 @@ def test_build_coworld_manifest_runs_compose_and_writes_hydrated_manifest(
     assert built_manifest["game"]["version"] == "0.2.0"
     assert built_manifest["game"]["runnable"]["image"] == "game-runtime:coworld-111111111111"
     assert built_manifest["player"][0]["image"] == "player-runtime:coworld-aaaaaaaaaaaa"
+    assert built_manifest["reporter"] == [{"reporter": "softmax/default@1"}]
     template = json.loads(template_path.read_text(encoding="utf-8"))
     assert "version" not in template["game"]
     assert template["game"]["runnable"]["image"] == "{{GAME_IMAGE}}"
@@ -97,26 +94,6 @@ def test_build_coworld_manifest_runs_compose_and_writes_hydrated_manifest(
         ),
         (
             ["docker", "tag", "player-runtime:latest", "player-runtime:coworld-aaaaaaaaaaaa"],
-            {"check": True},
-        ),
-        (
-            [
-                "docker",
-                "image",
-                "inspect",
-                "--format",
-                "{{.Id}}",
-                "ghcr.io/metta-ai/reporters-default:latest",
-            ],
-            {"check": True, "capture_output": True, "text": True},
-        ),
-        (
-            [
-                "docker",
-                "tag",
-                "ghcr.io/metta-ai/reporters-default:latest",
-                "ghcr.io/metta-ai/reporters-default:coworld-cccccccccccc",
-            ],
             {"check": True},
         ),
         (
@@ -183,13 +160,11 @@ def test_build_coworld_manifest_overrides_source_manifest_version(
             {
                 "game": "game-runtime:latest",
                 "player": "player-runtime:latest",
-                "reporter": "ghcr.io/metta-ai/reporters-default:latest",
                 "grader": "ghcr.io/metta-ai/graders-default:latest",
             },
             {
                 "game-runtime:latest": "sha256:111111111111",
                 "player-runtime:latest": "sha256:222222222222",
-                "ghcr.io/metta-ai/reporters-default:latest": "sha256:333333333333",
                 "ghcr.io/metta-ai/graders-default:latest": "sha256:444444444444",
             },
         ),
@@ -211,7 +186,6 @@ def test_build_coworld_manifest_tags_primary_role_images(tmp_path: Path, monkeyp
         include_version=False,
         role_images={
             "commissioner": "{{COMMISSIONER_IMAGE}}",
-            "reporter": "{{REPORTER_IMAGE}}",
             "grader": "{{GRADER_IMAGE}}",
             "optimizer": "{{OPTIMIZER_IMAGE}}",
         },
@@ -224,7 +198,6 @@ def test_build_coworld_manifest_tags_primary_role_images(tmp_path: Path, monkeyp
                 "game": "game-runtime:latest",
                 "player": "player-runtime:latest",
                 "commissioner": "commissioner-runtime:latest",
-                "reporter": "reporter-runtime:latest",
                 "grader": "grader-runtime:latest",
                 "optimizer": "optimizer-runtime:latest",
             },
@@ -232,12 +205,8 @@ def test_build_coworld_manifest_tags_primary_role_images(tmp_path: Path, monkeyp
                 "game-runtime:latest": "sha256:111111111111",
                 "player-runtime:latest": "sha256:222222222222",
                 "commissioner-runtime:latest": "sha256:333333333333",
-                "reporter-runtime:latest": "sha256:444444444444",
                 "grader-runtime:latest": "sha256:555555555555",
                 "optimizer-runtime:latest": "sha256:666666666666",
-                # Defensive: stub reporter is overridden by role_images here, but keep mock entry
-                # in case a future refactor regresses the override.
-                "ghcr.io/metta-ai/reporters-default:latest": "sha256:777777777777",
             },
         ),
     )
@@ -248,7 +217,6 @@ def test_build_coworld_manifest_tags_primary_role_images(tmp_path: Path, monkeyp
     assert built_manifest["game"]["runnable"]["image"] == "game-runtime:coworld-111111111111"
     assert built_manifest["player"][0]["image"] == "player-runtime:coworld-222222222222"
     assert built_manifest["commissioner"][0]["image"] == "commissioner-runtime:coworld-333333333333"
-    assert built_manifest["reporter"][0]["image"] == "reporter-runtime:coworld-444444444444"
     assert built_manifest["grader"][0]["image"] == "grader-runtime:coworld-555555555555"
     assert built_manifest["optimizer"][0]["image"] == "optimizer-runtime:coworld-666666666666"
 
@@ -270,13 +238,11 @@ def test_build_coworld_manifest_preserves_digest_pinned_image_refs(
             {
                 "game": "game-runtime:latest",
                 "player": "player-runtime:latest",
-                "reporter": "ghcr.io/metta-ai/reporters-default:latest",
                 "grader": "ghcr.io/metta-ai/graders-default:latest",
             },
             {
                 "game-runtime:latest@sha256:1111": "sha256:111111111111",
                 "player-runtime:latest@sha256:2222": "sha256:222222222222",
-                "ghcr.io/metta-ai/reporters-default:latest": "sha256:cccccccccccc",
                 "ghcr.io/metta-ai/graders-default:latest": "sha256:dddddddddddd",
             },
             calls,
@@ -305,7 +271,6 @@ def test_build_coworld_manifest_resolves_mutable_registry_image_refs(
         include_version=False,
         role_images={
             "commissioner": "{{COMMISSIONER_IMAGE}}",
-            "reporter": "{{REPORTER_IMAGE}}",
             "grader": "ghcr.io/metta-ai/graders-default:latest",
         },
     )
@@ -318,7 +283,6 @@ def test_build_coworld_manifest_resolves_mutable_registry_image_refs(
                 "game": "game-runtime:latest",
                 "player": "player-runtime:latest",
                 "commissioner": "ghcr.io/metta-ai/commissioners-default:latest",
-                "reporter": "ghcr.io/metta-ai/reporters-default@sha256:cccc",
                 "grader": "grader-runtime:latest",
             },
             {
@@ -332,7 +296,6 @@ def test_build_coworld_manifest_resolves_mutable_registry_image_refs(
                 "game": "linux/amd64",
                 "player": "linux/amd64",
                 "commissioner": "linux/amd64",
-                "reporter": "linux/amd64",
                 "grader": "linux/amd64",
             },
         ),
@@ -350,7 +313,6 @@ def test_build_coworld_manifest_resolves_mutable_registry_image_refs(
     assert built_manifest["game"]["runnable"]["image"] == "game-runtime:coworld-111111111111"
     assert built_manifest["player"][0]["image"] == "player-runtime:coworld-222222222222"
     assert built_manifest["commissioner"][0]["image"] == "ghcr.io/metta-ai/commissioners-default@sha256:333333333333"
-    assert built_manifest["reporter"][0]["image"] == "ghcr.io/metta-ai/reporters-default@sha256:cccc"
     assert built_manifest["grader"][0]["image"] == "ghcr.io/metta-ai/graders-default@sha256:444444444444"
     commands = [command for command, _kwargs in calls]
     assert [
@@ -420,13 +382,11 @@ def test_build_command_writes_hydrated_manifest(tmp_path: Path, monkeypatch: pyt
             {
                 "game": "game-runtime:latest",
                 "player": "player-runtime:latest",
-                "reporter": "ghcr.io/metta-ai/reporters-default:latest",
                 "grader": "ghcr.io/metta-ai/graders-default:latest",
             },
             {
                 "game-runtime:latest": "sha256:111111111111",
                 "player-runtime:latest": "sha256:222222222222",
-                "ghcr.io/metta-ai/reporters-default:latest": "sha256:cccccccccccc",
                 "ghcr.io/metta-ai/graders-default:latest": "sha256:dddddddddddd",
             },
         ),
@@ -581,16 +541,8 @@ def _write_manifest(
                         "description": "Unit test player.",
                     }
                 ],
-                # Default stub for bundle image-substitution tests; tests override via role_images.
-                "reporter": [
-                    {
-                        "id": "unit-test-default-reporter",
-                        "name": "Unit Test Default Reporter",
-                        "type": "reporter",
-                        "image": "ghcr.io/metta-ai/reporters-default:latest",
-                        "description": "Default reporter stub.",
-                    }
-                ],
+                # Reporters are references (spec 0061), untouched by compose hydration.
+                "reporter": [{"reporter": "softmax/default@1"}],
                 # Default stub; tests override via role_images.
                 "grader": [
                     {

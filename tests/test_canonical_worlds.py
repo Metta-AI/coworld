@@ -22,10 +22,10 @@ REPO_ROOT = COWORLD_PACKAGE_ROOT.parents[1]
 COWORLD_SRC = COWORLD_PACKAGE_ROOT / "src" / "coworld"
 WORLDS = REPO_ROOT / "worlds"
 PAINTARENA_EXAMPLE = COWORLD_SRC / "examples" / "paintarena"
-VIABILITY_ROLE_SECTIONS = ("player", "optimizer", "commissioner", "reporter", "grader", "diagnoser")
+# Container role sections; reporters are references (spec 0061), not runnables.
+VIABILITY_ROLE_SECTIONS = ("player", "optimizer", "commissioner", "grader", "diagnoser")
 SUPPORTING_ROLE_SOURCE_OWNERS = {
     "commissioner": "https://github.com/Metta-AI/coworld-tools",
-    "reporter": "https://github.com/Metta-AI/coworld-tools",
     "grader": "https://github.com/Metta-AI/coworld-tools",
     "diagnoser": "https://github.com/Metta-AI/coworld-tools",
     "optimizer": "https://github.com/Metta-AI/optimizers",
@@ -114,7 +114,7 @@ def test_canonical_among_them_build_declares_role_starter_contexts() -> None:
 
     assert "GAME_CONTEXT" in compose_text
     assert "PLAYER_CONTEXT" in compose_text
-    assert "REPORTER_CONTEXT" in compose_text
+    assert "REPORTER_CONTEXT" not in compose_text
     assert "GRADER_CONTEXT" in compose_text
     assert "DIAGNOSER_CONTEXT" in compose_text
     assert "OPTIMIZER_CONTEXT" in compose_text
@@ -122,12 +122,11 @@ def test_canonical_among_them_build_declares_role_starter_contexts() -> None:
     assert "players/ivotewell/Dockerfile" in compose_text
     assert "COMMISSIONER_CONTEXT" not in compose_text
     assert "ghcr.io/metta-ai/commissioners-default:latest" not in compose_text
-    assert "coworld-tools/reporters/reporters" in compose_text
-    assert "among_them/among_them_summarizer/Dockerfile" in compose_text
+    assert "coworld-tools/reporters" not in compose_text
     assert "coworld-tools/graders/graders/among_them/among_them_grader" in compose_text
     assert "coworld-tools/diagnosers/diagnosers/among_them/among_them_diagnoser" in compose_text
     assert "optimizers" in compose_text
-    assert "coworld-among-them-summarizer:latest" in compose_text
+    assert "coworld-among-them-summarizer:latest" not in compose_text
     assert "coworld-among-them-grader:latest" in compose_text
     assert "ghcr.io/metta-ai/reporters-among-them-summarizer" not in compose_text
     assert "ghcr.io/metta-ai/graders-among-them" not in compose_text
@@ -143,21 +142,21 @@ def test_canonical_cogs_vs_clips_build_declares_role_contexts() -> None:
 
     assert "GAME_CONTEXT" in compose_text
     assert "PLAYER_CONTEXT" in compose_text
-    assert "REPORTER_CONTEXT" in compose_text
+    assert "REPORTER_CONTEXT" not in compose_text
     assert "COMMISSIONER_CONTEXT" in compose_text
     assert "METTASCOPE_CONTEXT" in compose_text
     assert "coworld-cogs-vs-clips" in compose_text
-    assert "coworld-tools/reporters/reporters" in compose_text
+    assert "coworld-tools/reporters" not in compose_text
     assert "coworld-tools/commissioners" in compose_text
     assert "Dockerfile.game" in compose_text
     assert "Dockerfile.player" in compose_text
-    assert "cogs_vs_clips/cogs_vs_clips_summarizer/Dockerfile" in compose_text
+    assert "cogs_vs_clips_summarizer" not in compose_text
     assert "commissioners/Dockerfile" in compose_text
     assert "RULESET_STRATEGY_CONFIG_NAME: cogs_vs_clips" in compose_text
     assert "cogs_src:" in compose_text
     assert "mettascope_src:" in compose_text
     assert "../../packages/mettagrid/nim/mettascope" in compose_text
-    assert "coworld-cogs-vs-clips-summarizer:latest" in compose_text
+    assert "coworld-cogs-vs-clips-summarizer:latest" not in compose_text
     assert "coworld-cogs-vs-clips-commissioner:latest" in compose_text
     assert "games/games/cogsguard" not in compose_text
 
@@ -169,21 +168,20 @@ def test_canonical_four_score_build_declares_role_contexts() -> None:
 
     assert "GAME_CONTEXT" in compose_text
     assert "PLAYER_CONTEXT" in compose_text
-    assert "REPORTER_CONTEXT" in compose_text
+    assert "REPORTER_CONTEXT" not in compose_text
     assert "METTASCOPE_CONTEXT" in compose_text
     assert "COMMISSIONER_CONTEXT" in compose_text
     assert "coworld-four-score" in compose_text
-    assert "coworld-tools/reporters/reporters" in compose_text
+    assert "coworld-tools/reporters" not in compose_text
     assert "commissioners/Dockerfile" in compose_text
     assert "RULESET_STRATEGY_CONFIG_NAME" in compose_text
     assert "four_score" in compose_text
     assert "Dockerfile.game" in compose_text
     assert "Dockerfile.player" in compose_text
-    assert "cogs_vs_clips/cogs_vs_clips_summarizer/Dockerfile" in compose_text
+    assert "cogs_vs_clips_summarizer" not in compose_text
     assert "cogs_src:" in compose_text
     assert "mettascope_src:" in compose_text
     assert "../../packages/mettagrid/nim/mettascope" in compose_text
-    assert "coworld-cogs-vs-clips-summarizer:latest" in compose_text
     assert "coworld-four-score-commissioner:latest" in compose_text
     assert "games/games/cogsguard" not in compose_text
 
@@ -234,13 +232,13 @@ def test_canonical_cue_n_woo_upload_adds_default_commissioner() -> None:
     compose_text = (WORLDS / "cue_n_woo" / "compose.yaml").read_text(encoding="utf-8")
     upload_text = (WORLDS / "upload.sh").read_text(encoding="utf-8")
 
-    assert "REPORTER_CONTEXT" in compose_text
+    assert "REPORTER_CONTEXT" not in compose_text
     assert "OPTIMIZER_CONTEXT" in compose_text
-    assert "coworld-tools/reporters/reporters" in compose_text
+    assert "coworld-tools/reporters" not in compose_text
     assert "optimizers" in compose_text
-    assert "coworld-default-reporter:latest" in compose_text
+    assert "coworld-default-reporter:latest" not in compose_text
     assert "coworld-optimizer:latest" in compose_text
-    assert '"REPORTER_CONTEXT=${REPORTER_CONTEXT}"' in upload_text
+    assert "REPORTER_CONTEXT" not in upload_text
     assert '"OPTIMIZER_CONTEXT=${OPTIMIZER_CONTEXT}"' in upload_text
     assert "  commissioner:" in compose_text
     assert "COMMISSIONER_IMAGE" in compose_text
@@ -314,9 +312,9 @@ def test_canonical_world_supporting_roles_point_to_source_owners() -> None:
 def test_coworld_manifest_rejects_unknown_role_type(tmp_path: Path) -> None:
     manifest_path = _materialized_template(tmp_path, PAINTARENA_EXAMPLE / "coworld_manifest_template.json")
     manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
-    manifest["reporter"][0]["type"] = "archivist"
+    manifest["grader"][0]["type"] = "archivist"
 
-    with pytest.raises(ValidationError, match="reporter.0.type"):
+    with pytest.raises(ValidationError, match="grader.0.type"):
         CoworldManifest.model_validate(manifest)
 
 
@@ -324,32 +322,27 @@ def test_external_canonical_manifests_live_with_source_repos() -> None:
     expected_readme_references = {
         "among_them": (
             "GAME_CONTEXT=/path/to/coworld-among-them",
-            "REPORTER_CONTEXT=/path/to/coworld-tools/reporters/reporters",
             "GRADER_CONTEXT=/path/to/coworld-tools/graders/graders/among_them/among_them_grader",
             "DIAGNOSER_CONTEXT=/path/to/coworld-tools/diagnosers/diagnosers/among_them/among_them_diagnoser",
             "../coworld-among-them/coworld_manifest.json",
         ),
         "cogs_vs_clips": (
             "GAME_CONTEXT=/path/to/coworld-cogs-vs-clips",
-            "REPORTER_CONTEXT=/path/to/coworld-tools/reporters/reporters",
             "COMMISSIONER_CONTEXT=/path/to/coworld-tools/commissioners",
             "../coworld-cogs-vs-clips/coworld_manifest_template.json",
         ),
         "cue_n_woo": (
             "GAME_CONTEXT=/path/to/cue-n-woo/v2",
-            "REPORTER_CONTEXT=/path/to/coworld-tools/reporters/reporters",
             "../cue-n-woo/v2/coworld/coworld_manifest_template.json",
             "worlds/cue_n_woo/upload.sh",
         ),
         "four_score": (
             "GAME_CONTEXT=/path/to/coworld-cogs-vs-clips",
-            "REPORTER_CONTEXT=/path/to/coworld-tools/reporters/reporters",
             "COMMISSIONER_CONTEXT=/path/to/coworld-tools/commissioners",
             "../coworld-cogs-vs-clips/coworld_four_score_manifest_template.json",
         ),
         "crewrift": (
             "GAME_CONTEXT=/path/to/coworld-crewrift",
-            "REPORTER_CONTEXT=/path/to/coworld-tools/reporters/reporters",
             "GRADER_CONTEXT=/path/to/coworld-tools/graders",
             "DIAGNOSER_CONTEXT=/path/to/coworld-tools/diagnosers/diagnosers/crewrift/crewrift_diagnoser",
             "COMMISSIONER_CONTEXT=/path/to/coworld-tools/commissioners",
@@ -424,11 +417,8 @@ def test_paintarena_template_declares_all_viability_role_sections() -> None:
     assert [role["id"] for role in paintarena["grader"]] == ["paint-arena-grader"]
     assert [role["type"] for role in paintarena["diagnoser"]] == ["diagnoser"]
     assert [role["id"] for role in paintarena["diagnoser"]] == ["paint-arena-diagnoser"]
-    assert [role["type"] for role in paintarena["reporter"]] == ["reporter", "reporter"]
-    assert [role["id"] for role in paintarena["reporter"]] == [
-        "paint-arena-summarizer",
-        "paint-arena-parquet-stats-reporter",
-    ]
+    # Reporters are references (spec 0061); Paint Arena declares none and ships no reporter containers.
+    assert "reporter" not in paintarena
     assert [role["type"] for role in paintarena["optimizer"]] == ["optimizer"]
     assert [role["id"] for role in paintarena["optimizer"]] == ["paint-arena-reference-optimizer"]
 
@@ -446,7 +436,7 @@ def test_paintarena_example_keeps_template_and_worlds_build_pointer() -> None:
         WORLDS / "paintarena" / "compose.yaml"
     ).read_text(encoding="utf-8").replace("../../packages/coworld/src/coworld/examples/paintarena", ".")
     dockerfile = (PAINTARENA_EXAMPLE / "Dockerfile").read_text(encoding="utf-8")
-    for package_dir in ("shared", "game", "player", "reporter", "grader", "diagnoser", "optimizer"):
+    for package_dir in ("shared", "game", "player", "grader", "diagnoser", "optimizer"):
         assert f"COPY {package_dir} /app/coworld/examples/paintarena/{package_dir}" in dockerfile
 
 

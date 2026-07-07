@@ -28,7 +28,7 @@ def test_paintarena_optimizer_writes_plan(tmp_path: Path, monkeypatch: pytest.Mo
     assert artifact["input_counts"] == {"reports": 2, "grader_outputs": 1, "diagnoser_outputs": 1}
     assert artifact["recommendations"] == [
         "Run the bundled sweep-painter baseline and the target policy on the default PaintArena variant.",
-        "Compare painted_tiles and per-frame territory ownership from the parquet stats reporter.",
+        "Compare painted_tiles and per-frame territory ownership from episode results and replay stats.",
         "Use the supplied report artifacts to identify low-paint-share intervals.",
         "Apply supplied diagnoser advice before changing exploration or movement heuristics.",
         "Prioritize changes that improve grader-selected episodes before broad retesting.",

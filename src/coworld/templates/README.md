@@ -23,7 +23,6 @@ Use these templates as starter files, then compare the result with the complete 
 | Game | `roles/game/` | FastAPI game server scaffold with `/healthz`, `/client/*`, `/player`, `/global`, and artifact URI helpers. |
 | Player | `roles/player/` | WebSocket player loop scaffold using `COWORLD_PLAYER_WS_URL`. |
 | Commissioner | `roles/commissioner/` | WebSocket commissioner scaffold plus manifest fragment. |
-| Reporter | `roles/reporter/` | Process-style reporter scaffold using `COGAME_REPORT_REQUEST`. |
 | Grader | `roles/grader/` | One-shot bundle consumer using `COGAME_EPISODE_BUNDLE_URI` and `COGAME_GRADE_URI`. |
 | Diagnoser | `roles/diagnoser/` | One-shot bundle consumer using `COGAME_EPISODE_BUNDLE_URI`, `COGAME_TARGET_POLICY_URI`, and `COGAME_DIAGNOSIS_URI`. |
 | Optimizer | `roles/optimizer/` | Optimizer manifest fragment and minimal plan writer for game-specific optimizer experiments. |
@@ -31,4 +30,7 @@ Use these templates as starter files, then compare the result with the complete 
 ## Complete Example
 
 Paint Arena is the canonical full example packaged with Coworld. Its single image contains concrete game, player,
-reporter, grader, diagnoser, and optimizer runnables, plus a manifest template that declares every role section.
+grader, diagnoser, and optimizer runnables, plus a manifest template that declares every container role section.
+
+There is no reporter template here: reporters are submittable wasm components (spec 0061), not containers, and the
+wasm authoring template ships with the reporter SDK. See `docs/roles/REPORTER.md` for the contract.

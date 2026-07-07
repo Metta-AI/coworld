@@ -22,7 +22,6 @@ from jsonschema.exceptions import ValidationError as JsonSchemaValidationError
 from pydantic import BaseModel, ConfigDict, Field, TypeAdapter
 from websockets.exceptions import ConnectionClosed, InvalidHandshake, InvalidStatus
 
-from coworld.reporter_protocol import ReporterEpisodeInput, ReportRequest
 from coworld.runner.io import RunnerEpisodeError, RunnerErrorType
 from coworld.schema_validation import validate_json_schema
 from coworld.types import CoworldEpisodeJobSpec, CoworldRunnableSpec
@@ -34,7 +33,6 @@ REPLAY_SAVE_ENV_VAR = "COGAME_SAVE_REPLAY_URI"
 REPLAY_LOAD_ENV_VAR = "COGAME_LOAD_REPLAY_URI"
 GAME_HOST_ENV_VAR = "COGAME_HOST"
 GAME_PORT_ENV_VAR = "COGAME_PORT"
-REPORT_REQUEST_ENV_VAR = "COGAME_REPORT_REQUEST"
 GAME_HOST = "0.0.0.0"
 GAME_PORT = 8080
 LOCAL_DOCKER_NETWORK = "coworld-local"
@@ -533,58 +531,6 @@ def verify_replay_loadable(
             )
     finally:
         subprocess.run(["docker", "rm", "-f", replay_container], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-
-
-def run_reporter(
-    reporter: RunnableLaunchSpec,
-    *,
-    workspace: Path,
-    request_id: str,
-    episodes: list[ReporterEpisodeInput],
-    timeout_seconds: float,
-    container_prefix: str = LOCAL_EPISODE_CONTAINER_PREFIX,
-) -> bytes:
-    """Run one reporter container against direct episode inputs and return its report zip.
-
-    Mounts ``workspace`` into the container, passes ``COGAME_REPORT_REQUEST``
-    with container-visible ``file://`` artifact refs, runs the reporter to
-    completion, and returns the bytes it wrote. A reporter is a short-lived
-    process-style container that only does file I/O, so it needs neither the
-    local network nor a published port.
-    """
-    workspace.mkdir(parents=True, exist_ok=True)
-    report_path = workspace / "report.zip"
-    report_path.unlink(missing_ok=True)
-    report_request = ReportRequest(
-        request_id=request_id,
-        episodes=episodes,
-        report_uri=f"file://{CONTAINER_WORKDIR}/report.zip",
-    )
-
-    container_name = f"{container_prefix}-reporter-{secrets.token_hex(8)}"
-    completed = subprocess.run(
-        [
-            "docker",
-            "run",
-            "--rm",
-            "--name",
-            container_name,
-            *_env_args(reporter.env),
-            "-e",
-            f"{REPORT_REQUEST_ENV_VAR}={report_request.model_dump_json(exclude_none=True)}",
-            "-v",
-            f"{workspace.resolve()}:{CONTAINER_WORKDIR}:rw",
-            *_image_command(reporter),
-        ],
-        capture_output=True,
-        text=True,
-        timeout=timeout_seconds,
-    )
-    if completed.returncode != 0:
-        raise RuntimeError(f"Reporter container exited with status {completed.returncode}.\n{completed.stderr[-4000:]}")
-    if not report_path.exists():
-        raise FileNotFoundError(f"Reporter container did not write a report to report_uri.\n{completed.stderr[-4000:]}")
-    return report_path.read_bytes()
 
 
 def _player_container_ws_url(host: str, slot: int, token: str) -> str:

@@ -1,8 +1,10 @@
 # Paint Arena Coworld Example
 
 Paint Arena is the smallest complete Coworld example in this package. It has one game image and one bundled player
-entrypoint. The same image also carries reference reporter, grader, diagnoser, and optimizer role entrypoints so the
-manifest shows the full Coworld role shape without extra build contexts.
+entrypoint. The same image also carries reference grader, diagnoser, and optimizer role entrypoints so the
+manifest shows the full Coworld role shape without extra build contexts. Reporters are not containers — a manifest
+declares reporter *references* to wasm components or platform reporter versions; see the
+[Reporter role](../../docs/roles/REPORTER.md) for the v2 contract.
 
 The game is two-player and tick-based. Each player moves around a grid and paints the tile they are standing on.
 Painting overwrites the previous owner. Final scores are the number of tiles painted with each player's color.

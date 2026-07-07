@@ -226,7 +226,7 @@ replay upload remain the source of truth for episode success.
 
 There is no separate hosted media artifact for videos, screenshots, or rich human-readable reports in the episode runner
 path. Put compact, replay-critical bytes in the replay artifact, keep `results.json` small and schema-valid, and use
-reporter/support-role artifacts for larger watchability outputs when those runtimes are invoked.
+platform reporter runs or support-role artifacts for larger watchability outputs when those runtimes are invoked.
 
 ## Kubernetes Requirements
 

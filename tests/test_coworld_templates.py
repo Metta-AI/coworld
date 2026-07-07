@@ -10,7 +10,6 @@ ROLE_TEMPLATE_FILES = {
     "game": {"README.md", "Dockerfile", "game_server.py"},
     "player": {"README.md", "Dockerfile", "player.py"},
     "commissioner": {"README.md", "Dockerfile", "commissioner.py", "commissioner_manifest_entry.json"},
-    "reporter": {"README.md", "Dockerfile", "reporter.py"},
     "grader": {"README.md", "Dockerfile", "grader.py"},
     "diagnoser": {"README.md", "Dockerfile", "diagnoser.py"},
     "optimizer": {"README.md", "optimizer_manifest_entry.json", "optimizer_plan.py"},

@@ -191,6 +191,29 @@ class ImageUploadResponse(BaseModel):
     pre_signed_info: EcrPushInfo | None = None
 
 
+class ReporterVersionResponse(BaseModel):
+    id: str
+    name: str
+    version: int
+    content_hash: str
+
+
+class ReporterUploadResponse(BaseModel):
+    upload_url: str | None = None
+    existing_version: ReporterVersionResponse | None = None
+
+
+class ReporterUploadCompleteResponse(BaseModel):
+    version: ReporterVersionResponse
+    # Present only when this upload registered the reporter (first version of a new name).
+    reporter_key: str | None = None
+
+
+class WhoAmIResponse(BaseModel):
+    # The authenticated user's id; for player-subject tokens, the owning user's id.
+    owner_user_id: str | None = None
+
+
 @dataclass(frozen=True)
 class CoworldUploadResult:
     id: str
@@ -289,6 +312,35 @@ class CoworldUploadClient:
         )
         _raise_for_status(response)
         return CoworldUploadResponse.model_validate(response.json())
+
+    def request_reporter_upload(
+        self, *, name: str, content_hash: str, size_bytes: int, attributes: dict[str, Any]
+    ) -> ReporterUploadResponse:
+        response = self._http_client.post(
+            "/v2/reporters/upload",
+            headers=self._headers(),
+            json={"name": name, "content_hash": content_hash, "size_bytes": size_bytes, "attributes": attributes},
+            timeout=60.0,
+        )
+        _raise_for_status(response)
+        return ReporterUploadResponse.model_validate(response.json())
+
+    def complete_reporter_upload(
+        self, *, name: str, content_hash: str, attributes: dict[str, Any]
+    ) -> ReporterUploadCompleteResponse:
+        response = self._http_client.post(
+            "/v2/reporters/upload/complete",
+            headers=self._headers(),
+            json={"name": name, "content_hash": content_hash, "attributes": attributes},
+            timeout=300.0,
+        )
+        _raise_for_status(response)
+        return ReporterUploadCompleteResponse.model_validate(response.json())
+
+    def whoami(self) -> WhoAmIResponse:
+        response = self._http_client.get("/whoami", headers=self._headers(), timeout=30.0)
+        _raise_for_status(response)
+        return WhoAmIResponse.model_validate(response.json())
 
     def patch_commissioner(
         self,
@@ -590,6 +642,50 @@ class CoworldUploadClient:
         return PolicyVersionResponse.model_validate(response.json())
 
 
+def _submit_wasm_reporters(client: CoworldUploadClient, manifest: dict[str, Any], package_root: Path) -> dict[str, Any]:
+    """Submit wasm reporter references and rewrite them to platform references (spec 0061).
+
+    Every reporter a hosted manifest carries is an owner-qualified platform
+    reference: for each `{"wasm": ..., "id": ..., "attributes": ...}` entry, upload
+    the component through the standard reporter flow (full static validation runs
+    server-side; identical bytes+attributes dedupe to the existing version) under
+    the name `{game-name}-{id}` (reporter names cannot contain "/", the owner
+    separator) and replace the entry with `{"reporter": "owner/name@version"}`,
+    where owner is the submitter's user id from `/whoami`.
+    """
+    references = list(manifest.get("reporter") or [])
+    if not any("wasm" in reference for reference in references):
+        return manifest
+    owner_user_id = client.whoami().owner_user_id
+    if owner_user_id is None:
+        raise RuntimeError("Could not resolve your user id from /whoami. Run: uv run softmax login")
+    game_name = manifest["game"]["name"]
+    rewritten: list[dict[str, Any]] = []
+    for reference in references:
+        if "reporter" in reference:
+            rewritten.append(reference)
+            continue
+        wasm_path = (package_root / reference["wasm"]).resolve()
+        wasm_bytes = wasm_path.read_bytes()
+        content_hash = hashlib.sha256(wasm_bytes).hexdigest()
+        name = f"{game_name}-{reference['id']}"
+        upload = client.request_reporter_upload(
+            name=name, content_hash=content_hash, size_bytes=len(wasm_bytes), attributes=reference["attributes"]
+        )
+        if upload.existing_version is not None:
+            version = upload.existing_version
+        else:
+            assert upload.upload_url is not None
+            put_response = httpx.put(upload.upload_url, content=wasm_bytes, timeout=600.0)
+            put_response.raise_for_status()
+            version = client.complete_reporter_upload(
+                name=name, content_hash=content_hash, attributes=reference["attributes"]
+            ).version
+        _logger.info("Reporter %s submitted as %s@%s (%s)", reference["id"], name, version.version, content_hash[:12])
+        rewritten.append({"reporter": f"{owner_user_id}/{name}@{version.version}"})
+    return {**manifest, "reporter": rewritten}
+
+
 def upload_coworld(
     manifest_path: Path,
     *,
@@ -613,6 +709,7 @@ def upload_coworld(
 
     with CoworldUploadClient.from_login(server_url=server) as client:
         upload_manifest = _manifest_with_softmax_image_ids(client, manifest)
+        upload_manifest = _submit_wasm_reporters(client, upload_manifest, manifest_path.parent)
         response = client.upload_manifest(upload_manifest)
         if wait_for_hosted_smoke:
             status = get_coworld_status(

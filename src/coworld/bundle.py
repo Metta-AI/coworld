@@ -12,7 +12,9 @@ from coworld.image_refs import image_ref_without_tag, is_digest_pinned_image_ref
 from coworld.schema_validation import load_json_object
 from coworld.types import CoworldManifest, CoworldRunnableSpec
 
-ROLE_SECTIONS = ("player", "reporter", "commissioner", "grader", "diagnoser", "optimizer")
+# Compose-built runnable sections. `reporter` is deliberately absent: reporter entries are
+# references (spec 0061) — platform reporter versions or wasm components — not container images.
+ROLE_SECTIONS = ("player", "commissioner", "grader", "diagnoser", "optimizer")
 FULL_SHA_PATTERN = re.compile(r"^[0-9a-f]{40}$")
 
 

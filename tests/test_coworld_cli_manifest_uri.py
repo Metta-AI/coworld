@@ -152,7 +152,7 @@ def test_coworld_certify_prints_replay_liveness_and_inspection_command(
             transcript=transcript,
             step_results=step_results,
             artifacts=artifacts,
-            reports=[],
+            reporter_references=[],
         )
 
     monkeypatch.setattr("coworld.cli.certify_coworld", fake_certify_coworld)
@@ -377,7 +377,7 @@ def test_coworld_certify_downloads_missing_coworld_id_cache(tmp_path: Path, monk
             transcript=transcript,
             step_results=[StepResult(id=step.id, kind=step.kind, status="pass") for step in transcript.steps],
             artifacts=artifacts,
-            reports=[],
+            reporter_references=[],
         )
 
     monkeypatch.chdir(tmp_path)
@@ -1034,7 +1034,7 @@ def _materialized_template(tmp_path: Path, template_path: Path) -> Path:
     game_image = manifest["game"]["runnable"]["image"]
     if game_image in placeholders:
         manifest["game"]["runnable"]["image"] = placeholders[game_image]
-    for section in ("player", "commissioner", "reporter", "grader", "diagnoser", "optimizer"):
+    for section in ("player", "commissioner", "grader", "diagnoser", "optimizer"):
         if section in manifest:
             for runnable in manifest[section]:
                 image = runnable["image"]

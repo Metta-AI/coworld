@@ -32,17 +32,8 @@ from coworld.manifest_validation import (
     infer_token_count_for_game_config,
     validate_coworld_manifest_game_configs,
 )
-from coworld.report import ReportManifest, validate_report_zip
-from coworld.reporter_protocol import (
-    BundleToken,
-    ReporterArtifactRef,
-    ReporterEpisodeArtifacts,
-    ReporterEpisodeInput,
-    ReporterEpisodeManifest,
-)
 from coworld.runner.io import RunnerEpisodeError
 from coworld.runner.runner import (
-    CONTAINER_WORKDIR,
     GAME_HOST,
     GAME_HOST_ENV_VAR,
     GAME_PORT,
@@ -58,7 +49,6 @@ from coworld.runner.runner import (
     assert_docker_image_reachable,
     generate_tokens,
     run_episode_containers,
-    run_reporter,
     verify_replay_loadable,
 )
 from coworld.schema_validation import (
@@ -71,6 +61,7 @@ from coworld.types import (
     CoworldEpisodeJobSpec,
     CoworldManifest,
     CoworldProtocolDocs,
+    CoworldReporterPlatformReference,
     CoworldRunnableSpec,
     CoworldTranscript,
     StepResult,
@@ -126,24 +117,17 @@ CertifierImageReachabilityChecker = Callable[[CoworldPackage], None]
 # replay mode via Docker (verify_replay_loadable); Observatory flow injects a checker that asks the
 # backend to boot and probe a one-shot replay runtime for the smoke episode job.
 CertifierReplayLoadableChecker = Callable[[CoworldPackage, EpisodeArtifacts], None]
-# Runs the supporting roles (reporters + commissioner). Local flow runs them via Docker
+# Checks the supporting roles (reporter references + commissioner). Local flow statically
+# validates reporter references and probes commissioners via Docker
 # (run_certification_supporting_roles); Observatory flow injects a runner that asks the backend to
-# probe them as one-shot k8s containers. Returns (reports, feedback); a failure raises
-# ReporterCertificationError / CommissionerProbeError so the step attributes it correctly.
-CertifierSupportingRolesRunner = Callable[
-    [CoworldPackage, EpisodeArtifacts, float], tuple[list["ReportCertification"], str]
-]
+# resolve references against the registry and probe commissioners as one-shot k8s containers.
+# Returns (reporter reference lines, feedback); a failure raises ReporterCertificationError /
+# CommissionerProbeError so the step attributes it correctly.
+CertifierSupportingRolesRunner = Callable[[CoworldPackage, EpisodeArtifacts, float], tuple[list[str], str]]
 
 
 def _local_image_reachability_checker(package: CoworldPackage) -> None:
     validate_image_references(package)
-
-
-@dataclass(frozen=True)
-class ReportCertification:
-    reporter_id: str
-    manifest: ReportManifest
-    report_path: Path
 
 
 @dataclass(frozen=True)
@@ -152,7 +136,7 @@ class CertificationResult:
     artifacts: EpisodeArtifacts
     episode_request: JsonObject
     results: JsonObject
-    reports: list[ReportCertification]
+    reporter_references: list[str]
     transcript: CoworldTranscript
     step_results: list[StepResult]
     matriculated_at: datetime
@@ -230,6 +214,70 @@ def validate_source_references(package: CoworldPackage) -> list[str]:
     if issues:
         raise ValueError("Coworld source references are not certifiable:\n- " + "\n- ".join(issues))
     return resolved_sources
+
+
+def validate_reporter_references(package: CoworldPackage) -> list[str]:
+    """Statically validate ``manifest.reporter`` references, one human-readable line per entry.
+
+    Reporters are references (spec 0061), not containers, so certification never runs them.
+    A platform reference's owner-qualified ``owner/name@version`` shape is already
+    schema-enforced; it is just recorded here. A wasm reference must name a non-empty
+    component file inside the package root (absolute paths and path escapes are
+    rejected) and declare ``purpose``, ``world``, and an
+    ``outputs`` list whose entries each carry a non-empty ``name``, ``type``, and
+    ``description``. Full semantic validation of the component and its attributes happens at
+    platform submission (`coworld upload-coworld`); this check only catches locally decidable
+    mistakes before upload.
+    """
+    package_root = package.manifest_path.parent
+    lines: list[str] = []
+    issues: list[str] = []
+    for index, reference in enumerate(package.manifest.reporter):
+        label = f"reporter[{index}]"
+        if isinstance(reference, CoworldReporterPlatformReference):
+            lines.append(f"{label}: platform reference {reference.reporter}")
+            continue
+
+        wasm_path = Path(reference.wasm)
+        if wasm_path.is_absolute():
+            issues.append(f"{label} ({reference.id}): wasm path must be package-relative, got {reference.wasm!r}")
+            continue
+        resolved = (package_root / wasm_path).resolve()
+        if not resolved.is_relative_to(package_root.resolve()):
+            issues.append(f"{label} ({reference.id}): wasm path escapes the package root: {reference.wasm!r}")
+            continue
+        if not resolved.is_file():
+            issues.append(f"{label} ({reference.id}): wasm component not found at {reference.wasm!r}")
+            continue
+        if resolved.stat().st_size == 0:
+            issues.append(f"{label} ({reference.id}): wasm component is empty: {reference.wasm!r}")
+            continue
+
+        attributes = reference.attributes
+        for field in ("purpose", "world"):
+            value = attributes.get(field)
+            if not isinstance(value, str) or not value.strip():
+                issues.append(f"{label} ({reference.id}): attributes.{field} must be a non-empty string")
+        outputs = attributes.get("outputs")
+        if not isinstance(outputs, list) or not outputs:
+            issues.append(f"{label} ({reference.id}): attributes.outputs must be a non-empty list")
+        else:
+            for output_index, output in enumerate(outputs):
+                if not isinstance(output, dict):
+                    issues.append(f"{label} ({reference.id}): attributes.outputs[{output_index}] must be an object")
+                    continue
+                for field in ("name", "type", "description"):
+                    value = output.get(field)
+                    if not isinstance(value, str) or not value.strip():
+                        issues.append(
+                            f"{label} ({reference.id}): attributes.outputs[{output_index}].{field} "
+                            "must be a non-empty string"
+                        )
+        lines.append(f"{label}: wasm component {reference.wasm} (id {reference.id})")
+
+    if issues:
+        raise ValueError("Coworld reporter references are not certifiable:\n- " + "\n- ".join(issues))
+    return lines
 
 
 def build_episode_request(package: CoworldPackage, artifacts: EpisodeArtifacts) -> JsonObject:
@@ -466,14 +514,14 @@ def certify_coworld(
     run_step("players-run", lambda: validate_players_ran(package, artifacts), "Game and declared players started.")
 
     supporting_result = cast(
-        tuple[list[ReportCertification], str],
+        tuple[list[str], str],
         run_step(
             "supporting-roles",
             lambda: run_supporting_roles(package, artifacts, timeout_seconds),
-            lambda value: cast(tuple[list[ReportCertification], str], value)[1],
+            lambda value: cast(tuple[list[str], str], value)[1],
         ),
     )
-    reports = supporting_result[0]
+    reporter_references = supporting_result[0]
 
     _assert_transcript_complete(transcript, step_results)
     graduated_at = datetime.now(timezone.utc)
@@ -483,7 +531,7 @@ def certify_coworld(
         artifacts=artifacts,
         episode_request=episode_request,
         results=results,
-        reports=reports,
+        reporter_references=reporter_references,
         transcript=transcript,
         step_results=step_results,
         matriculated_at=matriculated_at,
@@ -551,13 +599,13 @@ def run_certification_supporting_roles(
     artifacts: EpisodeArtifacts,
     *,
     timeout_seconds: float,
-) -> tuple[list[ReportCertification], str]:
+) -> tuple[list[str], str]:
     feedback = []
     try:
-        reports = run_certification_reporters(package, artifacts, timeout_seconds=timeout_seconds)
+        reporter_references = validate_reporter_references(package)
     except Exception as exc:
         raise ReporterCertificationError(str(exc)) from exc
-    feedback.append(f"reporters run: {len(reports)}")
+    feedback.append(f"reporter references validated: {len(reporter_references)}")
 
     for commissioner in package.manifest.commissioner:
         try:
@@ -577,9 +625,9 @@ def run_certification_supporting_roles(
         feedback.append(f"diagnosers declared, harness not available yet: {len(package.manifest.diagnoser)}")
     if package.manifest.optimizer:
         feedback.append(f"optimizers skipped for Executable: {len(package.manifest.optimizer)}")
-    if feedback == ["reporters run: 0", "commissioners probed: 0"]:
+    if feedback == ["reporter references validated: 0", "commissioners probed: 0"]:
         feedback.append("no supporting roles declared")
-    return reports, "; ".join(feedback)
+    return reporter_references, "; ".join(feedback)
 
 
 def run_certification_commissioner(
@@ -673,113 +721,6 @@ def certification_schedule_rounds_request() -> ScheduleRoundsRequest:
     )
 
 
-def run_certification_reporters(
-    package: CoworldPackage,
-    artifacts: EpisodeArtifacts,
-    *,
-    timeout_seconds: float,
-) -> list[ReportCertification]:
-    """Run every declared reporter against the certification episode and certify its report.
-
-    Assembles one episode bundle from the certification artifacts, runs each
-    ``manifest.reporter`` container against it, and validates the report zip —
-    including the safe render profile for any HTML ``render`` entry (see
-    ``docs/artifacts/RENDER.md``). Reporters are optional, so a Coworld without
-    them certifies with an empty report list.
-    """
-    reporters = package.manifest.reporter
-    if not reporters:
-        return []
-
-    request_id = f"cert-{artifacts.workspace.name}"
-    episode = build_local_reporter_episode_input(artifacts, episode_request_id=request_id)
-    certifications: list[ReportCertification] = []
-    for reporter in reporters:
-        workspace = artifacts.workspace / "reports" / reporter.id
-        report_bytes = run_reporter(
-            RunnableLaunchSpec.from_model(reporter.as_runnable_spec()),
-            workspace=workspace,
-            request_id=request_id,
-            episodes=[episode],
-            timeout_seconds=timeout_seconds,
-        )
-        manifest = validate_report_zip(report_bytes)
-        certifications.append(
-            ReportCertification(reporter_id=reporter.id, manifest=manifest, report_path=workspace / "report.zip")
-        )
-    return certifications
-
-
-def build_local_reporter_episode_input(
-    artifacts: EpisodeArtifacts,
-    *,
-    episode_request_id: str,
-    uri_root: str = CONTAINER_WORKDIR,
-) -> ReporterEpisodeInput:
-    files: dict[BundleToken, str | dict[str, str]] = {
-        "results": "results.json",
-        "replay": "replay",
-        "game_logs": {"stdout": "logs/game.stdout.log", "stderr": "logs/game.stderr.log"},
-    }
-    include: list[BundleToken] = ["results", "replay", "game_logs"]
-    episode_artifacts = ReporterEpisodeArtifacts(
-        results=ReporterArtifactRef(
-            uri=f"file://{uri_root}/{artifacts.results_path.relative_to(artifacts.workspace)}",
-            media_type="application/json",
-        ),
-        replay=ReporterArtifactRef(
-            uri=f"file://{uri_root}/{artifacts.replay_path.relative_to(artifacts.workspace)}",
-            media_type="application/json",
-        ),
-        game_logs={
-            "stdout": ReporterArtifactRef(
-                uri=f"file://{uri_root}/{artifacts.game_stdout_path.relative_to(artifacts.workspace)}",
-                media_type="text/plain",
-            ),
-            "stderr": ReporterArtifactRef(
-                uri=f"file://{uri_root}/{artifacts.game_stderr_path.relative_to(artifacts.workspace)}",
-                media_type="text/plain",
-            ),
-        },
-    )
-
-    player_log_files: dict[str, str] = {}
-    for log_path in sorted(artifacts.logs_dir.glob("policy_agent_*.log")):
-        slot = log_path.stem.removeprefix("policy_agent_")
-        player_log_files[slot] = f"logs/{log_path.name}"
-        episode_artifacts.player_logs[slot] = ReporterArtifactRef(
-            uri=f"file://{uri_root}/{log_path.relative_to(artifacts.workspace)}",
-            media_type="text/plain",
-        )
-    if player_log_files:
-        files["player_logs"] = player_log_files
-        include.append("player_logs")
-
-    player_artifact_files: dict[str, str] = {}
-    for artifact_path in sorted(artifacts.workspace.glob("policy_artifact_*.zip")):
-        slot = artifact_path.stem.removeprefix("policy_artifact_")
-        player_artifact_files[slot] = f"artifacts/{artifact_path.name}"
-        episode_artifacts.player_artifact[slot] = ReporterArtifactRef(
-            uri=f"file://{uri_root}/{artifact_path.relative_to(artifacts.workspace)}",
-            media_type="application/zip",
-        )
-    if player_artifact_files:
-        files["player_artifact"] = player_artifact_files
-        include.append("player_artifact")
-
-    return ReporterEpisodeInput(
-        episode_request_id=episode_request_id,
-        status="success",
-        manifest=ReporterEpisodeManifest(
-            ereq_id=episode_request_id,
-            status="success",
-            include=include,
-            files=files,
-        ),
-        artifacts=episode_artifacts,
-    )
-
-
 def _split_transcript_row(row: str) -> list[str]:
     return [cell.strip() for cell in row.strip().strip("|").split("|")]
 
@@ -804,7 +745,7 @@ def _image_references(package: CoworldPackage) -> list[tuple[str, str]]:
         (f"Certification players[{slot}].image", player.image)
         for slot, player in enumerate(_certification_player_specs(package))
     )
-    for section in ("player", "reporter", "commissioner", "grader", "diagnoser", "optimizer"):
+    for section in ("player", "commissioner", "grader", "diagnoser", "optimizer"):
         references.extend(
             (f"Coworld {section}[{index}].image", runnable.image)
             for index, runnable in enumerate(getattr(package.manifest, section))
@@ -817,7 +758,7 @@ def _source_references(package: CoworldPackage) -> list[tuple[str, str]]:
     game_source_url = package.manifest.game.runnable.source_url
     if game_source_url is not None:
         references.append(("game.runnable.source_url", game_source_url))
-    for section in ("player", "reporter", "commissioner", "grader", "diagnoser", "optimizer"):
+    for section in ("player", "commissioner", "grader", "diagnoser", "optimizer"):
         references.extend(
             (f"Coworld {section}[{index}].source_url", source_url)
             for index, runnable in enumerate(getattr(package.manifest, section))

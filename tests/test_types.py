@@ -102,14 +102,64 @@ def test_manifest_rejects_wrong_game_runnable_type() -> None:
 
 def test_manifest_rejects_wrong_role_section_type() -> None:
     with pytest.raises(ValidationError, match="player.0.type"):
-        _manifest(player_type="reporter")
+        _manifest(player_type="grader")
 
 
 def test_manifest_rejects_wrong_grader_section_type() -> None:
     manifest = _manifest_data()
-    manifest["grader"][0]["type"] = "reporter"
+    manifest["grader"][0]["type"] = "player"
 
     with pytest.raises(ValidationError, match="grader.0.type"):
+        CoworldManifest.model_validate(manifest)
+
+
+def test_manifest_rejects_reporter_runnable_type() -> None:
+    # Reporters are references (spec 0061), never container runnables.
+    with pytest.raises(ValidationError):
+        CoworldRunnableSpec.model_validate({"type": "reporter", "image": "reporter"})
+
+
+def test_manifest_reporter_accepts_platform_and_wasm_references() -> None:
+    manifest = _manifest_data()
+    manifest["reporter"] = [
+        {"reporter": "paintarena/summarizer@3"},
+        {
+            "wasm": "./reporters/summary.wasm",
+            "id": "summary",
+            "attributes": {
+                "purpose": "Summarize episodes.",
+                "world": "softmax:reporter",
+                "outputs": [{"name": "summary", "type": "markdown", "description": "Episode summary."}],
+            },
+        },
+    ]
+
+    typed = CoworldManifest.model_validate(manifest)
+    validate_json_schema(manifest, coworld_manifest_schema())
+
+    assert typed.reporter[0].reporter == "paintarena/summarizer@3"  # type: ignore[union-attr]
+    assert typed.reporter[1].id == "summary"  # type: ignore[union-attr]
+
+
+@pytest.mark.parametrize(
+    "reference",
+    ["summarizer@1", "acme/summarizer", "acme/summarizer@v1", "acme/Summarizer@1", "acme/summarizer@0"],
+)
+def test_manifest_reporter_rejects_malformed_platform_references(reference: str) -> None:
+    manifest = _manifest_data()
+    manifest["reporter"] = [{"reporter": reference}]
+
+    with pytest.raises(ValidationError):
+        CoworldManifest.model_validate(manifest)
+
+
+def test_manifest_reporter_rejects_container_runnable_entries() -> None:
+    manifest = _manifest_data()
+    manifest["reporter"] = [
+        {"id": "reporter", "type": "reporter", "image": "reporter", "name": "R", "description": "R."}
+    ]
+
+    with pytest.raises(ValidationError):
         CoworldManifest.model_validate(manifest)
 
 
@@ -161,7 +211,7 @@ def test_episode_job_rejects_non_player_runnable() -> None:
         CoworldEpisodeJobSpec(
             manifest=_manifest(),
             game_config={},
-            players=[CoworldRunnableSpec(type="reporter", image="reporter")],
+            players=[CoworldRunnableSpec(type="grader", image="grader")],
         )
 
 
@@ -458,16 +508,7 @@ def _manifest_data(game_type: str = "game", player_type: str = "player") -> dict
                 "source_url": "https://example.com/player",
             }
         ],
-        "reporter": [
-            {
-                "id": "reporter",
-                "name": "Reporter",
-                "description": "Reporter.",
-                "type": "reporter",
-                "image": "reporter",
-                "source_url": "https://example.com/reporter",
-            }
-        ],
+        "reporter": [{"reporter": "example/reporter@1"}],
         "grader": [
             {
                 "id": "default-grader",

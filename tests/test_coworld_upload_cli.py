@@ -130,7 +130,7 @@ def test_upload_coworld_rejects_mutable_registry_image_refs(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     manifest = _manifest()
-    cast(list[dict[str, object]], manifest["reporter"])[0]["image"] = "ghcr.io/metta-ai/reporters-default:latest"
+    cast(list[dict[str, object]], manifest["player"])[0]["image"] = "ghcr.io/metta-ai/players-default:latest"
     manifest_path = _write_manifest(tmp_path, manifest)
     monkeypatch.setattr("coworld.upload.certify_coworld", lambda *_args, **_kwargs: pytest.fail("certified manifest"))
 
@@ -138,7 +138,7 @@ def test_upload_coworld_rejects_mutable_registry_image_refs(
         upload_coworld(manifest_path)
 
     message = str(exc_info.value)
-    assert "ghcr.io/metta-ai/reporters-default:latest" in message
+    assert "ghcr.io/metta-ai/players-default:latest" in message
     assert "resolve-and-upload" in message
 
 
@@ -1905,14 +1905,6 @@ def test_manifest_image_helpers_substitute_role_images() -> None:
                 "run": ["python", "-m", "unit_test.player"],
             }
         ],
-        "reporter": [
-            {
-                "id": "unit-test-reporter",
-                "type": "reporter",
-                "image": "reporter-img:latest",
-                "run": ["python", "/app/reporter.py"],
-            }
-        ],
         "grader": [
             {
                 "id": "unit-test-grader",
@@ -1923,12 +1915,11 @@ def test_manifest_image_helpers_substitute_role_images() -> None:
     }
 
     discovered = {field["image"] for field in _manifest_image_fields(manifest)}
-    assert discovered == {"unit-test-runtime:latest", "player-img:latest", "reporter-img:latest", "grader-img:latest"}
+    assert discovered == {"unit-test-runtime:latest", "player-img:latest", "grader-img:latest"}
 
     image_tags = {
         "unit-test-runtime:latest": "img_game",
         "player-img:latest": "img_player",
-        "reporter-img:latest": "img_reporter",
         "grader-img:latest": "img_grader",
     }
     substituted = _manifest_with_local_images(manifest, image_tags)
@@ -1942,10 +1933,6 @@ def test_manifest_image_helpers_substitute_role_images() -> None:
     players = substituted["player"]
     assert isinstance(players, list)
     assert players[0]["image"] == "img_player"
-
-    reporters = substituted["reporter"]
-    assert isinstance(reporters, list)
-    assert reporters[0]["image"] == "img_reporter"
 
     graders = substituted["grader"]
     assert isinstance(graders, list)
@@ -2088,15 +2075,7 @@ def _manifest() -> dict[str, object]:
                 "run": ["python", "-m", "unit_test.player"],
             }
         ],
-        "reporter": [
-            {
-                "id": "unit-test-reporter",
-                "name": "Unit Test Reporter",
-                "description": "Reporter stub; reuses unit-test-runtime so upload dedupe doesn't request a 2nd image.",
-                "type": "reporter",
-                "image": "unit-test-runtime:latest",
-            }
-        ],
+        "reporter": [{"reporter": "softmax/default@1"}],
         "grader": [
             {
                 "id": "unit-test-grader",
@@ -2131,11 +2110,6 @@ def _manifest_with_image(image: str) -> dict[str, object]:
     player = players[0]
     assert isinstance(player, dict)
     player["image"] = image
-    reporters = manifest["reporter"]
-    assert isinstance(reporters, list)
-    reporter = reporters[0]
-    assert isinstance(reporter, dict)
-    reporter["image"] = image
     graders = manifest["grader"]
     assert isinstance(graders, list)
     grader = graders[0]
