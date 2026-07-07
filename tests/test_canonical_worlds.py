@@ -390,6 +390,21 @@ def test_cue_n_woo_upload_defaults_to_cue_n_woo_commissioner() -> None:
     assert "ghcr.io/metta-ai/commissioners-cue-n-woo:latest" in readme_text
 
 
+def test_cue_n_woo_readme_documents_live_player_protocol_contract() -> None:
+    readme_text = (WORLDS / "cue_n_woo" / "README.md").read_text(encoding="utf-8")
+
+    assert "Do not run local play, certify, or replay commands against the upstream template directly." in readme_text
+    assert "worlds/upload.sh cue_n_woo 0.2.28" in readme_text
+    assert "cue_n_woo 0.2.1" not in readme_text
+    assert "redacts `me.judge` during `proposals`" in readme_text
+    assert "must cache those details before the phase changes" in readme_text
+    assert "`ceil(len(answer.strip()) / 4)`" in readme_text
+    assert "48 stripped characters" in readme_text
+    assert "uv run coworld play tmp/cue_n_woo/coworld_manifest.json" in readme_text
+    assert "uv run coworld certify tmp/cue_n_woo/coworld_manifest.json" in readme_text
+    assert "uv run coworld replay tmp/cue_n_woo/coworld_manifest.json path/to/replay.json.z" in readme_text
+
+
 def test_crewrift_upload_defaults_to_manifest_commissioner() -> None:
     upload_text = (WORLDS / "upload.sh").read_text(encoding="utf-8")
     readme_text = (WORLDS / "crewrift" / "README.md").read_text(encoding="utf-8")
