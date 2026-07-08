@@ -316,6 +316,21 @@
           "default": null,
           "description": "Maximum number of simultaneously active policy memberships a single user may hold in this Coworld's league. Unset means the platform default applies.",
           "title": "Players Per User"
+        },
+        "episode_timeout_minutes": {
+          "anyOf": [
+            {
+              "maximum": 100,
+              "minimum": 1,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Maximum wall-clock minutes a hosted episode of this Coworld may run before the platform kills it. Also bounds hosted certification runs. Must be between 1 and 100. Unset means the platform default (20 minutes).",
+          "title": "Episode Timeout Minutes"
         }
       },
       "required": ["game", "player", "variants", "certification"],

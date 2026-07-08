@@ -255,6 +255,29 @@ def test_manifest_rejects_promo_without_video_url() -> None:
         CoworldManifest.model_validate(manifest)
 
 
+def test_manifest_episode_timeout_defaults_to_twenty_minutes() -> None:
+    manifest = CoworldManifest.model_validate(_manifest_data())
+
+    assert manifest.episode_timeout_minutes is None
+    assert manifest.episode_timeout_seconds == 20 * 60
+
+
+def test_manifest_accepts_episode_timeout_up_to_max() -> None:
+    data = _manifest_data()
+    data["episode_timeout_minutes"] = 100
+
+    assert CoworldManifest.model_validate(data).episode_timeout_seconds == 100 * 60
+
+
+@pytest.mark.parametrize("minutes", [-5, 0, 101])
+def test_manifest_rejects_out_of_bounds_episode_timeout(minutes: int) -> None:
+    data = _manifest_data()
+    data["episode_timeout_minutes"] = minutes
+
+    with pytest.raises(ValidationError, match="episode_timeout_minutes"):
+        CoworldManifest.model_validate(data)
+
+
 def test_manifest_rejects_null_game_docs() -> None:
     manifest = _manifest_data()
     manifest["game"]["docs"] = None

@@ -10,6 +10,8 @@ HTTP_URL_PATTERN = r"^https?://"
 JsonSchema = dict[str, Any]
 CoworldRunnableRole = Literal["game", "player", "commissioner", "grader", "diagnoser", "optimizer"]
 CoworldManifestRole = Literal["player", "commissioner", "grader", "diagnoser", "optimizer"]
+DEFAULT_EPISODE_TIMEOUT_MINUTES = 20
+MAX_EPISODE_TIMEOUT_MINUTES = 100
 CoworldEngineRuntime = Literal["mettagrid", "cogweb", "bitworld", "nimgrid"]
 MANIFEST_ROLE_SECTIONS = cast(tuple[CoworldManifestRole, ...], get_args(CoworldManifestRole))
 _FUTURE_REQUIRED_ROLE_COMMENT = "Optional in the current schema; intended to become required as this role stabilizes."
@@ -397,6 +399,20 @@ class CoworldManifest(BaseModel):
             "league. Unset means the platform default applies."
         ),
     )
+    episode_timeout_minutes: int | None = Field(
+        default=None,
+        ge=1,
+        le=MAX_EPISODE_TIMEOUT_MINUTES,
+        description=(
+            "Maximum wall-clock minutes a hosted episode of this Coworld may run before the platform kills it. "
+            f"Also bounds hosted certification runs. Must be between 1 and {MAX_EPISODE_TIMEOUT_MINUTES}. "
+            f"Unset means the platform default ({DEFAULT_EPISODE_TIMEOUT_MINUTES} minutes)."
+        ),
+    )
+
+    @property
+    def episode_timeout_seconds(self) -> int:
+        return (self.episode_timeout_minutes or DEFAULT_EPISODE_TIMEOUT_MINUTES) * 60
 
     @model_validator(mode="after")
     def validate_role_types(self) -> "CoworldManifest":
