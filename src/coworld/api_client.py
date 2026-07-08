@@ -329,6 +329,14 @@ class EpisodeStatsResponse(CoworldAPIModel):
     steps: int | None = None
 
 
+class EpisodeRequestPolicyArtifactInfo(CoworldAPIModel):
+    position: int
+    policy_version_id: UUID
+    policy_name: str | None = None
+    has_log: bool
+    has_artifact: bool
+
+
 class CoworldReplaySessionResponse(CoworldAPIModel):
     viewer_url: str
 
@@ -676,17 +684,14 @@ class CoworldApiClient:
     def get_episode_request_artifact_bytes(self, episode_request_id: str, artifact_type: str) -> bytes:
         return self.get_bytes(f"/v2/episode-requests/{episode_request_id}/artifacts/{artifact_type}")
 
-    def list_job_policy_logs(self, job_id: UUID) -> list[str]:
-        return self._get(f"/jobs/{job_id}/policy-logs", list[str])
+    def list_episode_request_policy_artifacts(self, episode_request_id: str) -> list[EpisodeRequestPolicyArtifactInfo]:
+        return self._get(
+            f"/v2/episode-requests/{episode_request_id}/policy-artifacts",
+            list[EpisodeRequestPolicyArtifactInfo],
+        )
 
-    def get_job_policy_log(self, job_id: UUID, agent_idx: int) -> str:
-        return self.get_text(f"/jobs/{job_id}/policy-logs/{agent_idx}")
-
-    def list_job_policy_artifacts(self, job_id: UUID) -> list[str]:
-        return self._get(f"/jobs/{job_id}/policy-artifact", list[str])
-
-    def get_job_policy_artifact(self, job_id: UUID, agent_idx: int) -> bytes:
-        return self.get_bytes(f"/jobs/{job_id}/policy-artifact/{agent_idx}")
+    def get_episode_request_policy_log(self, episode_request_id: str, policy_version_id: UUID, agent_idx: int) -> str:
+        return self.get_text(f"/v2/episode-requests/{episode_request_id}/{policy_version_id}/policy-logs/{agent_idx}")
 
     def get_episode_request_policy_artifact(
         self, episode_request_id: str, policy_version_id: UUID, agent_idx: int

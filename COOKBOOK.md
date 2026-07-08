@@ -950,25 +950,32 @@ GET /v2/episode-requests
 GET /v2/episode-requests/ereq_...
 GET /v2/episode-requests/ereq_.../episode-stats
 GET /v2/episode-requests/ereq_.../artifacts/{spec|game-config|results|logs|error-info}
+GET /v2/episode-requests/ereq_.../policy-artifacts
 GET /v2/episode-requests/ereq_.../{policy_version_id}/policy-logs/{agent_idx}
+GET /v2/episode-requests/ereq_.../{policy_version_id}/policy-artifact/{agent_idx}
 ```
 
-Stats and results go through ownership-scoped v2 client helpers keyed by `ereq_...` — a participant
-reads their own episode, the requester and Softmax team read any episode:
+Stats, results, and per-policy logs/artifacts all go through ownership-scoped v2 client helpers keyed by
+`ereq_...`. Game-level stats/results are readable by the episode's requester and the Softmax team.
+Per-policy logs/artifacts are scoped to the seats whose policy you own — so you get every seat when you
+own them all (self-play, your own experience request), your own seats in a mixed competition episode, and
+the Softmax team reads every seat. The manifest lists exactly the seats you can then download:
 
 ```python
     stats = client.get_episode_request_episode_stats(episode.id)                    # ownership-scoped
     results_bytes = client.get_episode_request_artifact_bytes(episode.id, "results")  # ownership-scoped
+    manifest = client.list_episode_request_policy_artifacts(episode.id)             # which slots have log/artifact
+    for entry in manifest:
+        log = client.get_episode_request_policy_log(episode.id, entry.policy_version_id, entry.position)
+        artifact = client.get_episode_request_policy_artifact(episode.id, entry.policy_version_id, entry.position)
 ```
 
-Raw `replay` bytes and per-agent logs still come from the team-only `/jobs/{job_id}/...` routes
-(`get_job_artifact_bytes`, `list_job_policy_logs`, `get_job_policy_log`); non-team accounts get 403:
+Raw replay bytes still come from the team-only job route (there is no v2 replay artifact route yet):
 
 ```python
     job_id = episode.job_id
     assert job_id is not None
     replay_bytes = client.get_job_artifact_bytes(job_id, "replay")                  # team-only
-    player_logs = client.list_job_policy_logs(job_id)                               # team-only
 ```
 
 For raw HTTP hosted replay creation, the public request body is:
