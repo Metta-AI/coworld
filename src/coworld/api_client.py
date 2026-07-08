@@ -314,7 +314,7 @@ class AgentStatsDetail(CoworldAPIModel):
 
 class PolicyStatsDetail(CoworldAPIModel):
     position: int
-    policy_version_id: UUID | None = None
+    policy_version_id: UUID
     policy_name: str | None = None
     policy_version: int | None = None
     num_agents: int
