@@ -13,6 +13,7 @@ from pathlib import Path
 from typing import Annotated, Any
 from uuid import UUID
 
+import httpx
 import typer
 from rich import box
 from rich.table import Table
@@ -39,6 +40,8 @@ from coworld.submit import parse_policy_identifier
 from coworld.upload import download_coworld, downloaded_coworld_manifest_path, pull_and_tag_image
 
 _UUID_RE = re.compile(r"^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$")
+_POLICY_LOG_RE = re.compile(r"^policy_agent_(\d+)\.log$")
+_POLICY_ARTIFACT_RE = re.compile(r"^policy_artifact_(\d+)\.zip$")
 _XP_REQUEST_HELP = (
     "Typical loop: uv run coworld xp-request create xp-request-candidate.json; "
     "uv run coworld xp-request list --mine; uv run coworld xp-request get xreq_... --json; "
@@ -475,10 +478,9 @@ def register_tournament_commands(app: typer.Typer) -> None:
                 output_path.write_text(content, encoding="utf-8")
                 console.print(f"[green]Log saved to {output_path}[/green]")
                 return
-            manifest = client.list_episode_request_policy_artifacts(episode_request_id)
-            agent_indices = [entry.position for entry in manifest if entry.has_log]
-            artifact_indices = [entry.position for entry in manifest if entry.has_artifact]
+            job_id = _require_job_id(episode)
             if artifact:
+                artifact_indices = _available_artifact_agent_indices(client.list_job_policy_artifacts(job_id))
                 if mine:
                     allowed_policy_ids = _mine_policy_version_ids(client, division_id=None)
                     allowed_agent_indices = _agent_indices_for_policies(episode, allowed_policy_ids)
@@ -495,7 +497,7 @@ def register_tournament_commands(app: typer.Typer) -> None:
                                 f"[red]Agent {agent} has no artifact. Available agent indices: {available}.[/red]"
                             )
                         raise typer.Exit(1)
-                    content = _download_policy_artifact(client, episode, agent)
+                    content = _download_policy_artifact(client, episode, job_id, agent)
                     output_path = _resolve_artifact_output(episode_request_id, agent, download_dir, output)
                     output_path.parent.mkdir(parents=True, exist_ok=True)
                     output_path.write_bytes(content)
@@ -507,7 +509,7 @@ def register_tournament_commands(app: typer.Typer) -> None:
                 if download_dir is not None:
                     written: list[Path] = []
                     for agent_idx in artifact_indices:
-                        content = _download_policy_artifact(client, episode, agent_idx)
+                        content = _download_policy_artifact(client, episode, job_id, agent_idx)
                         output_path = download_dir / f"{episode_request_id}-policy_agent_{agent_idx}.zip"
                         output_path.parent.mkdir(parents=True, exist_ok=True)
                         output_path.write_bytes(content)
@@ -517,6 +519,9 @@ def register_tournament_commands(app: typer.Typer) -> None:
                 if list_logs or agent is None:
                     _print_policy_artifacts(artifact_indices)
                 return
+            available_logs = client.list_job_policy_logs(job_id)
+            agent_indices = _available_agent_indices(available_logs)
+            artifact_indices = _available_artifact_agent_indices(client.list_job_policy_artifacts(job_id))
             if mine:
                 allowed_policy_ids = _mine_policy_version_ids(client, division_id=None)
                 allowed_agent_indices = _agent_indices_for_policies(episode, allowed_policy_ids)
@@ -526,7 +531,7 @@ def register_tournament_commands(app: typer.Typer) -> None:
                 if mine and agent not in agent_indices:
                     console.print(f"[red]Agent {agent} is not controlled by one of your matched policies.[/red]")
                     raise typer.Exit(1)
-                content = _download_policy_log(client, episode, agent)
+                content = client.get_job_policy_log(job_id, agent)
                 if download_dir is None:
                     typer.echo(content)
                     if agent in artifact_indices:
@@ -537,12 +542,12 @@ def register_tournament_commands(app: typer.Typer) -> None:
                 output_path.write_text(content, encoding="utf-8")
                 console.print(f"[green]Log saved to {output_path}[/green]")
                 if agent in artifact_indices:
-                    _download_agent_artifact(client, episode, agent, download_dir)
+                    _download_agent_artifact(client, episode, job_id, agent, download_dir)
                 return
             if download_dir is not None:
                 written: list[Path] = []
                 for agent_idx in agent_indices:
-                    content = _download_policy_log(client, episode, agent_idx)
+                    content = client.get_job_policy_log(job_id, agent_idx)
                     output_path = download_dir / f"{episode_request_id}-policy_agent_{agent_idx}.log"
                     output_path.parent.mkdir(parents=True, exist_ok=True)
                     output_path.write_text(content, encoding="utf-8")
@@ -550,7 +555,7 @@ def register_tournament_commands(app: typer.Typer) -> None:
                 console.print(f"[green]Downloaded {len(written)} log file(s) to {download_dir}[/green]")
                 for agent_idx in artifact_indices:
                     if agent_idx in agent_indices:
-                        _download_agent_artifact(client, episode, agent_idx, download_dir)
+                        _download_agent_artifact(client, episode, job_id, agent_idx, download_dir)
                 return
         if list_logs or agent is None:
             _print_policy_logs(agent_indices)
@@ -1041,6 +1046,13 @@ def _print_experience_request_detail(row: ExperienceRequestDetail) -> None:
     _print_episodes(row.episodes)
 
 
+def _require_job_id(row: V2EpisodeRequestRow) -> UUID:
+    if row.job_id is None:
+        console.print("[red]Episode request has no job_id yet.[/red]")
+        raise typer.Exit(1)
+    return row.job_id
+
+
 def _print_episode_stats(episode_request_id: str, stats: EpisodeStatsResponse) -> None:
     console.print(f"[bold]Episode stats:[/bold] {episode_request_id}")
     console.print(f"Steps: {stats.steps if stats.steps is not None else '-'}")
@@ -1057,6 +1069,24 @@ def _print_episode_stats(episode_request_id: str, stats: EpisodeStatsResponse) -
         console.print(json.dumps(stats.game_stats, indent=2, sort_keys=True))
 
 
+def _available_agent_indices(log_names: list[str]) -> list[int]:
+    indices: list[int] = []
+    for name in log_names:
+        match = _POLICY_LOG_RE.fullmatch(name)
+        if match is not None:
+            indices.append(int(match.group(1)))
+    return sorted(indices)
+
+
+def _available_artifact_agent_indices(artifact_names: list[str]) -> list[int]:
+    indices: list[int] = []
+    for name in artifact_names:
+        match = _POLICY_ARTIFACT_RE.fullmatch(name)
+        if match is not None:
+            indices.append(int(match.group(1)))
+    return sorted(indices)
+
+
 def _policy_version_id_for_agent(episode: V2EpisodeRequestRow, agent_idx: int) -> UUID:
     for participant in episode.participants:
         if participant.position == agent_idx:
@@ -1068,30 +1098,33 @@ def _policy_version_id_for_agent(episode: V2EpisodeRequestRow, agent_idx: int) -
 def _download_policy_artifact(
     client: CoworldApiClient,
     episode: V2EpisodeRequestRow,
+    job_id: UUID,
     agent_idx: int,
 ) -> bytes:
-    """Fetch one agent's player artifact via the ownership-scoped v2 episode-request route."""
-    policy_version_id = _policy_version_id_for_agent(episode, agent_idx)
-    return client.get_episode_request_policy_artifact(episode.id, policy_version_id, agent_idx)
+    """Fetch one agent's player artifact, preferring the ownership-scoped v2 episode-request
+    route and falling back to the job-level route only when v2 is not deployed yet (404).
 
-
-def _download_policy_log(
-    client: CoworldApiClient,
-    episode: V2EpisodeRequestRow,
-    agent_idx: int,
-) -> str:
-    """Fetch one agent's policy log via the ownership-scoped v2 episode-request route."""
+    The v2 route is the correct, ownership-scoped path once deployed; the job-level route is a
+    pragmatic bridge while the v2 route rolls out. A 403 (genuine permission denial) is NOT a
+    fallback condition and propagates.
+    """
     policy_version_id = _policy_version_id_for_agent(episode, agent_idx)
-    return client.get_episode_request_policy_log(episode.id, policy_version_id, agent_idx)
+    try:
+        return client.get_episode_request_policy_artifact(episode.id, policy_version_id, agent_idx)
+    except httpx.HTTPStatusError as error:
+        if error.response.status_code != 404:
+            raise
+        return client.get_job_policy_artifact(job_id, agent_idx)
 
 
 def _download_agent_artifact(
     client: CoworldApiClient,
     episode: V2EpisodeRequestRow,
+    job_id: UUID,
     agent_idx: int,
     download_dir: Path,
 ) -> None:
-    content = _download_policy_artifact(client, episode, agent_idx)
+    content = _download_policy_artifact(client, episode, job_id, agent_idx)
     output_path = download_dir / f"{episode.id}-policy_agent_{agent_idx}.zip"
     output_path.parent.mkdir(parents=True, exist_ok=True)
     output_path.write_bytes(content)
@@ -1143,8 +1176,8 @@ def _download_episode_artifacts(
     artifacts_dir: Path | None,
     mine: bool,
 ) -> None:
-    manifest = client.list_episode_request_policy_artifacts(episode_request_id)
-    artifact_indices = [entry.position for entry in manifest if entry.has_artifact]
+    job_id = _require_job_id(episode)
+    artifact_indices = _available_artifact_agent_indices(client.list_job_policy_artifacts(job_id))
     if mine:
         allowed_policy_ids = _mine_policy_version_ids(client, division_id=None)
         allowed_agent_indices = _agent_indices_for_policies(episode, allowed_policy_ids)
@@ -1155,7 +1188,7 @@ def _download_episode_artifacts(
     output_dir = artifacts_dir if artifacts_dir is not None else Path.cwd() / f"{episode_request_id}-artifacts"
     output_dir.mkdir(parents=True, exist_ok=True)
     for agent_idx in artifact_indices:
-        content = _download_policy_artifact(client, episode, agent_idx)
+        content = _download_policy_artifact(client, episode, job_id, agent_idx)
         output_path = output_dir / f"policy_artifact_{agent_idx}.zip"
         output_path.write_bytes(content)
         console.print(f"[green]Artifact saved to {output_path}[/green]")

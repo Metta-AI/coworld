@@ -372,16 +372,19 @@ def test_episode_logs_downloads_only_my_policy_agents(
         method="GET",
         headers={"Authorization": "Bearer token"},
     ).respond_with_json(episode_request)
-    _expect_policy_artifacts_manifest(
-        httpserver,
-        [
-            _manifest_entry(0, MY_POLICY_VERSION_ID, has_log=True, has_artifact=True),
-            _manifest_entry(1, OTHER_POLICY_VERSION_ID, has_log=True, has_artifact=False, policy_name="otherbot"),
-        ],
-    )
+    httpserver.expect_request(
+        f"/observatory/jobs/{JOB_ID}/policy-logs",
+        method="GET",
+        headers={"Authorization": "Bearer token"},
+    ).respond_with_json(["policy_agent_0.log", "policy_agent_1.log"])
+    httpserver.expect_request(
+        f"/observatory/jobs/{JOB_ID}/policy-artifact",
+        method="GET",
+        headers={"Authorization": "Bearer token"},
+    ).respond_with_json(["policy_artifact_0.zip"])
     _expect_mine_memberships(httpserver, division_id=None)
     httpserver.expect_request(
-        f"/observatory/v2/episode-requests/{EPISODE_REQUEST_ID}/{MY_POLICY_VERSION_ID}/policy-logs/0",
+        f"/observatory/jobs/{JOB_ID}/policy-logs/0",
         method="GET",
         headers={"Authorization": "Bearer token"},
     ).respond_with_data("mine log\n", content_type="text/plain")
@@ -422,15 +425,16 @@ def test_episode_logs_agent_download_dir_fetches_both_log_and_artifact(
         f"/observatory/v2/episode-requests/{EPISODE_REQUEST_ID}",
         method="GET",
     ).respond_with_json(episode_request)
-    _expect_policy_artifacts_manifest(
-        httpserver,
-        [
-            _manifest_entry(0, MY_POLICY_VERSION_ID, has_log=True, has_artifact=True),
-            _manifest_entry(1, OTHER_POLICY_VERSION_ID, has_log=True, has_artifact=False, policy_name="otherbot"),
-        ],
-    )
     httpserver.expect_request(
-        f"/observatory/v2/episode-requests/{EPISODE_REQUEST_ID}/{MY_POLICY_VERSION_ID}/policy-logs/0",
+        f"/observatory/jobs/{JOB_ID}/policy-logs",
+        method="GET",
+    ).respond_with_json(["policy_agent_0.log", "policy_agent_1.log"])
+    httpserver.expect_request(
+        f"/observatory/jobs/{JOB_ID}/policy-artifact",
+        method="GET",
+    ).respond_with_json(["policy_artifact_0.zip"])
+    httpserver.expect_request(
+        f"/observatory/jobs/{JOB_ID}/policy-logs/0",
         method="GET",
     ).respond_with_data("agent0 log\n", content_type="text/plain")
     httpserver.expect_request(
@@ -466,12 +470,16 @@ def test_episode_logs_agent_view_prints_artifact_hint(
         f"/observatory/v2/episode-requests/{EPISODE_REQUEST_ID}",
         method="GET",
     ).respond_with_json(episode_request)
-    _expect_policy_artifacts_manifest(
-        httpserver,
-        [_manifest_entry(0, MY_POLICY_VERSION_ID, has_log=True, has_artifact=True)],
-    )
     httpserver.expect_request(
-        f"/observatory/v2/episode-requests/{EPISODE_REQUEST_ID}/{MY_POLICY_VERSION_ID}/policy-logs/0",
+        f"/observatory/jobs/{JOB_ID}/policy-logs",
+        method="GET",
+    ).respond_with_json(["policy_agent_0.log"])
+    httpserver.expect_request(
+        f"/observatory/jobs/{JOB_ID}/policy-artifact",
+        method="GET",
+    ).respond_with_json(["policy_artifact_0.zip"])
+    httpserver.expect_request(
+        f"/observatory/jobs/{JOB_ID}/policy-logs/0",
         method="GET",
     ).respond_with_data("agent0 log\n", content_type="text/plain")
 
@@ -540,10 +548,11 @@ def test_episode_logs_downloads_player_artifact(
         method="GET",
         headers={"Authorization": "Bearer token"},
     ).respond_with_json(episode_request)
-    _expect_policy_artifacts_manifest(
-        httpserver,
-        [_manifest_entry(0, MY_POLICY_VERSION_ID, has_log=True, has_artifact=True)],
-    )
+    httpserver.expect_request(
+        f"/observatory/jobs/{JOB_ID}/policy-artifact",
+        method="GET",
+        headers={"Authorization": "Bearer token"},
+    ).respond_with_json(["policy_artifact_0.zip"])
     httpserver.expect_request(
         f"/observatory/v2/episode-requests/{EPISODE_REQUEST_ID}/{MY_POLICY_VERSION_ID}/policy-artifact/0",
         method="GET",
@@ -569,21 +578,65 @@ def test_episode_logs_downloads_player_artifact(
     assert (tmp_path / f"{EPISODE_REQUEST_ID}-policy_agent_0.zip").read_bytes() == b"PK\x03\x04artifact zip"
 
 
-def test_episode_logs_artifact_403_surfaces_error(
+def test_episode_logs_artifact_falls_back_to_job_level_when_v2_route_missing(
     httpserver: HTTPServer,
+    monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
 ) -> None:
-    # A genuine permission denial on the ownership-scoped v2 route surfaces as an error.
     episode_request = _episode_request(episode_request_id=EPISODE_REQUEST_ID, replay_url=None)
     del episode_request["assignments"]
     httpserver.expect_request(
         f"/observatory/v2/episode-requests/{EPISODE_REQUEST_ID}",
         method="GET",
     ).respond_with_json(episode_request)
-    _expect_policy_artifacts_manifest(
-        httpserver,
-        [_manifest_entry(0, MY_POLICY_VERSION_ID, has_log=True, has_artifact=True)],
+    httpserver.expect_request(
+        f"/observatory/jobs/{JOB_ID}/policy-artifact",
+        method="GET",
+    ).respond_with_json(["policy_artifact_0.zip"])
+    # v2 ownership-scoped route is not deployed yet -> 404.
+    httpserver.expect_request(
+        f"/observatory/v2/episode-requests/{EPISODE_REQUEST_ID}/{MY_POLICY_VERSION_ID}/policy-artifact/0",
+        method="GET",
+    ).respond_with_data("not found", status=404)
+    # Job-level route is deployed and serves the zip.
+    httpserver.expect_request(
+        f"/observatory/jobs/{JOB_ID}/policy-artifact/0",
+        method="GET",
+    ).respond_with_data(b"PK\x03\x04job-level zip", content_type="application/zip")
+
+    result = CliRunner().invoke(
+        app,
+        [
+            "episode-logs",
+            EPISODE_REQUEST_ID,
+            "--agent",
+            "0",
+            "--artifact",
+            "--download-dir",
+            str(tmp_path),
+            "--server",
+            httpserver.url_for(""),
+        ],
     )
+
+    assert result.exit_code == 0, result.output
+    assert (tmp_path / f"{EPISODE_REQUEST_ID}-policy_agent_0.zip").read_bytes() == b"PK\x03\x04job-level zip"
+
+
+def test_episode_logs_artifact_403_propagates_without_fallback(
+    httpserver: HTTPServer,
+    tmp_path: Path,
+) -> None:
+    episode_request = _episode_request(episode_request_id=EPISODE_REQUEST_ID, replay_url=None)
+    del episode_request["assignments"]
+    httpserver.expect_request(
+        f"/observatory/v2/episode-requests/{EPISODE_REQUEST_ID}",
+        method="GET",
+    ).respond_with_json(episode_request)
+    httpserver.expect_request(
+        f"/observatory/jobs/{JOB_ID}/policy-artifact",
+        method="GET",
+    ).respond_with_json(["policy_artifact_0.zip"])
     httpserver.expect_request(
         f"/observatory/v2/episode-requests/{EPISODE_REQUEST_ID}/{MY_POLICY_VERSION_ID}/policy-artifact/0",
         method="GET",
@@ -606,6 +659,8 @@ def test_episode_logs_artifact_403_surfaces_error(
 
     assert result.exit_code != 0
     assert "Access denied (403)" in str(result.exception) or "403" in result.output
+    # No job-level fallback request should have been made on a genuine 403.
+    assert not any(request.path == f"/observatory/jobs/{JOB_ID}/policy-artifact/0" for request, _ in httpserver.log)
 
 
 def test_episode_logs_artifact_output_writes_named_file(
@@ -618,10 +673,10 @@ def test_episode_logs_artifact_output_writes_named_file(
         f"/observatory/v2/episode-requests/{EPISODE_REQUEST_ID}",
         method="GET",
     ).respond_with_json(episode_request)
-    _expect_policy_artifacts_manifest(
-        httpserver,
-        [_manifest_entry(0, MY_POLICY_VERSION_ID, has_log=True, has_artifact=True)],
-    )
+    httpserver.expect_request(
+        f"/observatory/jobs/{JOB_ID}/policy-artifact",
+        method="GET",
+    ).respond_with_json(["policy_artifact_0.zip"])
     httpserver.expect_request(
         f"/observatory/v2/episode-requests/{EPISODE_REQUEST_ID}/{MY_POLICY_VERSION_ID}/policy-artifact/0",
         method="GET",
@@ -659,10 +714,10 @@ def test_episode_logs_artifact_defaults_to_cwd_file(
         f"/observatory/v2/episode-requests/{EPISODE_REQUEST_ID}",
         method="GET",
     ).respond_with_json(episode_request)
-    _expect_policy_artifacts_manifest(
-        httpserver,
-        [_manifest_entry(0, MY_POLICY_VERSION_ID, has_log=True, has_artifact=True)],
-    )
+    httpserver.expect_request(
+        f"/observatory/jobs/{JOB_ID}/policy-artifact",
+        method="GET",
+    ).respond_with_json(["policy_artifact_0.zip"])
     httpserver.expect_request(
         f"/observatory/v2/episode-requests/{EPISODE_REQUEST_ID}/{MY_POLICY_VERSION_ID}/policy-artifact/0",
         method="GET",
@@ -696,10 +751,10 @@ def test_episode_logs_artifact_unknown_agent_lists_available(
         f"/observatory/v2/episode-requests/{EPISODE_REQUEST_ID}",
         method="GET",
     ).respond_with_json(episode_request)
-    _expect_policy_artifacts_manifest(
-        httpserver,
-        [_manifest_entry(0, MY_POLICY_VERSION_ID, has_log=True, has_artifact=True)],
-    )
+    httpserver.expect_request(
+        f"/observatory/jobs/{JOB_ID}/policy-artifact",
+        method="GET",
+    ).respond_with_json(["policy_artifact_0.zip"])
 
     result = CliRunner().invoke(
         app,
@@ -732,19 +787,25 @@ def test_replay_open_with_artifacts_downloads_zips(
         f"/observatory/v2/episode-requests/{EPISODE_REQUEST_ID}",
         method="GET",
     ).respond_with_json(episode_request)
-    _expect_policy_artifacts_manifest(
-        httpserver,
-        [
-            _manifest_entry(0, MY_POLICY_VERSION_ID, has_log=True, has_artifact=True),
-            _manifest_entry(1, OTHER_POLICY_VERSION_ID, has_log=True, has_artifact=True, policy_name="otherbot"),
-        ],
-    )
+    httpserver.expect_request(
+        f"/observatory/jobs/{JOB_ID}/policy-artifact",
+        method="GET",
+    ).respond_with_json(["policy_artifact_0.zip", "policy_artifact_1.zip"])
+    # v2 route not deployed -> both fall back to the job-level route.
     httpserver.expect_request(
         f"/observatory/v2/episode-requests/{EPISODE_REQUEST_ID}/{MY_POLICY_VERSION_ID}/policy-artifact/0",
         method="GET",
-    ).respond_with_data(b"PK\x03\x04zip0", content_type="application/zip")
+    ).respond_with_data("not found", status=404)
     httpserver.expect_request(
         f"/observatory/v2/episode-requests/{EPISODE_REQUEST_ID}/{OTHER_POLICY_VERSION_ID}/policy-artifact/1",
+        method="GET",
+    ).respond_with_data("not found", status=404)
+    httpserver.expect_request(
+        f"/observatory/jobs/{JOB_ID}/policy-artifact/0",
+        method="GET",
+    ).respond_with_data(b"PK\x03\x04zip0", content_type="application/zip")
+    httpserver.expect_request(
+        f"/observatory/jobs/{JOB_ID}/policy-artifact/1",
         method="GET",
     ).respond_with_data(b"PK\x03\x04zip1", content_type="application/zip")
 
@@ -892,35 +953,6 @@ def _expect_mine_memberships(httpserver: HTTPServer, *, division_id: str | None 
         method="GET",
         headers={"Authorization": "Bearer token"},
     ).respond_with_json([_membership(division_id=division_id or DIVISION_ID)])
-
-
-def _manifest_entry(
-    position: int,
-    policy_version_id: str,
-    *,
-    has_log: bool,
-    has_artifact: bool,
-    policy_name: str = "paintbot",
-) -> dict[str, object]:
-    return {
-        "position": position,
-        "policy_version_id": policy_version_id,
-        "policy_name": policy_name,
-        "has_log": has_log,
-        "has_artifact": has_artifact,
-    }
-
-
-def _expect_policy_artifacts_manifest(
-    httpserver: HTTPServer,
-    entries: list[dict[str, object]],
-    *,
-    episode_request_id: str = EPISODE_REQUEST_ID,
-) -> None:
-    httpserver.expect_request(
-        f"/observatory/v2/episode-requests/{episode_request_id}/policy-artifacts",
-        method="GET",
-    ).respond_with_json(entries)
 
 
 def _game() -> dict[str, object]:
