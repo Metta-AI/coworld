@@ -20,10 +20,16 @@ from coworld.upload import (
     ContainerImageResponse,
     CoworldUploadClient,
     CoworldUploadResponse,
+    ReporterRegisterResponse,
+    ReporterUploadCompleteResponse,
+    ReporterUploadResponse,
+    ReporterVersionResponse,
+    WhoAmIResponse,
     _certification_cache_key,
     _certification_code_digest,
     _certified_manifest_cache_path,
     _docker_archive_client_hash,
+    _humanize_reporter_id,
     _load_current_token,
     _load_string_cache,
     _local_image_client_hash,
@@ -33,6 +39,7 @@ from coworld.upload import (
     _manifest_with_softmax_image_ids,
     _prepare_public_ecr_docker_config,
     _push_archive_to_registry,
+    _submit_wasm_reporters,
     upload_coworld,
 )
 
@@ -2197,3 +2204,91 @@ def _manifest_with_image(image: str) -> dict[str, object]:
     assert isinstance(grader, dict)
     grader["image"] = image
     return manifest
+
+
+# --- wasm reporter submission: register-before-upload (spec 0061) -------------------
+
+
+def test_humanize_reporter_id_titlecases_slug() -> None:
+    assert _humanize_reporter_id("round-recap") == "Round Recap"
+    assert _humanize_reporter_id("player_stats") == "Player Stats"
+    assert _humanize_reporter_id("recap") == "Recap"
+
+
+class _RecordingReporterClient:
+    """Records the sequence of reporter API calls _submit_wasm_reporters makes."""
+
+    def __init__(self) -> None:
+        self.calls: list[tuple[str, dict[str, object]]] = []
+
+    def whoami(self) -> WhoAmIResponse:
+        return WhoAmIResponse(owner_user_id="owner-123")
+
+    def register_reporter(self, **kwargs: object) -> ReporterRegisterResponse:
+        self.calls.append(("register", kwargs))
+        return ReporterRegisterResponse(
+            id="rptr_x", name=str(kwargs["name"]), user_id="owner-123", created=True, reporter_key="rk_new"
+        )
+
+    def request_reporter_upload(self, **kwargs: object) -> ReporterUploadResponse:
+        self.calls.append(("upload", kwargs))
+        return ReporterUploadResponse(upload_url="https://s3/put", existing_version=None)
+
+    def complete_reporter_upload(self, **kwargs: object) -> ReporterUploadCompleteResponse:
+        self.calls.append(("complete", kwargs))
+        return ReporterUploadCompleteResponse(
+            version=ReporterVersionResponse(id="rv_1", name=str(kwargs["name"]), version=3, content_hash="0" * 64)
+        )
+
+
+def _wasm_manifest(tmp_path: Path, reference: dict[str, object]) -> dict[str, object]:
+    (tmp_path / "reporter.wasm").write_bytes(b"\x00asm-fake")
+    return {"game": {"name": "arena"}, "reporter": [reference]}
+
+
+def test_submit_wasm_reporters_registers_before_upload(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    monkeypatch.setattr("coworld.upload.httpx.put", lambda *_a, **_k: cast(object, _OkPut()))
+    client = _RecordingReporterClient()
+    reference = {
+        "wasm": "reporter.wasm",
+        "id": "round-recap",
+        "display_name": "Round Recap!",
+        "description": "A long human description.",
+        "attributes": {"purpose": "recap the round", "world": "softmax:reporter@0.1.0", "outputs": [{"x": 1}]},
+    }
+    manifest = _wasm_manifest(tmp_path, reference)
+
+    result = _submit_wasm_reporters(cast(object, client), manifest, tmp_path)  # type: ignore[arg-type]
+
+    steps = [name for name, _ in client.calls]
+    assert steps == ["register", "upload", "complete"]  # register comes first
+    register_kwargs = client.calls[0][1]
+    assert register_kwargs["name"] == "arena-round-recap"
+    assert register_kwargs["display_name"] == "Round Recap!"
+    assert register_kwargs["description"] == "A long human description."
+    assert register_kwargs["outputs"] == [{"x": 1}]
+    assert result["reporter"] == [{"reporter": "owner-123/arena-round-recap@3"}]
+
+
+def test_submit_wasm_reporters_falls_back_to_humanized_id_and_purpose(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    monkeypatch.setattr("coworld.upload.httpx.put", lambda *_a, **_k: cast(object, _OkPut()))
+    client = _RecordingReporterClient()
+    reference = {
+        "wasm": "reporter.wasm",
+        "id": "round-recap",
+        "attributes": {"purpose": "recap the round", "world": "softmax:reporter@0.1.0", "outputs": [{"x": 1}]},
+    }
+    manifest = _wasm_manifest(tmp_path, reference)
+
+    _submit_wasm_reporters(cast(object, client), manifest, tmp_path)  # type: ignore[arg-type]
+
+    register_kwargs = client.calls[0][1]
+    assert register_kwargs["display_name"] == "Round Recap"  # humanized id
+    assert register_kwargs["description"] == "recap the round"  # attributes.purpose
+
+
+class _OkPut:
+    def raise_for_status(self) -> None:
+        return None

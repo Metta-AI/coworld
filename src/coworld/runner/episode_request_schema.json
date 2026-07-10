@@ -534,6 +534,34 @@
           "title": "Id",
           "type": "string"
         },
+        "display_name": {
+          "anyOf": [
+            {
+              "maxLength": 200,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Human-facing title shown on the Reporters list. Defaults to a humanized `id` (e.g. 'round-recap' -> 'Round Recap') when omitted.",
+          "title": "Display Name"
+        },
+        "description": {
+          "anyOf": [
+            {
+              "maxLength": 2000,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Long-form description shown on the Reporters list. Defaults to `attributes.purpose` when omitted.",
+          "title": "Description"
+        },
         "attributes": {
           "additionalProperties": true,
           "description": "Reporter version attributes submitted with the component: purpose, world, outputs[] (name/type/description), requested_limits. Validated by the platform at submission.",

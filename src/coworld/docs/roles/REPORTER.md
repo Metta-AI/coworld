@@ -38,8 +38,9 @@ A platform-hosted reporter is a **WebAssembly component** uploaded against the r
 identity:
 
 - **Immutably versioned.** Each upload creates an immutable, content-addressed **version**
-  (identical bytes + attributes dedupe to the same version). Uploading a new name registers the
-  reporter and issues its key — upload *is* registration for the hosted path.
+  (identical bytes + attributes dedupe to the same version). Register the reporter identity first
+  (`POST /v2/reporters/register`); upload submits versions against it and never creates the
+  identity itself. `coworld upload` does this automatically for every wasm reporter in a manifest.
 - **Written in your language.** Compile to a component targeting the published
   `softmax:reporter` WIT world — the authoritative interface definition (exported `run`, the
   `types`/`episodes`/`platform`/`reports`/`llm`/`output` tool interfaces, and the `tool-error`
@@ -115,6 +116,8 @@ section holds **references**:
     { "reporter": "acme/match-recap@3" },
     { "wasm": "./reporters/recap.wasm",
       "id": "recap",
+      "display_name": "Round Recap",
+      "description": "A broadcast-style narrative recap of each closed round.",
       "attributes": { "purpose": "narrative", "outputs": [ … ] } }
   ]
 }
@@ -124,9 +127,12 @@ section holds **references**:
   reporter version. References are owner-qualified because reporter names are only unique per
   owner.
 - A **wasm reference** points at a component your coworld build produces; `coworld publish`
-  submits it through the standard upload flow, auto-creating (or extending) a reporter named
-  `{coworld-name}-{id}` owned by you (reporter names cannot contain `/` — it is the owner
-  separator in handles). Republishing unchanged bytes+attributes dedupes to the existing version.
+  **registers** a reporter named `{coworld-name}-{id}` owned by you (reporter names cannot contain
+  `/` — it is the owner separator in handles), then submits the component as a version against it.
+  Registration is an idempotent upsert, so republishing refreshes the reporter's metadata; unchanged
+  bytes+attributes dedupe to the existing version. `display_name` and `description` are **optional**:
+  omit them and `coworld publish` falls back to a humanized `id` (e.g. `recap` → `Recap`) and
+  `attributes.purpose` respectively.
 
 The section is optional. There are **no default reporters** — nothing is injected, and a coworld
 with no reporters certifies unchanged.

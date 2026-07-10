@@ -171,6 +171,19 @@ class CoworldReporterWasmReference(BaseModel):
         description="Package-relative path to a wasm component targeting the softmax:reporter world.",
     )
     id: str = Field(min_length=1, description="Reporter id; the platform name becomes {coworld-name}-{id}.")
+    display_name: str | None = Field(
+        default=None,
+        max_length=200,
+        description=(
+            "Human-facing title shown on the Reporters list. Defaults to a humanized `id` "
+            "(e.g. 'round-recap' -> 'Round Recap') when omitted."
+        ),
+    )
+    description: str | None = Field(
+        default=None,
+        max_length=2000,
+        description="Long-form description shown on the Reporters list. Defaults to `attributes.purpose` when omitted.",
+    )
     attributes: dict[str, Any] = Field(
         description=(
             "Reporter version attributes submitted with the component: purpose, world, "

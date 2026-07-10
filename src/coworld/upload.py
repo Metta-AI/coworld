@@ -199,6 +199,15 @@ class ReporterVersionResponse(BaseModel):
     content_hash: str
 
 
+class ReporterRegisterResponse(BaseModel):
+    id: str
+    name: str
+    user_id: str
+    created: bool
+    # Issued and shown once on create; None when register updated an existing reporter.
+    reporter_key: str | None = None
+
+
 class ReporterUploadResponse(BaseModel):
     upload_url: str | None = None
     existing_version: ReporterVersionResponse | None = None
@@ -206,8 +215,6 @@ class ReporterUploadResponse(BaseModel):
 
 class ReporterUploadCompleteResponse(BaseModel):
     version: ReporterVersionResponse
-    # Present only when this upload registered the reporter (first version of a new name).
-    reporter_key: str | None = None
 
 
 class WhoAmIResponse(BaseModel):
@@ -313,6 +320,18 @@ class CoworldUploadClient:
         )
         _raise_for_status(response)
         return CoworldUploadResponse.model_validate(response.json())
+
+    def register_reporter(
+        self, *, name: str, display_name: str, description: str, outputs: list[dict[str, Any]]
+    ) -> ReporterRegisterResponse:
+        response = self._http_client.post(
+            "/v2/reporters/register",
+            headers=self._headers(),
+            json={"name": name, "display_name": display_name, "description": description, "outputs": outputs},
+            timeout=60.0,
+        )
+        _raise_for_status(response)
+        return ReporterRegisterResponse.model_validate(response.json())
 
     def request_reporter_upload(
         self, *, name: str, content_hash: str, size_bytes: int, attributes: dict[str, Any]
@@ -643,15 +662,23 @@ class CoworldUploadClient:
         return PolicyVersionResponse.model_validate(response.json())
 
 
+def _humanize_reporter_id(reporter_id: str) -> str:
+    """Fallback display title from a reporter id: 'round-recap' -> 'Round Recap'."""
+    return re.sub(r"[-_]+", " ", reporter_id).strip().title()
+
+
 def _submit_wasm_reporters(client: CoworldUploadClient, manifest: dict[str, Any], package_root: Path) -> dict[str, Any]:
     """Submit wasm reporter references and rewrite them to platform references (spec 0061).
 
     Every reporter a hosted manifest carries is an owner-qualified platform
-    reference: for each `{"wasm": ..., "id": ..., "attributes": ...}` entry, upload
-    the component through the standard reporter flow (full static validation runs
-    server-side; identical bytes+attributes dedupe to the existing version) under
+    reference: for each `{"wasm": ..., "id": ..., "attributes": ...}` entry, first
+    register the reporter identity (POST /v2/reporters/register — an idempotent
+    upsert that creates a new name or refreshes an existing one's title,
+    description, and outputs contract), then upload the component through the
+    standard flow (full static validation runs server-side; identical
+    bytes+attributes dedupe to the existing version). Registration happens under
     the name `{game-name}-{id}` (reporter names cannot contain "/", the owner
-    separator) and replace the entry with `{"reporter": "owner/name@version"}`,
+    separator); the entry is replaced with `{"reporter": "owner/name@version"}`,
     where owner is the submitter's user id from `/whoami`.
     """
     references = list(manifest.get("reporter") or [])
@@ -670,8 +697,15 @@ def _submit_wasm_reporters(client: CoworldUploadClient, manifest: dict[str, Any]
         wasm_bytes = wasm_path.read_bytes()
         content_hash = hashlib.sha256(wasm_bytes).hexdigest()
         name = f"{game_name}-{reference['id']}"
+        attributes = reference["attributes"]
+        client.register_reporter(
+            name=name,
+            display_name=reference.get("display_name") or _humanize_reporter_id(reference["id"]),
+            description=reference.get("description") or attributes["purpose"],
+            outputs=attributes["outputs"],
+        )
         upload = client.request_reporter_upload(
-            name=name, content_hash=content_hash, size_bytes=len(wasm_bytes), attributes=reference["attributes"]
+            name=name, content_hash=content_hash, size_bytes=len(wasm_bytes), attributes=attributes
         )
         if upload.existing_version is not None:
             version = upload.existing_version
@@ -680,7 +714,7 @@ def _submit_wasm_reporters(client: CoworldUploadClient, manifest: dict[str, Any]
             put_response = httpx.put(upload.upload_url, content=wasm_bytes, timeout=600.0)
             put_response.raise_for_status()
             version = client.complete_reporter_upload(
-                name=name, content_hash=content_hash, attributes=reference["attributes"]
+                name=name, content_hash=content_hash, attributes=attributes
             ).version
         _logger.info("Reporter %s submitted as %s@%s (%s)", reference["id"], name, version.version, content_hash[:12])
         rewritten.append({"reporter": f"{owner_user_id}/{name}@{version.version}"})
