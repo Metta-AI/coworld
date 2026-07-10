@@ -171,10 +171,6 @@ def register_tournament_commands(app: typer.Typer) -> None:
     @app.command("results")
     def results(
         target_id: Annotated[str, typer.Argument(help="League, division, or round ID.")],
-        include_recent_rounds: Annotated[
-            int,
-            typer.Option("--include-recent-rounds", min=0, help="Recent rounds to include for division results."),
-        ] = 3,
         server: Annotated[str, typer.Option("--server", help="Observatory API server URL.")] = DEFAULT_SUBMIT_SERVER,
         json_output: Annotated[bool, typer.Option("--json", help="Print raw JSON.")] = False,
     ) -> None:
@@ -187,7 +183,7 @@ def register_tournament_commands(app: typer.Typer) -> None:
                 _print_division_ladder(target_id, rows)
                 return
             if target_id.startswith("div_"):
-                rows = client.get_division_leaderboard(target_id, include_recent_rounds=include_recent_rounds)
+                rows = client.get_division_leaderboard(target_id)
                 if json_output:
                     emit_json(_dump_models(rows))
                     return

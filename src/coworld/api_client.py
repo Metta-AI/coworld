@@ -458,43 +458,23 @@ class CoworldApiClient:
     def get_division(self, division_id: str) -> DivisionPublic:
         return self._get(f"/v2/divisions/{division_id}", DivisionPublic)
 
-    def get_division_leaderboard(
-        self,
-        division_id: str,
-        *,
-        include_recent_rounds: int = 0,
-    ) -> list[LeaderboardEntryPublic]:
+    def get_division_leaderboard(self, division_id: str) -> list[LeaderboardEntryPublic]:
         # The endpoint returns JSON null for divisions with an empty leaderboard; coalesce to [].
         rows = self._get(
             f"/v2/divisions/{division_id}/leaderboard",
             list[LeaderboardEntryPublic] | None,
-            params={"include_recent_rounds": include_recent_rounds},
         )
         return rows or []
 
-    def get_division_leaderboards(
-        self,
-        division_id: str,
-        *,
-        include_recent_rounds: int = 0,
-    ) -> DivisionLeaderboardsPublic | None:
+    def get_division_leaderboards(self, division_id: str) -> DivisionLeaderboardsPublic | None:
         return self._get(
             f"/v2/divisions/{division_id}/leaderboards",
             DivisionLeaderboardsPublic | None,
-            params={"include_recent_rounds": include_recent_rounds},
         )
 
-    def get_division_leaderboard_tables(
-        self,
-        division_id: str,
-        *,
-        include_recent_rounds: int = 0,
-    ) -> DivisionLeaderboardsPublic | None:
+    def get_division_leaderboard_tables(self, division_id: str) -> DivisionLeaderboardsPublic | None:
         # TODO: delete compatibility shim after callers stop using table terminology.
-        return self.get_division_leaderboards(
-            division_id,
-            include_recent_rounds=include_recent_rounds,
-        )
+        return self.get_division_leaderboards(division_id)
 
     def list_rounds(
         self,

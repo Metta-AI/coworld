@@ -124,7 +124,7 @@ means the champion flag got cleared by churn — NOT that the policy was deleted
 
    ```python
    # raw route; official rank = mean_round_score
-   resp = http.get(f"/v2/divisions/{WOOD}/leaderboard?include_recent_rounds=0", headers=hdr)
+   resp = http.get(f"/v2/divisions/{WOOD}/leaderboard", headers=hdr)
    entries = resp.json()["entries"]   # each has mean_round_score, rounds_played, recent_rounds
    present = any(e for e in entries if e["player"]["id"] == "<your_player_id>")
    ```

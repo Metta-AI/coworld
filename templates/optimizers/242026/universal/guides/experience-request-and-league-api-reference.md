@@ -64,7 +64,7 @@ some champion flips) need the user's web session. Stage those and hand the final
 
 ## Standings (official rank)
 
-- `GET /v2/divisions/{div}/leaderboard?include_recent_rounds=0` → entries with `mean_round_score`,
+- `GET /v2/divisions/{div}/leaderboard` → entries with `mean_round_score`,
   `rounds_played`, and per-entry `recent_rounds` (recent per-round rank/score).
   CLI: `uv run coworld results <division_id>`.
 - **Official rank = `mean_round_score`** — a slow cumulative per-user lifetime mean (~430 rounds ≈

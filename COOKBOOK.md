@@ -205,7 +205,7 @@ with CoworldApiClient.from_login(server_url=server) as client:
     leagues = client.list_leagues()
     league = client.get_league(leagues[0].id)
     divisions = client.list_divisions(league_id=league.id)
-    leaderboard = client.get_division_leaderboard(divisions[0].id, include_recent_rounds=3)
+    leaderboard = client.get_division_leaderboard(divisions[0].id)
 
 coworld = download_coworld("cow_...", server=server)
 Path("coworld_manifest.json").write_text(json.dumps(coworld.manifest, indent=2) + "\n")
@@ -1104,7 +1104,7 @@ with CoworldApiClient.from_login(server_url=get_api_server()) as client:
     leagues = client.list_leagues()
     league = client.get_league(leagues[0].id)
     divisions = client.list_divisions(league_id=league.id)
-    leaderboard = client.get_division_leaderboard(divisions[0].id, include_recent_rounds=3)
+    leaderboard = client.get_division_leaderboard(divisions[0].id)
     rounds = client.list_rounds(division_id=divisions[0].id, status="completed", limit=5)
 ```
 
