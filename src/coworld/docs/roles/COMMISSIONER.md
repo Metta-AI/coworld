@@ -138,7 +138,9 @@ Sent during the league scheduling phase before a new round exists:
   "league": {
     "id": "uuid_league",
     "commissioner_key": "container",
-    "commissioner_config": { "commissioner_runnable_id": "among-them-commissioner" }
+    "commissioner_config": {
+      "commissioner_runnable_id": "among-them-commissioner"
+    }
   },
   "divisions": [
     { "id": "uuid_open", "name": "open", "level": 0, "type": "competition" },
@@ -187,9 +189,13 @@ Sent before scheduling when the selected commissioner runtime/config has not yet
   "league": {
     "id": "uuid_league",
     "commissioner_key": "container",
-    "commissioner_config": { "commissioner_runnable_id": "default-commissioner" }
+    "commissioner_config": {
+      "commissioner_runnable_id": "default-commissioner"
+    }
   },
-  "divisions": [{ "id": "uuid_daily", "name": "Daily", "level": 1, "type": "competition" }]
+  "divisions": [
+    { "id": "uuid_daily", "name": "Daily", "level": 1, "type": "competition" }
+  ]
 }
 ```
 
@@ -207,9 +213,18 @@ Sent after the platform has created or renamed divisions from `league_migration_
   "league": {
     "id": "uuid_league",
     "commissioner_key": "container",
-    "commissioner_config": { "commissioner_runnable_id": "default-commissioner" }
+    "commissioner_config": {
+      "commissioner_runnable_id": "default-commissioner"
+    }
   },
-  "divisions": [{ "id": "uuid_competition", "name": "Competition", "level": 1, "type": "competition" }],
+  "divisions": [
+    {
+      "id": "uuid_competition",
+      "name": "Competition",
+      "level": 1,
+      "type": "competition"
+    }
+  ],
   "memberships": [
     {
       "id": "uuid_membership",
@@ -463,7 +478,11 @@ Request episodes to run:
       "variant_id": "arena_4p",
       "policy_version_ids": ["uuid_a", "uuid_b", "uuid_c", "uuid_d"],
       "seed": 42,
-      "tags": { "stage": "qualifying", "match": "1" }
+      "tags": {
+        "stage": "qualifying",
+        "match": "1",
+        "coworld_config_overlay_secret": "qualifying_roster_42"
+      }
     }
   ]
 }
@@ -477,6 +496,29 @@ is the episode's player count. Repeating a policy version is valid when one poli
 
 The `request_id` is commissioner-generated and opaque to the platform. It's echoed back in `episode_result`,
 `episode_failed`, `episodes_accepted`, and `episodes_rejected`.
+
+`coworld_config_overlay_secret` is an optional reserved tag for private, owner-published episode inputs. Its value names
+a Coworld secret containing a `coworld.game_config_overlay.v1` JSON document:
+
+```json
+{
+  "format": "coworld.game_config_overlay.v1",
+  "game_config_overrides": {
+    "roster_snapshot": {
+      "uri": "secret://coworld/my_game/qualifying_roster_snapshot_42",
+      "sha256": "<sha256>",
+      "expected_characters": ["Tank", "Healer", "Support", "Melee", "Ranged"]
+    }
+  }
+}
+```
+
+Before persisting the episode, the platform reads this document from the requesting Coworld owner's private,
+KMS-encrypted namespace, shallow-merges `game_config_overrides` onto the selected variant, and validates the result
+against `game.config_schema` for the requested player count. At actual Kubernetes dispatch, nested
+`secret://coworld/<game>/<name>` config values become short-lived read URLs. The commissioner sees only the non-secret
+object name; it never receives storage credentials, signed URLs, or the private object bytes. Antfarm does not support
+private config values, so these episodes must use the Kubernetes backend.
 
 The commissioner may send `schedule_episodes` more than once during a round. After each `episode_result` or
 `episode_failed`, the platform invokes the commissioner's `on_episode_completed` hook. Any episodes returned by that
@@ -494,8 +536,18 @@ Signal that the round is done:
     {
       "division_id": "uuid_open",
       "rankings": [
-        { "policy_version_id": "uuid", "player_id": "player_abc", "rank": 1, "score": 0.85 },
-        { "policy_version_id": "uuid", "player_id": "player_xyz", "rank": 2, "score": 0.6 }
+        {
+          "policy_version_id": "uuid",
+          "player_id": "player_abc",
+          "rank": 1,
+          "score": 0.85
+        },
+        {
+          "policy_version_id": "uuid",
+          "player_id": "player_xyz",
+          "rank": 2,
+          "score": 0.6
+        }
       ]
     }
   ],

@@ -652,6 +652,20 @@ backend.
 Secrets are stored in the original uploader's Coworld-name namespace. Passing a Coworld name targets your canonical owned
 Coworld when there is one; pass a `cow_...` id when uploading a secret for a non-canonical candidate version.
 
+Container commissioners can select a private per-episode game-config overlay without receiving the private bytes. Put
+the referenced binary input and a small overlay document in the same Coworld secret namespace:
+
+```bash
+uv run coworld secret put my_game qualifying_roster_snapshot_42 ./roster.snapshot
+uv run coworld secret put my_game qualifying_roster_42 ./roster-overlay.json
+```
+
+The overlay uses format `coworld.game_config_overlay.v1`; nested `secret://` values are resolved only when the episode
+job is dispatched. The commissioner sets the reserved episode tag
+`coworld_config_overlay_secret=qualifying_roster_42`. See the
+[commissioner contract](src/coworld/docs/roles/COMMISSIONER.md#schedule_episodes) for the document shape and trust
+boundary.
+
 ### Non-CLI API
 
 The non-CLI flow is an API sequence with a Docker registry step:
@@ -794,6 +808,8 @@ uv run coworld xp-request episodes xreq_...
 The body is passed through to the backend unchanged, so use the request shape from the v2 API reference (direct
 `coworld_id`/`variant_id`, or a `target` with `league_name`/`division_name`, plus a `roster` of `policy_ref`, `top_n`,
 or `random` participants).
+For a game-owned private episode input, set `game_config_overlay_secret` to the name published by the Coworld owner;
+do not place `secret://` references in public `game_config_overrides`.
 Children start `pending` and are dispatched asynchronously, so a `get` right after `create` shows them as `pending`.
 
 ### Non-CLI API
