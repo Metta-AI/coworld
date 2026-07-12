@@ -6,7 +6,10 @@ from uuid import UUID
 
 from pydantic import BaseModel, Field, field_validator, model_validator
 
-_STATE_MAX_BYTES = 10 * 1024 * 1024
+COMMISSIONER_STATE_MAX_BYTES = 10 * 1024 * 1024
+# Commissioner messages wrap state with rankings, reports, and other protocol fields.
+# Keep the transport bounded while allowing every protocol-valid state payload.
+COMMISSIONER_MESSAGE_MAX_BYTES = 16 * 1024 * 1024
 POLICY_MEMBERSHIP_STATUS_COMPETING = "competing"
 POLICY_MEMBERSHIP_SUBSTATUS_ACTIVE = "active"
 POLICY_MEMBERSHIP_SUBSTATUS_BENCHED = "benched"
@@ -664,7 +667,7 @@ class RoundComplete(BaseModel):
             return value
         serialized = json.dumps(value)
         size_bytes = len(serialized.encode())
-        if size_bytes > _STATE_MAX_BYTES:
+        if size_bytes > COMMISSIONER_STATE_MAX_BYTES:
             raise ValueError(f"state must not exceed 10 MB (got {size_bytes} bytes)")
         return value
 
