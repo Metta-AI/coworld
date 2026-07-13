@@ -1043,7 +1043,7 @@ certification checks the ref or default branch as it exists at run time. Replay-
 in replay mode with `COGAME_LOAD_REPLAY_URI` and verifies `GET /client/replay`; it waits for a frame from the `/replay` WebSocket.
 Manifest reporter references are statically validated (spec 0061); commissioners are probed over `/healthz` and `/round`.
 `upload-coworld` certifies again before uploading the manifest and runnable images. After upload, the platform
-auto-queues a hosted certification run for the new version (when enabled server-side); the upload output prints the
+auto-queues a hosted certification run for the new version; the upload output prints the
 hosted certification state, `coworld status <cow_id>` shows the verdict and per-step transcript, and
 `--wait-certification` polls the hosted run to completion (exit 2 on an author-controlled failure, 3 on platform
 failure/timeout). A failed hosted certification never blocks or hides the upload.
