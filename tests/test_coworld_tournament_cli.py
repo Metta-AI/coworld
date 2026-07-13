@@ -1048,3 +1048,121 @@ def _episode_request(
         ],
         "created_at": NOW,
     }
+
+
+REPORTER_ID = "rptr_00000000-0000-0000-0000-000000000041"
+OUTPUT_ID = "rout_00000000-0000-0000-0000-000000000042"
+
+
+def _reporter_row(name: str = "round-recap", *, latest_version: int | None = 3) -> dict[str, Any]:
+    return {
+        "id": REPORTER_ID,
+        "name": name,
+        "display_name": "Round recap",
+        "description": "Summarizes a closed round.",
+        "user_id": "owner@example.com",
+        "latest_version": latest_version,
+        "outputs": [{"name": "recap", "type": "render-html", "description": "the html recap"}],
+        "run_count": 7,
+        "output_count": 12,
+        "created_at": NOW,
+    }
+
+
+def test_reporters_list_forwards_search_and_type_filters(httpserver: HTTPServer) -> None:
+    httpserver.expect_request(
+        "/observatory/v2/reporters",
+        method="GET",
+        headers={"Authorization": "Bearer token"},
+    ).respond_with_json([_reporter_row()])
+
+    result = CliRunner().invoke(
+        app,
+        [
+            "reporters",
+            "list",
+            "--query",
+            "recap",
+            "--type",
+            "render-html",
+            "--mode",
+            "hosted",
+            "--server",
+            httpserver.url_for(""),
+            "--json",
+        ],
+    )
+
+    assert result.exit_code == 0, result.output
+    rows = json.loads(result.output)
+    assert rows[0]["id"] == REPORTER_ID
+    query = next(request for request, _ in httpserver.log if request.path == "/observatory/v2/reporters")
+    assert query.args["q"] == "recap"
+    assert query.args.getlist("type") == ["render-html"]
+    assert query.args["mode"] == "hosted"
+
+
+def test_reporters_search_shorthand_sets_query(httpserver: HTTPServer) -> None:
+    httpserver.expect_request(
+        "/observatory/v2/reporters",
+        method="GET",
+    ).respond_with_json([_reporter_row()])
+
+    result = CliRunner().invoke(
+        app,
+        ["reporters", "search", "elo", "--server", httpserver.url_for(""), "--json"],
+    )
+
+    assert result.exit_code == 0, result.output
+    query = next(request for request, _ in httpserver.log if request.path == "/observatory/v2/reporters")
+    assert query.args["q"] == "elo"
+
+
+def test_reporters_show_renders_detail_card(httpserver: HTTPServer) -> None:
+    detail = _reporter_row()
+    detail["purpose"] = "Summarize the closed round for humans."
+    detail["latest_output"] = {
+        "id": OUTPUT_ID,
+        "reporter_id": REPORTER_ID,
+        "reporter_run_id": None,
+        "name": "recap",
+        "type": "render-html",
+        "size_bytes": 42,
+        "media_type": "text/html",
+        "created_at": NOW,
+        "url": f"/v2/reporters/outputs/{OUTPUT_ID}",
+    }
+    httpserver.expect_request(
+        f"/observatory/v2/reporters/{REPORTER_ID}",
+        method="GET",
+    ).respond_with_json(detail)
+
+    result = CliRunner().invoke(
+        app,
+        ["reporters", "show", REPORTER_ID, "--server", httpserver.url_for(""), "--json"],
+    )
+
+    assert result.exit_code == 0, result.output
+    payload = json.loads(result.output)
+    assert payload["purpose"] == "Summarize the closed round for humans."
+    assert payload["latest_output"]["url"] == f"/v2/reporters/outputs/{OUTPUT_ID}"
+
+
+def test_reporters_show_json_preserves_schema_key_for_json_outputs(httpserver: HTTPServer) -> None:
+    # The API contract exposes a JSON part's schema URI under `schema`; the CLI's
+    # --json must round-trip that documented key, not leak the Python field name.
+    detail = _reporter_row()
+    detail["outputs"] = [
+        {"name": "summary", "type": "json", "description": "the summary", "schema": "https://x/schema.json"}
+    ]
+    httpserver.expect_request(f"/observatory/v2/reporters/{REPORTER_ID}", method="GET").respond_with_json(detail)
+
+    result = CliRunner().invoke(
+        app,
+        ["reporters", "show", REPORTER_ID, "--server", httpserver.url_for(""), "--json"],
+    )
+
+    assert result.exit_code == 0, result.output
+    output = json.loads(result.output)["outputs"][0]
+    assert output["schema"] == "https://x/schema.json"
+    assert "schema_uri" not in output

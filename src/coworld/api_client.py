@@ -366,6 +366,55 @@ class PolicyVersionsResponse(CoworldAPIModel):
     total_count: int
 
 
+class ReporterOutputPublic(CoworldAPIModel):
+    id: str
+    reporter_id: str
+    reporter_run_id: str | None = None
+    name: str
+    type: str
+    size_bytes: int
+    media_type: str | None = None
+    created_at: datetime
+    url: str
+
+
+class ReporterOutputDecl(CoworldAPIModel):
+    # The API contract exposes the JSON Schema URI under `schema`; serialize by
+    # alias so `coworld reporters ... --json` round-trips the documented key
+    # (a plain model_dump would leak the Python field name `schema_uri`).
+    model_config = ConfigDict(extra="allow", populate_by_name=True, serialize_by_alias=True)
+
+    name: str
+    type: str
+    description: str
+    # JSON Schema URI, serialized as `schema` on the wire (json parts only).
+    schema_uri: str | None = Field(default=None, alias="schema")
+    optional: bool = False
+
+
+class ReporterPublic(CoworldAPIModel):
+    id: str
+    name: str
+    display_name: str
+    description: str
+    user_id: str
+    latest_version: int | None = None
+    outputs: list[ReporterOutputDecl] = Field(default_factory=list)
+    run_count: int = 0
+    output_count: int = 0
+    created_at: datetime
+
+    @computed_field  # type: ignore[prop-decorator]
+    @property
+    def mode(self) -> str:
+        return "hosted" if self.latest_version is not None else "external"
+
+
+class ReporterDetailPublic(ReporterPublic):
+    purpose: str | None = None
+    latest_output: ReporterOutputPublic | None = None
+
+
 class CoworldApiClient:
     # Process-scoped: set by the top-level Typer `--elevated` callback in `coworld/cli.py`
     # so it applies to every client constructed later in the same invocation. Client-side
@@ -688,6 +737,28 @@ class CoworldApiClient:
             CoworldReplaySessionResponse,
             json={"coworld_id": coworld_id, "episode_id": str(episode_id), "replay_uri": replay_uri},
         )
+
+    def list_reporters(
+        self,
+        *,
+        q: str | None = None,
+        types: Iterable[str] | None = None,
+        mode: str = "all",
+        author: str | None = None,
+        limit: int = 200,
+        offset: int = 0,
+    ) -> list[ReporterPublic]:
+        params: dict[str, Any] = {"mode": mode, "limit": limit, "offset": offset}
+        if q is not None:
+            params["q"] = q
+        if types is not None:
+            params["type"] = list(types)
+        if author is not None:
+            params["author"] = author
+        return self._get("/v2/reporters", list[ReporterPublic], params=params)
+
+    def get_reporter(self, reporter_id: str) -> ReporterDetailPublic:
+        return self._get(f"/v2/reporters/{reporter_id}", ReporterDetailPublic)
 
     def lookup_policy_version(self, *, name: str, version: int | None = None) -> PolicyVersionRow | None:
         params: dict[str, str | int] = {"mine": "true", "name_exact": name, "limit": 100}

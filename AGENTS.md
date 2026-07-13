@@ -40,6 +40,7 @@ uv run coworld run-episode <manifest-or-id> [request.json|image...] [-n N]
 uv run coworld scrimmage <manifest-or-id> <policy-image>
 uv run coworld play <manifest.json> [image|request.json]
 uv run coworld xp-request create <body.json|-> / list / get / episodes
+uv run coworld reporters list [-q TEXT] [--type T] [--mode hosted|external] / search <text> / show <rptr_...>
 uv run coworld build / certify / upload-coworld
 uv run coworld upload-policy / submit
 uv run coworld player list / use <player-id> / unset

@@ -27,6 +27,8 @@ from coworld.api_client import (
     LeaguePolicyMembershipPublic,
     LeaguePublic,
     LeagueSubmissionPublic,
+    ReporterDetailPublic,
+    ReporterPublic,
     RoundDetailPublic,
     RoundPublic,
     V2EpisodeRequestRow,
@@ -118,6 +120,67 @@ def register_tournament_commands(app: typer.Typer) -> None:
             emit_json(_dump_models(rows))
             return
         _print_episodes(rows)
+
+    reporters_app = typer.Typer(
+        no_args_is_help=True,
+        help="Discover reporters: list, search, and inspect what each one produces.",
+    )
+    app.add_typer(reporters_app, name="reporters")
+
+    @reporters_app.command("list")
+    def reporters_list(
+        query: Annotated[
+            str | None,
+            typer.Option("--query", "-q", help="Substring match on name, title, description, or purpose."),
+        ] = None,
+        type_filter: Annotated[
+            list[str] | None,
+            typer.Option("--type", help="Keep reporters producing this output type (repeatable), e.g. render-html."),
+        ] = None,
+        mode: Annotated[
+            str, typer.Option("--mode", help="Filter by hosting mode: all, hosted, or external.")
+        ] = "all",
+        author: Annotated[str | None, typer.Option("--author", help="Owner user id (exact).")] = None,
+        limit: Annotated[int, typer.Option("--limit", min=1, max=500, help="Maximum rows to return.")] = 200,
+        offset: Annotated[int, typer.Option("--offset", min=0, help="Rows to skip.")] = 0,
+        server: Annotated[str, typer.Option("--server", help="Observatory API server URL.")] = DEFAULT_SUBMIT_SERVER,
+        json_output: Annotated[bool, typer.Option("--json", help="Print raw JSON.")] = False,
+    ) -> None:
+        with CoworldApiClient.from_login(server_url=server) as client:
+            rows = client.list_reporters(
+                q=query, types=type_filter, mode=mode, author=author, limit=limit, offset=offset
+            )
+        if json_output:
+            emit_json(_dump_models(rows))
+            return
+        _print_reporters(rows)
+
+    @reporters_app.command("search")
+    def reporters_search(
+        query: Annotated[str, typer.Argument(help="Search text matched against name, title, description, purpose.")],
+        server: Annotated[str, typer.Option("--server", help="Observatory API server URL.")] = DEFAULT_SUBMIT_SERVER,
+        json_output: Annotated[bool, typer.Option("--json", help="Print raw JSON.")] = False,
+    ) -> None:
+        """Shorthand for `reporters list --query <text>`."""
+        with CoworldApiClient.from_login(server_url=server) as client:
+            rows = client.list_reporters(q=query)
+        if json_output:
+            emit_json(_dump_models(rows))
+            return
+        _print_reporters(rows)
+
+    @reporters_app.command("show")
+    def reporters_show(
+        reporter_id: Annotated[str, typer.Argument(help="Reporter ID (prefix rptr_).")],
+        server: Annotated[str, typer.Option("--server", help="Observatory API server URL.")] = DEFAULT_SUBMIT_SERVER,
+        json_output: Annotated[bool, typer.Option("--json", help="Print raw JSON.")] = False,
+    ) -> None:
+        with CoworldApiClient.from_login(server_url=server) as client:
+            detail = client.get_reporter(reporter_id)
+        if json_output:
+            emit_json(detail.model_dump(mode="json"))
+            return
+        _print_reporter_detail(detail)
 
     @app.command("leagues")
     def leagues(
@@ -716,6 +779,61 @@ def _resolve_policy_filter(client: CoworldApiClient, policy: str) -> UUID:
         console.print(f"[red]Policy '{name}{version_hint}' not found.[/red]")
         raise typer.Exit(1)
     return row.resolved_id
+
+
+def _reporter_outputs_summary(outputs: list[Any]) -> str:
+    return ", ".join(f"{o.name} ({o.type})" for o in outputs) or "-"
+
+
+def _print_reporters(rows: list[ReporterPublic]) -> None:
+    table = Table(title="Reporters", box=box.SIMPLE_HEAVY, show_lines=False, pad_edge=False)
+    table.add_column("ID")
+    table.add_column("Name")
+    table.add_column("Title")
+    table.add_column("Mode")
+    table.add_column("Outputs")
+    table.add_column("Runs", justify="right")
+    table.add_column("Parts", justify="right")
+    for row in rows:
+        table.add_row(
+            row.id,
+            row.name,
+            row.display_name,
+            row.mode,
+            _reporter_outputs_summary(row.outputs),
+            str(row.run_count),
+            str(row.output_count),
+        )
+    console.print(table)
+    console.print(f"[dim]{len(rows)} reporter(s)[/dim]")
+
+
+def _print_reporter_detail(row: ReporterDetailPublic) -> None:
+    console.print(f"[bold]Reporter:[/bold] {row.id}")
+    console.print(f"Name: {row.name}")
+    console.print(f"Title: {row.display_name}")
+    console.print(f"Mode: {row.mode}" + (f" (v{row.latest_version})" if row.latest_version is not None else ""))
+    console.print(f"Author: {row.user_id}")
+    console.print(f"Description: {row.description}")
+    if row.purpose:
+        console.print(f"Purpose: {row.purpose}")
+    console.print(f"Runs: {row.run_count}   Output parts: {row.output_count}")
+    console.print(f"Created: {_format_dt(row.created_at)}")
+    if row.outputs:
+        table = Table(title="Declared outputs", box=box.SIMPLE, show_lines=False, pad_edge=False)
+        table.add_column("Name")
+        table.add_column("Type")
+        table.add_column("Optional")
+        table.add_column("Description")
+        for output in row.outputs:
+            table.add_row(output.name, output.type, str(output.optional).lower(), output.description)
+        console.print(table)
+    if row.latest_output is not None:
+        sample = row.latest_output
+        console.print(
+            f"[dim]Latest output: {sample.name} ({sample.type}), {sample.size_bytes} bytes, "
+            f"{_format_dt(sample.created_at)} — {sample.url}[/dim]"
+        )
 
 
 def _print_leagues(rows: list[LeaguePublic]) -> None:
