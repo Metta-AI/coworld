@@ -79,6 +79,32 @@ class CoworldUploadResponse(BaseModel):
     canonical: bool
 
 
+class CoworldCertificationFailure(BaseModel):
+    kind: str
+    detail: str
+    remediation: str
+    retryable: bool
+
+
+class CoworldCertificationStepSummary(BaseModel):
+    id: str
+    status: str
+
+
+class CoworldCertificationStatus(BaseModel):
+    """Response of GET /v2/coworlds/{id}/certification (spec 0062)."""
+
+    coworld_id: str
+    state: str  # never_run | queued | certifying | certified | failed
+    certified: bool
+    contract_version: str | None = None
+    certification_job_id: str | None = None
+    failed_step: str | None = None
+    failure: CoworldCertificationFailure | None = None
+    transcript_summary: list[CoworldCertificationStepSummary] = []
+    completed_at: datetime | None = None
+
+
 class PolicyVersionResponse(BaseModel):
     id: str
     name: str
@@ -247,6 +273,7 @@ class HostedSmokeEpisodeStatus:
 class CoworldStatusResult:
     coworld: CoworldUploadResponse
     hosted_smoke_episodes: tuple[HostedSmokeEpisodeStatus, ...]
+    certification: CoworldCertificationStatus | None = None
 
     @property
     def hosted_smoke_episode_ids(self) -> tuple[str, ...]:
@@ -444,6 +471,15 @@ class CoworldUploadClient:
         )
         _raise_for_status(response)
         return CoworldUploadResponse.model_validate(response.json())
+
+    def get_coworld_certification(self, coworld_id: str) -> CoworldCertificationStatus:
+        response = self._http_client.get(
+            f"/v2/coworlds/{coworld_id}/certification",
+            headers=self._headers(),
+            timeout=60.0,
+        )
+        _raise_for_status(response)
+        return CoworldCertificationStatus.model_validate(response.json())
 
     def find_canonical_coworld(self, name: str) -> CoworldListEntry | None:
         target_name = _coworld_name_key(name)
@@ -854,7 +890,41 @@ def get_coworld_status(
     return CoworldStatusResult(
         coworld=client.get_coworld(coworld_id),
         hosted_smoke_episodes=hosted_smoke_episodes,
+        certification=client.get_coworld_certification(coworld_id),
     )
+
+
+def wait_for_upload_certification(
+    client: CoworldUploadClient,
+    *,
+    coworld_id: str,
+    timeout_seconds: float,
+    poll_seconds: float = 5.0,
+    on_step: Any = None,
+) -> CoworldCertificationStatus:
+    """Poll the hosted certification status until it reaches a terminal state.
+
+    ``on_step`` receives each (step_id, status) transition once, in transcript order,
+    so callers can stream progress. Raises TimeoutError when the window expires; a
+    `never_run` state is not terminal (the auto-queue background task may not have
+    landed yet) and keeps polling.
+    """
+    deadline = time.monotonic() + timeout_seconds
+    reported: dict[str, str] = {}
+    while True:
+        status = client.get_coworld_certification(coworld_id)
+        if on_step is not None:
+            for step in status.transcript_summary:
+                if reported.get(step.id) != step.status:
+                    reported[step.id] = step.status
+                    on_step(step.id, step.status)
+        if status.state in ("certified", "failed"):
+            return status
+        if time.monotonic() >= deadline:
+            raise TimeoutError(
+                f"Timed out waiting for hosted certification of Coworld {coworld_id} (state: {status.state})"
+            )
+        time.sleep(poll_seconds)
 
 
 def get_hosted_smoke_episode_statuses(
@@ -1103,6 +1173,8 @@ def upload_coworld_cmd(
     wait_for_hosted_smoke: bool = True,
     hosted_smoke_timeout_seconds: float = 1800.0,
     hosted_smoke_poll_seconds: float = 5.0,
+    wait_certification: bool = False,
+    certification_timeout_seconds: float = 1800.0,
 ) -> None:
     if base_coworld is not None:
         if manifest_path is not None:
@@ -1139,6 +1211,41 @@ def upload_coworld_cmd(
     typer.echo(f"Manifest hash: {result.manifest_hash}")
     typer.echo(f"Size: {result.size_bytes} bytes")
     typer.echo(f"Canonical: {'yes' if result.canonical else 'no'}")
+
+    # Hosted certification is observational (spec 0062): the upload already succeeded,
+    # so by default just report that it was queued and where to watch it.
+    with CoworldUploadClient.from_login(server_url=server) as client:
+        if not wait_certification:
+            state = client.get_coworld_certification(result.id).state
+            if state == "never_run":
+                state = "not queued (no current certifier registered)"
+            typer.echo(f"Hosted certification: {state}")
+            typer.echo(f"Status: uv run coworld status {result.id}")
+            return
+        typer.echo("Hosted certification:")
+        try:
+            certification = wait_for_upload_certification(
+                client,
+                coworld_id=result.id,
+                timeout_seconds=certification_timeout_seconds,
+                on_step=lambda step_id, status: typer.echo(f"  {status:<4}  {step_id}"),
+            )
+        except TimeoutError as exc:
+            # The upload already succeeded; a wait timeout is a platform-side outcome (exit 3).
+            typer.echo(f"Hosted certification: {exc}")
+            typer.echo(f"Status: uv run coworld status {result.id}")
+            raise typer.Exit(code=3) from exc
+    if certification.state == "certified":
+        typer.echo("Hosted certification: passed")
+        return
+    typer.echo("Hosted certification: failed")
+    if certification.failed_step is not None:
+        typer.echo(f"Failed step: {certification.failed_step}")
+    if certification.failure is not None:
+        typer.echo(f"Reason: {certification.failure.detail}")
+        typer.echo(f"Fix: {certification.failure.remediation}")
+        raise typer.Exit(code=3 if certification.failure.retryable else 2)
+    raise typer.Exit(code=2)
 
 
 def upload_policy_cmd(

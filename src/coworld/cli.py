@@ -34,6 +34,7 @@ from coworld.types import StepResult, TranscriptStep
 from coworld.upload import (
     AutoChampion,
     ContainerImageResponse,
+    CoworldCertificationStatus,
     CoworldListEntry,
     CoworldStatusResult,
     CoworldUploadClient,
@@ -561,6 +562,7 @@ def status_coworld(
             {
                 "coworld": result.coworld.model_dump(mode="json"),
                 "hosted_smoke_episodes": [episode.model_dump() for episode in result.hosted_smoke_episodes],
+                "certification": result.certification.model_dump(mode="json") if result.certification else None,
             }
         )
         return
@@ -634,6 +636,18 @@ def upload_coworld(
         float,
         typer.Option("--hosted-smoke-timeout-seconds", min=1.0, help="Maximum time to wait for hosted smoke."),
     ] = 1800.0,
+    wait_certification: Annotated[
+        bool,
+        typer.Option(
+            "--wait-certification/--no-wait-certification",
+            help="Wait for the auto-queued hosted certification and stream step results. "
+            "Exits 2 on a certification failure you control, 3 on platform failure/timeout.",
+        ),
+    ] = False,
+    certification_timeout_seconds: Annotated[
+        float,
+        typer.Option("--certification-timeout-seconds", min=1.0, help="Maximum time to wait for certification."),
+    ] = 1800.0,
 ) -> None:
     upload_coworld_cmd(
         manifest_path,
@@ -645,6 +659,8 @@ def upload_coworld(
         image_updates=image_updates,
         wait_for_hosted_smoke=wait_hosted_smoke,
         hosted_smoke_timeout_seconds=hosted_smoke_timeout_seconds,
+        wait_certification=wait_certification,
+        certification_timeout_seconds=certification_timeout_seconds,
     )
 
 
@@ -1244,6 +1260,7 @@ def _print_coworld_detail(coworld: CoworldListEntry | CoworldUploadResponse) -> 
 
 def _print_coworld_status(result: CoworldStatusResult) -> None:
     _print_coworld_detail(result.coworld)
+    _print_certification_status(result.certification)
     if not result.hosted_smoke_episodes:
         console.print("Hosted smoke episodes: none")
         return
@@ -1260,6 +1277,26 @@ def _print_coworld_status(result: CoworldStatusResult) -> None:
     for episode in result.hosted_smoke_episodes:
         table.add_row(episode.id, episode.status, episode.error or "-")
     console.print(table)
+
+
+def _print_certification_status(certification: CoworldCertificationStatus | None) -> None:
+    if certification is None:
+        return
+    if certification.state == "certified":
+        console.print(f"Hosted certification: certified ({certification.contract_version})")
+    elif certification.state == "failed":
+        console.print("[red]Hosted certification: failed[/red]")
+        if certification.failed_step is not None:
+            console.print(f"  Failed step: {certification.failed_step}")
+        if certification.failure is not None:
+            console.print(f"  Reason: {certification.failure.detail}")
+            console.print(f"  Fix: {certification.failure.remediation}")
+    elif certification.state == "never_run":
+        console.print("Hosted certification: never run")
+    else:
+        console.print(f"[yellow]Hosted certification: {certification.state}[/yellow]")
+    for step in certification.transcript_summary:
+        console.print(f"  {step.status:<4}  {step.id}")
 
 
 def _print_image_table(images: list[ContainerImageResponse]) -> None:

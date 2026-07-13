@@ -1042,7 +1042,11 @@ implemented supporting-role probes. Mutable `source_url` refs and bare repositor
 certification checks the ref or default branch as it exists at run time. Replay-load verification starts the game image
 in replay mode with `COGAME_LOAD_REPLAY_URI` and verifies `GET /client/replay`; it waits for a frame from the `/replay` WebSocket.
 Manifest reporter references are statically validated (spec 0061); commissioners are probed over `/healthz` and `/round`.
-`upload-coworld` certifies again before uploading the manifest and runnable images.
+`upload-coworld` certifies again before uploading the manifest and runnable images. After upload, the platform
+auto-queues a hosted certification run for the new version (when enabled server-side); the upload output prints the
+hosted certification state, `coworld status <cow_id>` shows the verdict and per-step transcript, and
+`--wait-certification` polls the hosted run to completion (exit 2 on an author-controlled failure, 3 on platform
+failure/timeout). A failed hosted certification never blocks or hides the upload.
 
 `certify` also writes `certification_report.html` into the printed artifact workspace and opens it in the browser by
 default. The report is a local transcript view with each step's pass/fail status, failure reason, artifact paths, and

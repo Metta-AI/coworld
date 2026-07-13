@@ -360,6 +360,8 @@ def test_upload_coworld_command_certifies_before_uploading(
         }
     )
 
+    _expect_certification_status(httpserver, "cow_00000000-0000-0000-0000-000000000002", state="queued")
+
     result = CliRunner().invoke(
         app,
         [
@@ -376,6 +378,7 @@ def test_upload_coworld_command_certifies_before_uploading(
     assert "Coworld: cow_00000000-0000-0000-0000-000000000002" in result.output
     assert "Manifest hash: sha256:manifest-hash" in result.output
     assert "Canonical: yes" in result.output
+    assert "Hosted certification: queued" in result.output
     assert certification_calls == [(manifest_path.resolve(), 60.0)]
 
 
@@ -580,6 +583,7 @@ def test_upload_coworld_command_waits_for_hosted_smoke_success(httpserver: HTTPS
         f"/observatory/v2/coworlds/{new_coworld_id}",
         method="GET",
     ).respond_with_json(_coworld_entry(new_coworld_id, manifest, version="0.2.0", canonical=True))
+    _expect_certification_status(httpserver, new_coworld_id, state="queued")
 
     result = CliRunner().invoke(
         app,
@@ -653,6 +657,149 @@ def test_upload_coworld_command_fails_on_hosted_smoke_failure(httpserver: HTTPSe
     assert "image pull failed" in str(result.exception)
 
 
+def test_upload_coworld_command_waits_for_certification_success(httpserver: HTTPServer) -> None:
+    old_coworld_id = "cow_00000000-0000-0000-0000-000000000013"
+    new_coworld_id = "cow_00000000-0000-0000-0000-000000000014"
+    image_id = "img_00000000-0000-0000-0000-000000000099"
+    manifest = _manifest_with_image(image_id)
+
+    httpserver.expect_request(
+        "/observatory/v2/coworlds",
+        method="GET",
+        query_string="limit=200&offset=0",
+    ).respond_with_json([_coworld_entry(old_coworld_id, manifest, version="0.1.0", canonical=True)])
+    httpserver.expect_request("/observatory/v2/coworlds/upload", method="POST").respond_with_json(
+        _coworld_entry(new_coworld_id, manifest, version="0.2.0", canonical=True)
+    )
+    _expect_certification_status(
+        httpserver,
+        new_coworld_id,
+        state="certified",
+        transcript_summary=[
+            {"id": "matriculate", "status": "pass"},
+            {"id": "smoke-episode", "status": "pass"},
+        ],
+    )
+
+    result = CliRunner().invoke(
+        app,
+        [
+            "upload-coworld",
+            "--from-coworld",
+            old_coworld_id,
+            "--version",
+            "0.2.0",
+            "--server",
+            httpserver.url_for(""),
+            "--no-wait-hosted-smoke",
+            "--wait-certification",
+            "--certification-timeout-seconds",
+            "5",
+        ],
+    )
+
+    assert result.exit_code == 0, result.output
+    assert "pass  matriculate" in result.output
+    assert "pass  smoke-episode" in result.output
+    assert "Hosted certification: passed" in result.output
+
+
+def test_upload_coworld_command_wait_certification_fails_with_remediation(httpserver: HTTPServer) -> None:
+    old_coworld_id = "cow_00000000-0000-0000-0000-000000000013"
+    new_coworld_id = "cow_00000000-0000-0000-0000-000000000014"
+    image_id = "img_00000000-0000-0000-0000-000000000099"
+    manifest = _manifest_with_image(image_id)
+
+    httpserver.expect_request(
+        "/observatory/v2/coworlds",
+        method="GET",
+        query_string="limit=200&offset=0",
+    ).respond_with_json([_coworld_entry(old_coworld_id, manifest, version="0.1.0", canonical=True)])
+    httpserver.expect_request("/observatory/v2/coworlds/upload", method="POST").respond_with_json(
+        _coworld_entry(new_coworld_id, manifest, version="0.2.0", canonical=True)
+    )
+    _expect_certification_status(
+        httpserver,
+        new_coworld_id,
+        state="failed",
+        failed_step="results-conform",
+        transcript_summary=[
+            {"id": "matriculate", "status": "pass"},
+            {"id": "results-conform", "status": "fail"},
+        ],
+        failure={
+            "kind": "results_malformed",
+            "detail": "results.json is missing required field scores",
+            "remediation": "Update the game to write results matching game.results_schema.",
+            "retryable": False,
+        },
+    )
+
+    result = CliRunner().invoke(
+        app,
+        [
+            "upload-coworld",
+            "--from-coworld",
+            old_coworld_id,
+            "--version",
+            "0.2.0",
+            "--server",
+            httpserver.url_for(""),
+            "--no-wait-hosted-smoke",
+            "--wait-certification",
+            "--certification-timeout-seconds",
+            "5",
+        ],
+    )
+
+    # Upload succeeded; the author-controlled certification failure exits 2 with a fix.
+    assert result.exit_code == 2, result.output
+    assert "Upload complete: unit-test-game:0.2.0" in result.output
+    assert "Failed step: results-conform" in result.output
+    assert "Reason: results.json is missing required field scores" in result.output
+    assert "Fix: Update the game to write results matching game.results_schema." in result.output
+
+
+def test_upload_coworld_command_wait_certification_timeout_exits_3(httpserver: HTTPServer) -> None:
+    old_coworld_id = "cow_00000000-0000-0000-0000-000000000013"
+    new_coworld_id = "cow_00000000-0000-0000-0000-000000000014"
+    image_id = "img_00000000-0000-0000-0000-000000000099"
+    manifest = _manifest_with_image(image_id)
+
+    httpserver.expect_request(
+        "/observatory/v2/coworlds",
+        method="GET",
+        query_string="limit=200&offset=0",
+    ).respond_with_json([_coworld_entry(old_coworld_id, manifest, version="0.1.0", canonical=True)])
+    httpserver.expect_request("/observatory/v2/coworlds/upload", method="POST").respond_with_json(
+        _coworld_entry(new_coworld_id, manifest, version="0.2.0", canonical=True)
+    )
+    # Certification never leaves `queued`, so the wait window expires.
+    _expect_certification_status(httpserver, new_coworld_id, state="queued")
+
+    result = CliRunner().invoke(
+        app,
+        [
+            "upload-coworld",
+            "--from-coworld",
+            old_coworld_id,
+            "--version",
+            "0.2.0",
+            "--server",
+            httpserver.url_for(""),
+            "--no-wait-hosted-smoke",
+            "--wait-certification",
+            "--certification-timeout-seconds",
+            "1",
+        ],
+    )
+
+    # Upload succeeded; the timeout is a platform-side outcome with the documented exit code.
+    assert result.exit_code == 3, result.output
+    assert "Upload complete: unit-test-game:0.2.0" in result.output
+    assert "Timed out waiting for hosted certification" in result.output
+
+
 def test_coworld_status_command_waits_for_hosted_smoke_success(httpserver: HTTPServer) -> None:
     coworld_id = "cow_00000000-0000-0000-0000-000000000014"
     image_id = "img_00000000-0000-0000-0000-000000000099"
@@ -674,6 +821,12 @@ def test_coworld_status_command_waits_for_hosted_smoke_success(httpserver: HTTPS
         f"/observatory/v2/coworlds/{coworld_id}",
         method="GET",
     ).respond_with_json(_coworld_entry(coworld_id, manifest, version="0.2.0", canonical=True))
+    _expect_certification_status(
+        httpserver,
+        coworld_id,
+        state="certified",
+        transcript_summary=[{"id": "matriculate", "status": "pass"}],
+    )
 
     result = CliRunner().invoke(
         app,
@@ -690,6 +843,7 @@ def test_coworld_status_command_waits_for_hosted_smoke_success(httpserver: HTTPS
 
     assert result.exit_code == 0, result.output
     assert "Coworld: cow_00000000-0000-0000-0000-000000000014" in result.output
+    assert "Hosted certification: certified (coworld-v1)" in result.output
     assert "Hosted smoke certification: passed" in result.output
     assert "ereq_00000000-0000-0000-0000-000000000001" in result.output
     assert "Canonical: yes" in result.output
@@ -711,6 +865,18 @@ def test_coworld_status_command_prints_pending_hosted_smoke(httpserver: HTTPServ
         f"/observatory/v2/coworlds/{coworld_id}",
         method="GET",
     ).respond_with_json(_coworld_entry(coworld_id, manifest, version="0.2.0", canonical=False))
+    _expect_certification_status(
+        httpserver,
+        coworld_id,
+        state="failed",
+        failed_step="results-conform",
+        failure={
+            "kind": "results_malformed",
+            "detail": "results.json is missing required field scores",
+            "remediation": "Update the game to write results matching game.results_schema.",
+            "retryable": False,
+        },
+    )
 
     result = CliRunner().invoke(
         app,
@@ -723,6 +889,9 @@ def test_coworld_status_command_prints_pending_hosted_smoke(httpserver: HTTPServ
     )
 
     assert result.exit_code == 0, result.output
+    assert "Hosted certification: failed" in result.output
+    assert "Failed step: results-conform" in result.output
+    assert "results.json is missing required field scores" in result.output
     assert "Hosted smoke certification: pending" in result.output
     assert "running" in result.output
     assert "Canonical: no" in result.output
@@ -773,6 +942,8 @@ def test_upload_coworld_from_existing_manifest_applies_patch_without_images(
             "canonical": True,
         }
     )
+
+    _expect_certification_status(httpserver, coworld_id, state="queued")
 
     result = CliRunner().invoke(
         app,
@@ -875,6 +1046,8 @@ def test_upload_coworld_from_existing_manifest_updates_one_role_image(
             "canonical": True,
         }
     )
+
+    _expect_certification_status(httpserver, coworld_id, state="queued")
 
     result = CliRunner().invoke(
         app,
@@ -2082,6 +2255,33 @@ def _coworld_entry(
         "created_at": "2026-05-08T21:00:00Z",
         "canonical": canonical,
     }
+
+
+def _expect_certification_status(
+    httpserver: HTTPServer,
+    coworld_id: str,
+    *,
+    state: str = "never_run",
+    transcript_summary: list[dict[str, str]] | None = None,
+    failed_step: str | None = None,
+    failure: dict[str, object] | None = None,
+) -> None:
+    httpserver.expect_request(
+        f"/observatory/v2/coworlds/{coworld_id}/certification",
+        method="GET",
+    ).respond_with_json(
+        {
+            "coworld_id": coworld_id,
+            "state": state,
+            "certified": state == "certified",
+            "contract_version": None if state == "never_run" else "coworld-v1",
+            "certification_job_id": None,
+            "failed_step": failed_step,
+            "failure": failure,
+            "transcript_summary": transcript_summary or [],
+            "completed_at": None,
+        }
+    )
 
 
 def _episode_request(
