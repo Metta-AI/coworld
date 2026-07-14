@@ -643,9 +643,11 @@ uv run coworld secret list cue_n_woo
 }
 ```
 
-Hosted tournament and episode dispatch replaces the `secret://` value with a short-lived presigned HTTPS URL for the
-matching Coworld. Hosted play and hosted replay sessions do not resolve Coworld secrets. Local runs also do not resolve
-hosted secrets; override the env var locally, for example with `WORKER_SIGNING_KEY_URI=file:///path/to/dev_key`.
+Hosted tournament, episode, and replay-session dispatch replaces the `secret://` value with a short-lived presigned
+HTTPS URL for the matching Coworld. Hosted replay creation accepts only recorded replay URIs for that Coworld; the
+stored Coworld owner—not the viewer—selects the secret namespace, and the browser receives only the derived replay
+viewer capability. Hosted play and local runs do not resolve hosted secrets; override the env var locally, for example
+with `WORKER_SIGNING_KEY_URI=file:///path/to/dev_key`.
 Antfarm dispatch does not resolve Coworld secrets, so secret-bearing Coworlds should run on the k8s hosted episode
 backend.
 
