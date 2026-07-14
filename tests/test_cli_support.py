@@ -1,7 +1,25 @@
+from pathlib import Path
+
 import pytest
 import typer
 
-from coworld.cli_support import observatory_web_url, validate_run_argv
+from coworld.cli_support import active_docker_context, observatory_web_url, validate_run_argv
+
+
+def test_active_docker_context_reads_docker_config(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    (tmp_path / "config.json").write_text('{"currentContext":"orbstack"}\n', encoding="utf-8")
+    monkeypatch.setenv("DOCKER_CONFIG", str(tmp_path))
+    monkeypatch.delenv("DOCKER_CONTEXT", raising=False)
+    monkeypatch.delenv("DOCKER_HOST", raising=False)
+
+    assert active_docker_context() == "orbstack"
+
+
+def test_active_docker_context_identifies_docker_host_override(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("DOCKER_CONTEXT", "orbstack")
+    monkeypatch.setenv("DOCKER_HOST", "unix:///Users/example/.docker/run/docker.sock")
+
+    assert active_docker_context() == "default (DOCKER_HOST=unix:///Users/example/.docker/run/docker.sock)"
 
 
 def test_validate_run_argv_rejects_single_token_with_spaces() -> None:

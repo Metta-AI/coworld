@@ -396,9 +396,11 @@ def test_build_command_writes_hydrated_manifest(tmp_path: Path, monkeypatch: pyt
     result = CliRunner().invoke(
         app,
         ["build", str(tmp_path / "compose.yaml"), str(template_path), "0.2.0", str(output_path)],
+        env={"DOCKER_CONTEXT": "desktop-linux", "DOCKER_HOST": ""},
     )
 
     assert result.exit_code == 0, result.output
+    assert "Docker context: desktop-linux" in result.output
     assert f"Built Coworld manifest: {output_path.resolve()}" in result.output
     built_manifest = json.loads(output_path.read_text(encoding="utf-8"))
     assert built_manifest["game"]["version"] == "0.2.0"

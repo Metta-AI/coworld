@@ -1,15 +1,35 @@
 from __future__ import annotations
 
 import json
+import os
 import shlex
 import sys
+from pathlib import Path
 from typing import Any
 from urllib.parse import urlparse, urlunparse
 
 import typer
+from pydantic import BaseModel, Field
 from rich.console import Console
 
 console = Console()
+
+
+class _DockerConfig(BaseModel):
+    current_context: str = Field(default="default", alias="currentContext")
+
+
+def active_docker_context() -> str:
+    if docker_host := os.environ.get("DOCKER_HOST"):
+        return f"default (DOCKER_HOST={docker_host})"
+    if docker_context := os.environ.get("DOCKER_CONTEXT"):
+        return docker_context
+
+    docker_config = Path(os.environ.get("DOCKER_CONFIG") or Path.home() / ".docker").expanduser()
+    config_path = docker_config / "config.json"
+    if not config_path.is_file():
+        return "default"
+    return _DockerConfig.model_validate_json(config_path.read_text(encoding="utf-8")).current_context
 
 
 def emit_json(payload: Any) -> None:

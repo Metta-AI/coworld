@@ -12,6 +12,7 @@ import typer
 from packaging.version import Version
 from rich import box
 from rich.table import Table
+from typer.core import TyperCommand
 
 from coworld.bundle import build_coworld_manifest
 from coworld.certification_report import write_certification_report
@@ -22,7 +23,7 @@ from coworld.certifier import (
     load_executable_transcript,
     load_manifest_episode_job_spec,
 )
-from coworld.cli_support import console, emit_json, observatory_web_url, validate_run_argv
+from coworld.cli_support import active_docker_context, console, emit_json, observatory_web_url, validate_run_argv
 from coworld.config import DEFAULT_OPTIMIZER_PORT, DEFAULT_SUBMIT_SERVER
 from coworld.manifest_uri import materialized_manifest_path, materialized_replay_path
 from coworld.optimizer.runtime import OptimizerSetupError, run_optimizer_session
@@ -52,6 +53,12 @@ app = typer.Typer(no_args_is_help=True, pretty_exceptions_enable=False)
 register_tournament_commands(app)
 hosted_game_app = typer.Typer(no_args_is_help=True, help="Create and join hosted Coworld games.")
 app.add_typer(hosted_game_app, name="hosted-game")
+
+
+class _DockerCommand(TyperCommand):
+    def invoke(self, ctx: typer.Context) -> object:
+        typer.echo(f"Docker context: {active_docker_context()} (local images use this store)")
+        return super().invoke(ctx)
 
 
 def _parse_secret_env(value: str) -> tuple[str, str]:
@@ -238,7 +245,7 @@ def main(
     CoworldUploadClient.set_elevated(elevated)
 
 
-@app.command("certify")
+@app.command("certify", cls=_DockerCommand)
 def certify(
     manifest_uri: Annotated[str, typer.Argument(help="Path, URI, or Coworld ID for coworld_manifest.json.")],
     server: Annotated[str, typer.Option("--server", help="Observatory API server URL.")] = DEFAULT_SUBMIT_SERVER,
@@ -314,7 +321,7 @@ def certify(
         webbrowser.open(transcript_report.uri)
 
 
-@app.command("build")
+@app.command("build", cls=_DockerCommand)
 def build(
     compose_file: Annotated[Path, typer.Argument(help="Path to the Coworld compose.yaml build file.")],
     template_path: Annotated[
@@ -349,7 +356,7 @@ def build(
     typer.echo(f"Built Coworld manifest: {manifest_path}")
 
 
-@app.command("resolve-and-upload")
+@app.command("resolve-and-upload", cls=_DockerCommand)
 def resolve_and_upload(
     compose_file: Annotated[Path, typer.Argument(help="Path to the Coworld compose.yaml build file.")],
     template_path: Annotated[
@@ -384,7 +391,7 @@ def resolve_and_upload(
     )
 
 
-@app.command("play")
+@app.command("play", cls=_DockerCommand)
 def play(
     manifest_uri: Annotated[str, typer.Argument(help="Path, URI, or Coworld ID for coworld_manifest.json.")],
     episode_request_or_player_images: Annotated[
@@ -592,7 +599,7 @@ def images(
     _print_image_detail(image)
 
 
-@app.command("upload-coworld")
+@app.command("upload-coworld", cls=_DockerCommand)
 def upload_coworld(
     manifest_path: Annotated[Path | None, typer.Argument(help="Path to coworld_manifest.json.")] = None,
     base_coworld: Annotated[
@@ -664,7 +671,7 @@ def upload_coworld(
     )
 
 
-@app.command("patch-commissioner")
+@app.command("patch-commissioner", cls=_DockerCommand)
 def patch_commissioner(
     coworld_name: Annotated[str, typer.Argument(help="Canonical Coworld name to patch.")],
     image: Annotated[str, typer.Argument(help="Commissioner image to upload.")],
@@ -687,7 +694,7 @@ def patch_commissioner(
     )
 
 
-@app.command("download")
+@app.command("download", cls=_DockerCommand)
 def download(
     coworld_ref: Annotated[
         str,
@@ -710,7 +717,7 @@ def download(
     )
 
 
-@app.command("upload-policy")
+@app.command("upload-policy", cls=_DockerCommand)
 def upload_policy(
     image: Annotated[str, typer.Argument(help="Local Docker image to upload as a CoWorld policy.")],
     name: Annotated[str, typer.Option("--name", "-n", help="Policy name.")],
@@ -808,7 +815,7 @@ def submit(
     )
 
 
-@app.command("run-episode", help="Run one or more headless local episodes.")
+@app.command("run-episode", cls=_DockerCommand, help="Run one or more headless local episodes.")
 def run_episode(
     manifest_uri: Annotated[str, typer.Argument(help="Path, URI, or Coworld ID for coworld_manifest.json.")],
     episode_request_or_player_images: Annotated[
@@ -946,7 +953,7 @@ def run_episode(
         typer.echo(f"Artifacts root: {artifacts_root}")
 
 
-@app.command("scrimmage", help="Run one local episode against a target policy container.")
+@app.command("scrimmage", cls=_DockerCommand, help="Run one local episode against a target policy container.")
 def scrimmage(
     manifest_uri: Annotated[str, typer.Argument(help="Path, URI, or Coworld ID for coworld_manifest.json.")],
     target_player_image: Annotated[
@@ -1033,7 +1040,7 @@ def _split_episode_request_and_player_images(values: list[str] | None) -> tuple[
     return None, values
 
 
-@app.command("replay")
+@app.command("replay", cls=_DockerCommand)
 def replay(
     manifest_uri: Annotated[str, typer.Argument(help="Path, URI, or Coworld ID for coworld_manifest.json.")],
     replay_uri: Annotated[str, typer.Argument(help="Path or URI to a replay artifact JSON file.")],
@@ -1060,7 +1067,7 @@ def replay(
     typer.echo(f"Logs: {session.artifacts.logs_dir}")
 
 
-@app.command("optimize")
+@app.command("optimize", cls=_DockerCommand)
 def optimize(
     manifest_uri: Annotated[
         str | None,
