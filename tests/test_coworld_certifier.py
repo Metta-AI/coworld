@@ -251,7 +251,14 @@ def test_assert_docker_image_reachable_accepts_remote_image(monkeypatch: pytest.
 
     def fake_run(cmd, **kwargs):
         calls.append(cmd)
-        return subprocess.CompletedProcess(cmd, 1 if cmd[1:3] == ["image", "inspect"] else 0, stdout="", stderr="")
+        if cmd[1:3] == ["image", "inspect"]:
+            return subprocess.CompletedProcess(cmd, 1, stdout="", stderr="not local")
+        return subprocess.CompletedProcess(
+            cmd,
+            0,
+            stdout=json.dumps({"Descriptor": {"platform": {"os": "linux", "architecture": "amd64"}}}),
+            stderr="",
+        )
 
     monkeypatch.setattr(subprocess, "run", fake_run)
 
@@ -259,7 +266,7 @@ def test_assert_docker_image_reachable_accepts_remote_image(monkeypatch: pytest.
 
     assert calls == [
         ["docker", "image", "inspect", "ghcr.io/example/image:latest"],
-        ["docker", "manifest", "inspect", "ghcr.io/example/image:latest"],
+        ["docker", "manifest", "inspect", "--verbose", "ghcr.io/example/image:latest"],
     ]
 
 
@@ -326,7 +333,7 @@ def test_assert_docker_image_reachable_requires_remote_manifest_with_amd64_for_u
         return subprocess.CompletedProcess(
             cmd,
             0,
-            stdout=json.dumps({"manifests": [{"platform": {"os": "linux", "architecture": "arm64"}}]}),
+            stdout=json.dumps([{"Descriptor": {"platform": {"os": "linux", "architecture": "arm64"}}}]),
             stderr="",
         )
 
@@ -363,6 +370,100 @@ def test_assert_episode_images_reachable_rejects_local_arm64_for_upload(
 
     with pytest.raises(RuntimeError, match="linux/amd64"):
         assert_episode_images_reachable(job, require_linux_amd64=True)
+
+
+def test_assert_episode_images_reachable_warns_for_remote_amd64_image_on_apple_silicon(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    package = load_coworld_package(_write_package_files(tmp_path))
+    job = build_manifest_episode_job_spec(package)
+
+    def fake_run(cmd, **kwargs):
+        if cmd[1:3] == ["image", "inspect"]:
+            return subprocess.CompletedProcess(cmd, 1, stdout="", stderr="not local")
+        return subprocess.CompletedProcess(
+            cmd,
+            0,
+            stdout=json.dumps({"Descriptor": {"platform": {"os": "linux", "architecture": "amd64"}}}),
+            stderr="",
+        )
+
+    monkeypatch.setattr(subprocess, "run", fake_run)
+    monkeypatch.setattr("coworld.runner.runner.sys.platform", "darwin")
+    monkeypatch.setattr("coworld.runner.runner.platform.machine", lambda: "arm64")
+    monkeypatch.delenv("DOCKER_DEFAULT_PLATFORM", raising=False)
+
+    assert_episode_images_reachable(job)
+
+    warning = capsys.readouterr().err
+    assert "linux/amd64-only Coworld images will run on Apple Silicon" in warning
+    assert "export DOCKER_DEFAULT_PLATFORM=linux/amd64" in warning
+    assert "src/coworld/docs/MACOS.md" in warning
+    assert warning.count("Warning:") == 1
+
+
+@pytest.mark.parametrize(
+    ("platforms", "default_platform"),
+    [
+        ([{"Os": "linux", "Architecture": "arm64"}], None),
+        ([{"Os": "linux", "Architecture": "amd64"}], "linux/amd64"),
+    ],
+)
+def test_assert_episode_images_reachable_skips_amd64_emulation_warning_when_configured_or_native(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    platforms: list[dict[str, str]],
+    default_platform: str | None,
+) -> None:
+    package = load_coworld_package(_write_package_files(tmp_path))
+    job = build_manifest_episode_job_spec(package)
+
+    def fake_run(cmd, **kwargs):
+        return subprocess.CompletedProcess(cmd, 0, stdout=json.dumps(platforms), stderr="")
+
+    monkeypatch.setattr(subprocess, "run", fake_run)
+    monkeypatch.setattr("coworld.runner.runner.sys.platform", "darwin")
+    monkeypatch.setattr("coworld.runner.runner.platform.machine", lambda: "arm64")
+    if default_platform is None:
+        monkeypatch.delenv("DOCKER_DEFAULT_PLATFORM", raising=False)
+    else:
+        monkeypatch.setenv("DOCKER_DEFAULT_PLATFORM", default_platform)
+
+    assert_episode_images_reachable(job)
+
+    assert capsys.readouterr().err == ""
+
+
+def test_assert_episode_images_reachable_skips_amd64_emulation_warning_for_multi_platform_images(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    package = load_coworld_package(_write_package_files(tmp_path))
+    job = build_manifest_episode_job_spec(package)
+
+    def fake_run(cmd, **kwargs):
+        if cmd[1:3] == ["image", "inspect"]:
+            return subprocess.CompletedProcess(cmd, 1, stdout="", stderr="not local")
+        return subprocess.CompletedProcess(
+            cmd,
+            0,
+            stdout=json.dumps(
+                [
+                    {"Descriptor": {"platform": {"os": "linux", "architecture": "amd64"}}},
+                    {"Descriptor": {"platform": {"os": "linux", "architecture": "arm64"}}},
+                ]
+            ),
+            stderr="",
+        )
+
+    monkeypatch.setattr(subprocess, "run", fake_run)
+    monkeypatch.setattr("coworld.runner.runner.sys.platform", "darwin")
+    monkeypatch.setattr("coworld.runner.runner.platform.machine", lambda: "arm64")
+    monkeypatch.delenv("DOCKER_DEFAULT_PLATFORM", raising=False)
+
+    assert_episode_images_reachable(job)
+
+    assert capsys.readouterr().err == ""
 
 
 def test_validate_source_references_rejects_empty_github_source_url(

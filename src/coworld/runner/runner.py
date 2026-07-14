@@ -3,10 +3,12 @@ from __future__ import annotations
 import asyncio
 import json
 import os
+import platform
 import re
 import secrets
 import socket
 import subprocess
+import sys
 import tempfile
 import time
 from contextlib import ExitStack
@@ -73,12 +75,10 @@ class DockerManifestDescriptor(BaseModel):
     platform: DockerManifestPlatform
 
 
-class DockerManifestInspectResult(BaseModel):
+class DockerManifestVerboseEntry(BaseModel):
     model_config = ConfigDict(extra="ignore")
 
-    os_name: str | None = Field(default=None, alias="os")
-    architecture: str | None = None
-    manifests: list[DockerManifestDescriptor] = Field(default_factory=list)
+    descriptor: DockerManifestDescriptor = Field(alias="Descriptor")
 
 
 @dataclass(frozen=True)
@@ -168,6 +168,10 @@ class PlayerLaunchSpec(RunnableLaunchSpec):
 def assert_docker_image_reachable(
     image: str, *, label: str = "Docker image", require_linux_amd64: bool = False
 ) -> None:
+    _reachable_docker_image_platforms(image, label=label, require_linux_amd64=require_linux_amd64)
+
+
+def _reachable_docker_image_platforms(image: str, *, label: str, require_linux_amd64: bool) -> set[tuple[str, str]]:
     if _CONTAINER_IMAGE_ID_RE.match(image):
         raise RuntimeError(
             f"{label} is an unresolved Coworld image id: {image}\n"
@@ -179,15 +183,40 @@ def assert_docker_image_reachable(
 
     local_result = subprocess.run(["docker", "image", "inspect", image], capture_output=True, text=True, timeout=30)
     if local_result.returncode == 0:
-        if require_linux_amd64:
-            _assert_local_image_is_linux_amd64(image, label=label, inspect_stdout=local_result.stdout)
-        return
+        entries = TypeAdapter(list[DockerImageInspectEntry]).validate_json(local_result.stdout)
+        if len(entries) != 1:
+            raise RuntimeError(f"docker image inspect returned {len(entries)} entries for {image}")
+        entry = entries[0]
+        platforms = {(entry.os_name, entry.architecture)}
+        if require_linux_amd64 and ("linux", "amd64") not in platforms:
+            raise RuntimeError(
+                f"{label} {image} is {entry.os_name}/{entry.architecture}; "
+                "Coworld uploads and hosted execution require linux/amd64 images. "
+                "Rebuild the image with: docker build --platform linux/amd64 ..."
+            )
+        return platforms
 
-    remote_result = subprocess.run(["docker", "manifest", "inspect", image], capture_output=True, text=True, timeout=60)
+    remote_result = subprocess.run(
+        ["docker", "manifest", "inspect", "--verbose", image], capture_output=True, text=True, timeout=60
+    )
     if remote_result.returncode == 0:
-        if require_linux_amd64:
-            _assert_manifest_contains_linux_amd64(image, label=label, manifest_stdout=remote_result.stdout)
-        return
+        manifest = TypeAdapter(DockerManifestVerboseEntry | list[DockerManifestVerboseEntry]).validate_json(
+            remote_result.stdout
+        )
+        entries = manifest if isinstance(manifest, list) else [manifest]
+        platforms = {(entry.descriptor.platform.os_name, entry.descriptor.platform.architecture) for entry in entries}
+        if require_linux_amd64 and ("linux", "amd64") not in platforms:
+            platform_summary = (
+                ", ".join(f"{os_name}/{architecture}" for os_name, architecture in sorted(platforms))
+                if platforms
+                else "no declared platforms"
+            )
+            raise RuntimeError(
+                f"{label} {image} manifest does not include linux/amd64 ({platform_summary}); "
+                "Coworld uploads and hosted execution require linux/amd64 images. "
+                "Publish a linux/amd64 image or a multi-platform manifest containing linux/amd64."
+            )
+        return platforms
 
     raise RuntimeError(
         f"{label} is not available locally or reachable remotely: {image}\n"
@@ -196,49 +225,50 @@ def assert_docker_image_reachable(
     )
 
 
-def _assert_local_image_is_linux_amd64(image: str, *, label: str, inspect_stdout: str) -> None:
-    entries = TypeAdapter(list[DockerImageInspectEntry]).validate_json(inspect_stdout)
-    if len(entries) != 1:
-        raise RuntimeError(f"docker image inspect returned {len(entries)} entries for {image}")
-    entry = entries[0]
-    if entry.os_name != "linux" or entry.architecture != "amd64":
-        raise RuntimeError(
-            f"{label} {image} is {entry.os_name}/{entry.architecture}; "
-            "Coworld uploads and hosted execution require linux/amd64 images. "
-            "Rebuild the image with: docker build --platform linux/amd64 ..."
-        )
-
-
-def _assert_manifest_contains_linux_amd64(image: str, *, label: str, manifest_stdout: str) -> None:
-    manifest = DockerManifestInspectResult.model_validate_json(manifest_stdout)
-    if manifest.os_name == "linux" and manifest.architecture == "amd64":
-        return
-    if any(
-        descriptor.platform.os_name == "linux" and descriptor.platform.architecture == "amd64"
-        for descriptor in manifest.manifests
-    ):
-        return
-    platforms = [
-        f"{descriptor.platform.os_name}/{descriptor.platform.architecture}" for descriptor in manifest.manifests
-    ]
-    if manifest.os_name is not None and manifest.architecture is not None:
-        platforms.append(f"{manifest.os_name}/{manifest.architecture}")
-    platform_summary = ", ".join(platforms) if platforms else "no declared platforms"
-    raise RuntimeError(
-        f"{label} {image} manifest does not include linux/amd64 ({platform_summary}); "
-        "Coworld uploads and hosted execution require linux/amd64 images. "
-        "Publish a linux/amd64 image or a multi-platform manifest containing linux/amd64."
-    )
-
-
 def assert_episode_images_reachable(job: CoworldEpisodeJobSpec, *, require_linux_amd64: bool = False) -> None:
-    assert_docker_image_reachable(
-        job.game_runnable.image, label="game.runnable.image", require_linux_amd64=require_linux_amd64
-    )
-    for slot, player in enumerate(job.players):
-        assert_docker_image_reachable(
-            player.image, label=f"players[{slot}].image", require_linux_amd64=require_linux_amd64
+    image_platforms = [
+        (
+            job.game_runnable.image,
+            _reachable_docker_image_platforms(
+                job.game_runnable.image,
+                label="game.runnable.image",
+                require_linux_amd64=require_linux_amd64,
+            ),
         )
+    ]
+    for slot, player in enumerate(job.players):
+        image_platforms.append(
+            (
+                player.image,
+                _reachable_docker_image_platforms(
+                    player.image,
+                    label=f"players[{slot}].image",
+                    require_linux_amd64=require_linux_amd64,
+                ),
+            )
+        )
+
+    if (
+        sys.platform == "darwin"
+        and platform.machine() in {"arm64", "aarch64"}
+        and os.environ.get("DOCKER_DEFAULT_PLATFORM") != "linux/amd64"
+    ):
+        amd64_only_images = sorted(
+            {
+                image
+                for image, platforms in image_platforms
+                if ("linux", "amd64") in platforms and ("linux", "arm64") not in platforms
+            }
+        )
+        if amd64_only_images:
+            print(
+                "Warning: linux/amd64-only Coworld images will run on Apple Silicon, but "
+                "DOCKER_DEFAULT_PLATFORM is not set to linux/amd64: "
+                f"{', '.join(amd64_only_images)}\n"
+                "Enable Rosetta in OrbStack, then run: export DOCKER_DEFAULT_PLATFORM=linux/amd64\n"
+                "Setup: https://github.com/Metta-AI/coworld/blob/main/src/coworld/docs/MACOS.md",
+                file=sys.stderr,
+            )
 
 
 def run_coworld_episode(
@@ -791,10 +821,7 @@ def local_port_publish_args(ports: list[ResolvedLocalPort]) -> list[str]:
 def local_port_env(ports: list[ResolvedLocalPort]) -> dict[str, str]:
     if not ports:
         return {}
-    env = {
-        f"{LOCAL_PORT_ENV_PREFIX}{port.container_port}": f"{port.host}:{port.host_port}"
-        for port in ports
-    }
+    env = {f"{LOCAL_PORT_ENV_PREFIX}{port.container_port}": f"{port.host}:{port.host_port}" for port in ports}
     env[LOCAL_PORTS_JSON_ENV_VAR] = json.dumps(
         {str(port.container_port): {"host": port.host, "port": port.host_port} for port in ports},
         separators=(",", ":"),
@@ -830,16 +857,12 @@ def _local_port_requests(env: Mapping[str, str]) -> list[LocalPortRequest]:
             mapping = entry
         parts = [part.strip() for part in mapping.split(":")]
         if len(parts) > 2:
-            raise ValueError(
-                f"{LOCAL_EXTRA_PORTS_ENV_VAR} entry {entry!r} must be container_port[:host_port]"
-            )
+            raise ValueError(f"{LOCAL_EXTRA_PORTS_ENV_VAR} entry {entry!r} must be container_port[:host_port]")
         container_port = _parse_local_extra_port(parts[0], entry=entry, label="container port", allow_zero=False)
         host_port = None
         if len(parts) == 2:
             if parts[1] == "":
-                raise ValueError(
-                    f"{LOCAL_EXTRA_PORTS_ENV_VAR} entry {entry!r} must omit host_port or set it to 0"
-                )
+                raise ValueError(f"{LOCAL_EXTRA_PORTS_ENV_VAR} entry {entry!r} must omit host_port or set it to 0")
             parsed_host_port = _parse_local_extra_port(parts[1], entry=entry, label="host port", allow_zero=True)
             host_port = parsed_host_port or None
         requests.append(LocalPortRequest(container_port=container_port, host_port=host_port))
