@@ -619,7 +619,10 @@ async def _require_global_message(
     url: str, *, timeout_seconds: float, on_connect_failure: Callable[[], None] | None = None
 ) -> None:
     try:
-        async with websockets.connect(url, open_timeout=5) as websocket:
+        # max_size=None: a game's first global snapshot can exceed the 1 MiB
+        # websockets default (high-resolution sprite protocols ship multi-MB
+        # init frames), and this probe only checks that a message arrives.
+        async with websockets.connect(url, open_timeout=5, max_size=None) as websocket:
             message = await asyncio.wait_for(websocket.recv(), timeout=min(timeout_seconds, 10.0))
     except (OSError, asyncio.TimeoutError, ConnectionClosed, InvalidHandshake, InvalidStatus) as exc:
         # A player that crashes before the game emits its first global message
