@@ -163,6 +163,9 @@ def test_commissioner_message_parses_schedule_episodes() -> None:
                     "policy_version_ids": [str(policy_version_id) for policy_version_id in policy_version_ids],
                     "seed": 42,
                     "tags": {"stage": "round"},
+                    "game_config_overrides": {
+                        "players": [{"character": {"race": "troll", "character_class": "hunter"}}]
+                    },
                 }
             ],
         }
@@ -176,6 +179,7 @@ def test_commissioner_message_parses_schedule_episodes() -> None:
             policy_version_ids=policy_version_ids,
             seed=42,
             tags={"stage": "round"},
+            game_config_overrides={"players": [{"character": {"race": "troll", "character_class": "hunter"}}]},
         )
     ]
 

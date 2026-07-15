@@ -77,6 +77,7 @@ class EpisodeRequest(BaseModel):
     policy_version_ids: list[UUID]
     seed: int | None = None
     tags: dict[str, str] = Field(default_factory=dict)
+    game_config_overrides: dict[str, Any] = Field(default_factory=dict)
 
 
 class EpisodeScore(BaseModel):

@@ -486,6 +486,11 @@ Request episodes to run:
         "stage": "qualifying",
         "match": "1",
         "coworld_config_overlay_secret": "qualifying_roster_42"
+      },
+      "game_config_overrides": {
+        "players": [
+          {"character": {"race": "troll", "character_class": "hunter"}}
+        ]
       }
     }
   ]
@@ -500,6 +505,11 @@ is the episode's player count. Repeating a policy version is valid when one poli
 
 The `request_id` is commissioner-generated and opaque to the platform. It's echoed back in `episode_result`,
 `episode_failed`, `episodes_accepted`, and `episodes_rejected`.
+
+`game_config_overrides` optionally shallow-merges public, per-episode values onto the selected variant. The platform
+rejects runner-managed `tokens`, rejects `secret://` values, and validates the final config against
+`game.config_schema` for the requested player count before persisting the episode. Use this for entrant-specific public
+configuration such as a selected character or map; use the reserved private-overlay tag below for secret-backed input.
 
 `coworld_config_overlay_secret` is an optional reserved tag for private, owner-published episode inputs. Its value names
 a Coworld secret containing a `coworld.game_config_overlay.v1` JSON document:
