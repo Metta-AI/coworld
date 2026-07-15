@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import webbrowser
+from typing import Any
 
 import typer
 
@@ -40,6 +41,7 @@ def submit_policy_to_league_cmd(
     server: str = DEFAULT_SUBMIT_SERVER,
     open_browser: bool = True,
     auto_champion: AutoChampion = AutoChampion.always,
+    preferences: dict[str, Any] | None = None,
 ) -> None:
     with CoworldUploadClient.from_login(server_url=server) as client:
         policy_version = _resolve_policy_version(client, policy_identifier)
@@ -50,6 +52,7 @@ def submit_policy_to_league_cmd(
             league_id,
             policy_version.id,
             auto_champion=auto_champion,
+            preferences=preferences,
         )
 
     placement_runs_async = submission.status in {"pending", "processing"}

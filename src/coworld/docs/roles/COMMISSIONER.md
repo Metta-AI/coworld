@@ -153,6 +153,7 @@ Sent during the league scheduling phase before a new round exists:
       "division_id": "uuid_open",
       "policy_version_id": "uuid",
       "player_id": "player_abc",
+      "preferences": { "team_name": "Dungeon Delvers", "role": "tank" },
       "status": "competing",
       "substatus": "active",
       "is_champion": true
@@ -174,10 +175,11 @@ Sent during the league scheduling phase before a new round exists:
 }
 ```
 
-The commissioner receives all divisions, active memberships, and recent rounds for the league. Platform-owned champion
-state is carried by `is_champion`; `substatus` is commissioner-owned display and workflow state. The default scheduling
-policy is to create rounds from `status="competing"` memberships with `is_champion=true`, report those memberships as
-`substatus="active"`, and report non-champion competing memberships as `substatus="benched"`.
+The commissioner receives all divisions, active memberships, and recent rounds for the league. Each membership carries
+the arbitrary `preferences` object supplied with its league submission. Platform-owned champion state is carried by
+`is_champion`; `substatus` is commissioner-owned display and workflow state. The default scheduling policy is to create
+rounds from `status="competing"` memberships with `is_champion=true`, report those memberships as `substatus="active"`,
+and report non-champion competing memberships as `substatus="benched"`.
 
 ##### `league_migration_config_request`
 
@@ -231,6 +233,7 @@ Sent after the platform has created or renamed divisions from `league_migration_
       "league_id": "uuid_league",
       "division_id": "uuid_daily",
       "policy_version_id": "uuid_policy_version",
+      "preferences": {},
       "status": "competing"
     }
   ]
@@ -268,6 +271,7 @@ custom entrant set.
       "division_id": "uuid_open",
       "policy_version_id": "uuid",
       "player_id": "player_abc",
+      "preferences": { "team_name": "Dungeon Delvers", "role": "tank" },
       "status": "competing",
       "substatus": "active",
       "is_champion": true

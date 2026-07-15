@@ -28,7 +28,12 @@ def test_submit_policy_to_league_posts_v2_submission(
         "/observatory/v2/league-submissions",
         method="POST",
         headers={"Authorization": "Bearer player-token"},
-        json={"league_id": LEAGUE_ID, "policy_version_id": POLICY_VERSION_ID, "auto_champion": "always"},
+        json={
+            "league_id": LEAGUE_ID,
+            "policy_version_id": POLICY_VERSION_ID,
+            "auto_champion": "always",
+            "preferences": {"team_name": "Dungeon Delvers", "role": "tank", "priority": 1},
+        },
     ).respond_with_json(
         {
             "id": "sub_00000000-0000-0000-0000-000000000051",
@@ -46,6 +51,12 @@ def test_submit_policy_to_league_posts_v2_submission(
             LEAGUE_ID,
             "--server",
             httpserver.url_for(""),
+            "--preference",
+            "team_name=Dungeon Delvers",
+            "--preference",
+            "role=tank",
+            "--preference",
+            "priority=1",
         ],
     )
 
@@ -64,6 +75,23 @@ def test_submit_policy_to_league_posts_v2_submission(
     assert policy_query.args["name_exact"] == "paintbot"
     assert policy_query.args["version"] == "3"
     assert not any(request.path == "/observatory/v2/leagues" for request, _ in httpserver.log)
+
+
+def test_submit_policy_rejects_malformed_preference() -> None:
+    result = CliRunner().invoke(
+        app,
+        [
+            "submit",
+            "paintbot",
+            "--league",
+            LEAGUE_ID,
+            "--preference",
+            "role",
+        ],
+    )
+
+    assert result.exit_code == 2
+    assert "Expected KEY=VALUE format" in result.output
 
 
 def test_submit_policy_can_disable_auto_champion(

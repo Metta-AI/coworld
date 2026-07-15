@@ -805,13 +805,22 @@ def submit(
             help="Champion promotion mode after the policy qualifies.",
         ),
     ] = AutoChampion.always,
+    preference: Annotated[
+        list[str] | None,
+        typer.Option(
+            "--preference",
+            help="Submission preference as KEY=VALUE. Repeat for multiple values; JSON values are decoded.",
+        ),
+    ] = None,
 ) -> None:
+    preferences = dict(_parse_override(value) for value in preference) if preference is not None else None
     submit_policy_to_league_cmd(
         policy,
         league_id=league,
         server=server,
         open_browser=open_browser,
         auto_champion=auto_champion,
+        preferences=preferences,
     )
 
 

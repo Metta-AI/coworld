@@ -514,15 +514,19 @@ class CoworldUploadClient:
         policy_version_id: UUID,
         *,
         auto_champion: AutoChampion = AutoChampion.always,
+        preferences: dict[str, Any] | None = None,
     ) -> LeagueSubmissionResponse:
+        payload: dict[str, Any] = {
+            "league_id": league_id,
+            "policy_version_id": str(policy_version_id),
+            "auto_champion": auto_champion.value,
+        }
+        if preferences is not None:
+            payload["preferences"] = preferences
         response = self._http_client.post(
             "/v2/league-submissions",
             headers=self._headers(),
-            json={
-                "league_id": league_id,
-                "policy_version_id": str(policy_version_id),
-                "auto_champion": auto_champion.value,
-            },
+            json=payload,
             timeout=120.0,
         )
         _raise_for_status(response)

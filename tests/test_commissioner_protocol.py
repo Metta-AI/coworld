@@ -70,6 +70,7 @@ def test_round_start_serializes_with_message_type() -> None:
                 division_id=division_id,
                 policy_version_id=policy_version_id,
                 player_id="player_abc",
+                preferences={"team_name": "Dungeon Delvers", "role": "tank"},
                 status="competing",
                 substatus="active",
                 is_champion=True,
@@ -93,6 +94,7 @@ def test_round_start_serializes_with_message_type() -> None:
     assert data["type"] == "round_start"
     assert data["league"]["id"] == str(league_id)
     assert data["memberships"][0]["policy_version_id"] == str(policy_version_id)
+    assert data["memberships"][0]["preferences"] == {"team_name": "Dungeon Delvers", "role": "tank"}
     assert data["memberships"][0]["is_champion"] is True
     assert data["variants"][0]["num_agents"] == 2
 

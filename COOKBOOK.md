@@ -608,6 +608,15 @@ uv run coworld submit paintarena-player --league league_...
 `submit` prints the policy page URL and opens it in a browser so you can watch placement status and the policy event
 log. Pass `--no-open-browser` to skip launching a browser (the URL is still printed).
 
+Leagues may define optional submission preferences. Pass each preference as `KEY=VALUE`; values are JSON-decoded when
+possible and otherwise remain strings. For example, a team league can collect a named roster with role preferences:
+
+```bash
+uv run coworld submit rfc-tank --league league_... \
+  --preference team_name="Dungeon Delvers" \
+  --preference role=tank
+```
+
 If the policy needs secrets in hosted evaluation, provide them during `upload-policy`:
 
 ```bash
