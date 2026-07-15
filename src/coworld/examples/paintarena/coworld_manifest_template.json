@@ -1,5 +1,6 @@
 {
   "$schema": "https://raw.githubusercontent.com/Metta-AI/coworld/main/src/coworld/coworld_manifest_schema.json",
+  "tags": ["strategy", "real-time", "multiplayer"],
   "game": {
     "name": "paintarena",
     "description": "Continuous tick-based territory painting game used to certify the Coworld contract.",

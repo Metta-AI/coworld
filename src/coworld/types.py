@@ -4,6 +4,7 @@ from typing import Annotated, Any, Literal, cast, get_args
 
 from packaging.version import Version
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
+from pydantic.json_schema import SkipJsonSchema
 
 SCHEMA_VERSION = "https://json-schema.org/draft/2020-12/schema"
 HTTP_URL_PATTERN = r"^https?://"
@@ -357,6 +358,12 @@ class CoworldManifest(BaseModel):
     )
 
     schema_: str | None = Field(default=None, alias="$schema", description="Optional JSON Schema URI for IDE tooling.")
+    tags: Annotated[list[Annotated[str, Field(min_length=1)]], Field(min_length=3)] | SkipJsonSchema[None] = Field(
+        default=None,
+        description="Tags describing the Coworld for discovery and classification. "
+        "When present, at least three are required.",
+        json_schema_extra=lambda schema: schema.pop("default", None),
+    )
     game: CoworldGameManifest = Field(
         description="Game runnable and protocol metadata. Role docs: docs/roles/GAME.md.",
         json_schema_extra=_role_doc_schema("game"),

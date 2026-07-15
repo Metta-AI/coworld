@@ -66,6 +66,28 @@ def test_load_coworld_package_validates_inline_game_manifest(tmp_path: Path) -> 
     assert package.manifest.game.name == "unit-test-game"
 
 
+def test_load_coworld_package_allows_tagless_historical_manifest(tmp_path: Path) -> None:
+    coworld_manifest_path = _write_package_files(tmp_path)
+    manifest = json.loads(coworld_manifest_path.read_text())
+    del manifest["tags"]
+    coworld_manifest_path.write_text(json.dumps(manifest))
+
+    package = load_coworld_package(coworld_manifest_path)
+
+    assert package.manifest.tags is None
+    assert "tags" not in package.manifest.model_dump(exclude_none=True)
+
+
+def test_load_coworld_package_requires_tags_for_certification(tmp_path: Path) -> None:
+    coworld_manifest_path = _write_package_files(tmp_path)
+    manifest = json.loads(coworld_manifest_path.read_text())
+    del manifest["tags"]
+    coworld_manifest_path.write_text(json.dumps(manifest))
+
+    with pytest.raises(ValueError, match="certification requires at least three manifest tags"):
+        load_coworld_package(coworld_manifest_path, require_certification_tags=True)
+
+
 def test_load_coworld_package_requires_protocol_uri_doc_urls(tmp_path: Path) -> None:
     coworld_manifest_path = _write_package_files(tmp_path)
     manifest = json.loads(coworld_manifest_path.read_text())
@@ -2393,6 +2415,7 @@ def _coworld_manifest(
             "players": [{"player_id": "unit-test-player"}],
         }
     return {
+        "tags": ["test", "multiplayer", "real-time"],
         "game": _game_manifest(config_schema_required=config_schema_required or ["tokens"]),
         "player": [
             {

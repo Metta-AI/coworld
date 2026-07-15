@@ -259,7 +259,7 @@ def test_coworld_certify_error_without_failed_step_marks_report_failed(
 
 def test_coworld_certify_schema_failure_prints_actionable_detail(monkeypatch: MonkeyPatch, tmp_path: Path) -> None:
     manifest_path = tmp_path / "coworld_manifest.json"
-    manifest_path.write_text("{}\n", encoding="utf-8")
+    manifest_path.write_text('{"tags": ["test", "multiplayer", "real-time"]}\n', encoding="utf-8")
     monkeypatch.chdir(tmp_path)
 
     result = CliRunner().invoke(app, ["certify", str(manifest_path), "--no-open-report"])
@@ -950,6 +950,7 @@ def _cogs_vs_clips_manifest(tmp_path: Path) -> Path:
     manifest_path.write_text(
         json.dumps(
             {
+                "tags": ["strategy", "multiplayer", "real-time"],
                 "game": {
                     "name": "cogs_vs_clips",
                     "version": "0.1.0",

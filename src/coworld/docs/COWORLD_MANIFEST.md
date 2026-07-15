@@ -4,6 +4,10 @@ Every Coworld package has a `coworld_manifest.json` file. The manifest is the pa
 which game to run, which bundled players and supporting runnables ship with the Coworld, which variants exist, which
 docs are game-authored, and which certification episode proves the package works.
 
+The optional top-level `tags` field contains non-empty strings that describe the Coworld for discovery and
+classification. Historical manifests without tags remain valid for playback and replay. New certification requires at
+least three tags; when the field is present, the manifest schema also requires at least three entries.
+
 The field-level reference is the generated JSON Schema:
 
 - [`coworld_manifest_schema.json`](../coworld_manifest_schema.json) is the canonical machine-readable contract.

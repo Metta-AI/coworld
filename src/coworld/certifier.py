@@ -143,11 +143,13 @@ class CertificationResult:
     graduated_at: datetime
 
 
-def load_coworld_package(manifest_path: Path) -> CoworldPackage:
+def load_coworld_package(manifest_path: Path, *, require_certification_tags: bool = False) -> CoworldPackage:
     manifest_path = manifest_path.resolve()
     manifest = load_json_object(manifest_path)
     validate_json_schema(manifest, coworld_manifest_schema())
     typed_manifest = CoworldManifest.model_validate(manifest)
+    if require_certification_tags and typed_manifest.tags is None:
+        raise ValueError("Coworld certification requires at least three manifest tags")
     validate_coworld_manifest_game_configs(typed_manifest)
 
     package = CoworldPackage(
@@ -456,7 +458,11 @@ def certify_coworld(
 
     package = cast(
         CoworldPackage,
-        run_step("matriculate", lambda: load_coworld_package(manifest_path), "Manifest schema validated."),
+        run_step(
+            "matriculate",
+            lambda: load_coworld_package(manifest_path, require_certification_tags=True),
+            "Manifest schema and certification tags validated.",
+        ),
     )
     matriculated_at = datetime.now(timezone.utc)
 
