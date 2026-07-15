@@ -488,7 +488,6 @@ def _write_manifest(
     manifest_path.write_text(
         json.dumps(
             {
-                "tags": ["test", "multiplayer", "real-time"],
                 "game": {
                     "name": "unit-test-game",
                     **({"version": "0.1.0"} if include_version else {}),

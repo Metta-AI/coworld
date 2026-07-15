@@ -2393,7 +2393,6 @@ def _coworld_manifest(
             "players": [{"player_id": "unit-test-player"}],
         }
     return {
-        "tags": ["test", "multiplayer", "real-time"],
         "game": _game_manifest(config_schema_required=config_schema_required or ["tokens"]),
         "player": [
             {

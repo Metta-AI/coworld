@@ -2303,7 +2303,6 @@ def _episode_request(
 
 def _manifest() -> dict[str, object]:
     return {
-        "tags": ["test", "multiplayer", "real-time"],
         "game": {
             "name": "unit-test-game",
             "version": "0.1.0",

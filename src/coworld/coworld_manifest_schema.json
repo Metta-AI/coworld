@@ -670,16 +670,6 @@
       "description": "Optional JSON Schema URI for IDE tooling.",
       "title": "$Schema"
     },
-    "tags": {
-      "description": "At least three tags describing the Coworld for discovery and classification.",
-      "items": {
-        "minLength": 1,
-        "type": "string"
-      },
-      "minItems": 3,
-      "title": "Tags",
-      "type": "array"
-    },
     "game": {
       "$ref": "#/$defs/CoworldGameManifest",
       "description": "Game runnable and protocol metadata. Role docs: docs/roles/GAME.md.",
@@ -801,7 +791,7 @@
       "title": "Episode Timeout Minutes"
     }
   },
-  "required": ["tags", "game", "player", "variants", "certification"],
+  "required": ["game", "player", "variants", "certification"],
   "title": "Coworld Manifest",
   "type": "object"
 }
