@@ -357,6 +357,10 @@ class CoworldManifest(BaseModel):
     )
 
     schema_: str | None = Field(default=None, alias="$schema", description="Optional JSON Schema URI for IDE tooling.")
+    tags: list[Annotated[str, Field(min_length=1)]] = Field(
+        min_length=3,
+        description="At least three tags describing the Coworld for discovery and classification.",
+    )
     game: CoworldGameManifest = Field(
         description="Game runnable and protocol metadata. Role docs: docs/roles/GAME.md.",
         json_schema_extra=_role_doc_schema("game"),

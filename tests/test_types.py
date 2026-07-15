@@ -93,6 +93,33 @@ def test_manifest_schema_accepts_game_resources() -> None:
     validate_json_schema(manifest, coworld_manifest_schema())
 
 
+def test_manifest_requires_at_least_three_tags() -> None:
+    manifest = _manifest_data()
+    manifest["tags"] = ["strategy", "multiplayer"]
+
+    with pytest.raises(ValidationError, match="tags"):
+        CoworldManifest.model_validate(manifest)
+    with pytest.raises(JsonSchemaValidationError, match="too short"):
+        validate_json_schema(manifest, coworld_manifest_schema())
+
+
+def test_manifest_requires_tags_field() -> None:
+    manifest = _manifest_data()
+    del manifest["tags"]
+
+    with pytest.raises(ValidationError, match="tags"):
+        CoworldManifest.model_validate(manifest)
+
+
+def test_manifest_accepts_three_tags() -> None:
+    manifest = _manifest_data()
+
+    typed = CoworldManifest.model_validate(manifest)
+    validate_json_schema(manifest, coworld_manifest_schema())
+
+    assert typed.tags == ["strategy", "multiplayer", "real-time"]
+
+
 def test_manifest_rejects_wrong_game_runnable_type() -> None:
     schema = coworld_manifest_schema()["$defs"]["CoworldGameManifest"]["properties"]["runnable"]["properties"]["type"]
     assert schema["const"] == "game"
@@ -511,6 +538,7 @@ def _assert_schema_properties_have_descriptions(schema_name: str, schema: dict[s
 
 def _manifest_data(game_type: str = "game", player_type: str = "player") -> dict[str, Any]:
     return {
+        "tags": ["strategy", "multiplayer", "real-time"],
         "game": {
             "name": "Example",
             "version": "1.0.0",
