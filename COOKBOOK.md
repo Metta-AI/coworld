@@ -821,6 +821,10 @@ The body is passed through to the backend unchanged, so use the request shape fr
 or `random` participants).
 For a game-owned private episode input, set `game_config_overlay_secret` to the name published by the Coworld owner;
 do not place `secret://` references in public `game_config_overrides`.
+Stateful Coworlds may additionally set a typed `state` object. Omit it for the Coworld's normal new-state start; use
+`head` for a player's live mutable state or `snapshot` for an immutable player/world checkpoint. Both explicit modes
+require `game_config_overlay_secret`. Participant state requires fixed `policy_ref` entries pinned in seat order, so
+new policy versions can retain player-owned state without using the policy version as the state key.
 Children start `pending` and are dispatched asynchronously, so a `get` right after `create` shows them as `pending`.
 
 ### Non-CLI API
