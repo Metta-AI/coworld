@@ -42,6 +42,7 @@ class MembershipInfo(BaseModel):
     division_id: UUID
     policy_version_id: UUID
     player_id: str | None = None
+    player_name: str | None = None
     preferences: dict[str, Any] = Field(default_factory=dict)
     status: str = "competing"
     substatus: str | None = None
