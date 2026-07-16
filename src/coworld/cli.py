@@ -40,6 +40,7 @@ from coworld.upload import (
     CoworldStatusResult,
     CoworldUploadClient,
     CoworldUploadResponse,
+    cache_certified_manifest,
     coworld_status,
     download_coworld_cmd,
     downloaded_coworld_manifest_path,
@@ -277,6 +278,7 @@ def certify(
                 timeout_seconds=timeout_seconds,
                 on_step=on_step,
             )
+            cache_certified_manifest(manifest_path)
         except Exception as exc:
             report = write_certification_report(
                 manifest_uri=str(manifest_uri),

@@ -135,6 +135,7 @@ def test_coworld_certify_prints_replay_liveness_and_inspection_command(
     monkeypatch: MonkeyPatch, tmp_path: Path
 ) -> None:
     opened_urls: list[str] = []
+    cached_manifests: list[Path] = []
     manifest_path = tmp_path / "coworld_manifest.json"
     manifest_path.write_text('{"game": {"name": "unit"}}\n', encoding="utf-8")
     workspace = tmp_path / "workspace"
@@ -156,6 +157,7 @@ def test_coworld_certify_prints_replay_liveness_and_inspection_command(
         )
 
     monkeypatch.setattr("coworld.cli.certify_coworld", fake_certify_coworld)
+    monkeypatch.setattr("coworld.cli.cache_certified_manifest", cached_manifests.append)
     monkeypatch.setattr("coworld.cli.webbrowser.open", opened_urls.append)
 
     result = CliRunner().invoke(app, ["certify", str(manifest_path)])
@@ -166,6 +168,7 @@ def test_coworld_certify_prints_replay_liveness_and_inspection_command(
     assert f"Inspect replay: uv run coworld replay {manifest_path} {workspace / 'replay.json'}" in result.output
     assert f"Inspect logs: ls {workspace / 'logs'}" in result.output
     assert f"Transcript report: {report_path.as_uri()}" in result.output
+    assert cached_manifests == [manifest_path.resolve()]
     assert opened_urls == [report_path.as_uri()]
     html = report_path.read_text(encoding="utf-8")
     assert "Coworld certification" in html

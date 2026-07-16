@@ -779,8 +779,7 @@ def upload_coworld(
     certified_manifests = _load_string_cache(certification_cache_path)
     if certification_key not in certified_manifests:
         certify_coworld(package.manifest_path, timeout_seconds=timeout_seconds)
-        certified_manifests[certification_key] = "certified"
-        _write_string_cache(certification_cache_path, certified_manifests)
+        cache_certified_manifest(package.manifest_path, cache_key=certification_key)
 
     with CoworldUploadClient.from_login(server_url=server) as client:
         upload_manifest = _manifest_with_softmax_image_ids(client, manifest)
@@ -1539,22 +1538,11 @@ def _local_image_client_hash(image: str) -> str:
         capture_output=True,
         text=True,
     ).stdout.strip()
-    cache_path = _client_hash_cache_path()
-    cache = _load_string_cache(cache_path)
-    cached = cache.get(image_id)
-    if cached is not None:
-        return cached
-    with tempfile.TemporaryFile() as archive:
-        subprocess.run(["docker", "image", "save", image], check=True, stdout=archive)
-        archive.seek(0)
-        client_hash = _docker_archive_client_hash(archive, image=image)
-    cache[image_id] = client_hash
-    _write_string_cache(cache_path, cache)
-    return client_hash
-
-
-def _client_hash_cache_path() -> Path:
-    return _coworld_cache_path("image_client_hashes.json")
+    # Docker image IDs are content-addressed config digests whose rootfs diff IDs
+    # cover every layer. They are therefore already the stable local content key
+    # this endpoint needs; saving and rereading a multi-gigabyte image to derive a
+    # second hash only delays the upload.
+    return image_id
 
 
 def _certified_manifest_cache_path() -> Path:
@@ -1577,6 +1565,18 @@ def _certification_cache_key(manifest_path: Path, *, manifest: dict[str, object]
         "local_images": _certification_local_image_hashes(manifest_data),
     }
     return _sha256_digest(json.dumps(key, sort_keys=True, separators=(",", ":")).encode())
+
+
+def cache_certified_manifest(
+    manifest_path: Path,
+    *,
+    manifest: dict[str, object] | None = None,
+    cache_key: str | None = None,
+) -> None:
+    cache_path = _certified_manifest_cache_path()
+    cache = _load_string_cache(cache_path)
+    cache[cache_key or _certification_cache_key(manifest_path, manifest=manifest)] = "certified"
+    _write_string_cache(cache_path, cache)
 
 
 def _certification_code_digest() -> str:
@@ -1646,56 +1646,6 @@ def _write_string_cache(cache_path: Path, cache: dict[str, str]) -> None:
             pass
 
 
-def _docker_archive_client_hash(archive: Any, *, image: str | None = None) -> str:
-    with tarfile.open(fileobj=archive, mode="r:*") as tar:
-        manifest_json = _read_tar_member(tar, "manifest.json")
-        manifest = json.loads(manifest_json)
-        if not isinstance(manifest, list) or len(manifest) != 1:
-            raise RuntimeError("Docker image archive must contain exactly one image manifest")
-        image_manifest = manifest[0]
-        if not isinstance(image_manifest, dict):
-            raise RuntimeError("Docker image archive manifest entry must be an object")
-
-        config_name = image_manifest["Config"]
-        layers = image_manifest["Layers"]
-        if not isinstance(config_name, str) or not isinstance(layers, list):
-            raise RuntimeError("Docker image archive manifest has invalid config or layers")
-
-        config_bytes = _read_tar_member(tar, config_name)
-        config = json.loads(config_bytes)
-        if not isinstance(config, dict):
-            raise RuntimeError("Docker image archive config must be an object")
-        os_name = config.get("os")
-        architecture = config.get("architecture")
-        if os_name != "linux" or architecture != "amd64":
-            subject = f"Docker image {image}" if image is not None else "Docker image archive"
-            raise RuntimeError(
-                f"{subject} is {os_name or 'unknown'}/{architecture or 'unknown'}; "
-                "hosted Coworld episodes require linux/amd64 images. "
-                "Rebuild the image with: docker build --platform linux/amd64 ..."
-            )
-
-        layer_hashes = []
-        for layer in layers:
-            if not isinstance(layer, str):
-                raise RuntimeError("Docker image archive manifest layers must be strings")
-            layer_hashes.append(_sha256_digest(_read_tar_member(tar, layer)))
-
-        content = {
-            "config": _sha256_digest(config_bytes),
-            "layers": layer_hashes,
-        }
-    encoded = json.dumps(content, sort_keys=True, separators=(",", ":")).encode()
-    return _sha256_digest(encoded)
-
-
-def _read_tar_member(tar: tarfile.TarFile, name: str) -> bytes:
-    member = tar.extractfile(name)
-    if member is None:
-        raise RuntimeError(f"Docker image archive is missing {name}")
-    return member.read()
-
-
 def _sha256_digest(content: bytes) -> str:
     return f"sha256:{hashlib.sha256(content).hexdigest()}"
 
@@ -1743,31 +1693,42 @@ def _push_archive_to_registry(archive: Any, base_url: str, tag: str, auth_header
     """Push a docker-save tar archive to a registry via the OCI distribution API."""
     headers = {"Authorization": f"Basic {auth_header}"}
 
-    with tarfile.open(fileobj=archive, mode="r|*") as tar:
-        members: dict[str, bytes] = {}
-        for member in tar:
-            if member.isfile():
-                data = tar.extractfile(member)
-                if data is not None:
-                    members[member.name] = data.read()
+    with tarfile.open(fileobj=archive, mode="r:*") as tar, httpx.Client(timeout=_REGISTRY_UPLOAD_TIMEOUT) as client:
+        manifest_file = tar.extractfile("manifest.json")
+        if manifest_file is None:
+            raise RuntimeError("Docker image archive is missing manifest.json")
+        docker_manifest = json.load(manifest_file)
+        if not isinstance(docker_manifest, list) or len(docker_manifest) != 1:
+            raise RuntimeError("Docker image archive must contain exactly one image manifest")
+        entry = docker_manifest[0]
+        if not isinstance(entry, dict):
+            raise RuntimeError("Docker image archive manifest entry must be an object")
 
-    manifest_json = members.get("manifest.json")
-    if manifest_json is None:
-        raise RuntimeError("Docker image archive is missing manifest.json")
-    docker_manifest = json.loads(manifest_json)
-    if not isinstance(docker_manifest, list) or len(docker_manifest) != 1:
-        raise RuntimeError("Docker image archive must contain exactly one image manifest")
-    entry = docker_manifest[0]
+        config_name = entry["Config"]
+        layer_names = entry["Layers"]
+        if not isinstance(config_name, str) or not isinstance(layer_names, list):
+            raise RuntimeError("Docker image archive has invalid config or layers")
+        config_file = tar.extractfile(config_name)
+        if config_file is None:
+            raise RuntimeError(f"Docker image archive is missing {config_name}")
+        config_bytes = config_file.read()
 
-    config_name = entry["Config"]
-    layer_names = entry["Layers"]
-    config_bytes = members[config_name]
-
-    with httpx.Client(timeout=_REGISTRY_UPLOAD_TIMEOUT) as client:
         layer_descriptors = []
         for layer_name in layer_names:
-            layer_bytes = members[layer_name]
-            descriptor = _push_blob(client, base_url, headers, layer_bytes, _DOCKER_LAYER_MEDIA_TYPE)
+            if not isinstance(layer_name, str):
+                raise RuntimeError("Docker image archive manifest layers must be strings")
+            layer = tar.getmember(layer_name)
+            layer_file = tar.extractfile(layer)
+            if layer_file is None:
+                raise RuntimeError(f"Docker image archive is missing {layer_name}")
+            descriptor = _push_streaming_blob(
+                client,
+                base_url,
+                headers,
+                layer_file,
+                size=layer.size,
+                media_type=_DOCKER_LAYER_MEDIA_TYPE,
+            )
             layer_descriptors.append(descriptor)
             _logger.info("Pushed layer %s (%d bytes)", descriptor["digest"], descriptor["size"])
 
@@ -1799,10 +1760,7 @@ def _push_blob(
 
     resp = client.post(f"{base_url}/blobs/uploads/", headers=headers)
     resp.raise_for_status()
-    upload_url = resp.headers["Location"]
-    if not upload_url.startswith("http"):
-        registry_origin = base_url.split("/v2/")[0]
-        upload_url = registry_origin + upload_url
+    upload_url = _absolute_registry_upload_url(base_url, resp.headers["Location"])
 
     sep = "&" if "?" in upload_url else "?"
     resp = client.put(
@@ -1813,6 +1771,56 @@ def _push_blob(
     resp.raise_for_status()
 
     return {"mediaType": media_type, "digest": digest, "size": len(data)}
+
+
+def _push_streaming_blob(
+    client: httpx.Client,
+    base_url: str,
+    headers: dict[str, str],
+    data: Any,
+    *,
+    size: int,
+    media_type: str,
+) -> dict[str, Any]:
+    resp = client.post(f"{base_url}/blobs/uploads/", headers=headers)
+    resp.raise_for_status()
+    upload_url = _absolute_registry_upload_url(base_url, resp.headers["Location"])
+
+    hasher = hashlib.sha256()
+    uploaded_size = 0
+
+    def chunks() -> Any:
+        nonlocal uploaded_size
+        while chunk := data.read(1024 * 1024):
+            hasher.update(chunk)
+            uploaded_size += len(chunk)
+            yield chunk
+
+    resp = client.patch(
+        upload_url,
+        content=chunks(),
+        headers=headers
+        | {
+            "Content-Type": "application/octet-stream",
+            "Content-Length": str(size),
+        },
+    )
+    resp.raise_for_status()
+    if uploaded_size != size:
+        raise RuntimeError(f"Docker archive layer size changed while uploading: expected {size}, read {uploaded_size}")
+
+    upload_url = _absolute_registry_upload_url(base_url, resp.headers.get("Location", upload_url))
+    digest = f"sha256:{hasher.hexdigest()}"
+    sep = "&" if "?" in upload_url else "?"
+    resp = client.put(f"{upload_url}{sep}digest={digest}", content=b"", headers=headers)
+    resp.raise_for_status()
+    return {"mediaType": media_type, "digest": digest, "size": size}
+
+
+def _absolute_registry_upload_url(base_url: str, upload_url: str) -> str:
+    if upload_url.startswith("http"):
+        return upload_url
+    return base_url.split("/v2/", 1)[0] + upload_url
 
 
 def _image_upload_name(image: str) -> str:

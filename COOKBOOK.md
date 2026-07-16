@@ -60,9 +60,9 @@ uv run coworld hosted-game create cow_... --variant variant_...
 uv run coworld hosted-game join cps_...
 ```
 
-`xp-request` is the supported path for replayable non-tournament policy evaluation and fills a full `roster` — each
-seat is a specific policy (`policy_ref`) or a `top_n`/`random` champion from a target league. `hosted-game` creates
-browser player slots; it does not attach uploaded policy versions or schedule tournament policy episodes.
+`xp-request` is the supported path for replayable non-tournament policy evaluation and fills a full `roster` — each seat
+is a specific policy (`policy_ref`) or a `top_n`/`random` champion from a target league. `hosted-game` creates browser
+player slots; it does not attach uploaded policy versions or schedule tournament policy episodes.
 
 ### How do I submit a policy to the Observatory?
 
@@ -77,8 +77,8 @@ uv run coworld submit paintarena-player --league league_...
 
 Add `--use-bedrock` (and `--bedrock-model MODEL`, which your player reads from `BEDROCK_MODEL`) during `upload-policy`
 when the hosted policy uses Bedrock; see [Bedrock for Coworld players](src/coworld/docs/BEDROCK.md). Add
-`--secret-env NAME=value` for other hosted provider credentials. For local Bedrock tests, use `run-episode --use-bedrock`
-or `play --use-bedrock` with the AWS profile and region options.
+`--secret-env NAME=value` for other hosted provider credentials. For local Bedrock tests, use
+`run-episode --use-bedrock` or `play --use-bedrock` with the AWS profile and region options.
 
 ### How do I know my policy passed self-play?
 
@@ -635,8 +635,9 @@ own Bedrock API key. Add `--bedrock-model MODEL` to set `BEDROCK_MODEL`; your pl
 Manager and injected only into that policy version's player pod.
 
 A Bedrock player can pass local certification and still fail its first hosted rounds if it was uploaded without
-`--use-bedrock` or reads its model from the wrong variable. See [Bedrock for Coworld players](src/coworld/docs/BEDROCK.md),
-which also covers staying robust when shared Bedrock capacity throttles (throttled episodes time out and score as a loss).
+`--use-bedrock` or reads its model from the wrong variable. See
+[Bedrock for Coworld players](src/coworld/docs/BEDROCK.md), which also covers staying robust when shared Bedrock
+capacity throttles (throttled episodes time out and score as a loss).
 
 Game containers sometimes need hosted tournament/episode-only secrets, such as a signing key for a private worker.
 Upload those as Coworld secrets and reference them from the manifest with `secret://`:
@@ -656,12 +657,11 @@ Hosted tournament, episode, and replay-session dispatch replaces the `secret://`
 HTTPS URL for the matching Coworld. Hosted replay creation accepts only recorded replay URIs for that Coworld; the
 stored Coworld owner—not the viewer—selects the secret namespace, and the browser receives only the derived replay
 viewer capability. Hosted play and local runs do not resolve hosted secrets; override the env var locally, for example
-with `WORKER_SIGNING_KEY_URI=file:///path/to/dev_key`.
-Antfarm dispatch does not resolve Coworld secrets, so secret-bearing Coworlds should run on the k8s hosted episode
-backend.
+with `WORKER_SIGNING_KEY_URI=file:///path/to/dev_key`. Antfarm dispatch does not resolve Coworld secrets, so
+secret-bearing Coworlds should run on the k8s hosted episode backend.
 
-Secrets are stored in the original uploader's Coworld-name namespace. Passing a Coworld name targets your canonical owned
-Coworld when there is one; pass a `cow_...` id when uploading a secret for a non-canonical candidate version.
+Secrets are stored in the original uploader's Coworld-name namespace. Passing a Coworld name targets your canonical
+owned Coworld when there is one; pass a `cow_...` id when uploading a secret for a non-canonical candidate version.
 
 Container commissioners can select a private per-episode game-config overlay without receiving the private bytes. Put
 the referenced binary input and a small overlay document in the same Coworld secret namespace:
@@ -672,10 +672,9 @@ uv run coworld secret put my_game qualifying_roster_42 ./roster-overlay.json
 ```
 
 The overlay uses format `coworld.game_config_overlay.v1`; nested `secret://` values are resolved only when the episode
-job is dispatched. The commissioner sets the reserved episode tag
-`coworld_config_overlay_secret=qualifying_roster_42`. See the
-[commissioner contract](src/coworld/docs/roles/COMMISSIONER.md#schedule_episodes) for the document shape and trust
-boundary.
+job is dispatched. The commissioner sets the reserved episode tag `coworld_config_overlay_secret=qualifying_roster_42`.
+See the [commissioner contract](src/coworld/docs/roles/COMMISSIONER.md#schedule_episodes) for the document shape and
+trust boundary.
 
 ### Non-CLI API
 
@@ -818,14 +817,13 @@ uv run coworld xp-request episodes xreq_...
 
 The body is passed through to the backend unchanged, so use the request shape from the v2 API reference (direct
 `coworld_id`/`variant_id`, or a `target` with `league_name`/`division_name`, plus a `roster` of `policy_ref`, `top_n`,
-or `random` participants).
-For a game-owned private episode input, set `game_config_overlay_secret` to the name published by the Coworld owner;
-do not place `secret://` references in public `game_config_overrides`.
-Stateful Coworlds may additionally set a typed `state` object. Omit it for the Coworld's normal new-state start; use
-`head` for a player's live mutable state or `snapshot` for an immutable player/world checkpoint. Both explicit modes
-require `game_config_overlay_secret`. Participant state requires fixed `policy_ref` entries pinned in seat order, so
-new policy versions can retain player-owned state without using the policy version as the state key.
-Children start `pending` and are dispatched asynchronously, so a `get` right after `create` shows them as `pending`.
+or `random` participants). For a game-owned private episode input, set `game_config_overlay_secret` to the name
+published by the Coworld owner; do not place `secret://` references in public `game_config_overrides`. Stateful Coworlds
+may additionally set a typed `state` object. Omit it for the Coworld's normal new-state start; use `head` for a player's
+live mutable state or `snapshot` for an immutable player/world checkpoint. Both explicit modes require
+`game_config_overlay_secret`. Participant state requires fixed `policy_ref` entries pinned in seat order, so new policy
+versions can retain player-owned state without using the policy version as the state key. Children start `pending` and
+are dispatched asynchronously, so a `get` right after `create` shows them as `pending`.
 
 ### Non-CLI API
 
@@ -986,11 +984,11 @@ GET /v2/episode-requests/ereq_.../{policy_version_id}/policy-logs/{agent_idx}
 GET /v2/episode-requests/ereq_.../{policy_version_id}/policy-artifact/{agent_idx}
 ```
 
-Stats, results, and per-policy logs/artifacts all go through ownership-scoped v2 client helpers keyed by
-`ereq_...`. Game-level stats/results are readable by the episode's requester and the Softmax team.
-Per-policy logs/artifacts are scoped to the seats whose policy you own — so you get every seat when you
-own them all (self-play, your own experience request), your own seats in a mixed competition episode, and
-the Softmax team reads every seat. The manifest lists exactly the seats you can then download:
+Stats, results, and per-policy logs/artifacts all go through ownership-scoped v2 client helpers keyed by `ereq_...`.
+Game-level stats/results are readable by the episode's requester and the Softmax team. Per-policy logs/artifacts are
+scoped to the seats whose policy you own — so you get every seat when you own them all (self-play, your own experience
+request), your own seats in a mixed competition episode, and the Softmax team reads every seat. The manifest lists
+exactly the seats you can then download:
 
 ```python
     stats = client.get_episode_request_episode_stats(episode.id)                    # ownership-scoped
@@ -1050,18 +1048,19 @@ uv run coworld certify tmp/paintarena/coworld_manifest.json
 uv run coworld upload-coworld tmp/paintarena/coworld_manifest.json
 ```
 
-`certify` runs the Executable transcript locally. It validates GitHub `source_url` refs by checking that they resolve and
-carry a Dockerfile, validates the manifest's certification fixture before launching containers, runs one smoke episode,
-validates results, verifies the replay artifact is present and loadable, confirms declared players launched, and checks
-implemented supporting-role probes. Mutable `source_url` refs and bare repository URLs pass with a warning because
-certification checks the ref or default branch as it exists at run time. Replay-load verification starts the game image
-in replay mode with `COGAME_LOAD_REPLAY_URI` and verifies `GET /client/replay`; it waits for a frame from the `/replay` WebSocket.
-Manifest reporter references are statically validated (spec 0061); commissioners are probed over `/healthz` and `/round`.
-`upload-coworld` certifies again before uploading the manifest and runnable images. After upload, the platform
-auto-queues a hosted certification run for the new version; the upload output prints the
-hosted certification state, `coworld status <cow_id>` shows the verdict and per-step transcript, and
-`--wait-certification` polls the hosted run to completion (exit 2 on an author-controlled failure, 3 on platform
-failure/timeout). A failed hosted certification never blocks or hides the upload.
+`certify` runs the Executable transcript locally. It validates GitHub `source_url` refs by checking that they resolve
+and carry a Dockerfile, validates the manifest's certification fixture before launching containers, runs one smoke
+episode, validates results, verifies the replay artifact is present and loadable, confirms declared players launched,
+and checks implemented supporting-role probes. Mutable `source_url` refs and bare repository URLs pass with a warning
+because certification checks the ref or default branch as it exists at run time. Replay-load verification starts the
+game image in replay mode with `COGAME_LOAD_REPLAY_URI` and verifies `GET /client/replay`. It waits for a frame from the
+`/replay` WebSocket. Manifest reporter references are statically validated (spec 0061); commissioners are probed over
+`/healthz` and `/round`. After a successful explicit `certify`, the exact manifest, certifier code, transcript, and
+local image IDs are cached. `upload-coworld` reuses that proof when nothing changed; otherwise it certifies before
+creating or pushing any Docker archive. After upload, the platform auto-queues a hosted certification run for the new
+version; the upload output prints the hosted certification state, `coworld status <cow_id>` shows the verdict and
+per-step transcript, and `--wait-certification` polls the hosted run to completion (exit 2 on an author-controlled
+failure, 3 on platform failure/timeout). A failed hosted certification never blocks or hides the upload.
 
 `certify` also writes `certification_report.html` into the printed artifact workspace and opens it in the browser by
 default. The report is a local transcript view with each step's pass/fail status, failure reason, artifact paths, and

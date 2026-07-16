@@ -6,7 +6,7 @@ import re
 import subprocess
 import tarfile
 from pathlib import Path
-from typing import BinaryIO, cast
+from typing import cast
 
 import pytest
 from click import unstyle
@@ -28,7 +28,6 @@ from coworld.upload import (
     _certification_cache_key,
     _certification_code_digest,
     _certified_manifest_cache_path,
-    _docker_archive_client_hash,
     _humanize_reporter_id,
     _load_current_token,
     _load_string_cache,
@@ -2035,75 +2034,20 @@ def test_downloaded_image_tags_include_coworld_id() -> None:
     )
 
 
-def test_local_image_client_hash_uses_docker_archive_content(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_local_image_client_hash_uses_content_addressed_docker_image_id(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     monkeypatch.setenv("XDG_CACHE_HOME", str(tmp_path))
-    config = b'{"architecture":"amd64","cmd":["python","game.py"],"os":"linux"}'
-    archive = _docker_archive(config=config, layers=[b"layer-one", b"layer-two"])
-    save_calls: list[list[str]] = []
+    calls: list[list[str]] = []
 
-    def fake_run(command: list[str], **kwargs: object) -> subprocess.CompletedProcess[str]:
-        if command[:3] == ["docker", "image", "inspect"]:
-            return subprocess.CompletedProcess(command, 0, stdout="sha256:unit-image-id\n")
-        assert command == ["docker", "image", "save", "unit-test-runtime:latest"]
-        save_calls.append(command)
-        stdout = cast(BinaryIO, kwargs["stdout"])
-        stdout.write(archive)
-        return subprocess.CompletedProcess(command, 0)
+    def fake_run(command: list[str], **_kwargs: object) -> subprocess.CompletedProcess[str]:
+        calls.append(command)
+        return subprocess.CompletedProcess(command, 0, stdout="sha256:unit-image-id\n")
 
     monkeypatch.setattr("coworld.upload.subprocess.run", fake_run)
 
-    expected = _expected_archive_hash(config, [b"layer-one", b"layer-two"])
-    assert _local_image_client_hash("unit-test-runtime:latest") == expected
-    assert _local_image_client_hash("unit-test-runtime:latest") == expected
-    assert len(save_calls) == 1
-
-
-def test_local_image_client_hash_ignores_malformed_cache(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setenv("XDG_CACHE_HOME", str(tmp_path))
-    cache_path = tmp_path / "coworld" / "image_client_hashes.json"
-    cache_path.parent.mkdir()
-    cache_path.write_text("{not-json", encoding="utf-8")
-    config = b'{"architecture":"amd64","os":"linux"}'
-    archive = _docker_archive(config=config, layers=[b"layer-one"])
-
-    def fake_run(command: list[str], **kwargs: object) -> subprocess.CompletedProcess[str]:
-        if command[:3] == ["docker", "image", "inspect"]:
-            return subprocess.CompletedProcess(command, 0, stdout="sha256:unit-image-id\n")
-        assert command == ["docker", "image", "save", "unit-test-runtime:latest"]
-        stdout = cast(BinaryIO, kwargs["stdout"])
-        stdout.write(archive)
-        return subprocess.CompletedProcess(command, 0)
-
-    monkeypatch.setattr("coworld.upload.subprocess.run", fake_run)
-
-    expected = _expected_archive_hash(config, [b"layer-one"])
-    assert _local_image_client_hash("unit-test-runtime:latest") == expected
-    assert json.loads(cache_path.read_text(encoding="utf-8")) == {"sha256:unit-image-id": expected}
-
-
-def test_docker_archive_client_hash_matches_config_and_layer_digests() -> None:
-    config = b'{"architecture":"amd64","env":["A=B"],"os":"linux"}'
-    archive = io.BytesIO(_docker_archive(config=config, layers=[b"layer-one"]))
-
-    assert _docker_archive_client_hash(archive) == _expected_archive_hash(config, [b"layer-one"])
-
-
-def test_local_image_client_hash_rejects_non_amd64_archive(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setenv("XDG_CACHE_HOME", str(tmp_path))
-    archive = _docker_archive(config=b'{"architecture":"arm64","os":"linux"}', layers=[b"layer-one"])
-
-    def fake_run(command: list[str], **kwargs: object) -> subprocess.CompletedProcess[str]:
-        if command[:3] == ["docker", "image", "inspect"]:
-            return subprocess.CompletedProcess(command, 0, stdout="sha256:unit-image-id\n")
-        assert command == ["docker", "image", "save", "unit-test-runtime:latest"]
-        stdout = cast(BinaryIO, kwargs["stdout"])
-        stdout.write(archive)
-        return subprocess.CompletedProcess(command, 0)
-
-    monkeypatch.setattr("coworld.upload.subprocess.run", fake_run)
-
-    with pytest.raises(RuntimeError, match="linux/arm64"):
-        _local_image_client_hash("unit-test-runtime:latest")
+    assert _local_image_client_hash("unit-test-runtime:latest") == "sha256:unit-image-id"
+    assert calls == [["docker", "image", "inspect", "--format", "{{.Id}}", "unit-test-runtime:latest"]]
 
 
 def test_push_archive_to_registry_uploads_layers_config_and_manifest(httpserver: HTTPServer) -> None:
@@ -2114,9 +2058,14 @@ def test_push_archive_to_registry_uploads_layers_config_and_manifest(httpserver:
     layer_digest = _sha256_digest(layer_data)
     config_digest = _sha256_digest(config)
 
-    # Layer blob upload: POST to initiate, PUT to finalize
+    # Layer blob upload: POST to initiate, PATCH to stream, PUT to finalize.
     httpserver.expect_request("/v2/repo/test/blobs/uploads/", method="POST").respond_with_data(
         "", status=202, headers={"Location": httpserver.url_for("/v2/repo/test/blobs/upload-session-layer")}
+    )
+    httpserver.expect_request("/v2/repo/test/blobs/upload-session-layer", method="PATCH").respond_with_data(
+        "",
+        status=202,
+        headers={"Location": httpserver.url_for("/v2/repo/test/blobs/upload-session-layer")},
     )
     httpserver.expect_request("/v2/repo/test/blobs/upload-session-layer", method="PUT").respond_with_data(
         "", status=201
@@ -2215,14 +2164,6 @@ def _add_tar_file(tar: tarfile.TarFile, name: str, content: bytes) -> None:
     info = tarfile.TarInfo(name)
     info.size = len(content)
     tar.addfile(info, io.BytesIO(content))
-
-
-def _expected_archive_hash(config: bytes, layers: list[bytes]) -> str:
-    content = {
-        "config": _sha256_digest(config),
-        "layers": [_sha256_digest(layer) for layer in layers],
-    }
-    return _sha256_digest(json.dumps(content, sort_keys=True, separators=(",", ":")).encode())
 
 
 def _sha256_digest(content: bytes) -> str:
