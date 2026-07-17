@@ -867,7 +867,7 @@ def test_replay_open_hosted_opens_viewer_url(httpserver: HTTPServer, monkeypatch
         "/observatory/v2/coworlds/replays/session",
         method="POST",
         headers={"Authorization": "Bearer token"},
-    ).respond_with_json({"viewer_url": viewer_url})
+    ).respond_with_json({"viewer_url": viewer_url, "ready": False})
     monkeypatch.setattr("coworld.tournament_cli.webbrowser.open", opened_urls.append)
 
     result = CliRunner().invoke(

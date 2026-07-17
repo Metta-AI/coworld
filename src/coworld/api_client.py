@@ -339,6 +339,7 @@ class EpisodeRequestPolicyArtifactInfo(CoworldAPIModel):
 
 class CoworldReplaySessionResponse(CoworldAPIModel):
     viewer_url: str
+    ready: bool
 
 
 class PolicyVersionRow(CoworldAPIModel):
