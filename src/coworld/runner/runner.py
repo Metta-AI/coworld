@@ -24,7 +24,7 @@ from jsonschema.exceptions import ValidationError as JsonSchemaValidationError
 from pydantic import BaseModel, ConfigDict, Field, TypeAdapter
 from websockets.exceptions import ConnectionClosed, InvalidHandshake, InvalidStatus
 
-from coworld.runner.io import GameEpisodeError, RunnerEpisodeError, RunnerErrorType
+from coworld.runner.io import GamePlayerFailure, RunnerEpisodeError, RunnerErrorType
 from coworld.schema_validation import validate_json_schema
 from coworld.types import CoworldEpisodeJobSpec, CoworldRunnableSpec
 
@@ -33,7 +33,7 @@ CONFIG_ENV_VAR = "COGAME_CONFIG_URI"
 RESULTS_ENV_VAR = "COGAME_RESULTS_URI"
 REPLAY_SAVE_ENV_VAR = "COGAME_SAVE_REPLAY_URI"
 REPLAY_LOAD_ENV_VAR = "COGAME_LOAD_REPLAY_URI"
-EPISODE_ERROR_ENV_VAR = "COGAME_EPISODE_ERROR_URI"
+PLAYER_FAILURE_ENV_VAR = "COGAME_PLAYER_FAILURE_URI"
 GAME_HOST_ENV_VAR = "COGAME_HOST"
 GAME_PORT_ENV_VAR = "COGAME_PORT"
 GAME_HOST = "0.0.0.0"
@@ -88,7 +88,7 @@ class EpisodeArtifacts:
     config_path: Path
     results_path: Path
     replay_path: Path
-    episode_error_path: Path
+    player_failure_path: Path
     logs_dir: Path
     game_stdout_path: Path
     game_stderr_path: Path
@@ -104,7 +104,7 @@ class EpisodeArtifacts:
             config_path=workspace / "config.json",
             results_path=workspace / "results.json",
             replay_path=workspace / "replay",
-            episode_error_path=workspace / "episode_error.json",
+            player_failure_path=workspace / "player_failure.json",
             logs_dir=logs_dir,
             game_stdout_path=logs_dir / "game.stdout.log",
             game_stderr_path=logs_dir / "game.stderr.log",
@@ -400,7 +400,7 @@ def run_episode_containers(spec: EpisodeRunSpec, *, verify_replay: bool = True) 
                     "-e",
                     f"{REPLAY_SAVE_ENV_VAR}=file://{CONTAINER_WORKDIR}/replay",
                     "-e",
-                    f"{EPISODE_ERROR_ENV_VAR}=file://{CONTAINER_WORKDIR}/episode_error.json",
+                    f"{PLAYER_FAILURE_ENV_VAR}=file://{CONTAINER_WORKDIR}/player_failure.json",
                     "-v",
                     f"{spec.artifacts.workspace.resolve()}:{CONTAINER_WORKDIR}:rw",
                     *_image_command(spec.game),
@@ -477,7 +477,7 @@ def run_episode_containers(spec: EpisodeRunSpec, *, verify_replay: bool = True) 
                 if verify_replay
                 else (spec.artifacts.results_path,)
             )
-            _raise_if_game_declared_failure(spec.artifacts, required_artifacts, player_count=len(spec.players))
+            _raise_if_game_declared_player_failure(spec.artifacts, required_artifacts, player_count=len(spec.players))
 
             for slot, (player_process, player_stderr_path) in enumerate(player_processes):
                 _wait_for_player_exit(player_process, player_stderr_path, failed_policy_index=slot)
@@ -743,7 +743,7 @@ def _wait_for_game_exit(
         )
 
 
-def _raise_if_game_declared_failure(
+def _raise_if_game_declared_player_failure(
     artifacts: EpisodeArtifacts,
     required_artifacts: tuple[Path, ...],
     *,
@@ -751,21 +751,21 @@ def _raise_if_game_declared_failure(
 ) -> None:
     if all(path.exists() for path in required_artifacts):
         return
-    if not artifacts.episode_error_path.exists():
+    if not artifacts.player_failure_path.exists():
         return
-    payload = artifacts.episode_error_path.read_text(encoding="utf-8")
-    error = GameEpisodeError.model_validate_json(payload)
+    payload = artifacts.player_failure_path.read_text(encoding="utf-8")
     if all(path.exists() for path in required_artifacts):
         return
-    if error.failed_policy_index >= player_count:
+    failure = GamePlayerFailure.model_validate_json(payload)
+    if failure.failed_policy_index >= player_count:
         raise RunnerEpisodeError(
-            f"Game declared player slot {error.failed_policy_index}, but the episode has {player_count} players",
+            f"Game declared player slot {failure.failed_policy_index}, but the episode has {player_count} players",
             error_type="game_contract_violation",
         )
     raise RunnerEpisodeError(
-        error.message,
-        error_type=error.error_type,
-        failed_policy_index=error.failed_policy_index,
+        failure.message,
+        error_type="player_error",
+        failed_policy_index=failure.failed_policy_index,
     )
 
 

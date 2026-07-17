@@ -32,12 +32,11 @@ class RunnerError(BaseModel):
     failed_policy_index: int | None = None
 
 
-class GameEpisodeError(BaseModel):
-    """Terminal episode failure declared by the game runnable."""
+class GamePlayerFailure(BaseModel):
+    """Terminal player failure declared by the game runnable."""
 
     model_config = ConfigDict(extra="forbid")
 
-    error_type: Literal["player_error"]
     message: str = Field(min_length=1, max_length=2000)
     failed_policy_index: int = Field(ge=0)
 

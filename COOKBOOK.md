@@ -324,7 +324,7 @@ docker run --rm --name paintarena-game \
   -e COGAME_CONFIG_URI=file:///coworld/config.json \
   -e COGAME_RESULTS_URI=file:///coworld/results.json \
   -e COGAME_SAVE_REPLAY_URI=file:///coworld/replay \
-  -e COGAME_EPISODE_ERROR_URI=file:///coworld/episode_error.json \
+  -e COGAME_PLAYER_FAILURE_URI=file:///coworld/player_failure.json \
   -v "$PWD/tmp/paintarena/docker:/coworld:rw" \
   coworld-paintarena:latest \
   python -m coworld.examples.paintarena.game.server

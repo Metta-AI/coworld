@@ -7,8 +7,8 @@ The **error info artifact** is runner-written JSON describing a hosted episode f
 The hosted runner writes error info to `ERROR_INFO_URI` when the coordinator fails before a normal episode completion.
 The local runner does not currently produce a separate error-info file.
 
-A game may declare that its own rules make a player failure terminal by writing a `GameEpisodeError` to the separate
-`COGAME_EPISODE_ERROR_URI`. The coordinator validates that input, raises the corresponding typed runner failure, and
+A game may declare that its own rules make a player failure terminal by writing a `GamePlayerFailure` to the separate
+`COGAME_PLAYER_FAILURE_URI`. The coordinator validates that input, assigns `error_type: "player_error"`, and
 remains the sole producer of this final artifact. Games never infer or write `ERROR_INFO_URI`.
 
 ## Contract

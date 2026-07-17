@@ -38,7 +38,7 @@ Optional: `run`, `env`, `source_url`, `repository_url`
 - Replay mode: `COGAME_LOAD_REPLAY_URI` set
 - `/client/replay` must auto-play and loop
 - Writes results to `COGAME_RESULTS_URI`, replay to `COGAME_SAVE_REPLAY_URI`, or a terminal player failure to
-  `COGAME_EPISODE_ERROR_URI`
+  `COGAME_PLAYER_FAILURE_URI`
 - `config_schema` must require a `tokens` string array with `minItems` and `maxItems`; equal bounds define a fixed slot
   count, while variable bounds require each token-free game config to carry `players` so its length defines the concrete
   slot count

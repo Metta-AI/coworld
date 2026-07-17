@@ -42,7 +42,7 @@ Per-player resource requests are configurable per job via `COWORLD_PLAYER_CPU_RE
 Hosted episode Jobs have a 20 minute active deadline. The coordinator's per-episode wait defaults to
 `COWORLD_TIMEOUT_SECONDS=3600`; hosted dispatch currently sets the Kubernetes Job deadline to 20 minutes and gives
 presigned artifact URLs one extra hour of validity. A game may end an episode early by writing a typed
-`episode_error.json` to `COGAME_EPISODE_ERROR_URI`; otherwise player pod failures remain diagnostic until the episode
+`player_failure.json` to `COGAME_PLAYER_FAILURE_URI`; otherwise player pod failures remain diagnostic until the episode
 times out.
 
 ## Parent Job Shape
@@ -158,13 +158,13 @@ COGAME_PORT=8080
 COGAME_CONFIG_URI=file:///coworld/config.json
 COGAME_RESULTS_URI=file:///coworld/results.json
 COGAME_SAVE_REPLAY_URI=file:///coworld/replay
-COGAME_EPISODE_ERROR_URI=file:///coworld/episode_error.json
+COGAME_PLAYER_FAILURE_URI=file:///coworld/player_failure.json
 ```
 
 The game binds its HTTP and websocket server to `COGAME_HOST:COGAME_PORT`. `coworld-init-config` writes
 `COGAME_CONFIG_URI` before the game starts. The game writes results and the replay to their supplied URIs. When the
-game's own rules make a player failure terminal, it may instead write a `GameEpisodeError` to
-`COGAME_EPISODE_ERROR_URI`. The worker validates these game outputs and remains the sole producer of the hosted
+game's own rules make a player failure terminal, it may instead write a `GamePlayerFailure` to
+`COGAME_PLAYER_FAILURE_URI`. The worker validates these game outputs and remains the sole producer of the hosted
 artifacts listed below.
 
 ## Optional Inputs
@@ -213,7 +213,7 @@ Outputs:
   `game.stderr.log`) plus any per-player log files (`policy_agent_{slot}.log`) the coordinator captured. Game container
   stdout/stderr is **public** to anyone with episode access — game authors must not write secrets or private information
   to those streams.
-- `ERROR_INFO_URI`: typed failure JSON written by the coordinator. A game-declared `episode_error.json` is an input to
+- `ERROR_INFO_URI`: typed failure JSON written by the coordinator. A game-declared `player_failure.json` is an input to
   the coordinator, not this final hosted artifact.
 - `POLICY_LOG_URLS`: JSON object mapping each player slot to a destination URI. Each player log is uploaded from
   `policy_agent_{slot}.log` and contains that player container's combined stdout and stderr. Player logs are also

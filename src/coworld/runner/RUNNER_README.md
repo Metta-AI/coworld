@@ -23,7 +23,7 @@ uv run coworld run-episode path/to/coworld_manifest.json my-player:latest
 The hosted production runner is `coworld.runner.kubernetes_runner`. That path uses Kubernetes containers instead of
 Docker on the runner machine, but it follows the same game and player contract.
 
-A game may write a typed `GameEpisodeError` to the runner-supplied `COGAME_EPISODE_ERROR_URI` when its own rules make a
+A game may write a typed `GamePlayerFailure` to the runner-supplied `COGAME_PLAYER_FAILURE_URI` when its own rules make a
 player failure terminal. The runner validates and reports it without imposing that policy on other games.
 
 ## Output Files
@@ -34,7 +34,7 @@ contains:
 - `config.json` — concrete game config used for the episode (with runner-injected tokens)
 - `results.json` — game-written results, validated against `game.results_schema`
 - `replay` — game-written replay artifact (exact bytes written by the game container)
-- `episode_error.json` — optional typed terminal failure written by the game to its explicit URI
+- `player_failure.json` — optional typed terminal failure written by the game to its explicit URI
 - `logs/game.stdout.log`, `logs/game.stderr.log` — game container stdout/stderr
 - `logs/policy_agent_{slot}.log` — combined stdout+stderr for each player container
 - `policy_artifact_{slot}.zip` — optional artifact each player uploads (max 200 MB). The runner mounts the

@@ -22,13 +22,13 @@ from coworld.runner.runner import (
     CONFIG_ENV_VAR,
     CONTAINER_WORKDIR,
     DEFAULT_PLAYER_EXIT_TIMEOUT_SECONDS,
-    EPISODE_ERROR_ENV_VAR,
     GAME_HOST,
     GAME_HOST_ENV_VAR,
     GAME_PORT,
     GAME_PORT_ENV_VAR,
     LOCAL_DOCKER_NETWORK,
     LOCAL_GAME_NETWORK_ALIAS_PREFIX,
+    PLAYER_FAILURE_ENV_VAR,
     REPLAY_LOAD_ENV_VAR,
     REPLAY_SAVE_ENV_VAR,
     RESULTS_ENV_VAR,
@@ -38,7 +38,7 @@ from coworld.runner.runner import (
     RunnableLaunchSpec,
     _free_local_port,
     _player_container_ws_url,
-    _raise_if_game_declared_failure,
+    _raise_if_game_declared_player_failure,
     _require_replay_message,
     _tail,
     _wait_for_game_exit,
@@ -203,7 +203,7 @@ def play_coworld(
                     "-e",
                     f"{REPLAY_SAVE_ENV_VAR}=file://{CONTAINER_WORKDIR}/replay",
                     "-e",
-                    f"{EPISODE_ERROR_ENV_VAR}=file://{CONTAINER_WORKDIR}/episode_error.json",
+                    f"{PLAYER_FAILURE_ENV_VAR}=file://{CONTAINER_WORKDIR}/player_failure.json",
                     "-v",
                     f"{artifacts.workspace.resolve()}:{CONTAINER_WORKDIR}:rw",
                     *_image_command(package.game),
@@ -251,7 +251,7 @@ def play_coworld(
 
             on_ready(session)
             _wait_for_game_exit(game_process, artifacts.game_stderr_path, timeout_seconds=timeout_seconds)
-            _raise_if_game_declared_failure(artifacts, (artifacts.results_path,), player_count=len(players))
+            _raise_if_game_declared_player_failure(artifacts, (artifacts.results_path,), player_count=len(players))
 
             for slot, (player_process, player_log_path) in enumerate(player_processes):
                 _wait_for_player_exit(

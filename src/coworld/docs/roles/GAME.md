@@ -38,25 +38,24 @@ It must:
 - Make `GET /client/replay` start playback automatically and loop from the recorded end back to tick 0 by default.
 - Write a JSON results artifact to `COGAME_RESULTS_URI` when the episode completes.
 - Write replay bytes to `COGAME_SAVE_REPLAY_URI`.
-- When its own rules make a player failure terminal, write a typed `GameEpisodeError` to
-  `COGAME_EPISODE_ERROR_URI` instead of results. The runner validates this signal and produces the platform-owned
+- When its own rules make a player failure terminal, write a typed `GamePlayerFailure` to
+  `COGAME_PLAYER_FAILURE_URI` instead of results. The runner validates this signal and produces the platform-owned
   [`error_info.json`](../artifacts/ERROR_INFO.md); the game does not write that final artifact.
 
 The runner validates the final results against `manifest.game.results_schema`. Replay bytes are game-defined, but the
 same game image must be able to load them in replay mode.
 
-`GameEpisodeError` is deliberately narrower than the runner's final error artifact: a game can declare only the player
+`GamePlayerFailure` is deliberately narrower than the runner's final error artifact: a game can declare only the player
 failure it observed, not infrastructure or coordinator failures owned by the runner.
 
 ```json
 {
-  "error_type": "player_error",
   "message": "Player slot 3 failed before completing its session",
   "failed_policy_index": 3
 }
 ```
 
-All fields are required, unknown fields are rejected, `message` is 1–2000 characters, and `failed_policy_index` is a
+Both fields are required, unknown fields are rejected, `message` is 1–2000 characters, and `failed_policy_index` is a
 non-negative player slot.
 
 Publish the declaration atomically (for a file URI, write a temporary file and rename it), then shut down gracefully.
