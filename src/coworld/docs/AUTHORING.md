@@ -159,11 +159,11 @@ template must **not** set `game.version` — the build stamps it. Fill in the se
   Mutable refs (branches, `/tree/main/`) certify with warnings today; pin anyway — provenance that moves is provenance
   you can't trust.
 
-**The build.** `coworld build <compose.yaml> <template.json> <version> <out-dir>/coworld_manifest.json` builds the
-images, substitutes the placeholders, stamps the version, validates the hydrated manifest against the schema, and writes
-the hydrated manifest to the given output path. Pass `--source-context <repo-dir>` to pin every `source_url` to that
-checkout's current commit SHA automatically. Build from committed, pushed state — a manifest pinned to a SHA that only
-exists on your machine certifies locally and is unbuildable by everyone else.
+**The build.** Keep `compose.yaml` and `coworld_manifest_template.json` in the owning project, then run
+`coworld build --version <version>`. The command builds and pulls the images, resolves mutable image references,
+substitutes placeholders, stamps the version, validates the hydrated manifest, pins owner-repo source URLs to the
+current commit, and writes `dist/coworld_manifest.json`. Build from committed, pushed state so the pinned commit is
+available to everyone.
 
 **Optional static replay viewer.** To open replays without starting the game image, add a generated browser bundle and
 `game.replay_viewer.bundle` to the manifest template. The required `coworld build` hook creates that bundle before the
@@ -185,9 +185,9 @@ stands on.
 **Rung 2 — headless episodes.**
 
 ```bash
-uv run coworld run-episode <out-dir>/coworld_manifest.json          # certification fixture
-uv run coworld run-episode <out-dir>/coworld_manifest.json -n 3     # seed increments per episode
-uv run coworld run-episode <out-dir>/coworld_manifest.json --variant <id>
+uv run coworld run-episode dist/coworld_manifest.json          # certification fixture
+uv run coworld run-episode dist/coworld_manifest.json -n 3     # seed increments per episode
+uv run coworld run-episode dist/coworld_manifest.json --variant <id>
 ```
 
 Then **read the artifacts** in the output directory: the results validate and the scores are plausible; the replay file
@@ -199,7 +199,7 @@ assumption.
 **Rung 3 — browser play.**
 
 ```bash
-uv run coworld play <out-dir>/coworld_manifest.json
+uv run coworld play dist/coworld_manifest.json
 ```
 
 Click through every surface a human will see: the player client (join, act, finish), the global viewer, and — via the
@@ -209,7 +209,7 @@ hidden information must not leak into the global or replay views.
 **Rung 4 — certify.**
 
 ```bash
-uv run coworld certify <out-dir>/coworld_manifest.json
+uv run coworld certify dist/coworld_manifest.json
 ```
 
 Certification runs the ordered, automated transcript in
@@ -228,7 +228,7 @@ When a step fails, fix the root cause and re-run the whole command — the trans
 
 ```bash
 uv run softmax login       # once
-uv run coworld upload-coworld <out-dir>/coworld_manifest.json
+uv run coworld upload-coworld dist/coworld_manifest.json
 ```
 
 Upload reuses the successful certification when the manifest, images, transcript, and certifier are unchanged. If any of

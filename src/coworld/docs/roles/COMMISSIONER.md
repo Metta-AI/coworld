@@ -763,8 +763,8 @@ Current examples include:
 - Reusable default commissioner: `id: "default-commissioner"` with image
   `ghcr.io/metta-ai/commissioners-default:latest`.
 
-Prefer the mutable `:latest` tag in your source (`compose.yaml` / `commissioner.Dockerfile`), like the canonical worlds
-(paintarena, tribal_village, ...) do. `coworld build --resolve-mutable-images` resolves `:latest` to the intended
+Prefer the mutable `:latest` tag in your source (`compose.yaml` / `commissioner.Dockerfile`), as owned Coworld projects
+do. `coworld build` resolves `:latest` to the intended
 immutable digest **at upload time** and writes that digest into the uploaded manifest, so each upload picks up the
 newest published commissioner while the runner still gets an exact, pinned image. Hardcoding a digest in source instead
 freezes the game on whatever was current when the digest was written, which is how coworlds silently ran a months-stale
@@ -860,7 +860,7 @@ Three options, cheapest first:
 
    This keeps your scheduling config in your own repo instead of editing the shared `coworld-tools` configs. **Build
    `FROM …commissioners-default:latest`** so each build picks up the newest published commissioner;
-   `coworld build --resolve-mutable-images` resolves the tag to an immutable digest at upload time, so the uploaded
+   `coworld build` resolves the tag to an immutable digest, so the uploaded
    image is still exactly pinned. (The build/upload runs on linux/amd64 — where the `:latest` manifest list pulls fine —
    so the old arm64 caveat about pinning a platform-specific digest no longer applies on the build host.) cognames is
    the in-tree reference for this:

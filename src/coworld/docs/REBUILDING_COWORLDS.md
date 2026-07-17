@@ -1,104 +1,41 @@
-# Rebuilding Coworlds After The Role Repo Move
+# Rebuilding Coworlds
 
-This guide is for rebuilding or fixing an existing Coworld after the June 2026 repository consolidation.
+Each Coworld project owns its release inputs:
 
-## Current Source Map
+- `compose.yaml` describes every container image used by the manifest;
+- `coworld_manifest_template.json` describes the game and its roles without `game.version`;
+- `dist/coworld_manifest.json` is generated and must not be committed.
 
-- `packages/coworld` contains the public Coworld package, starter templates under
-  [`templates`](../templates/README.md), and the complete [Paint Arena example](../examples/paintarena/README.md).
-- [`Metta-AI/coworld-tools`](https://github.com/Metta-AI/coworld-tools) contains the imported shared implementation
-  trees from the old `players`, `commissioners`, `graders`, `diagnosers`, and `games` repositories. Those
-  old role repos are archived pointers now; do not start new work there.
-- A `Metta-AI/coworld-<slug>` game repo owns game-specific pieces that only make sense for that game: the game server,
-  bundled starter players, local graders, and any commissioner that is intentionally coupled to that game.
+Keep game-specific game, player, commissioner, grader, diagnoser, and optimizer implementations in the game project.
+Use a shared role image only when it is intentionally shared and should change for every Coworld that consumes it.
+Reporter entries are platform or wasm references, not container services.
 
-> **Reporters are not container runnables.** Reporters v2 (spec 0061) are registered platform identities / wasm
-> references, so the container-image-copy/rebuild rules below do not apply to them. A manifest reporter entry is a
-> reference — `{"reporter": "owner/name@version"}` or `{"wasm": "./path.wasm", "id": ..., "attributes": ...}` — submitted
-> through the reporter API, not a Dockerfile build.
-- `Metta-AI/optimizers` is still the active optimizer workbench repository unless a specific optimizer has moved beside
-  its game.
+## Build Workflow
 
-## Canonical Flow
+From the owning project root:
 
-When you build or repair a Coworld piece, start from one of the shared sources:
+```bash
+uv run coworld build --version 0.1.0
+uv run coworld certify dist/coworld_manifest.json
+uv run coworld upload-coworld dist/coworld_manifest.json
+```
 
-- copy a role template from `packages/coworld/src/coworld/templates`;
-- copy the matching role from the Paint Arena example under `packages/coworld/src/coworld/examples/paintarena`; or
-- copy the closest existing implementation from `Metta-AI/coworld-tools`.
+`coworld build` pulls and builds the compose services, resolves every mutable image reference to a digest, substitutes
+the image placeholders, stamps the requested version, and validates the result. It also pins mutable GitHub
+`source_url` values that belong to the current Git checkout to the checkout's commit. Build from committed, pushed
+state so those source commits are available to certification and future rebuilds.
 
-Then put the Coworld-specific copy in the owning game repo, for example `Metta-AI/coworld-muster/commissioner/`
-or `Metta-AI/coworld-muster/players/<starter>/`. Update that game repo's
-`compose.yaml` and `coworld_manifest.json` so the runnable builds from the game-local folder and its `source_url` points
-at the game repo. (Reporters are the exception — see the note above; they are submitted as references, not built here.)
+For a nonstandard layout, select the project and override individual filenames only when needed:
 
-Use `coworld-tools` directly only when the runnable is intentionally shared and should change for every Coworld that
-uses it. Most fixes for "the commissioner for this Coworld" are not shared fixes; copy from `coworld-tools` or the
-template into the game repo first, then modify the game-local copy.
+```bash
+uv run coworld build --project path/to/coworld --version 0.1.0
+```
 
-## The One-Owner Rule
+Do not create a second compose file or manifest template in a coordinating repository. Fix and release the files in
+the repository that owns the Coworld.
 
-Each runnable in a release manifest must point to exactly one source owner:
+## One-Owner Rule
 
-- **Shared role implementation:** leave it in `coworld-tools` only when it is meant to stay shared, and use a
-  `source_url` like
-  `https://github.com/Metta-AI/coworld-tools/tree/<sha>/commissioners/commissioners/ruleset_strategy_commissioner`.
-- **Game-local implementation:** keep it beside the game and use a `source_url` like
-  `https://github.com/Metta-AI/coworld-crewrift/tree/<sha>/commissioner`.
-- **Package example or template:** keep it in the Coworld package and use a `source_url` under
-  `https://github.com/Metta-AI/coworld/tree/<sha>/src/coworld/...`.
-
-Do not point new manifests at archived repos such as `Metta-AI/commissioners`, `Metta-AI/reporters`,
-`Metta-AI/graders`, `Metta-AI/diagnosers`, or `Metta-AI/players`. Do not leave the same runnable split between
-`coworld-tools` and a game repo; choose one owner before rebuilding.
-
-## Rebuild Workflow
-
-1. Identify every runnable in the manifest: `game`, `player`, `commissioner`, `grader`, `diagnoser`, and
-   `optimizer`. (`reporter` entries are references, not container runnables — see the note above.)
-2. Choose the source owner for each runnable. The default for a Coworld-specific piece is the game repo. Start from
-   `packages/coworld` templates, Paint Arena, or `coworld-tools`, then copy the relevant piece into the game repo before
-   customizing it.
-3. Edit the chosen owner repo and build from that checkout. Use `coworld-tools` as the owner only for pieces that are
-   deliberately shared across Coworlds.
-4. Make the manifest `source_url` match the chosen owner. Release manifests should prefer full commit SHAs for stable
-   provenance. Manifest templates may use a branch ref, short SHA, tag, or bare repository URL; certification accepts
-   those mutable refs with a warning after checking the GitHub source at run time.
-5. Rebuild with all relevant source contexts:
-
-   ```bash
-   uv run coworld build \
-     --source-context ../coworld-tools \
-     --source-context ../coworld-crewrift \
-     worlds/crewrift/compose.yaml \
-     ../coworld-crewrift/coworld_manifest.json \
-     0.1.60 \
-     tmp/crewrift/coworld_manifest.json
-   ```
-
-6. Certify and upload the hydrated manifest:
-
-   ```bash
-   uv run coworld certify tmp/crewrift/coworld_manifest.json
-   uv run coworld upload-coworld tmp/crewrift/coworld_manifest.json
-   ```
-
-The Metta `worlds/upload.sh` helper follows the same rule: game contexts point at `coworld-*` repos, shared role
-contexts point into `coworld-tools`, and optimizer contexts point at `optimizers` unless explicitly overridden.
-
-## Commissioner Changes
-
-For commissioners, decide whether you are changing a shared tournament strategy or a game-specific league controller.
-
-- If the Coworld uses the reusable `ruleset_strategy` commissioner unchanged, keep the source in
-  `coworld-tools/commissioners/commissioners/ruleset_strategy_commissioner`.
-- If you are changing a bundled YAML config that should remain shared across games, edit that config in
-  `coworld-tools`.
-- If you are fixing the commissioner for one Coworld, copy the closest starter from
-  `packages/coworld/src/coworld/templates/roles/commissioner`, Paint Arena, or `coworld-tools/commissioners` into a
-  game-local folder such as `coworld-muster/commissioner/`. Update the Coworld compose file to build that image, and
-  point `manifest.commissioner[].source_url` at the game repo. For example, a Crewrift-specific commissioner belongs in
-  `Metta-AI/coworld-crewrift`, not in the archived `Metta-AI/commissioners` repo.
-
-The platform does not read commissioner behavior from the database at runtime. It runs the commissioner image selected
-by the uploaded Coworld manifest.
+Every runnable has one source owner. Its `source_url`, Docker build context, and implementation must agree. A shared
+implementation may remain in a shared role repository; a game-specific change belongs beside the game. Never split a
+runnable between an orchestration checkout and its game project.

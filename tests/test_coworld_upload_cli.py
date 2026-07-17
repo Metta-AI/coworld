@@ -153,7 +153,7 @@ def test_upload_coworld_rejects_mutable_registry_image_refs(
 
     message = str(exc_info.value)
     assert "ghcr.io/metta-ai/players-default:latest" in message
-    assert "resolve-and-upload" in message
+    assert "coworld build --version <version>" in message
 
 
 def test_upload_coworld_requires_built_replay_viewer_before_certification(

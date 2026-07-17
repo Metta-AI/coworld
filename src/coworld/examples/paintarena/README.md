@@ -14,12 +14,8 @@ Painting overwrites the previous owner. Final scores are the number of tiles pai
 From the repository root, build from the packaged example files:
 
 ```bash
-uv run coworld build \
-  packages/coworld/src/coworld/examples/paintarena/compose.yaml \
-  packages/coworld/src/coworld/examples/paintarena/coworld_manifest_template.json \
-  0.1.0 \
-  tmp/paintarena/coworld_manifest.json
-uv run coworld upload-coworld tmp/paintarena/coworld_manifest.json
+uv run coworld build --project packages/coworld/src/coworld/examples/paintarena --version 0.1.0
+uv run coworld upload-coworld packages/coworld/src/coworld/examples/paintarena/dist/coworld_manifest.json
 ```
 
 ## Play Locally
@@ -27,7 +23,7 @@ uv run coworld upload-coworld tmp/paintarena/coworld_manifest.json
 From the repository root:
 
 ```bash
-uv run coworld play tmp/paintarena/coworld_manifest.json
+uv run coworld play packages/coworld/src/coworld/examples/paintarena/dist/coworld_manifest.json
 ```
 
 The command prints:
@@ -44,7 +40,7 @@ Open both player links before playing. The episode starts after both player webs
 To run the full game with the bundled sweep-painter player image:
 
 ```bash
-uv run coworld run-episode tmp/paintarena/coworld_manifest.json
+uv run coworld run-episode packages/coworld/src/coworld/examples/paintarena/dist/coworld_manifest.json
 ```
 
 This is the same local smoke-test shape a league player would use with their own image.
@@ -66,7 +62,7 @@ findings.
 From the repository root:
 
 ```bash
-uv run coworld certify tmp/paintarena/coworld_manifest.json
+uv run coworld certify packages/coworld/src/coworld/examples/paintarena/dist/coworld_manifest.json
 ```
 
 Certification runs the game and bundled sweep-painter policy containers end to end, then validates the results and replay

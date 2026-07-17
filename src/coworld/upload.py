@@ -1230,7 +1230,7 @@ def _reject_mutable_registry_image_refs(manifest: dict[str, object]) -> None:
     refs = ", ".join(mutable_refs)
     raise RuntimeError(
         "Coworld manifest contains mutable registry image refs: "
-        f"{refs}. Use `uv run coworld resolve-and-upload` to generate a digest-pinned manifest and upload that."
+        f"{refs}. Run `uv run coworld build --version <version>` in the owning Coworld project first."
     )
 
 

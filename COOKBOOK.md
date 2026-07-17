@@ -221,23 +221,19 @@ which does that Docker work for you.
 From the repository root, hydrate the in-package Paint Arena manifest and build its images:
 
 ```bash
-uv run coworld build \
-  packages/coworld/src/coworld/examples/paintarena/compose.yaml \
-  packages/coworld/src/coworld/examples/paintarena/coworld_manifest_template.json \
-  0.1.0 \
-  tmp/paintarena/coworld_manifest.json
+uv run coworld build --project packages/coworld/src/coworld/examples/paintarena --version 0.1.0
 ```
 
 Run a browser-play session with the bundled Paint Arena player:
 
 ```bash
-uv run coworld play tmp/paintarena/coworld_manifest.json
+uv run coworld play packages/coworld/src/coworld/examples/paintarena/dist/coworld_manifest.json
 ```
 
 Run one headless local episode with the same default fixture:
 
 ```bash
-uv run coworld run-episode tmp/paintarena/coworld_manifest.json
+uv run coworld run-episode packages/coworld/src/coworld/examples/paintarena/dist/coworld_manifest.json
 ```
 
 Use `play` when you want browser links for a live local episode. Use `run-episode` when you want a headless smoke test
@@ -1040,13 +1036,9 @@ replay_coworld(
 Coworld authors should build, certify, and upload the Coworld package. For Paint Arena:
 
 ```bash
-uv run coworld build \
-  packages/coworld/src/coworld/examples/paintarena/compose.yaml \
-  packages/coworld/src/coworld/examples/paintarena/coworld_manifest_template.json \
-  0.1.0 \
-  tmp/paintarena/coworld_manifest.json
-uv run coworld certify tmp/paintarena/coworld_manifest.json
-uv run coworld upload-coworld tmp/paintarena/coworld_manifest.json
+uv run coworld build --project packages/coworld/src/coworld/examples/paintarena --version 0.1.0
+uv run coworld certify packages/coworld/src/coworld/examples/paintarena/dist/coworld_manifest.json
+uv run coworld upload-coworld packages/coworld/src/coworld/examples/paintarena/dist/coworld_manifest.json
 ```
 
 `certify` runs the Executable transcript locally. It validates GitHub `source_url` refs by checking that they resolve

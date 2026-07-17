@@ -11,6 +11,15 @@ from typer.testing import CliRunner
 from coworld.bundle import _github_source_contexts, _pinned_source_url, build_coworld_manifest
 from coworld.cli import app
 
+REAL_SUBPROCESS_RUN = subprocess.run
+
+
+@pytest.fixture(autouse=True)
+def _owner_checkout(tmp_path: Path) -> None:
+    _init_git_repo(tmp_path, "git@github.com:Metta-AI/unit-test-coworld.git", "main")
+    head = _commit_file(tmp_path, "README.md", "# Unit test Coworld\n")
+    _git(tmp_path, "update-ref", "refs/remotes/origin/main", head)
+
 
 def test_build_coworld_manifest_runs_compose_and_writes_hydrated_manifest(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
@@ -94,26 +103,6 @@ def test_build_coworld_manifest_runs_compose_and_writes_hydrated_manifest(
         ),
         (
             ["docker", "tag", "player-runtime:latest", "player-runtime:coworld-aaaaaaaaaaaa"],
-            {"check": True},
-        ),
-        (
-            [
-                "docker",
-                "image",
-                "inspect",
-                "--format",
-                "{{.Id}}",
-                "ghcr.io/metta-ai/graders-default:latest",
-            ],
-            {"check": True, "capture_output": True, "text": True},
-        ),
-        (
-            [
-                "docker",
-                "tag",
-                "ghcr.io/metta-ai/graders-default:latest",
-                "ghcr.io/metta-ai/graders-default:coworld-eeeeeeeeeeee",
-            ],
             {"check": True},
         ),
     ]
@@ -231,40 +220,6 @@ def test_build_coworld_manifest_requires_template_without_version(tmp_path: Path
 
     with pytest.raises(RuntimeError, match="must not set game.version"):
         build_coworld_manifest(tmp_path / "compose.yaml", template_path, "0.2.0", tmp_path / "out.json")
-
-
-def test_build_coworld_manifest_overrides_source_manifest_version(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    manifest_path = _write_manifest(
-        tmp_path,
-        game_image="{{GAME_IMAGE}}",
-        player_image="{{PLAYER_IMAGE}}",
-        name="coworld_manifest.json",
-    )
-    (tmp_path / "compose.yaml").write_text("services: {}\n", encoding="utf-8")
-    monkeypatch.setattr(
-        "coworld.bundle.subprocess.run",
-        _fake_docker_run(
-            {
-                "game": "game-runtime:latest",
-                "player": "player-runtime:latest",
-                "grader": "ghcr.io/metta-ai/graders-default:latest",
-            },
-            {
-                "game-runtime:latest": "sha256:111111111111",
-                "player-runtime:latest": "sha256:222222222222",
-                "ghcr.io/metta-ai/graders-default:latest": "sha256:444444444444",
-            },
-        ),
-    )
-
-    output_path = build_coworld_manifest(tmp_path / "compose.yaml", manifest_path, "0.2.0", tmp_path / "out.json")
-
-    built_manifest = json.loads(output_path.read_text(encoding="utf-8"))
-    source_manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
-    assert source_manifest["game"]["version"] == "0.1.0"
-    assert built_manifest["game"]["version"] == "0.2.0"
 
 
 def test_build_coworld_manifest_tags_primary_role_images(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -395,7 +350,6 @@ def test_build_coworld_manifest_resolves_mutable_registry_image_refs(
         template_path,
         "0.2.0",
         tmp_path / "out.json",
-        resolve_mutable_image_refs=True,
     )
 
     built_manifest = json.loads(output_path.read_text(encoding="utf-8"))
@@ -458,7 +412,7 @@ def test_source_url_pinning_uses_checked_out_source_contexts(tmp_path: Path) -> 
 
 
 def test_build_command_writes_hydrated_manifest(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    template_path = _write_manifest(
+    _write_manifest(
         tmp_path,
         game_image="game-runtime:latest",
         player_image="player-runtime:latest",
@@ -484,7 +438,7 @@ def test_build_command_writes_hydrated_manifest(tmp_path: Path, monkeypatch: pyt
     output_path = tmp_path / "dist" / "coworld_manifest.json"
     result = CliRunner().invoke(
         app,
-        ["build", str(tmp_path / "compose.yaml"), str(template_path), "0.2.0", str(output_path)],
+        ["build", "--project", str(tmp_path), "--version", "0.2.0"],
         env={"DOCKER_CONTEXT": "desktop-linux", "DOCKER_HOST": ""},
     )
 
@@ -495,59 +449,6 @@ def test_build_command_writes_hydrated_manifest(tmp_path: Path, monkeypatch: pyt
     assert built_manifest["game"]["version"] == "0.2.0"
     assert built_manifest["game"]["runnable"]["image"] == "game-runtime:coworld-111111111111"
     assert built_manifest["player"][0]["image"] == "player-runtime:coworld-222222222222"
-
-
-def test_resolve_and_upload_command_builds_resolved_manifest_then_uploads(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    compose_path = tmp_path / "compose.yaml"
-    template_path = tmp_path / "coworld_manifest_template.json"
-    output_path = tmp_path / "dist" / "coworld_manifest.json"
-    compose_path.write_text("services: {}\n", encoding="utf-8")
-    template_path.write_text('{"game": {"name": "unit"}}\n', encoding="utf-8")
-    build_calls: list[tuple[Path, Path, str, Path, bool, tuple[Path, ...]]] = []
-    upload_calls: list[tuple[Path, str, float]] = []
-
-    def fake_build(
-        compose_file: Path,
-        template_file: Path,
-        version: str,
-        manifest_output: Path,
-        *,
-        resolve_mutable_image_refs: bool = False,
-        source_contexts: tuple[Path, ...] = (),
-    ) -> Path:
-        build_calls.append(
-            (compose_file, template_file, version, manifest_output, resolve_mutable_image_refs, source_contexts)
-        )
-        return manifest_output.resolve()
-
-    def fake_upload(manifest_path: Path, *, server: str, timeout_seconds: float) -> None:
-        upload_calls.append((manifest_path, server, timeout_seconds))
-
-    monkeypatch.setattr("coworld.cli.build_coworld_manifest", fake_build)
-    monkeypatch.setattr("coworld.cli.upload_coworld_cmd", fake_upload)
-
-    result = CliRunner().invoke(
-        app,
-        [
-            "resolve-and-upload",
-            str(compose_path),
-            str(template_path),
-            "0.2.0",
-            str(output_path),
-            "--server",
-            "http://localhost:3102/api",
-            "--timeout-seconds",
-            "17",
-            "--source-context",
-            str(tmp_path / "source"),
-        ],
-    )
-
-    assert result.exit_code == 0, result.output
-    assert build_calls == [(compose_path, template_path, "0.2.0", output_path, True, (tmp_path / "source",))]
-    assert upload_calls == [(output_path.resolve(), "http://localhost:3102/api", 17.0)]
 
 
 def _write_manifest(
@@ -641,7 +542,10 @@ def _write_manifest(
                         "id": "unit-test-default-grader",
                         "name": "Unit Test Default Grader",
                         "type": "grader",
-                        "image": "ghcr.io/metta-ai/graders-default:latest",
+                        "image": (
+                            "ghcr.io/metta-ai/graders-default@sha256:"
+                            "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd"
+                        ),
                         "source_url": "https://github.com/Metta-AI/coworld-tools/tree/e6b7863c2619d260bb29f14364baf09c578c9f30/graders/graders/default/default_grader",
                         "description": "Default grader stub.",
                     }
@@ -665,7 +569,7 @@ def _write_manifest(
 
 
 def _init_git_repo(path: Path, remote_url: str, branch: str) -> None:
-    path.mkdir()
+    path.mkdir(exist_ok=True)
     _git(path, "init", "-b", branch)
     _git(path, "config", "user.email", "coworld-test@example.com")
     _git(path, "config", "user.name", "Coworld Test")
@@ -690,6 +594,8 @@ def _fake_docker_run(
     service_platforms: Mapping[str, str] | None = None,
 ) -> Callable[..., subprocess.CompletedProcess[str]]:
     def fake_run(command: list[str], **kwargs: object) -> subprocess.CompletedProcess[str]:
+        if command[0] == "git":
+            return REAL_SUBPROCESS_RUN(command, **kwargs)
         if calls is not None:
             calls.append((command, kwargs))
         if command[:3] == ["docker", "compose", "-f"] and command[-3:] == ["config", "--format", "json"]:

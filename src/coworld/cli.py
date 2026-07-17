@@ -325,72 +325,35 @@ def certify(
 
 @app.command("build", cls=_DockerCommand)
 def build(
-    compose_file: Annotated[Path, typer.Argument(help="Path to the Coworld compose.yaml build file.")],
+    version: Annotated[str, typer.Option("--version", help="Version to write into the hydrated manifest.")],
+    project_dir: Annotated[
+        Path,
+        typer.Option(
+            "--project",
+            help="Coworld project directory containing compose.yaml and coworld_manifest_template.json.",
+        ),
+    ] = Path("."),
+    compose_file: Annotated[
+        Path,
+        typer.Option("--compose", help="Compose filename, relative to the project directory."),
+    ] = Path("compose.yaml"),
     template_path: Annotated[
         Path,
-        typer.Argument(help="Path to coworld_manifest_template.json or coworld_manifest.json."),
-    ],
-    version: Annotated[str, typer.Argument(help="Version to write into the hydrated manifest.")],
-    output_path: Annotated[Path, typer.Argument(help="Output path for coworld_manifest.json.")],
-    resolve_mutable_images: Annotated[
-        bool,
-        typer.Option(
-            "--resolve-mutable-images",
-            help="Resolve mutable registry image refs such as ghcr.io/name:latest to immutable digest refs.",
-        ),
-    ] = False,
-    source_context: Annotated[
-        list[Path] | None,
-        typer.Option(
-            "--source-context",
-            help="Local git checkout used to pin matching GitHub source_url refs to immutable commits.",
-        ),
-    ] = None,
-) -> None:
-    manifest_path = build_coworld_manifest(
-        compose_file,
-        template_path,
-        version,
-        output_path,
-        resolve_mutable_image_refs=resolve_mutable_images,
-        source_contexts=tuple(source_context or ()),
-    )
-    typer.echo(f"Built Coworld manifest: {manifest_path}")
-
-
-@app.command("resolve-and-upload", cls=_DockerCommand)
-def resolve_and_upload(
-    compose_file: Annotated[Path, typer.Argument(help="Path to the Coworld compose.yaml build file.")],
-    template_path: Annotated[
+        typer.Option("--template", help="Manifest template filename, relative to the project directory."),
+    ] = Path("coworld_manifest_template.json"),
+    output_path: Annotated[
         Path,
-        typer.Argument(help="Path to coworld_manifest_template.json or coworld_manifest.json."),
-    ],
-    version: Annotated[str, typer.Argument(help="Version to write into the hydrated manifest.")],
-    output_path: Annotated[Path, typer.Argument(help="Output path for the resolved coworld_manifest.json.")],
-    server: Annotated[str, typer.Option("--server", help="Observatory API server URL.")] = DEFAULT_SUBMIT_SERVER,
-    timeout_seconds: Annotated[float, typer.Option("--timeout-seconds", min=1.0)] = 60.0,
-    source_context: Annotated[
-        list[Path] | None,
-        typer.Option(
-            "--source-context",
-            help="Local git checkout used to pin matching GitHub source_url refs to immutable commits.",
-        ),
-    ] = None,
+        typer.Option("--output", help="Output filename, relative to the project directory."),
+    ] = Path("dist/coworld_manifest.json"),
 ) -> None:
+    project_dir = project_dir.resolve()
     manifest_path = build_coworld_manifest(
-        compose_file,
-        template_path,
+        project_dir / compose_file,
+        project_dir / template_path,
         version,
-        output_path,
-        resolve_mutable_image_refs=True,
-        source_contexts=tuple(source_context or ()),
+        project_dir / output_path,
     )
     typer.echo(f"Built Coworld manifest: {manifest_path}")
-    upload_coworld_cmd(
-        manifest_path,
-        server=server,
-        timeout_seconds=timeout_seconds,
-    )
 
 
 @app.command("play", cls=_DockerCommand)

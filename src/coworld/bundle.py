@@ -25,9 +25,6 @@ def build_coworld_manifest(
     template_path: Path,
     version: str,
     output_path: Path,
-    *,
-    resolve_mutable_image_refs: bool = False,
-    source_contexts: tuple[Path, ...] = (),
 ) -> Path:
     compose_file = compose_file.resolve()
     template_path = template_path.resolve()
@@ -37,13 +34,12 @@ def build_coworld_manifest(
 
     manifest_json = load_json_object(template_path)
     game = manifest_json["game"]
-    if isinstance(game, dict) and "version" in game and template_path.name != "coworld_manifest.json":
+    if isinstance(game, dict) and "version" in game:
         raise RuntimeError(f"Coworld manifest templates must not set game.version: {template_path}")
 
     compose_services = _compose_services(compose_file)
     manifest = _load_template_manifest(manifest_json, version, _compose_image_placeholders(compose_services))
-    if source_contexts:
-        manifest = _with_pinned_source_urls(manifest, _github_source_contexts(source_contexts))
+    manifest = _with_pinned_source_urls(manifest, _github_source_contexts((compose_file.parent,)))
     # Pull image-only services before building; buildable services are produced locally below.
     subprocess.run(
         ["docker", "compose", "-f", str(compose_file), "pull", "--ignore-buildable", "--ignore-pull-failures"],
@@ -53,21 +49,20 @@ def build_coworld_manifest(
     # --pull so buildable services (e.g. a commissioner built FROM
     # commissioners-default:latest) always refresh their base image instead of
     # reusing a stale locally-cached one. A mutable FROM can otherwise bake an
-    # out-of-date base, and --resolve-mutable-images below only rewrites manifest
+    # out-of-date base, and image resolution below only rewrites manifest
     # image refs after the local image is built, not Dockerfile base layers.
     subprocess.run(
         ["docker", "compose", "-f", str(compose_file), "build", "--pull"],
         cwd=compose_file.parent,
         check=True,
     )
-    if resolve_mutable_image_refs:
-        resolved_image_refs = _resolved_mutable_image_refs(manifest)
-        manifest = _with_image_tags(manifest, resolved_image_refs)
-        _pull_image_refs(
-            resolved_image_refs,
-            _compose_image_platforms(compose_services),
-            _compose_default_platform(compose_services),
-        )
+    resolved_image_refs = _resolved_mutable_image_refs(manifest)
+    manifest = _with_image_tags(manifest, resolved_image_refs)
+    _pull_image_refs(
+        resolved_image_refs,
+        _compose_image_platforms(compose_services),
+        _compose_default_platform(compose_services),
+    )
     manifest = _with_image_tags(manifest, _built_image_tags(manifest))
 
     output_path.parent.mkdir(parents=True, exist_ok=True)
