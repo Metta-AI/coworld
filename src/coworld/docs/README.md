@@ -79,7 +79,8 @@ The short version:
 
 1. A Coworld author packages a game, role runnables, variants, docs, schemas, and a certification fixture into a manifest.
 2. A player author builds or selects a player image for that Coworld.
-3. A runner starts one game container and one player container per slot for each episode.
+3. A runner starts one game container and one player container per slot for each bounded episode. Persistent leagues may
+   instead reconcile one commissioner-requested player runtime per stable player across many scoring windows.
 4. Players connect to the game's `/player` WebSocket and exchange game-defined observations and actions.
 5. The episode produces per-episode artifacts: [results](artifacts/RESULTS.md), [replay bytes](artifacts/REPLAY.md),
    [logs](artifacts/GAME_LOGS.md), an optional per-player [artifact](artifacts/PLAYER_ARTIFACT.md), and
@@ -130,7 +131,7 @@ A league round begins when the platform decides one is due. The platform starts 
 round and connects to its `/round` WebSocket. The commissioner reads the round context (divisions, memberships, recent
 results, variants, and prior state) and sends `schedule_episodes` listing the episodes it wants run.
 
-For each scheduled episode, the runner starts:
+For each scheduled bounded episode, the runner starts:
 
 - one **game** container, listening on `COGAME_HOST:COGAME_PORT` with `/healthz`, `/player`, `/global`, and `/client/*`
   routes;
@@ -144,6 +145,11 @@ artifacts to the URIs provided by the runner; the runner captures logs and hoste
 upload an optional [artifact](artifacts/PLAYER_ARTIFACT.md) to `COWORLD_PLAYER_ARTIFACT_UPLOAD_URL` before its container
 is torn down. Each completed episode's `scores` are routed back to the commissioner as an `episode_result` message; the
 commissioner can schedule more episodes or emit `round_complete` with per-division rankings and policy membership events.
+
+Persistent leagues separate execution from accounting. Their scheduling response publishes a complete desired set of
+long-lived player runtimes. The platform reconciles at most one runtime per stable league player and replaces it when
+that player's selected policy changes. Sealed game windows become completed recorded episodes and round evidence
+without passing through the episode runner or spawning duplicate players.
 
 For the in-flight contracts, see the [game role](roles/GAME.md), the [player role](roles/PLAYER.md), and the
 [commissioner role](roles/COMMISSIONER.md). For artifact contracts, see the

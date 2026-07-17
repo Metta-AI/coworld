@@ -4,6 +4,11 @@ This page describes the lifecycle of a Coworld package and the episodes run from
 handoffs: what gets packaged, what runs locally, what changes in hosted tournament evaluation, which artifacts are
 produced, and which roles participate at each point.
 
+Bounded Coworlds use episodes as both execution and evidence boundaries. Persistent Coworlds split those concerns: the
+commissioner publishes durable player-runtime desired state, while authoritative game windows are recorded later as
+episodes. A recorded episode is evidence that already exists, not a request to run work, and never launches a game or
+player container.
+
 For the role model itself, see [README.md](README.md#roles). For the game container route and environment-variable
 contract, see [GAME.md](roles/GAME.md). For task recipes and exact CLI commands, see the package
 [COOKBOOK.md](../../../COOKBOOK.md).

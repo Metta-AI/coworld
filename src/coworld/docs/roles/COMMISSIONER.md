@@ -101,15 +101,60 @@ that WebSocket connection as JSON messages with a `"type"` field.
    `WEBSOCKET /round`, and sends `schedule_rounds_request`.
 5. Commissioner returns `schedule_rounds_response` with zero or more `RoundSpec` entries. An empty `rounds` array means
    no round is due on this tick.
-6. Platform filters returned specs to known league divisions, enforces active-round and concurrency constraints,
+6. The same response may publish the complete `persistent_players` desired set. Platform reconciles one long-lived
+   runtime per stable league player independently of round and episode execution.
+7. Platform filters returned specs to known league divisions, enforces active-round and concurrency constraints,
    persists accepted `Round` rows, and starts per-round supervisors for them.
+
+### Persistent player runtimes
+
+Persistent Coworlds may use `schedule_rounds_response.persistent_players` to control player lifecycle independently of
+episodes. Each entry names a stable `player_id`, the selected `policy_version_id`, public tags and game-config
+overrides, and an optional private config-overlay secret name. The array is the complete desired set for the league on
+that scheduling tick.
+
+A persistent league has one `Game`, and that `Game` is bound to one canonical, dedicated Coworld registration with
+exactly one declared competition variant. The platform derives that variant's game config and treats the Coworld's
+top-level `game.runnable` as authoritative; the commissioner cannot choose another Coworld, variant, or game image in
+`persistent_players`.
+
+The platform owns reconciliation. It keeps one runtime identity per `(league, player_id)`, stops the previous policy
+generation completely before starting a replacement, and stops runtimes omitted from the next desired set. The player
+container still receives the normal `COWORLD_PLAYER_WS_URL` and `COGAMES_ENGINE_WS_URL`; persistent execution does not
+define a second player protocol.
+
+Persistent runtimes do not represent episodes. Authoritative game windows are materialized later as completed recorded
+episodes; they do not create execution requests, enter episode admission, or launch another player pod.
+
+```json
+{
+  "type": "schedule_rounds_response",
+  "rounds": [],
+  "persistent_players": [
+    {
+      "player_id": "player_abc",
+      "policy_version_id": "00000000-0000-0000-0000-000000000001",
+      "tags": {"benchmark": "persistent-leveling"},
+      "game_config_overrides": {
+        "persistent_entrant": {
+          "player_id": "player_abc",
+          "policy_version_id": "00000000-0000-0000-0000-000000000001"
+        }
+      },
+      "config_overlay_secret": "persistent-production"
+    }
+  ]
+}
+```
 
 ### Round execution lifecycle
 
 1. For each persisted container round, platform starts the commissioner container.
 2. Platform polls `/healthz` until ready, connects to `WEBSOCKET /round`, and sends `round_start` (round context:
-   divisions, memberships, recent results, variants, optional state blob from the previous round).
-3. Commissioner reads its state, sends `schedule_episodes` listing the episodes it wants to run.
+   divisions, memberships, recent results, variants, optional pre-completed recorded episode results, and optional
+   state blob from the previous round).
+3. For an ordinary round, the commissioner sends `schedule_episodes` listing the episodes it wants to run. For a
+   recorded round, it scores `round_start.completed_episodes` directly and must not schedule executable episodes.
 4. Platform responds with `episodes_accepted` or `episodes_rejected`, dispatches valid episodes.
 5. As episodes complete, platform sends `episode_result` or `episode_failed`.
 6. Platform calls the commissioner's episode-completed hook for the result or failure; the commissioner may schedule
@@ -468,6 +513,36 @@ Return zero or more round specs for the current scheduling tick:
 
 The platform persists accepted specs as `Round` rows. It does not create a round when `rounds` is empty, when the
 division is unknown, or when an active non-concurrent round already exists for that division.
+
+A persistent commissioner returns one recorded round per aligned source interval. `idempotency_key` identifies that
+interval, and each `recorded_episodes` entry is already-completed evidence rather than an execution request:
+
+```json
+{
+  "division_id": "uuid_persistent",
+  "round_config": {"entrant_policy_version_ids": ["uuid_a"]},
+  "idempotency_key": "realm-1:1784212800000:1784213400000",
+  "recorded_episodes": [
+    {
+      "source_id": "pww_window_1",
+      "policy_version_id": "uuid_a",
+      "player_id": "ply_a",
+      "score": 25,
+      "scores": {"xp_gained": 25, "total_xp": 125},
+      "game_results": {"persistent_window": {"outcome": "completed"}},
+      "replay_url": "https://realm/windows/pww_window_1/replay",
+      "started_at": "2026-07-16T12:00:00Z",
+      "ended_at": "2026-07-16T12:10:00Z"
+    }
+  ]
+}
+```
+
+The platform validates each player/policy pair against the active membership in the target division, then atomically
+creates the round, completed `Episode` rows, and their `RoundEpisode` links. It does not create `EpisodeRequest` or
+`JobRequest` rows. Retries deduplicate by both round interval and source window id. On `round_start`, those entries
+appear as normal `EpisodeResult` objects in `completed_episodes`. Coworld and variant identity come from the league's
+dedicated, single-variant Coworld, so recorded evidence cannot select another game config, runnable, or image.
 
 ##### `schedule_episodes`
 

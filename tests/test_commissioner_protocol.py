@@ -34,10 +34,12 @@ from coworld.commissioner.protocol import (
     LeagueMigrationResponse,
     MembershipChange,
     MembershipInfo,
+    PersistentPlayerRuntimeRequest,
     PolicyMembershipEventChange,
     RankDivisionResponse,
     RankingEntry,
     RecentResult,
+    RecordedEpisodeSpec,
     RoundComplete,
     RoundCompletedResponse,
     RoundConfig,
@@ -99,6 +101,129 @@ def test_round_start_serializes_with_message_type() -> None:
     assert data["memberships"][0]["preferences"] == {"team_name": "Dungeon Delvers", "role": "tank"}
     assert data["memberships"][0]["is_champion"] is True
     assert data["variants"][0]["num_agents"] == 2
+
+
+def test_schedule_rounds_response_serializes_persistent_player_desired_state() -> None:
+    policy_version_id = uuid4()
+    response = ScheduleRoundsResponse(
+        persistent_players=[
+            PersistentPlayerRuntimeRequest(
+                player_id="player_abc",
+                policy_version_id=policy_version_id,
+                tags={"benchmark": "persistent-leveling"},
+                game_config_overrides={
+                    "persistent_entrant": {
+                        "player_id": "player_abc",
+                        "policy_version_id": str(policy_version_id),
+                    }
+                },
+                config_overlay_secret="persistent-production",
+            )
+        ]
+    )
+
+    assert response.to_json() == {
+        "type": "schedule_rounds_response",
+        "rounds": [],
+        "persistent_players": [
+            {
+                "player_id": "player_abc",
+                "policy_version_id": str(policy_version_id),
+                "tags": {"benchmark": "persistent-leveling"},
+                "game_config_overrides": {
+                    "persistent_entrant": {
+                        "player_id": "player_abc",
+                        "policy_version_id": str(policy_version_id),
+                    }
+                },
+                "config_overlay_secret": "persistent-production",
+            }
+        ],
+    }
+
+
+def test_persistent_player_runtime_rejects_variant_selection() -> None:
+    with pytest.raises(ValidationError, match="variant_id"):
+        PersistentPlayerRuntimeRequest.model_validate(
+            {
+                "player_id": "player_abc",
+                "policy_version_id": str(uuid4()),
+                "variant_id": "another-competition",
+            }
+        )
+
+
+@pytest.mark.parametrize("duplicate_field", ["player_id", "policy_version_id"])
+def test_schedule_rounds_response_rejects_duplicate_persistent_player_identity(duplicate_field: str) -> None:
+    first_policy_version_id = uuid4()
+    second_policy_version_id = first_policy_version_id if duplicate_field == "policy_version_id" else uuid4()
+    second_player_id = "player-a" if duplicate_field == "player_id" else "player-b"
+
+    with pytest.raises(ValidationError, match=f"unique {duplicate_field}"):
+        ScheduleRoundsResponse(
+            persistent_players=[
+                PersistentPlayerRuntimeRequest(
+                    player_id="player-a",
+                    policy_version_id=first_policy_version_id,
+                ),
+                PersistentPlayerRuntimeRequest(
+                    player_id=second_player_id,
+                    policy_version_id=second_policy_version_id,
+                ),
+            ]
+        )
+
+
+def test_recorded_round_serializes_completed_window_evidence() -> None:
+    policy_version_id = uuid4()
+    started_at = datetime(2026, 7, 16, 12, 0, tzinfo=timezone.utc)
+    response = ScheduleRoundsResponse(
+        rounds=[
+            RoundSpec(
+                division_id=uuid4(),
+                round_config=RoundConfig(entrant_policy_version_ids=[policy_version_id]),
+                idempotency_key="realm-1:1784212800000:1784213400000",
+                recorded_episodes=[
+                    RecordedEpisodeSpec(
+                        source_id="pww_window_1",
+                        policy_version_id=policy_version_id,
+                        player_id="ply_player_1",
+                        score=25,
+                        scores={"xp_gained": 25, "total_xp": 125},
+                        game_results={"persistent_window": {"outcome": "completed"}},
+                        replay_url="https://realm/windows/pww_window_1/replay",
+                        started_at=started_at,
+                        ended_at=started_at.replace(minute=10),
+                    )
+                ],
+            )
+        ]
+    )
+
+    payload = response.to_json()
+
+    assert payload["rounds"][0]["idempotency_key"] == "realm-1:1784212800000:1784213400000"
+    assert payload["rounds"][0]["recorded_episodes"][0]["source_id"] == "pww_window_1"
+    assert payload["rounds"][0]["recorded_episodes"][0]["policy_version_id"] == str(policy_version_id)
+
+
+def test_recorded_round_requires_round_idempotency_key() -> None:
+    with pytest.raises(ValidationError, match="requires an idempotency_key"):
+        RoundSpec(
+            division_id=uuid4(),
+            round_config=RoundConfig(),
+            recorded_episodes=[
+                RecordedEpisodeSpec(
+                    source_id="window-1",
+                    policy_version_id=uuid4(),
+                    player_id="ply_player",
+                    score=0,
+                    game_results={},
+                    started_at=datetime(2026, 7, 16, 12, 0, tzinfo=timezone.utc),
+                    ended_at=datetime(2026, 7, 16, 12, 10, tzinfo=timezone.utc),
+                )
+            ],
+        )
 
 
 def test_default_competing_helpers_use_is_champion_and_emit_commissioner_substatuses() -> None:

@@ -1,10 +1,11 @@
 from __future__ import annotations
 
 import json
+from datetime import datetime
 from typing import Any, Literal
 from uuid import UUID
 
-from pydantic import BaseModel, Field, field_validator, model_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 COMMISSIONER_STATE_MAX_BYTES = 10 * 1024 * 1024
 # Commissioner messages wrap state with rankings, reports, and other protocol fields.
@@ -79,6 +80,23 @@ class EpisodeRequest(BaseModel):
     seed: int | None = None
     tags: dict[str, str] = Field(default_factory=dict)
     game_config_overrides: dict[str, Any] = Field(default_factory=dict)
+
+
+class PersistentPlayerRuntimeRequest(BaseModel):
+    """Commissioner-authored desired state for one long-lived league player."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    player_id: str = Field(min_length=1, max_length=128)
+    policy_version_id: UUID
+    tags: dict[str, str] = Field(default_factory=dict)
+    game_config_overrides: dict[str, Any] = Field(default_factory=dict)
+    config_overlay_secret: str | None = Field(
+        default=None,
+        min_length=1,
+        max_length=128,
+        pattern=r"^[A-Za-z0-9][A-Za-z0-9_.-]{0,127}$",
+    )
 
 
 class EpisodeScore(BaseModel):
@@ -172,11 +190,47 @@ class LeaderboardRoundResultInfo(RoundResultInfo):
     player_name: str | None = None
 
 
+class RecordedEpisodeSpec(BaseModel):
+    """Authoritative episode evidence that already exists outside platform execution."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    source_id: str = Field(min_length=1, max_length=200)
+    policy_version_id: UUID
+    player_id: str = Field(min_length=1, max_length=128)
+    score: float
+    scores: dict[str, float] = Field(default_factory=dict)
+    game_results: dict[str, Any]
+    replay_url: str | None = None
+    started_at: datetime
+    ended_at: datetime
+    tags: dict[str, str] = Field(default_factory=dict)
+
+    @model_validator(mode="after")
+    def require_positive_interval(self) -> "RecordedEpisodeSpec":
+        if self.started_at.tzinfo is None or self.ended_at.tzinfo is None:
+            raise ValueError("recorded episode timestamps must include a timezone")
+        if self.ended_at <= self.started_at:
+            raise ValueError("recorded episode ended_at must be after started_at")
+        return self
+
+
 class RoundSpec(BaseModel):
     division_id: UUID
     round_config: RoundConfig
     execution_backend: str = "dispatch"
     notes: str | None = None
+    idempotency_key: str | None = Field(default=None, min_length=1, max_length=200)
+    recorded_episodes: list[RecordedEpisodeSpec] = Field(default_factory=list)
+
+    @model_validator(mode="after")
+    def require_unique_recorded_episode_ids(self) -> "RoundSpec":
+        source_ids = [episode.source_id for episode in self.recorded_episodes]
+        if len(source_ids) != len(set(source_ids)):
+            raise ValueError("recorded episodes must use unique source_id values")
+        if self.recorded_episodes and self.idempotency_key is None:
+            raise ValueError("a round with recorded episodes requires an idempotency_key")
+        return self
 
 
 class DivisionLeaderboardEntry(BaseModel):
@@ -493,6 +547,7 @@ class RoundStart(BaseModel):
     memberships: list[MembershipInfo]
     recent_results: list[RecentResult]
     variants: list[VariantInfo]
+    completed_episodes: list[EpisodeResult] = Field(default_factory=list)
     state: Any = None
 
     def to_json(self) -> dict[str, Any]:
@@ -694,6 +749,17 @@ class ScheduleRoundsRequest(BaseModel):
 
 class ScheduleRoundsResponse(BaseModel):
     rounds: list[RoundSpec] = Field(default_factory=list)
+    persistent_players: list[PersistentPlayerRuntimeRequest] = Field(default_factory=list)
+
+    @model_validator(mode="after")
+    def require_unique_persistent_players(self) -> "ScheduleRoundsResponse":
+        player_ids = [runtime.player_id for runtime in self.persistent_players]
+        if len(player_ids) != len(set(player_ids)):
+            raise ValueError("persistent player runtimes must use unique player_id values")
+        policy_version_ids = [runtime.policy_version_id for runtime in self.persistent_players]
+        if len(policy_version_ids) != len(set(policy_version_ids)):
+            raise ValueError("persistent player runtimes must use unique policy_version_id values")
+        return self
 
     def to_json(self) -> dict[str, Any]:
         data = self.model_dump(mode="json")
