@@ -65,9 +65,9 @@ you want players to learn — read
 
 The game is a long-running container that owns the episode. Its full HTTP/WebSocket/artifact contract is in the
 [game role doc](roles/GAME.md); the runner-injected environment (`COGAME_CONFIG_URI`, `COGAME_RESULTS_URI`,
-`COGAME_SAVE_REPLAY_URI`, `COGAME_LOAD_REPLAY_URI`, `COGAME_HOST`/`COGAME_PORT`) and the required routes (`/healthz`,
-`/player`, `/global`, `/client/*`) are defined there. Start from the [game template](../templates/README.md) or Paint
-Arena's `game/server.py`.
+`COGAME_SAVE_REPLAY_URI`, `COGAME_EPISODE_ERROR_URI`, `COGAME_LOAD_REPLAY_URI`, `COGAME_HOST`/`COGAME_PORT`) and the
+required routes (`/healthz`, `/player`, `/global`, `/client/*`) are defined there. Start from the
+[game template](../templates/README.md) or Paint Arena's `game/server.py`.
 
 Beyond the contract, these design rules separate a Coworld that survives hosted play from one that hangs its first
 league round:

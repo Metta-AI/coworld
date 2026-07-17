@@ -172,8 +172,8 @@ The hosted lifecycle is:
 12. Each player pod receives `COWORLD_PLAYER_WS_URL` and `COGAMES_ENGINE_WS_URL`, pointing at the game Service with its
     slot and token.
 13. The game and players run the episode using the same game/player protocol as local execution.
-14. The game writes results and replay bytes into the shared workdir.
-15. The worker validates results, collects logs, and uploads the configured hosted artifacts.
+14. The game writes results and replay bytes, or a terminal `GameEpisodeError`, to the runner-supplied URIs.
+15. The worker validates the game output, collects logs, and uploads the configured hosted artifacts.
 16. The platform records episode status, results, logs, replay links, and round/leaderboard state. For container
     commissioner leagues, it streams completed or failed episode results back to the commissioner until
     `round_complete`, then persists commissioner rankings, membership changes, and state for the next round.

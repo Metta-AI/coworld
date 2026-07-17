@@ -34,6 +34,7 @@ from coworld.runner.phase_timings import EpisodePhaseTimings
 from coworld.runner.runner import (
     EpisodeArtifacts,
     PlayerLaunchSpec,
+    _raise_if_game_declared_failure,
     _require_bad_player_rejected,
     _require_global_message,
     _require_http_ok,
@@ -572,18 +573,20 @@ def _wait_for_episode_artifacts(
     timeout_seconds: float,
     require_replay: bool,
 ) -> None:
-    # Game artifacts win. Player pod failures are attributed only after the game
-    # times out without writing the required episode artifacts.
+    # The game owns whether a player failure ends an episode. Required output artifacts
+    # win; otherwise a game may publish a typed terminal failure through episode_error.json.
+    # Player pod state remains a timeout fallback for games that do not make that choice.
     deadline = time.monotonic() + timeout_seconds
-    expected = [artifacts.results_path]
-    if require_replay:
-        expected.append(artifacts.replay_path)
+    expected = (artifacts.results_path, artifacts.replay_path) if require_replay else (artifacts.results_path,)
+    player_count = len(player_pod_names or ())
 
     while time.monotonic() < deadline:
         missing = [path for path in expected if not path.exists()]
 
         if not missing:
             return
+
+        _raise_if_game_declared_failure(artifacts, expected, player_count=player_count)
 
         exit_code = _game_container_exit_code(core_v1, namespace, pod_name)
 
@@ -593,6 +596,7 @@ def _wait_for_episode_artifacts(
             missing = [path for path in expected if not path.exists()]
             if not missing:
                 return
+            _raise_if_game_declared_failure(artifacts, expected, player_count=player_count)
             missing_list = ", ".join(str(path) for path in missing)
             if artifacts.results_path in missing:
                 raise RunnerEpisodeError(
@@ -605,6 +609,10 @@ def _wait_for_episode_artifacts(
             )
 
         time.sleep(_ARTIFACT_POLL_SECONDS)
+    missing = [path for path in expected if not path.exists()]
+    if not missing:
+        return
+    _raise_if_game_declared_failure(artifacts, expected, player_count=player_count)
     _raise_if_player_pod_failed(core_v1, namespace, player_pod_names or ())
     expected_list = ", ".join(str(path) for path in expected)
     raise RunnerEpisodeError(

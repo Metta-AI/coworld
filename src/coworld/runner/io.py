@@ -7,7 +7,7 @@ from urllib.error import HTTPError
 from urllib.parse import unquote, urlparse
 from urllib.request import Request, urlopen
 
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict, Field
 
 _WRITE_RETRY_DELAYS_SECONDS = (0.5, 1.0, 2.0)
 _RETRYABLE_WRITE_STATUS_CODES = {429, 500, 502, 503, 504}
@@ -30,6 +30,16 @@ class RunnerError(BaseModel):
     error_type: RunnerErrorType
     message: str
     failed_policy_index: int | None = None
+
+
+class GameEpisodeError(BaseModel):
+    """Terminal episode failure declared by the game runnable."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    error_type: Literal["player_error"]
+    message: str = Field(min_length=1, max_length=2000)
+    failed_policy_index: int = Field(ge=0)
 
 
 class RunnerEpisodeError(RuntimeError):

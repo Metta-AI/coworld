@@ -147,6 +147,17 @@ class _FailingCoreV1:
         raise RuntimeError("pod status read failed")
 
 
+def _declare_game_failure(artifacts: EpisodeArtifacts, *, slot: int, message: str) -> None:
+    artifacts.episode_error_path.write_text(
+        runner_io.GameEpisodeError(
+            error_type="player_error",
+            message=message,
+            failed_policy_index=slot,
+        ).model_dump_json(),
+        encoding="utf-8",
+    )
+
+
 def test_upload_outputs_uploads_raw_replay_bytes(tmp_path, monkeypatch):
     artifacts = EpisodeArtifacts.create(tmp_path)
     artifacts.results_path.write_text("{}", encoding="utf-8")
@@ -355,6 +366,7 @@ def test_run_episode_containers_uses_docker_dns_and_omits_policy_names_env(tmp_p
     game_command, player_command = commands
     env_values = [value for index, value in enumerate(game_command) if index > 0 and game_command[index - 1] == "-e"]
     assert all(not value.startswith("COWORLD_POLICY_NAMES=") for value in env_values)
+    assert f"{runner_module.EPISODE_ERROR_ENV_VAR}=file:///coworld/episode_error.json" in env_values
     assert run_commands[0] == ["docker", "network", "inspect", runner_module.LOCAL_DOCKER_NETWORK]
     assert "coworld-run-game-session-1" in game_command
     assert "coworld-run-player-session-1-0" in player_command
@@ -773,6 +785,38 @@ def test_wait_for_episode_artifacts_reports_results_missing_when_game_exits_with
     assert exc_info.value.error_type == "results_missing"
 
 
+def test_wait_for_episode_artifacts_sees_failure_written_during_clean_game_exit(tmp_path):
+    artifacts = EpisodeArtifacts.create(tmp_path)
+
+    class DeclaringCoreV1:
+        def read_namespaced_pod(self, *, name: str, namespace: str):
+            _declare_game_failure(artifacts, slot=0, message="player failed during shutdown")
+            return SimpleNamespace(
+                status=SimpleNamespace(
+                    container_statuses=[
+                        SimpleNamespace(
+                            name="game",
+                            state=SimpleNamespace(terminated=SimpleNamespace(exit_code=0)),
+                        )
+                    ]
+                )
+            )
+
+    with pytest.raises(runner_io.RunnerEpisodeError, match="failed during shutdown") as exc_info:
+        _wait_for_episode_artifacts(
+            artifacts,
+            DeclaringCoreV1(),
+            "default",
+            "game-pod",
+            ["player-0"],
+            timeout_seconds=1.0,
+            require_replay=False,
+        )
+
+    assert exc_info.value.error_type == "player_error"
+    assert exc_info.value.failed_policy_index == 0
+
+
 def test_wait_for_episode_artifacts_reports_game_unhealthy_when_game_exits_nonzero(tmp_path):
     artifacts = EpisodeArtifacts.create(tmp_path)
     core_v1 = _FakeCoreV1(game_exit_codes=[42])
@@ -840,6 +884,40 @@ def test_wait_for_episode_artifacts_reports_failed_player_on_timeout(tmp_path, p
 
     assert exc_info.value.failed_policy_index == 0
     assert expected_message in str(exc_info.value)
+
+
+def test_game_declared_player_failure_is_attributed(tmp_path):
+    artifacts = EpisodeArtifacts.create(tmp_path)
+    _declare_game_failure(
+        artifacts,
+        slot=3,
+        message="RFC player slot 3 failed before completing its session",
+    )
+
+    with pytest.raises(runner_io.RunnerEpisodeError, match="slot 3") as exc_info:
+        runner_module._raise_if_game_declared_failure(artifacts, (artifacts.results_path,), player_count=4)
+
+    assert exc_info.value.error_type == "player_error"
+    assert exc_info.value.failed_policy_index == 3
+
+
+def test_game_declared_player_failure_rejects_out_of_range_slot(tmp_path):
+    artifacts = EpisodeArtifacts.create(tmp_path)
+    _declare_game_failure(artifacts, slot=2, message="invalid player slot")
+
+    with pytest.raises(runner_io.RunnerEpisodeError, match="episode has 2 players") as exc_info:
+        runner_module._raise_if_game_declared_failure(artifacts, (artifacts.results_path,), player_count=2)
+
+    assert exc_info.value.error_type == "game_contract_violation"
+    assert exc_info.value.failed_policy_index is None
+
+
+def test_completed_outputs_win_over_malformed_game_failure(tmp_path):
+    artifacts = EpisodeArtifacts.create(tmp_path)
+    artifacts.results_path.write_text("{}", encoding="utf-8")
+    artifacts.episode_error_path.write_text("not-json", encoding="utf-8")
+
+    runner_module._raise_if_game_declared_failure(artifacts, (artifacts.results_path,), player_count=1)
 
 
 def test_raise_if_no_players_started_fails_when_no_player_ever_ran():

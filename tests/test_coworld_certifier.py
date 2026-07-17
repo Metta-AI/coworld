@@ -37,6 +37,7 @@ from coworld.play import BedrockAwsEnv, ReplaySession, build_play_links, play_co
 from coworld.runner.io import RunnerEpisodeError
 from coworld.runner.runner import (
     CONFIG_ENV_VAR,
+    EPISODE_ERROR_ENV_VAR,
     LOCAL_DOCKER_NETWORK,
     LOCAL_EXTRA_PORTS_ENV_VAR,
     LOCAL_GAME_NETWORK_ALIAS_PREFIX,
@@ -1620,6 +1621,7 @@ def test_play_coworld_starts_certification_player_containers(tmp_path: Path, mon
     assert game_command[game_command.index("--network-alias") + 1] == f"{LOCAL_GAME_NETWORK_ALIAS_PREFIX}session-1"
     assert _docker_publish_values(game_command) == ["127.0.0.1:1234:8080"]
     assert f"{CONFIG_ENV_VAR}=file:///coworld/config.json" in game_command
+    assert f"{EPISODE_ERROR_ENV_VAR}=file:///coworld/episode_error.json" in game_command
     assert _env_value(game_command, LOCAL_PORTS_JSON_ENV_VAR) is None
     assert "coworld-play-player-session-1-0" in player_command
     assert "--network" in player_command
