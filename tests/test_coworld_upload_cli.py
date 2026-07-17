@@ -5,6 +5,7 @@ import os
 import re
 import subprocess
 import tarfile
+import zipfile
 from pathlib import Path
 from typing import cast
 
@@ -20,6 +21,8 @@ from coworld.upload import (
     ContainerImageResponse,
     CoworldUploadClient,
     CoworldUploadResponse,
+    ReplayViewerBundleCompleteResponse,
+    ReplayViewerBundleUploadResponse,
     ReporterRegisterResponse,
     ReporterUploadCompleteResponse,
     ReporterUploadResponse,
@@ -38,6 +41,8 @@ from coworld.upload import (
     _manifest_with_softmax_image_ids,
     _prepare_public_ecr_docker_config,
     _push_archive_to_registry,
+    _replay_viewer_bundle_files,
+    _submit_replay_viewer_bundle,
     _submit_wasm_reporters,
     upload_coworld,
 )
@@ -149,6 +154,19 @@ def test_upload_coworld_rejects_mutable_registry_image_refs(
     message = str(exc_info.value)
     assert "ghcr.io/metta-ai/players-default:latest" in message
     assert "resolve-and-upload" in message
+
+
+def test_upload_coworld_requires_built_replay_viewer_before_certification(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    manifest = _manifest()
+    cast(dict[str, object], manifest["game"])["replay_viewer"] = {"bundle": "replay-viewer"}
+    manifest_path = _write_manifest(tmp_path, manifest)
+    monkeypatch.setattr("coworld.upload.certify_coworld", lambda *_args, **_kwargs: pytest.fail("certified manifest"))
+
+    with pytest.raises(ValueError, match="not a directory"):
+        upload_coworld(manifest_path)
 
 
 def test_upload_coworld_posts_standalone_manifest(
@@ -2434,3 +2452,70 @@ def test_submit_wasm_reporters_falls_back_to_humanized_id_and_purpose(
 class _OkPut:
     def raise_for_status(self) -> None:
         return None
+
+
+class _RecordingReplayViewerBundleClient:
+    def __init__(self) -> None:
+        self.calls: list[tuple[str, dict[str, object]]] = []
+
+    def request_replay_viewer_bundle_upload(self, **kwargs: object) -> ReplayViewerBundleUploadResponse:
+        self.calls.append(("upload", kwargs))
+        return ReplayViewerBundleUploadResponse(bundle=f"sha256:{kwargs['content_hash']}", upload_url="https://s3/put")
+
+    def complete_replay_viewer_bundle_upload(self, **kwargs: object) -> ReplayViewerBundleCompleteResponse:
+        self.calls.append(("complete", kwargs))
+        return ReplayViewerBundleCompleteResponse(bundle=f"sha256:{kwargs['content_hash']}")
+
+
+def test_replay_viewer_bundle_files_requires_built_bundle(tmp_path: Path) -> None:
+    with pytest.raises(ValueError, match="not a directory"):
+        _replay_viewer_bundle_files(
+            {"game": {"replay_viewer": {"bundle": "build/static-replay-viewer"}}},
+            tmp_path,
+        )
+
+
+def test_submit_replay_viewer_bundle_uploads_deterministic_archive(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    bundle_dir = tmp_path / "replay-viewer"
+    bundle_dir.mkdir()
+    (bundle_dir / "index.html").write_text("<script src='viewer.js'></script>")
+    (bundle_dir / "viewer.js").write_text("console.log('viewer')")
+    uploaded: list[bytes] = []
+
+    class PutResponse:
+        def raise_for_status(self) -> None:
+            return None
+
+    def put(_url: str, *, content: bytes, timeout: float) -> PutResponse:
+        assert timeout == 600.0
+        uploaded.append(content)
+        return PutResponse()
+
+    monkeypatch.setattr("coworld.upload.httpx.put", put)
+    client = _RecordingReplayViewerBundleClient()
+    manifest = {"game": {"replay_viewer": {"bundle": "./replay-viewer"}}}
+
+    result = _submit_replay_viewer_bundle(cast(object, client), manifest, tmp_path)  # type: ignore[arg-type]
+
+    assert [name for name, _ in client.calls] == ["upload", "complete"]
+    content_hash = hashlib.sha256(uploaded[0]).hexdigest()
+    assert result["game"]["replay_viewer"] == {"bundle": f"sha256:{content_hash}"}
+    with zipfile.ZipFile(io.BytesIO(uploaded[0])) as archive:
+        assert archive.namelist() == ["index.html", "viewer.js"]
+        assert archive.read("viewer.js") == b"console.log('viewer')"
+
+
+def test_submit_replay_viewer_bundle_requires_index_html(tmp_path: Path) -> None:
+    bundle_dir = tmp_path / "replay-viewer"
+    bundle_dir.mkdir()
+    (bundle_dir / "viewer.js").write_text("console.log('viewer')")
+
+    with pytest.raises(ValueError, match="no index.html"):
+        _submit_replay_viewer_bundle(
+            cast(object, _RecordingReplayViewerBundleClient()),  # type: ignore[arg-type]
+            {"game": {"replay_viewer": {"bundle": "replay-viewer"}}},
+            tmp_path,
+        )

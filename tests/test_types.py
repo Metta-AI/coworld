@@ -93,6 +93,27 @@ def test_manifest_schema_accepts_game_resources() -> None:
     validate_json_schema(manifest, coworld_manifest_schema())
 
 
+def test_manifest_accepts_authored_and_uploaded_replay_viewer_bundles() -> None:
+    for bundle in ("./replay-viewer", f"sha256:{'a' * 64}"):
+        manifest = _manifest_data()
+        manifest["game"]["replay_viewer"] = {"bundle": bundle}
+
+        typed = CoworldManifest.model_validate(manifest)
+        validate_json_schema(manifest, coworld_manifest_schema())
+
+        assert typed.game.replay_viewer is not None
+        assert typed.game.replay_viewer.bundle == bundle
+
+
+@pytest.mark.parametrize("bundle", ["/replay-viewer", "../replay-viewer", "sha256:not-a-digest"])
+def test_manifest_rejects_invalid_replay_viewer_bundle(bundle: str) -> None:
+    manifest = _manifest_data()
+    manifest["game"]["replay_viewer"] = {"bundle": bundle}
+
+    with pytest.raises(ValidationError, match="replay_viewer.bundle"):
+        CoworldManifest.model_validate(manifest)
+
+
 def test_manifest_requires_at_least_three_tags() -> None:
     manifest = _manifest_data()
     manifest["tags"] = ["strategy", "multiplayer"]

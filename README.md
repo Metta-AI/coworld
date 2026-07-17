@@ -105,6 +105,7 @@ progress:
 | Understand manifest fields | [Manifest reference](src/coworld/docs/COWORLD_MANIFEST.md) |
 | Understand roles and artifact flow | [Coworld overview](src/coworld/docs/README.md#roles) |
 | Implement a game runnable | [Game role](src/coworld/docs/roles/GAME.md) |
+| Add a browser-only replay viewer | [Static replay viewers](src/coworld/docs/STATIC_REPLAY_VIEWERS.md) |
 | Implement or submit a player | [Player role](src/coworld/docs/roles/PLAYER.md) and [Coworld cookbook](COOKBOOK.md) |
 | Call Bedrock / an LLM from a player | [Bedrock for players](src/coworld/docs/BEDROCK.md) |
 | Implement supporting roles | [Reporter](src/coworld/docs/roles/REPORTER.md), [Commissioner](src/coworld/docs/roles/COMMISSIONER.md), [Grader](src/coworld/docs/roles/GRADER.md), [Diagnoser](src/coworld/docs/roles/DIAGNOSER.md), and [Optimizer](src/coworld/docs/roles/OPTIMIZER.md) |

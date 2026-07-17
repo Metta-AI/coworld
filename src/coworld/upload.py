@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import copy
 import hashlib
+import io
 import json
 import logging
 import os
@@ -12,6 +13,7 @@ import subprocess
 import tarfile
 import tempfile
 import time
+import zipfile
 from dataclasses import dataclass
 from datetime import datetime
 from enum import Enum
@@ -243,6 +245,15 @@ class ReporterUploadCompleteResponse(BaseModel):
     version: ReporterVersionResponse
 
 
+class ReplayViewerBundleUploadResponse(BaseModel):
+    bundle: str
+    upload_url: str | None
+
+
+class ReplayViewerBundleCompleteResponse(BaseModel):
+    bundle: str
+
+
 class WhoAmIResponse(BaseModel):
     # The authenticated user's id; for player-subject tokens, the owning user's id.
     owner_user_id: str | None = None
@@ -383,6 +394,30 @@ class CoworldUploadClient:
         )
         _raise_for_status(response)
         return ReporterUploadCompleteResponse.model_validate(response.json())
+
+    def request_replay_viewer_bundle_upload(
+        self, *, content_hash: str, size_bytes: int
+    ) -> ReplayViewerBundleUploadResponse:
+        response = self._http_client.post(
+            "/v2/coworlds/replay-viewer-bundles/upload",
+            headers=self._headers(),
+            json={"content_hash": content_hash, "size_bytes": size_bytes},
+            timeout=60.0,
+        )
+        _raise_for_status(response)
+        return ReplayViewerBundleUploadResponse.model_validate(response.json())
+
+    def complete_replay_viewer_bundle_upload(
+        self, *, content_hash: str, size_bytes: int
+    ) -> ReplayViewerBundleCompleteResponse:
+        response = self._http_client.post(
+            "/v2/coworlds/replay-viewer-bundles/upload/complete",
+            headers=self._headers(),
+            json={"content_hash": content_hash, "size_bytes": size_bytes},
+            timeout=600.0,
+        )
+        _raise_for_status(response)
+        return ReplayViewerBundleCompleteResponse.model_validate(response.json())
 
     def whoami(self) -> WhoAmIResponse:
         response = self._http_client.get("/whoami", headers=self._headers(), timeout=30.0)
@@ -761,6 +796,64 @@ def _submit_wasm_reporters(client: CoworldUploadClient, manifest: dict[str, Any]
     return {**manifest, "reporter": rewritten}
 
 
+def _replay_viewer_bundle_files(
+    manifest: dict[str, Any], package_root: Path
+) -> tuple[Path, list[Path]] | None:
+    replay_viewer = manifest["game"].get("replay_viewer")
+    if replay_viewer is None or replay_viewer["bundle"].startswith("sha256:"):
+        return None
+
+    root = package_root.resolve()
+    bundle_dir = (root / replay_viewer["bundle"]).resolve()
+    bundle_dir.relative_to(root)
+    if not bundle_dir.is_dir():
+        raise ValueError(f"Replay viewer bundle is not a directory: {bundle_dir}")
+    if not (bundle_dir / "index.html").is_file():
+        raise ValueError(f"Replay viewer bundle has no index.html: {bundle_dir}")
+
+    entries = list(bundle_dir.rglob("*"))
+    if any(path.is_symlink() for path in entries):
+        raise ValueError(f"Replay viewer bundle cannot contain symlinks: {bundle_dir}")
+    files = sorted(path for path in entries if path.is_file())
+    return bundle_dir, files
+
+
+def _submit_replay_viewer_bundle(
+    client: CoworldUploadClient,
+    manifest: dict[str, Any],
+    package_root: Path,
+) -> dict[str, Any]:
+    source_bundle = _replay_viewer_bundle_files(manifest, package_root)
+    if source_bundle is None:
+        return manifest
+    bundle_dir, files = source_bundle
+
+    archive = io.BytesIO()
+    with zipfile.ZipFile(archive, "w", compression=zipfile.ZIP_DEFLATED, compresslevel=9) as output:
+        for path in files:
+            info = zipfile.ZipInfo(path.relative_to(bundle_dir).as_posix(), date_time=(1980, 1, 1, 0, 0, 0))
+            info.compress_type = zipfile.ZIP_DEFLATED
+            info.external_attr = 0o644 << 16
+            output.writestr(info, path.read_bytes())
+    bundle_bytes = archive.getvalue()
+    content_hash = hashlib.sha256(bundle_bytes).hexdigest()
+    upload = client.request_replay_viewer_bundle_upload(
+        content_hash=content_hash,
+        size_bytes=len(bundle_bytes),
+    )
+    if upload.upload_url is not None:
+        put_response = httpx.put(upload.upload_url, content=bundle_bytes, timeout=600.0)
+        put_response.raise_for_status()
+        bundle = client.complete_replay_viewer_bundle_upload(
+            content_hash=content_hash,
+            size_bytes=len(bundle_bytes),
+        ).bundle
+    else:
+        bundle = upload.bundle
+    game = manifest["game"]
+    return {**manifest, "game": {**game, "replay_viewer": {"bundle": bundle}}}
+
+
 def upload_coworld(
     manifest_path: Path,
     *,
@@ -773,6 +866,7 @@ def upload_coworld(
     package = load_coworld_package(manifest_path)
     manifest = package.manifest.model_dump(by_alias=True, exclude_none=True)
     _reject_mutable_registry_image_refs(manifest)
+    _replay_viewer_bundle_files(manifest, manifest_path.parent)
 
     certification_key = _certification_cache_key(package.manifest_path, manifest=manifest)
     certification_cache_path = _certified_manifest_cache_path()
@@ -784,6 +878,7 @@ def upload_coworld(
     with CoworldUploadClient.from_login(server_url=server) as client:
         upload_manifest = _manifest_with_softmax_image_ids(client, manifest)
         upload_manifest = _submit_wasm_reporters(client, upload_manifest, manifest_path.parent)
+        upload_manifest = _submit_replay_viewer_bundle(client, upload_manifest, manifest_path.parent)
         response = client.upload_manifest(upload_manifest)
         if wait_for_hosted_smoke:
             status = get_coworld_status(

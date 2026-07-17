@@ -119,6 +119,95 @@ def test_build_coworld_manifest_runs_compose_and_writes_hydrated_manifest(
     ]
 
 
+def test_build_coworld_manifest_builds_declared_replay_viewer(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    template_path = _write_manifest(
+        tmp_path,
+        game_image="{{GAME_IMAGE}}",
+        player_image="{{PLAYER_IMAGE}}",
+        include_version=False,
+    )
+    template = json.loads(template_path.read_text(encoding="utf-8"))
+    template["game"]["replay_viewer"] = {"bundle": "replay-viewer"}
+    template_path.write_text(json.dumps(template), encoding="utf-8")
+    compose_path = tmp_path / "compose.yaml"
+    compose_path.write_text("services: {}\n", encoding="utf-8")
+    hook = tmp_path / "tools" / "build_replay_viewer.sh"
+    hook.parent.mkdir()
+    hook.write_text("#!/bin/sh\n", encoding="utf-8")
+    hook.chmod(0o755)
+    docker_run = _fake_docker_run(
+        {
+            "game": "game-runtime:latest",
+            "player": "player-runtime:latest",
+            "grader": "ghcr.io/metta-ai/graders-default:latest",
+        },
+        {
+            "game-runtime:latest": "sha256:111111111111",
+            "player-runtime:latest": "sha256:222222222222",
+            "ghcr.io/metta-ai/graders-default:latest": "sha256:dddddddddddd",
+        },
+    )
+    hook_calls: list[tuple[list[str], dict[str, object]]] = []
+
+    def run(command: list[str], **kwargs: object) -> subprocess.CompletedProcess[str]:
+        if command[0] == str(hook):
+            output_dir = Path(command[1])
+            output_dir.mkdir(parents=True)
+            (output_dir / "index.html").write_text("<main>Replay</main>", encoding="utf-8")
+            hook_calls.append((command, kwargs))
+            return subprocess.CompletedProcess(command, 0)
+        return docker_run(command, **kwargs)
+
+    monkeypatch.setattr("coworld.bundle.subprocess.run", run)
+    output_path = tmp_path / "dist" / "coworld_manifest.json"
+
+    built_manifest_path = build_coworld_manifest(compose_path, template_path, "0.2.0", output_path)
+
+    built_manifest = json.loads(built_manifest_path.read_text(encoding="utf-8"))
+    assert built_manifest["game"]["replay_viewer"] == {"bundle": "replay-viewer"}
+    assert (tmp_path / "dist" / "replay-viewer" / "index.html").is_file()
+    assert hook_calls == [([str(hook), str(tmp_path / "dist" / "replay-viewer")], {"cwd": tmp_path, "check": True})]
+
+
+def test_build_coworld_manifest_requires_replay_viewer_build_hook(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    template_path = _write_manifest(
+        tmp_path,
+        game_image="{{GAME_IMAGE}}",
+        player_image="{{PLAYER_IMAGE}}",
+        include_version=False,
+    )
+    template = json.loads(template_path.read_text(encoding="utf-8"))
+    template["game"]["replay_viewer"] = {"bundle": "replay-viewer"}
+    template_path.write_text(json.dumps(template), encoding="utf-8")
+    compose_path = tmp_path / "compose.yaml"
+    compose_path.write_text("services: {}\n", encoding="utf-8")
+    monkeypatch.setattr(
+        "coworld.bundle.subprocess.run",
+        _fake_docker_run(
+            {
+                "game": "game-runtime:latest",
+                "player": "player-runtime:latest",
+                "grader": "ghcr.io/metta-ai/graders-default:latest",
+            },
+            {
+                "game-runtime:latest": "sha256:111111111111",
+                "player-runtime:latest": "sha256:222222222222",
+                "ghcr.io/metta-ai/graders-default:latest": "sha256:dddddddddddd",
+            },
+        ),
+    )
+
+    with pytest.raises(RuntimeError, match="executable build hook"):
+        build_coworld_manifest(
+            compose_path,
+            template_path,
+            "0.2.0",
+            tmp_path / "dist" / "coworld_manifest.json",
+        )
+
+
 def test_build_coworld_manifest_requires_compose_file(tmp_path: Path) -> None:
     template_path = _write_manifest(
         tmp_path,

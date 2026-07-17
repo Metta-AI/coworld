@@ -34,7 +34,9 @@ It must:
 - Serve player HTML clients at `GET /client/player?slot=...&token=...`.
 - Serve player WebSocket connections at `/player?slot=...&token=...`.
 - Serve a live global viewer at `GET /client/global` and `/global`.
-- In replay mode, with `COGAME_LOAD_REPLAY_URI` set, serve `GET /client/replay` and `/replay`.
+- Support replay mode with `COGAME_LOAD_REPLAY_URI`, `GET /client/replay`, and `/replay`. Local certification still
+  probes this path; when `game.replay_viewer.bundle` is absent, hosted viewers also use it as the version-matched
+  container fallback.
 - Make `GET /client/replay` start playback automatically and loop from the recorded end back to tick 0 by default.
 - Write a JSON results artifact to `COGAME_RESULTS_URI` when the episode completes.
 - Write replay bytes to `COGAME_SAVE_REPLAY_URI`.
@@ -42,8 +44,16 @@ It must:
   `COGAME_PLAYER_FAILURE_URI` instead of results. The runner validates this signal and produces the platform-owned
   [`error_info.json`](../artifacts/ERROR_INFO.md); the game does not write that final artifact.
 
-The runner validates the final results against `manifest.game.results_schema`. Replay bytes are game-defined, but the
-same game image must be able to load them in replay mode.
+The runner validates the final results against `manifest.game.results_schema`. Replay bytes are game-defined. A game
+may declare `game.replay_viewer.bundle` as a package-relative static directory containing `index.html`; upload rewrites
+it to an immutable digest. Observatory runs that bundle in the browser and passes the replay URL in the `replay` query
+parameter. Bundle internals, including optional WASM resimulation, remain game-owned. Such a Coworld must provide an
+executable `tools/build_replay_viewer.sh`; `coworld build` runs it with the resolved bundle directory as its only
+argument before writing the hydrated manifest. The hook must recreate that directory so each built Coworld contains a
+viewer generated from its current game and rendering sources without retaining deleted assets. Upload only validates,
+archives, and submits the bundle referenced by that manifest.
+
+See [Static Replay Viewers](../STATIC_REPLAY_VIEWERS.md) for the complete authoring and verification contract.
 
 `GamePlayerFailure` is deliberately narrower than the runner's final error artifact: a game can declare only the player
 failure it observed, not infrastructure or coordinator failures owned by the runner.
@@ -103,14 +113,15 @@ config fields.
 ## Browser clients
 
 The game owns browser-client behavior. Player-facing flows expect `GET /client/player?slot=...&token=...` to serve the
-slot-specific player UI. Viewer flows expect `GET /client/global` for live viewing and `GET /client/replay` for replay
-mode. Replay viewers may expose pause, seek, speed, and loop controls, but the default browser replay surface should
+slot-specific player UI. Viewer flows expect `GET /client/global` for live viewing. Replay viewing uses the static
+bundle when declared and otherwise expects `GET /client/replay` from replay mode. Replay viewers may expose pause,
+seek, speed, and loop controls, but the default browser replay surface should
 begin playing and wrap back to tick 0 when it reaches the recorded end.
 
-`coworld certify` validates replay liveness for game authors: after the certification episode writes replay bytes, it
-starts the same game image in replay mode with `COGAME_LOAD_REPLAY_URI`, verifies `GET /client/replay`, and waits for a
-message from `/replay`. Authors should still open the printed replay command and inspect the browser replay before
-uploading, because only the game author can confirm that the viewer shows the right game state and controls.
+`coworld certify` validates replay liveness for game authors. For Coworlds without a static bundle, it starts the same
+game image in replay mode, loads `GET /client/replay`, and waits for `/replay`. Static-bundle certification validates
+and loads the inferred `index.html` entrypoint with the produced replay. Authors should still inspect the browser
+replay before uploading, because only the game author can confirm the game state and controls.
 
 The example Paint Arena protocol docs link here because the exact in-game messages are game-specific, while the route
 families and token semantics are Coworld-wide.

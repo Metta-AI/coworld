@@ -102,6 +102,8 @@ source of truth. They are generated docs and `$schema` targets; `test_types.py` 
   cross-links.
 - [src/coworld/docs/AUTHORING.md](src/coworld/docs/AUTHORING.md) - end-to-end guide for building and testing a new
   Coworld (design, game/player implementation, packaging, local testing, certification, upload, hosted verification).
+- [src/coworld/docs/STATIC_REPLAY_VIEWERS.md](src/coworld/docs/STATIC_REPLAY_VIEWERS.md) - static replay bundle,
+  manifest, Coworld build-hook, source-sharing, and browser-verification contract.
 - [src/coworld/docs/COWORLD_MANIFEST.md](src/coworld/docs/COWORLD_MANIFEST.md) - manifest semantics and schema source
   of truth.
 - [src/coworld/docs/BEDROCK.md](src/coworld/docs/BEDROCK.md) - **how a player calls Bedrock at runtime** (the

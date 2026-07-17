@@ -165,6 +165,13 @@ the hydrated manifest to the given output path. Pass `--source-context <repo-dir
 checkout's current commit SHA automatically. Build from committed, pushed state — a manifest pinned to a SHA that only
 exists on your machine certifies locally and is unbuildable by everyone else.
 
+**Optional static replay viewer.** To open replays without starting the game image, add a generated browser bundle and
+`game.replay_viewer.bundle` to the manifest template. The required `coworld build` hook creates that bundle before the
+hydrated manifest is written; shared
+game, replay, presentation, and rendering sources keep it in lockstep behaviorally. Follow
+[Static Replay Viewers](STATIC_REPLAY_VIEWERS.md) for the complete bundle, manifest, build-hook, sharing, and browser
+verification contract.
+
 ## Step 5: Test Locally
 
 Work up the ladder. Concrete command recipes are in the
@@ -289,6 +296,7 @@ Your Coworld is done when all of these are true, in this order:
 - [Manifest guide](COWORLD_MANIFEST.md) and the generated [schema](../coworld_manifest_schema.json).
 - [Game role](roles/GAME.md) and [player role](roles/PLAYER.md) — the two live runtime contracts.
 - [Lifecycle](LIFECYCLE.md) — local and hosted episode lifecycles in detail.
+- [Static replay viewers](STATIC_REPLAY_VIEWERS.md) — build and upload a browser-only replay bundle.
 - [Cookbook](../../../COOKBOOK.md) — copy-paste recipes for every command this guide names.
 - [Paint Arena](../examples/paintarena/README.md) — the complete worked example.
 - [Starter templates](../templates/README.md) — per-role scaffolds.

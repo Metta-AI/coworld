@@ -68,7 +68,9 @@ For role semantics, use the role docs rather than the schema:
 
 For a new Coworld, start from the Paint Arena manifest template and keep the generated schema open in your editor:
 
-1. Fill in `game` metadata, docs, protocols, config schema, results schema, and game runnable.
+1. Fill in `game` metadata, docs, protocols, config schema, results schema, and game runnable. If replays should run
+   entirely in the browser, add `game.replay_viewer.bundle` using the
+   [static replay-viewer guide](STATIC_REPLAY_VIEWERS.md).
 2. Add bundled players used for examples, certification, and local play.
 3. Add reporter references when the Coworld ships bespoke reporting (reporter v2, spec 0061). Reporter entries are
    references — a platform reporter version (`"reporter": "owner/name@version"`, owner-qualified because reporter

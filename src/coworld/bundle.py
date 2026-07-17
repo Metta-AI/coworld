@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import os
 import re
 import subprocess
 from collections.abc import Mapping
@@ -16,6 +17,7 @@ from coworld.types import CoworldManifest, CoworldRunnableSpec
 # references (spec 0061) — platform reporter versions or wasm components — not container images.
 ROLE_SECTIONS = ("player", "commissioner", "grader", "diagnoser", "optimizer")
 FULL_SHA_PATTERN = re.compile(r"^[0-9a-f]{40}$")
+REPLAY_VIEWER_BUILD_HOOK = Path("tools/build_replay_viewer.sh")
 
 
 def build_coworld_manifest(
@@ -69,11 +71,33 @@ def build_coworld_manifest(
     manifest = _with_image_tags(manifest, _built_image_tags(manifest))
 
     output_path.parent.mkdir(parents=True, exist_ok=True)
+    _build_replay_viewer_bundle(manifest, template_path.parent, output_path.parent)
     output_path.write_text(
         json.dumps(manifest.model_dump(by_alias=True, exclude_none=True), indent=2) + "\n",
         encoding="utf-8",
     )
     return output_path
+
+
+def _build_replay_viewer_bundle(manifest: CoworldManifest, source_root: Path, output_root: Path) -> None:
+    replay_viewer = manifest.game.replay_viewer
+    if replay_viewer is None or replay_viewer.bundle.startswith("sha256:"):
+        return
+
+    source_root = source_root.resolve()
+    output_root = output_root.resolve()
+    bundle_dir = (output_root / replay_viewer.bundle).resolve()
+    bundle_dir.relative_to(output_root)
+    build_hook = source_root / REPLAY_VIEWER_BUILD_HOOK
+    if not build_hook.is_file() or not os.access(build_hook, os.X_OK):
+        raise RuntimeError(
+            f"Coworld builds with a source replay viewer bundle require an executable build hook: {build_hook}"
+        )
+    subprocess.run([str(build_hook), str(bundle_dir)], cwd=source_root, check=True)
+    if not bundle_dir.is_dir():
+        raise RuntimeError(f"Replay viewer build hook did not produce its bundle directory: {bundle_dir}")
+    if not (bundle_dir / "index.html").is_file():
+        raise RuntimeError(f"Replay viewer build hook did not produce index.html: {bundle_dir}")
 
 
 def _load_template_manifest(
