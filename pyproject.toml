@@ -84,7 +84,7 @@ testpaths = ["tests"]
 markers = ["slow: marks tests as slow"]
 
 [tool.uv.sources]
-softmax-cli = { workspace = true }
+softmax-cli = {git = "https://github.com/Metta-AI/softmax-cli.git"}
 
 [tool.ruff]
 extend = "../../.ruff.toml"

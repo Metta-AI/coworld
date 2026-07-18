@@ -119,3 +119,47 @@ def test_list_coworld_league_seeds(httpserver: HTTPServer) -> None:
     assert result.exit_code == 0, result.output
     assert "newworld" in result.output
     assert "commissioner_driven" in result.output
+
+
+def test_update_coworld_league_seed_replaces_overrides(httpserver: HTTPServer) -> None:
+    response = {
+        **SEED_RESPONSE,
+        "overrides": {
+            "commissioner_config_extensions": {
+                "persistent_game_config_overlay_secret": "persistent_realm",
+            },
+            "commissioner_config_overlay_secret": "persistent_window_feed",
+        },
+    }
+    httpserver.expect_request(
+        "/observatory/v2/coworld-league-seeds/newworld",
+        method="PATCH",
+        headers={"Authorization": "Bearer token"},
+        json={"overrides": response["overrides"]},
+    ).respond_with_json(response)
+
+    result = CliRunner().invoke(
+        app,
+        [
+            "league",
+            "update",
+            "newworld",
+            "--set",
+            'commissioner_config_extensions={"persistent_game_config_overlay_secret":"persistent_realm"}',
+            "--set",
+            "commissioner_config_overlay_secret=persistent_window_feed",
+            "--server",
+            httpserver.url_for(""),
+        ],
+    )
+
+    assert result.exit_code == 0, result.output
+    assert "Updated league seed" in result.output
+    assert "league_00000000-0000-0000-0000-000000000081" in result.output
+
+
+def test_update_coworld_league_seed_requires_overrides() -> None:
+    result = CliRunner().invoke(app, ["league", "update", "newworld"])
+
+    assert result.exit_code == 2
+    assert "At least one --set" in result.output

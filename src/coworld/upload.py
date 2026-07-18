@@ -598,6 +598,21 @@ class CoworldUploadClient:
         _raise_for_status(response)
         return [CoworldLeagueSeedResponse.model_validate(item) for item in response.json()]
 
+    def update_league_seed(
+        self,
+        *,
+        coworld_name: str,
+        overrides: dict[str, Any],
+    ) -> CoworldLeagueSeedResponse:
+        response = self._http_client.patch(
+            f"/v2/coworld-league-seeds/{quote(coworld_name, safe='')}",
+            headers=self._headers(),
+            json={"overrides": overrides},
+            timeout=120.0,
+        )
+        _raise_for_status(response)
+        return CoworldLeagueSeedResponse.model_validate(response.json())
+
     def put_coworld_secret(
         self,
         *,

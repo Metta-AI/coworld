@@ -153,6 +153,32 @@ def league_list(
     console.print(table)
 
 
+@league_app.command("update")
+def league_update(
+    coworld_name: Annotated[str, typer.Argument(help="Canonical coworld name whose league seed should change.")],
+    overrides: Annotated[
+        list[str] | None,
+        typer.Option(
+            "--set",
+            help="Replacement override KEY=VALUE (VALUE parsed as JSON when possible). Repeatable.",
+        ),
+    ] = None,
+    server: Annotated[str, typer.Option("--server", help="Observatory API server URL.")] = DEFAULT_SUBMIT_SERVER,
+    json_output: Annotated[bool, typer.Option("--json", help="Print raw JSON.")] = False,
+) -> None:
+    if not overrides:
+        raise typer.BadParameter("At least one --set KEY=VALUE override is required")
+    override_map = dict(_parse_override(item) for item in overrides)
+    with CoworldUploadClient.from_login(server_url=server) as client:
+        seed = client.update_league_seed(coworld_name=coworld_name, overrides=override_map)
+    if json_output:
+        emit_json(seed.model_dump(mode="json"))
+        return
+    console.print(f"[green]Updated league seed[/green] for [bold]{seed.coworld_name}[/bold]")
+    if seed.league_id is not None:
+        console.print(f"[dim]League:[/dim] {seed.league_id}")
+
+
 @secret_app.command("put")
 def secret_put(
     coworld_name: Annotated[str, typer.Argument(help="Coworld game name or cow_... id.")],
