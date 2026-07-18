@@ -46,6 +46,7 @@ from coworld.commissioner.protocol import (
     RoundSpec,
     RoundStart,
     ScheduleEpisodes,
+    ScheduleRoundsRequest,
     ScheduleRoundsResponse,
     StageConfig,
     VariantInfo,
@@ -140,6 +141,33 @@ def test_schedule_rounds_response_serializes_persistent_player_desired_state() -
             }
         ],
     }
+
+
+def test_schedule_rounds_request_transports_resolved_commissioner_config() -> None:
+    request = ScheduleRoundsRequest(
+        league=LeagueInfo(
+            id=uuid4(),
+            commissioner_config={
+                "persistent_window_feed_config": {
+                    "url": "https://persistent.example/windows",
+                    "control_token_uri": "https://signed.example/control-token",
+                }
+            },
+        ),
+        divisions=[],
+        active_memberships=[],
+        recent_rounds=[],
+    )
+
+    payload = request.to_json()
+
+    assert payload["league"]["commissioner_config"] == {
+        "persistent_window_feed_config": {
+            "url": "https://persistent.example/windows",
+            "control_token_uri": "https://signed.example/control-token",
+        }
+    }
+    assert "commissioner_config_overlay_secret" not in payload["league"]["commissioner_config"]
 
 
 def test_persistent_player_runtime_rejects_variant_selection() -> None:

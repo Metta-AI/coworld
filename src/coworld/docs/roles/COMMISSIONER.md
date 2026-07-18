@@ -734,6 +734,31 @@ means the commissioner decided no round is due.
 are platform context, not an override for a config-driven commissioner image; reusable `ruleset_strategy` commissioners
 read their round cadence and structure from the YAML config baked into the image.
 
+### Private commissioner config
+
+When a commissioner needs private request-time configuration, the public league config carries only
+`commissioner_config_overlay_secret`, the name of an owner-scoped Coworld secret. Seeded leagues set this through the
+matching `CoworldSeedOverrides` field. The secret is a typed document:
+
+```json
+{
+  "format": "coworld.commissioner_config_overlay.v1",
+  "commissioner_config_overrides": {
+    "persistent_window_feed_config": {
+      "url": "https://persistent.example/windows",
+      "control_token_uri": "secret://coworld/vanilla_wow_persistent/persistent_control_token",
+      "replay_url_template": "https://persistent.example/windows/{window_id}/replay"
+    }
+  }
+}
+```
+
+Immediately before every commissioner request, the platform loads that object from the canonical Coworld owner's
+namespace, shallow-merges `commissioner_config_overrides` over the public config, recursively replaces nested
+`secret://coworld/<coworld>/<name>` values with short-lived read URLs, and removes the overlay locator from the config
+sent to the commissioner. Plaintext secret values and signed URLs are therefore stored neither in the league JSON nor
+in the long-lived commissioner pod specification. A secret URI naming another Coworld is rejected.
+
 ## League creation on deploy
 
 When a Coworld with a commissioner is deployed:
