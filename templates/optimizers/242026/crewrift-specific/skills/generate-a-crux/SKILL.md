@@ -1,13 +1,6 @@
 ---
 name: generate-a-crux
-description: >-
-  Hunt for and statistically confirm a "crux game" in Crewrift — a config where a
-  rival policy REPRODUCIBLY outscores yours at a fixed role/seat. Load this when you
-  have a league round you lost (or a rival won big), OR one of your own past
-  experience-request episodes that scored low, and you want to turn it into a
-  Wilson-confirmed crux (or rule it out as variance) before spending implementation
-  cycles. Drives league_eval.py / eval.py for the A/B arms, league_roster.py for the
-  field, and harness_core.wilson for the verdict.
+description: Use when finding and statistically confirming a reproducible Crewrift crux before changing the policy.
 ---
 
 # Generate a crux

@@ -1,6 +1,6 @@
 ---
 name: evidence-gated-coworld-optimization
-description: Improve a Coworld player by diagnosing one behavior failure, patching its smallest owner, and promoting only after completed comparison evidence.
+description: Use when improving a Coworld player through one diagnosed failure and completed comparison evidence.
 ---
 
 # Evidence-Gated Coworld Optimization

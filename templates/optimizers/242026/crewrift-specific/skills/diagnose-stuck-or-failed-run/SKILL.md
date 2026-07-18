@@ -1,13 +1,6 @@
 ---
 name: diagnose-stuck-or-failed-run
-description: >-
-  Invoke when an eval run looks dead, empty, wedged, or a hosted round came back
-  failed/zero — e.g. an empty logfile from a detached eval, a JSON-decode error on
-  a submit, a round stuck "pending"/"running" forever, an empty division
-  leaderboard, or a completed round with zero/garbage per-player scores. The goal
-  is to CLASSIFY the failure as infra (buffering, backend down, auth/route skew,
-  teardown race, API-shape drift) vs policy (a real regression) BEFORE reverting a
-  policy, resubmitting, or replacing a champion. Most "dead run" signals are infra.
+description: Use when classifying a stuck, failed, empty, or zero-scoring evaluation as infrastructure or policy failure.
 ---
 
 # Diagnose a stuck or failed eval run (infra vs policy)

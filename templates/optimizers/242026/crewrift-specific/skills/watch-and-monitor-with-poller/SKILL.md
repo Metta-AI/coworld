@@ -1,11 +1,6 @@
 ---
 name: watch-and-monitor-with-poller
-description: >-
-  Use when you need a STANDING watch loop that survives across turns — polling a crux/experience-request
-  battery to terminal, watching league rounds for new completions, or tracking a leaderboard rank over
-  time. The non-obvious rule: drive any multi-cycle poll with a persistent Monitor running the poller
-  command, NOT a detached Bash run_in_background with a long foreground `sleep` — the background variant
-  dies silently mid-loop (0-byte logfile, no error, no verdicts). Load this before launching a watch.
+description: Use when monitoring Crewrift evaluations, rounds, or rankings across turns with a persistent poller.
 ---
 
 # Watch and monitor with a poller

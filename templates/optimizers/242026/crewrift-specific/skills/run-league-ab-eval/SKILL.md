@@ -1,12 +1,6 @@
 ---
 name: run-league-ab-eval
-description: >-
-  Run an A/B between two crewrift policies (candidate vs baseline) — or a
-  crux/swap arm — on the hosted Softmax league via Observatory
-  experience-requests. Load this for the standard "did my change help?" eval
-  cycle: a single-change A/B measured against the league's top players in a
-  forced-role seat, returning a win-rate verdict with Wilson CIs. Use whenever
-  you need to judge a crewrift policy change before keeping it.
+description: Use when running a hosted Crewrift policy A/B and judging it with Wilson confidence intervals.
 ---
 
 # Run a league A/B eval (candidate vs baseline)

@@ -1,14 +1,6 @@
 ---
 name: resolve-live-roster-and-champion-state
-description: >-
-  Resolve live policy_version_ids, audit the FULL league roster, and restore the
-  champion flag. Load this BEFORE any experience-request / A/B launch, AFTER any
-  membership churn (submit, retire, champion/slot rotation, version roll), or
-  WHENEVER a player vanishes from the division leaderboard. League membership
-  churn silently clears `is_champion` on the surviving policy, which delists the
-  user; pvids also roll mid-session, so a roster snapshot from minutes ago is
-  stale. This recipe re-resolves live pvids, does a name-UNFILTERED roster audit,
-  and re-sets the champion flag.
+description: Use before evaluations or after roster churn to resolve live policy versions and restore the champion flag.
 ---
 
 # Resolve live roster and champion state

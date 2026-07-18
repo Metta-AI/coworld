@@ -1,14 +1,6 @@
 ---
 name: decode-replay-ground-truth
-description: >-
-  Get authoritative per-slot deaths / survival / movement / reward / role / tasks for a
-  crewrift episode by re-simulating the recorded S3 replay with the repo's replay_mine
-  binary. Load this whenever you need ground truth about what actually happened in an
-  episode — who died and at what tick, who survived, how far each slot traveled, final
-  per-slot reward — and must NOT trust telemetry. Server results.json, the crewborg
-  trace.db observer, and live telemetry are matched observers, not the oracle; this is
-  the oracle. Triggers: "did slot N die", "diedTick", "who survived", per-slot movement
-  / dist, presence-at-kill, victim-link, isolation, or any "replay-decoded" claim.
+description: Use when decoding a Crewrift replay for authoritative deaths, survival, movement, roles, tasks, or rewards.
 ---
 
 # Decode replay ground truth (replay_mine oracle)

@@ -1,12 +1,6 @@
 ---
 name: build-and-upload-policy
-description: >-
-  Compile a notsus.nim change into an amd64 Docker image and upload it as a new
-  policy version. Load this when you need to ship a crewrift notsus edit to the
-  league: it covers the cheap-to-expensive build/validation ladder, the local
-  full-container gate, and current `coworld upload-policy` upload flow. Triggers:
-  "build the bot", "upload the policy", "ship notsus", "make a new policy
-  version", "rebuild and field this".
+description: Use when compiling, validating, and uploading a notsus change as a new Crewrift policy version.
 ---
 
 # Build and upload a notsus policy

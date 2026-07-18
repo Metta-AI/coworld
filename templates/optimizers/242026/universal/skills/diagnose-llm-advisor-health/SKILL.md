@@ -1,12 +1,6 @@
 ---
 name: diagnose-llm-advisor-health
-description: >-
-  Confirm an LLM advisor (e.g. the notsus Bedrock vote advisor) is actually firing before
-  trusting any result that depends on it. Load this when an LLM-advised bot behaves identically
-  to its heuristic baseline (notably: votes SKIP every meeting / ejects zero imposters), or
-  before/while running ANY advisor-sensitive A/B or high-concurrency eval. The advisor fails
-  silently — results.json looks clean while the bot is a pure skip-bot — so verify the advisor
-  health signature first, otherwise the A/B measures nothing.
+description: Use when verifying that the notsus Bedrock vote advisor fires before an advisor-sensitive evaluation.
 ---
 
 # Diagnose LLM advisor health
