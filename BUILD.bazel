@@ -49,7 +49,7 @@ echo "coworld-paintarena@$$iid" > $@
 )
 
 # `:coworld_core` is the import-surface every external library consumer
-# (//app_backend, //metta:metta_obs, //worlds) actually needs:
+# (//app_backend, //metta:metta_obs) actually needs:
 #
 #   coworld.types, coworld.certifier, coworld.manifest_validation,
 #   coworld.schema_validation, coworld.commissioner.protocol,
@@ -149,10 +149,6 @@ py_library(
             "src/coworld/examples/**/*.json",
             "src/coworld/examples/**/*.html",
             "src/coworld/examples/**/*.md",
-            # *.yaml + Dockerfile* needed by test_canonical_worlds, which
-            # asserts the paintarena example's compose.yaml.is_file().
-            "src/coworld/examples/**/*.yaml",
-            "src/coworld/examples/**/Dockerfile*",
             "src/coworld/templates/**/*",
         ],
         allow_empty = True,
