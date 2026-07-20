@@ -514,8 +514,10 @@ Return zero or more round specs for the current scheduling tick:
 The platform persists accepted specs as `Round` rows. It does not create a round when `rounds` is empty, when the
 division is unknown, or when an active non-concurrent round already exists for that division.
 
-A persistent commissioner returns one recorded round per aligned source interval. `idempotency_key` identifies that
-interval, and each `recorded_episodes` entry is already-completed evidence rather than an execution request:
+A persistent commissioner may return recorded rounds for every available source interval. Before creating rounds, the
+platform reconciles already-materialized source IDs and coalesces all remaining recorded episodes for a division into
+one content-addressed backlog round. Each `recorded_episodes` entry is already-completed evidence rather than an
+execution request:
 
 ```json
 {
@@ -538,11 +540,12 @@ interval, and each `recorded_episodes` entry is already-completed evidence rathe
 }
 ```
 
-The platform validates each player/policy pair against the active membership in the target division, then atomically
-creates the round, completed `Episode` rows, and their `RoundEpisode` links. It does not create `EpisodeRequest` or
-`JobRequest` rows. Retries deduplicate by both round interval and source window id. On `round_start`, those entries
-appear as normal `EpisodeResult` objects in `completed_episodes`. Coworld and variant identity come from the league's
-dedicated, single-variant Coworld, so recorded evidence cannot select another game config, runnable, or image.
+The platform verifies that each policy belonged to the named player in the league and that the player is currently
+active in the target division, then atomically creates the batched round, completed `Episode` rows, and their
+`RoundEpisode` links. It does not create `EpisodeRequest` or `JobRequest` rows. Retries deduplicate by source window ID
+and the batch receives a stable content-derived `idempotency_key`. On `round_start`, those entries appear as normal
+`EpisodeResult` objects in `completed_episodes`. Coworld and variant identity come from the league's dedicated,
+single-variant Coworld, so recorded evidence cannot select another game config, runnable, or image.
 
 ##### `schedule_episodes`
 
