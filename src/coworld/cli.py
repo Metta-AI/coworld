@@ -507,11 +507,14 @@ def next_version(
     server: Annotated[str, typer.Option("--server", help="Observatory API server URL.")] = DEFAULT_SUBMIT_SERVER,
 ) -> None:
     with CoworldUploadClient.from_login(server_url=server) as client:
-        coworld = client.find_canonical_coworld(coworld_name)
-    if coworld is None:
-        console.print(f"[red]Canonical Coworld not found: {coworld_name}. Pass an explicit version instead.[/red]")
+        latest_version = max(
+            (Version(coworld.version) for coworld in client.iter_coworlds_by_name(coworld_name)),
+            default=None,
+        )
+    if latest_version is None:
+        console.print(f"[red]Coworld not found: {coworld_name}. Pass an explicit version instead.[/red]")
         raise typer.Exit(1)
-    release = Version(coworld.version).release
+    release = latest_version.release
     typer.echo(".".join(str(part) for part in (*release[:-1], release[-1] + 1)))
 
 
