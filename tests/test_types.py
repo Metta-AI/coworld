@@ -1,13 +1,15 @@
 from __future__ import annotations
 
+import inspect
 import json
 from pathlib import Path
 from typing import Any
 
 import pytest
 from jsonschema.exceptions import ValidationError as JsonSchemaValidationError
-from pydantic import ValidationError
+from pydantic import BaseModel, ValidationError
 
+import coworld.types
 from coworld.schema_validation import validate_json_schema
 from coworld.types import (
     CoworldEpisodeJobSpec,
@@ -608,3 +610,28 @@ def _manifest_data(game_type: str = "game", player_type: str = "player") -> dict
         "variants": [{"id": "default", "name": "Default", "description": "Default.", "game_config": {}}],
         "certification": {"game_config": {}, "players": [{"player_id": "player"}]},
     }
+
+
+def test_aliased_models_serialize_by_alias() -> None:
+    """A field alias in coworld.types is a wire-format commitment.
+
+    Plain ``model_dump()`` must emit the alias form without callers passing
+    ``by_alias=True``: forgetting the per-call-site flag is exactly the bug
+    class behind #18004, so any model declaring an aliased field must set
+    ``serialize_by_alias=True`` in its model_config.
+    """
+    offenders: list[str] = []
+    for _name, model in inspect.getmembers(coworld.types, inspect.isclass):
+        if not issubclass(model, BaseModel) or model.__module__ != coworld.types.__name__:
+            continue
+        aliased = [
+            field_name
+            for field_name, field in model.model_fields.items()
+            if (field.serialization_alias or field.alias) not in (None, field_name)
+        ]
+        if aliased and not model.model_config.get("serialize_by_alias"):
+            offenders.append(f"{model.__name__} (aliased fields: {', '.join(aliased)})")
+    assert not offenders, (
+        "Models with aliased fields must set serialize_by_alias=True in model_config "
+        "so plain model_dump() emits the wire format: " + "; ".join(offenders)
+    )

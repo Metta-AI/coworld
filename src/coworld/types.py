@@ -47,7 +47,7 @@ def _omit_default_from_schema(schema: JsonSchema) -> None:
 
 
 class CoworldResourceRequests(BaseModel):
-    model_config = ConfigDict(extra="forbid", populate_by_name=True)
+    model_config = ConfigDict(extra="forbid", populate_by_name=True, serialize_by_alias=True)
 
     cpu: str | None = Field(
         default=None,
@@ -221,7 +221,7 @@ CoworldDoc = Annotated[CoworldTextDoc | CoworldUriDoc, Field(discriminator="type
 
 
 class CoworldProtocolDocs(BaseModel):
-    model_config = ConfigDict(extra="forbid")
+    model_config = ConfigDict(extra="forbid", serialize_by_alias=True)
 
     player: CoworldDoc = Field(description="Public player WebSocket protocol documentation.")
     global_: CoworldDoc = Field(alias="global", description="Public global viewer protocol documentation.")
@@ -387,6 +387,7 @@ class CoworldCertificationFixture(BaseModel):
 class CoworldManifest(BaseModel):
     model_config = ConfigDict(
         extra="forbid",
+        serialize_by_alias=True,
         title="Coworld Manifest",
         json_schema_extra={
             "$schema": SCHEMA_VERSION,
@@ -483,6 +484,7 @@ class CoworldManifest(BaseModel):
 class CoworldEpisodeJobSpec(BaseModel):
     model_config = ConfigDict(
         extra="forbid",
+        serialize_by_alias=True,
         title="Coworld Episode Job Spec",
         json_schema_extra={
             "$schema": SCHEMA_VERSION,
@@ -525,7 +527,7 @@ TranscriptStepKind = Literal["auto", "human"]
 
 
 class TranscriptStep(BaseModel):
-    model_config = ConfigDict(extra="forbid")
+    model_config = ConfigDict(extra="forbid", serialize_by_alias=True)
 
     id: str = Field(min_length=1)
     kind: TranscriptStepKind

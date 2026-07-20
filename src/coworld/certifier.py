@@ -285,9 +285,7 @@ def validate_reporter_references(package: CoworldPackage) -> list[str]:
 def build_episode_request(package: CoworldPackage, artifacts: EpisodeArtifacts) -> JsonObject:
     episode_request: JsonObject = {
         key: cast(object, value)
-        for key, value in build_manifest_episode_job_spec(package)
-        .model_dump(by_alias=True, exclude_defaults=True)
-        .items()
+        for key, value in build_manifest_episode_job_spec(package).model_dump(exclude_defaults=True).items()
     }
     return episode_request
 

@@ -68,7 +68,7 @@ def build_coworld_manifest(
     output_path.parent.mkdir(parents=True, exist_ok=True)
     _build_replay_viewer_bundle(manifest, template_path.parent, output_path.parent)
     output_path.write_text(
-        json.dumps(manifest.model_dump(by_alias=True, exclude_none=True), indent=2) + "\n",
+        json.dumps(manifest.model_dump(exclude_none=True), indent=2) + "\n",
         encoding="utf-8",
     )
     return output_path
@@ -219,9 +219,7 @@ def _source_context_ref_sha(repo_root: Path, ref: str) -> str:
     if ref_completed.returncode != 0:
         return head_sha
     ref_sha = ref_completed.stdout.strip()
-    ancestor_completed = subprocess.run(
-        ["git", "-C", str(repo_root), "merge-base", "--is-ancestor", ref_sha, head_sha]
-    )
+    ancestor_completed = subprocess.run(["git", "-C", str(repo_root), "merge-base", "--is-ancestor", ref_sha, head_sha])
     if ancestor_completed.returncode == 0:
         return head_sha
     return ref_sha

@@ -14,11 +14,12 @@ import tarfile
 import tempfile
 import time
 import zipfile
+from collections.abc import Iterator
 from dataclasses import dataclass
 from datetime import datetime
 from enum import Enum
 from pathlib import Path
-from typing import Any, Iterator, Self
+from typing import Any, Self
 from urllib.parse import quote
 from uuid import UUID
 
@@ -817,9 +818,7 @@ def _submit_wasm_reporters(client: CoworldUploadClient, manifest: dict[str, Any]
     return {**manifest, "reporter": rewritten}
 
 
-def _replay_viewer_bundle_files(
-    manifest: dict[str, Any], package_root: Path
-) -> tuple[Path, list[Path]] | None:
+def _replay_viewer_bundle_files(manifest: dict[str, Any], package_root: Path) -> tuple[Path, list[Path]] | None:
     replay_viewer = manifest["game"].get("replay_viewer")
     if replay_viewer is None or replay_viewer["bundle"].startswith("sha256:"):
         return None
@@ -885,7 +884,7 @@ def upload_coworld(
     hosted_smoke_poll_seconds: float = 5.0,
 ) -> CoworldUploadResult:
     package = load_coworld_package(manifest_path)
-    manifest = package.manifest.model_dump(by_alias=True, exclude_none=True)
+    manifest = package.manifest.model_dump(exclude_none=True)
     _reject_mutable_registry_image_refs(manifest)
     _replay_viewer_bundle_files(manifest, manifest_path.parent)
 
