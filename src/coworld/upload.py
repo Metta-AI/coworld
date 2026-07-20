@@ -18,7 +18,7 @@ from dataclasses import dataclass
 from datetime import datetime
 from enum import Enum
 from pathlib import Path
-from typing import Any, Self
+from typing import Any, Iterator, Self
 from urllib.parse import quote
 from uuid import UUID
 
@@ -517,16 +517,22 @@ class CoworldUploadClient:
         return CoworldCertificationStatus.model_validate(response.json())
 
     def find_canonical_coworld(self, name: str) -> CoworldListEntry | None:
+        for coworld in self.iter_coworlds_by_name(name):
+            if coworld.canonical:
+                return coworld
+        return None
+
+    def iter_coworlds_by_name(self, name: str) -> Iterator[CoworldListEntry]:
         target_name = _coworld_name_key(name)
         limit = 200
         offset = 0
         while True:
             coworlds = self.list_coworlds(limit=limit, offset=offset)
             for coworld in coworlds:
-                if _coworld_name_key(coworld.name) == target_name and coworld.canonical:
-                    return coworld
+                if _coworld_name_key(coworld.name) == target_name:
+                    yield coworld
             if len(coworlds) < limit:
-                return None
+                return
             offset += limit
 
     def lookup_policy_version(self, *, name: str, version: int | None = None) -> PolicyVersionRow | None:

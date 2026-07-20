@@ -126,7 +126,38 @@ def test_next_version_command_bumps_canonical_patch(httpserver: HTTPServer) -> N
     assert result.output == "0.1.23\n"
 
 
-def test_next_version_command_fails_without_canonical_coworld(httpserver: HTTPServer) -> None:
+def test_next_version_command_bumps_past_noncanonical_versions(httpserver: HTTPServer) -> None:
+    manifest = _manifest()
+    httpserver.expect_request(
+        "/observatory/v2/coworlds",
+        method="GET",
+        query_string="limit=200&offset=0",
+    ).respond_with_json(
+        [
+            _coworld_entry(
+                "cow_00000000-0000-0000-0000-000000000011",
+                manifest,
+                name="crewrift_prime",
+                version="0.4.66",
+                canonical=False,
+            ),
+            _coworld_entry(
+                "cow_00000000-0000-0000-0000-000000000010",
+                manifest,
+                name="crewrift_prime",
+                version="0.4.65",
+                canonical=True,
+            ),
+        ]
+    )
+
+    result = CliRunner().invoke(app, ["next-version", "crewrift-prime", "--server", httpserver.url_for("")])
+
+    assert result.exit_code == 0, result.output
+    assert result.output == "0.4.67\n"
+
+
+def test_next_version_command_fails_without_existing_coworld(httpserver: HTTPServer) -> None:
     httpserver.expect_request(
         "/observatory/v2/coworlds",
         method="GET",
@@ -136,7 +167,7 @@ def test_next_version_command_fails_without_canonical_coworld(httpserver: HTTPSe
     result = CliRunner().invoke(app, ["next-version", "crewrift", "--server", httpserver.url_for("")], color=False)
 
     assert result.exit_code == 1
-    assert "Canonical Coworld not found: crewrift" in result.output
+    assert "Coworld not found: crewrift" in result.output
 
 
 def test_upload_coworld_rejects_mutable_registry_image_refs(
