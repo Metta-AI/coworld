@@ -25,6 +25,13 @@ from coworld.certifier import (
 )
 from coworld.cli_support import active_docker_context, console, emit_json, observatory_web_url, validate_run_argv
 from coworld.config import DEFAULT_OPTIMIZER_PORT, DEFAULT_SUBMIT_SERVER
+from coworld.deploy_audit import (
+    DEFAULT_GITHUB_OWNER,
+    DEFAULT_REPO_PREFIX,
+    audit_coworld_deployments,
+    format_deploy_audit_markdown,
+    github_token_from_env,
+)
 from coworld.manifest_uri import materialized_manifest_path, materialized_replay_path
 from coworld.optimizer.runtime import OptimizerSetupError, run_optimizer_session
 from coworld.play import PlaySession, ReplaySession, _resolve_bedrock_aws_env, play_coworld, replay_coworld
@@ -499,6 +506,46 @@ def list_coworlds(
         emit_json([coworld.model_dump(mode="json") for coworld in coworlds])
         return
     _print_coworld_table(coworlds)
+
+
+@app.command("deploy-audit")
+def deploy_audit(
+    owner: Annotated[
+        str, typer.Option("--owner", help="GitHub organization or owner to inspect.")
+    ] = DEFAULT_GITHUB_OWNER,
+    repo_prefix: Annotated[
+        str,
+        typer.Option("--repo-prefix", help="Repository prefix to discover when --repo is not passed."),
+    ] = DEFAULT_REPO_PREFIX,
+    repositories: Annotated[
+        list[str] | None,
+        typer.Option("--repo", help="Repository name to inspect. Repeat to avoid org-wide discovery."),
+    ] = None,
+    server: Annotated[str, typer.Option("--server", help="Observatory API server URL.")] = DEFAULT_SUBMIT_SERVER,
+    skip_coworld_registry: Annotated[
+        bool,
+        typer.Option("--skip-coworld-registry", help="Only inspect GitHub workflow state."),
+    ] = False,
+    json_output: Annotated[bool, typer.Option("--json", help="Print machine-readable audit JSON.")] = False,
+    fail_on_alert: Annotated[
+        bool,
+        typer.Option("--fail-on-alert", help="Exit non-zero when the audit finds deploy alerts."),
+    ] = False,
+) -> None:
+    result = audit_coworld_deployments(
+        owner=owner,
+        repo_prefix=repo_prefix,
+        repositories=repositories,
+        github_token=github_token_from_env(),
+        server=server,
+        include_coworld_registry=not skip_coworld_registry,
+    )
+    if json_output:
+        emit_json(result.model_dump(mode="json"))
+    else:
+        typer.echo(format_deploy_audit_markdown(result), nl=False)
+    if fail_on_alert and result.alerts:
+        raise typer.Exit(1)
 
 
 @app.command("next-version")

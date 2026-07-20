@@ -170,6 +170,33 @@ def test_next_version_command_fails_without_existing_coworld(httpserver: HTTPSer
     assert "Coworld not found: crewrift" in result.output
 
 
+def test_list_command_json_outputs_top_level_array(httpserver: HTTPServer) -> None:
+    manifest = _manifest()
+    httpserver.expect_request(
+        "/observatory/v2/coworlds",
+        method="GET",
+        query_string="limit=200&offset=0",
+    ).respond_with_json(
+        [
+            _coworld_entry(
+                "cow_00000000-0000-0000-0000-000000000010",
+                manifest,
+                name="ctf",
+                version="0.7.38",
+                canonical=True,
+            )
+        ]
+    )
+
+    result = CliRunner().invoke(app, ["list", "--json", "--server", httpserver.url_for("")])
+
+    assert result.exit_code == 0, result.output
+    payload = json.loads(result.output)
+    assert isinstance(payload, list)
+    assert payload[0]["name"] == "ctf"
+    assert payload[0]["canonical"] is True
+
+
 def test_upload_coworld_rejects_mutable_registry_image_refs(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,

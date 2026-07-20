@@ -1083,9 +1083,59 @@ Inspect uploaded Coworlds and images:
 
 ```bash
 uv run coworld list
+uv run coworld list --json
 uv run coworld show cow_...
 uv run coworld images
 ```
+
+`coworld list --json` prints a top-level JSON array of Coworld rows. It is not a paginated object and does not wrap rows
+in `entries`; scripts should iterate the array directly.
+
+### GitHub Upload Workflows
+
+Coworld source repos can use the shared manual upload workflow instead of copying the upload logic into every repo:
+
+```yaml
+name: Upload Coworld (manual)
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Coworld version. Blank auto-resolves only when confirm_upload=upload; dry-run uses 0.0.0."
+        required: false
+        default: ""
+      confirm_upload:
+        description: "Type upload to publish to Softmax. The default only builds the manifest."
+        required: true
+        default: "dry-run"
+
+jobs:
+  upload:
+    uses: Metta-AI/metta/.github/workflows/coworld-manual-upload.yml@main
+    with:
+      coworld_name: your-coworld-name
+      version: ${{ inputs.version }}
+      confirm_upload: ${{ inputs.confirm_upload }}
+    secrets:
+      SOFTMAX_API_KEY: ${{ secrets.SOFTMAX_API_KEY }}
+```
+
+Keep this workflow `workflow_dispatch`-only until the repo is ready for automatic default-branch uploads. The default
+must remain `confirm_upload: dry-run`; real upload requires typing `upload`. Automatic push-to-main uploads are for
+mature active Coworlds only, and must wait for hosted smoke plus verify that the uploaded version became canonical.
+
+Audit existing repos from this checkout with:
+
+```bash
+uv run coworld deploy-audit --owner Metta-AI
+uv run coworld deploy-audit --owner Metta-AI --fail-on-alert
+```
+
+The audit reports each repo's default branch, Coworld name, active leagues, current canonical version, latest uploaded
+version, upload workflow mode, latest default-branch upload run, and deploy alerts.
+The scheduled Metta audit workflow prefers `COWORLD_DEPLOY_AUDIT_GITHUB_TOKEN` for sibling private-repo reads and falls
+back to the workflow token when the secret is not configured.
 
 ### Non-CLI Docker/API
 

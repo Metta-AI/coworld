@@ -57,6 +57,7 @@ class LeaguePublic(CoworldAPIModel):
     hidden: bool = False
     is_game_of_week: bool = False
     created_at: datetime
+    disabled_at: datetime | None = None
 
 
 class DivisionCommissionerDescriptionPublic(CoworldAPIModel):

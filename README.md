@@ -70,6 +70,7 @@ the owning `coworld-<slug>` repo, then build and publish that game-local source.
 | Save per-player debugging files after an episode | [Player artifact](src/coworld/docs/artifacts/PLAYER_ARTIFACT.md) and `uv run coworld episode-logs --help` |
 | Author a new Coworld end to end | [Authoring A Coworld](src/coworld/docs/AUTHORING.md) |
 | Build, certify, and upload a Coworld | [Cookbook: Certify And Upload A Coworld](COOKBOOK.md#certify-and-upload-a-coworld) |
+| Audit Coworld upload workflows | [Cookbook: GitHub Upload Workflows](COOKBOOK.md#github-upload-workflows) and `uv run coworld deploy-audit --owner Metta-AI` |
 | Rebuild an existing Coworld after a role/source move | [Rebuilding Coworlds After The Role Repo Move](src/coworld/docs/REBUILDING_COWORLDS.md) |
 | Improve a policy in the optimizer workbench | `uv run coworld optimize` and [Optimizer role](src/coworld/docs/roles/OPTIMIZER.md) |
 | Understand package structure and manifest fields | [Manifest reference](src/coworld/docs/COWORLD_MANIFEST.md) |
