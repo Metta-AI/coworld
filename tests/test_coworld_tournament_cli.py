@@ -77,9 +77,7 @@ def test_replays_downloads_mine_division_replays(
                     replay_url=httpserver.url_for("/other-replay"),
                 ),
             ],
-            "total_count": 2,
-            "limit": 1000,
-            "offset": 0,
+            "next_cursor": None,
         }
     )
     _expect_mine_memberships(httpserver)
@@ -192,7 +190,7 @@ def test_episodes_accepts_bulk_rows_without_assignments(
         "/observatory/v2/episode-requests",
         method="GET",
         headers={"Authorization": "Bearer token"},
-    ).respond_with_json({"entries": [episode_request], "total_count": 1, "limit": 1000, "offset": 0})
+    ).respond_with_json({"entries": [episode_request], "next_cursor": None})
 
     result = CliRunner().invoke(
         app,
@@ -207,9 +205,9 @@ def test_episodes_accepts_bulk_rows_without_assignments(
     )
 
     assert result.exit_code == 0, result.output
-    rows = json.loads(result.output)
-    assert rows[0]["id"] == EPISODE_REQUEST_ID
-    assert "assignments" not in rows[0]
+    page = json.loads(result.output)
+    assert page["entries"][0]["id"] == EPISODE_REQUEST_ID
+    assert "assignments" not in page["entries"][0]
     episode_query = next(request for request, _ in httpserver.log if request.path == "/observatory/v2/episode-requests")
     assert episode_query.args["round_id"] == ROUND_ID
     assert not any(request.path == "/observatory/v2/rounds" for request, _ in httpserver.log)
@@ -226,9 +224,7 @@ def test_episodes_mine_division_uses_direct_episode_query(
     ).respond_with_json(
         {
             "entries": [_episode_request(episode_request_id=EPISODE_REQUEST_ID, replay_url="s3://replay")],
-            "total_count": 1,
-            "limit": 1000,
-            "offset": 0,
+            "next_cursor": None,
         }
     )
     _expect_mine_memberships(httpserver)
@@ -248,8 +244,8 @@ def test_episodes_mine_division_uses_direct_episode_query(
     )
 
     assert result.exit_code == 0, result.output
-    rows = json.loads(result.output)
-    assert [row["id"] for row in rows] == [EPISODE_REQUEST_ID]
+    page = json.loads(result.output)
+    assert [row["id"] for row in page["entries"]] == [EPISODE_REQUEST_ID]
     episode_query = next(request for request, _ in httpserver.log if request.path == "/observatory/v2/episode-requests")
     assert episode_query.args["division_id"] == DIVISION_ID
     assert not any(request.path == "/observatory/v2/rounds" for request, _ in httpserver.log)
@@ -266,9 +262,7 @@ def test_episodes_policy_uses_direct_episode_query(
     ).respond_with_json(
         {
             "entries": [_episode_request(episode_request_id=EPISODE_REQUEST_ID, replay_url="s3://replay")],
-            "total_count": 1,
-            "limit": 1000,
-            "offset": 0,
+            "next_cursor": "next-page",
         }
     )
 
@@ -278,6 +272,8 @@ def test_episodes_policy_uses_direct_episode_query(
             "episodes",
             "--policy",
             MY_POLICY_VERSION_ID,
+            "--cursor",
+            "current-page",
             "--server",
             httpserver.url_for(""),
             "--json",
@@ -285,10 +281,12 @@ def test_episodes_policy_uses_direct_episode_query(
     )
 
     assert result.exit_code == 0, result.output
-    rows = json.loads(result.output)
-    assert [row["id"] for row in rows] == [EPISODE_REQUEST_ID]
+    page = json.loads(result.output)
+    assert [row["id"] for row in page["entries"]] == [EPISODE_REQUEST_ID]
+    assert page["next_cursor"] == "next-page"
     episode_query = next(request for request, _ in httpserver.log if request.path == "/observatory/v2/episode-requests")
     assert episode_query.args["policy_version_id"] == MY_POLICY_VERSION_ID
+    assert episode_query.args["cursor"] == "current-page"
 
 
 def test_memberships_accepts_status_substatus_payload(

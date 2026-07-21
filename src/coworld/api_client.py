@@ -234,14 +234,13 @@ class EpisodeRequestScore(CoworldAPIModel):
     score: float
 
 
-class V2EpisodeRequestRow(CoworldAPIModel):
+class V2EpisodeRequestListRow(CoworldAPIModel):
     id: str
     requester_user_id: str
     round_id: str | None = None
     mod_name: str | None = None
     env_config_name: str | None = None
     coworld_id: str | None = None
-    game_config: dict[str, Any] | None = None
     seed: int | None = None
     max_steps: int | None = None
     status: str
@@ -257,6 +256,15 @@ class V2EpisodeRequestRow(CoworldAPIModel):
     failed_agent_index: int | None = None
     scores: list[EpisodeRequestScore]
     created_at: datetime
+
+
+class V2EpisodeRequestRow(V2EpisodeRequestListRow):
+    game_config: dict[str, Any] | None = None
+
+
+class EpisodeRequestPage(CoworldAPIModel):
+    entries: list[V2EpisodeRequestListRow]
+    next_cursor: str | None
 
 
 class ExperienceRequestRow(CoworldAPIModel):
@@ -620,9 +628,9 @@ class CoworldApiClient:
         player_id: str | None = None,
         policy_version_id: UUID | None = None,
         limit: int = 200,
-        offset: int = 0,
-    ) -> list[V2EpisodeRequestRow]:
-        params: dict[str, str | int] = {"limit": limit, "offset": offset}
+        cursor: str | None = None,
+    ) -> EpisodeRequestPage:
+        params: dict[str, str | int] = {"limit": limit}
         if division_id is not None:
             params["division_id"] = division_id
         if round_id is not None:
@@ -631,10 +639,11 @@ class CoworldApiClient:
             params["player_id"] = player_id
         if policy_version_id is not None:
             params["policy_version_id"] = str(policy_version_id)
+        if cursor is not None:
+            params["cursor"] = cursor
         response = self._http_client.get("/v2/episode-requests", headers=self._headers(), params=params)
         _raise_for_status(response)
-        page = response.json()
-        return TypeAdapter(list[V2EpisodeRequestRow]).validate_python(page["entries"])
+        return EpisodeRequestPage.model_validate(response.json())
 
     def get_episode_request(self, episode_request_id: str) -> V2EpisodeRequestRow:
         return self._get(f"/v2/episode-requests/{episode_request_id}", V2EpisodeRequestRow)

@@ -21,6 +21,7 @@ from coworld.api_client import (
     CoworldApiClient,
     DivisionLadderEntryPublic,
     DivisionPublic,
+    EpisodeRequestPage,
     EpisodeStatsResponse,
     ExperienceRequestDetail,
     ExperienceRequestRow,
@@ -31,6 +32,7 @@ from coworld.api_client import (
     ReporterPublic,
     RoundDetailPublic,
     RoundPublic,
+    V2EpisodeRequestListRow,
     V2EpisodeRequestRow,
 )
 from coworld.cli_support import console, emit_json
@@ -426,7 +428,7 @@ def register_tournament_commands(app: typer.Typer) -> None:
             bool, typer.Option("--with-replay", help="Only show episodes with replay URLs.")
         ] = False,
         limit: Annotated[int, typer.Option("--limit", min=1, max=1000, help="Maximum rows to return.")] = 200,
-        offset: Annotated[int, typer.Option("--offset", min=0, help="Rows to skip.")] = 0,
+        cursor: Annotated[str | None, typer.Option("--cursor", help="Cursor returned by the previous page.")] = None,
         server: Annotated[str, typer.Option("--server", help="Observatory API server URL.")] = DEFAULT_SUBMIT_SERVER,
         json_output: Annotated[bool, typer.Option("--json", help="Print raw JSON.")] = False,
     ) -> None:
@@ -439,26 +441,28 @@ def register_tournament_commands(app: typer.Typer) -> None:
                 _print_episode_detail(episode)
                 return
             policy_version_id = _resolve_policy_filter(client, policy) if policy is not None else None
-            rows = _collect_episode_requests(
+            page = _collect_episode_requests(
                 client,
                 division_id=division_id,
                 round_id=round_id,
                 policy_version_id=policy_version_id,
                 limit=limit,
-                offset=offset,
+                cursor=cursor,
             )
             rows = _filter_episode_requests(
                 client,
-                rows,
+                page.entries,
                 division_id=division_id,
                 policy_version_id=policy_version_id,
                 mine=mine,
                 with_replay=with_replay,
             )
         if json_output:
-            emit_json(_dump_models(rows))
+            emit_json(page.model_copy(update={"entries": rows}).model_dump(mode="json"))
             return
         _print_episodes(rows)
+        if page.next_cursor is not None:
+            console.print(f"[dim]Next cursor: {page.next_cursor}[/dim]")
 
     @app.command("episode-stats")
     def episode_stats(
@@ -631,23 +635,23 @@ def register_tournament_commands(app: typer.Typer) -> None:
             Path | None, typer.Option("--download-dir", "-o", help="Download replay files.")
         ] = None,
         limit: Annotated[int, typer.Option("--limit", min=1, max=1000, help="Maximum rows to return.")] = 1000,
-        offset: Annotated[int, typer.Option("--offset", min=0, help="Rows to skip.")] = 0,
+        cursor: Annotated[str | None, typer.Option("--cursor", help="Cursor returned by the previous page.")] = None,
         server: Annotated[str, typer.Option("--server", help="Observatory API server URL.")] = DEFAULT_SUBMIT_SERVER,
         json_output: Annotated[bool, typer.Option("--json", help="Print raw JSON metadata.")] = False,
     ) -> None:
         with CoworldApiClient.from_login(server_url=server) as client:
             policy_version_id = _resolve_policy_filter(client, policy) if policy is not None else None
-            rows = _collect_episode_requests(
+            page = _collect_episode_requests(
                 client,
                 division_id=division_id,
                 round_id=round_id,
                 policy_version_id=policy_version_id,
                 limit=limit,
-                offset=offset,
+                cursor=cursor,
             )
             rows = _filter_episode_requests(
                 client,
-                rows,
+                page.entries,
                 division_id=division_id,
                 policy_version_id=policy_version_id,
                 mine=mine,
@@ -662,9 +666,11 @@ def register_tournament_commands(app: typer.Typer) -> None:
                 console.print(f"[dim]Metadata: {download_dir / 'index.json'}[/dim]")
                 return
         if json_output:
-            emit_json(_dump_models(rows))
+            emit_json(page.model_copy(update={"entries": rows}).model_dump(mode="json"))
             return
         _print_replays(rows)
+        if page.next_cursor is not None:
+            console.print(f"[dim]Next cursor: {page.next_cursor}[/dim]")
 
     @app.command("replay-open")
     def replay_open(
@@ -1015,14 +1021,14 @@ def _collect_episode_requests(
     round_id: str | None,
     policy_version_id: UUID | None,
     limit: int,
-    offset: int,
-) -> list[V2EpisodeRequestRow]:
+    cursor: str | None,
+) -> EpisodeRequestPage:
     return client.list_episode_requests(
         division_id=division_id,
         round_id=round_id,
         policy_version_id=policy_version_id,
         limit=limit,
-        offset=offset,
+        cursor=cursor,
     )
 
 
@@ -1037,13 +1043,13 @@ def _mine_policy_version_ids(client: CoworldApiClient, *, division_id: str | Non
 
 def _filter_episode_requests(
     client: CoworldApiClient,
-    rows: list[V2EpisodeRequestRow],
+    rows: list[V2EpisodeRequestListRow],
     *,
     division_id: str | None,
     policy_version_id: UUID | None,
     mine: bool,
     with_replay: bool,
-) -> list[V2EpisodeRequestRow]:
+) -> list[V2EpisodeRequestListRow]:
     allowed_policy_ids: set[UUID] | None = None
     if mine:
         allowed_policy_ids = _mine_policy_version_ids(client, division_id=division_id)
@@ -1062,11 +1068,11 @@ def _filter_episode_requests(
     return filtered
 
 
-def _episode_has_policy(row: V2EpisodeRequestRow, policy_version_ids: set[UUID]) -> bool:
+def _episode_has_policy(row: V2EpisodeRequestListRow, policy_version_ids: set[UUID]) -> bool:
     return any(participant.policy_version_id in policy_version_ids for participant in row.participants)
 
 
-def _print_episodes(rows: list[V2EpisodeRequestRow]) -> None:
+def _print_episodes(rows: list[V2EpisodeRequestListRow]) -> None:
     table = Table(title="Coworld Episode Requests", box=box.SIMPLE_HEAVY, show_lines=False, pad_edge=False)
     table.add_column("ID")
     table.add_column("Status")
@@ -1275,7 +1281,7 @@ def _download_episode_artifacts(
         console.print(f"[green]Artifact saved to {output_path}[/green]")
 
 
-def _agent_indices_for_policies(row: V2EpisodeRequestRow, policy_version_ids: set[UUID]) -> set[int]:
+def _agent_indices_for_policies(row: V2EpisodeRequestListRow, policy_version_ids: set[UUID]) -> set[int]:
     return {
         participant.position for participant in row.participants if participant.policy_version_id in policy_version_ids
     }
@@ -1307,7 +1313,7 @@ def _print_policy_artifacts(agent_indices: list[int]) -> None:
 
 def _download_replays(
     client: CoworldApiClient,
-    rows: list[V2EpisodeRequestRow],
+    rows: list[V2EpisodeRequestListRow],
     output_dir: Path,
 ) -> list[dict[str, Any]]:
     output_dir.mkdir(parents=True, exist_ok=True)
@@ -1339,7 +1345,7 @@ def _download_replays(
     return metadata
 
 
-def _print_replays(rows: list[V2EpisodeRequestRow]) -> None:
+def _print_replays(rows: list[V2EpisodeRequestListRow]) -> None:
     table = Table(title="Coworld Replays", box=box.SIMPLE_HEAVY, show_lines=False, pad_edge=False)
     table.add_column("Episode Request")
     table.add_column("Coworld")

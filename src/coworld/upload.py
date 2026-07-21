@@ -456,9 +456,8 @@ class CoworldUploadClient:
         coworld_id: str | None = None,
         source: str | None = None,
         limit: int = 1000,
-        offset: int = 0,
     ) -> list[dict[str, Any]]:
-        params: dict[str, str | int] = {"limit": limit, "offset": offset}
+        params: dict[str, str | int] = {"limit": limit}
         if coworld_id is not None:
             params["coworld_id"] = coworld_id
         if source is not None:
@@ -470,12 +469,7 @@ class CoworldUploadClient:
             timeout=60.0,
         )
         _raise_for_status(response)
-        page = response.json()
-        if isinstance(page, dict) and isinstance(page.get("entries"), list):
-            return page["entries"]
-        if isinstance(page, list):
-            return page
-        raise RuntimeError("Unexpected episode request list response from server.")
+        return response.json()["entries"]
 
     def list_coworlds(self, *, limit: int = 200, offset: int = 0) -> list[CoworldListEntry]:
         response = self._http_client.get(
