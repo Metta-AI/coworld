@@ -76,6 +76,17 @@ uv run --project packages/coworld python packages/coworld/scripts/generate_cowor
 uv run metta pytest packages/coworld/tests/test_types.py -v
 ```
 
+Schema changes must also preserve validation and runner serialization for the exhaustive and minimal golden manifests:
+
+```bash
+uv run metta pytest packages/coworld/tests/test_manifest_compatibility.py -v
+```
+
+The test is hermetic and runs on every PR. Update the exhaustive fixture when adding a field, and preserve the minimal
+fixture's omission of optional fields. Do not weaken compatibility coverage merely to make a schema change pass.
+Migrate affected stored manifests or enforce a new requirement at certification/upload boundaries instead of making
+historical data unreadable.
+
 Do not hand-edit `src/coworld/coworld_manifest_schema.json` or `src/coworld/runner/episode_request_schema.json` as the
 source of truth. They are generated docs and `$schema` targets; `test_types.py` checks that they match `types.py`.
 

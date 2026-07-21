@@ -1,4 +1,26 @@
+load("@py_deps//:deps.bzl", "PYTEST_OPTS", "TEST_DEPS")
 load("//bazel:pyproject.bzl", "pyproject_test")
+load("//bazel:pytest.bzl", "pytest_test_typed")
+load("//bazel:ruff.bzl", "ruff_lint")
+
+_MANIFEST_COMPATIBILITY = "test_manifest_compatibility.py"
+_PACKAGE = "packages/coworld/tests"
+_LABEL = "//" + _PACKAGE
+_PYTEST_ARGS = [
+    "--rootdir=" + _PACKAGE,
+    "--confcutdir=" + _PACKAGE,
+    "--import-mode=importlib",
+    "-p",
+    "no:importnb",
+    "-o",
+    "addopts=",
+    "-o",
+    "pythonpath=",
+] + [
+    item
+    for key, value in PYTEST_OPTS.get(_LABEL, {}).items()
+    for item in ["-o", key + "=" + value]
+]
 
 # Bare-source filegroup consumed by //:import_linter_test so grimp can
 # walk `packages.coworld.tests` (declared as a root_package in
@@ -14,6 +36,15 @@ filegroup(
 # `:generated_schema_files`) against coworld.types' dynamic Pydantic
 # schema output.
 pyproject_test(
+    test_srcs = glob(
+        ["**/test_*.py"],
+        exclude = [
+            "**/__pycache__/**",
+            "**/fixtures/**",
+            _MANIFEST_COMPATIBILITY,
+        ],
+        allow_empty = True,
+    ),
     extra_tags = [
         "no-sandbox",
         "requires-network",
@@ -32,4 +63,25 @@ pyproject_test(
     # `coworld.*` imports first-party.
     ruff_context = ["//packages/coworld:coworld_lint_srcs"],
     typecheck = False,
+)
+
+filegroup(
+    name = "manifest_compatibility_fixtures",
+    srcs = glob(["manifest_compatibility/*.json"]),
+)
+
+# Curated golden fixtures are committed runfiles, so this schema gate is hermetic
+# and eligible for remote execution despite the package's network-dependent tests.
+pytest_test_typed(
+    name = "test_manifest_compatibility",
+    srcs = [_MANIFEST_COMPATIBILITY],
+    args = _PYTEST_ARGS,
+    data = [":manifest_compatibility_fixtures"],
+    deps = TEST_DEPS[_LABEL],
+)
+
+ruff_lint(
+    name = "_manifest_compatibility",
+    srcs = [_MANIFEST_COMPATIBILITY],
+    context = ["//packages/coworld:coworld_lint_srcs"],
 )

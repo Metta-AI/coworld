@@ -1,0 +1,146 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "tags": ["strategy", "turn-based", "multiplayer"],
+  "game": {
+    "name": "golden-coworld",
+    "version": "1.2.3",
+    "description": "Exhaustive golden Coworld manifest for schema compatibility tests.",
+    "owner": "coworld@example.com",
+    "config_schema": {
+      "type": "object",
+      "properties": {
+        "tokens": {
+          "type": "array",
+          "items": { "type": "string" }
+        }
+      },
+      "required": ["tokens"]
+    },
+    "results_schema": {
+      "type": "object",
+      "properties": {
+        "scores": {
+          "type": "array",
+          "items": { "type": "number" }
+        }
+      },
+      "required": ["scores"]
+    },
+    "runnable": {
+      "type": "game",
+      "image": "example.com/golden-game@sha256:1111111111111111111111111111111111111111111111111111111111111111",
+      "run": ["python", "-m", "golden.game"],
+      "env": { "LOG_LEVEL": "info" },
+      "source_url": "https://example.com/golden/game",
+      "resources": {
+        "requests": {
+          "cpu": "2",
+          "memory": "4Gi",
+          "ephemeral-storage": "10Gi"
+        },
+        "limits": { "cpu": "4" }
+      }
+    },
+    "protocols": {
+      "player": { "type": "text", "value": "# Player protocol" },
+      "global": { "type": "uri", "value": "https://example.com/protocols/global" },
+      "engine_runtime": "cogweb"
+    },
+    "docs": {
+      "readme": { "type": "text", "value": "# Golden Coworld" },
+      "pages": [
+        {
+          "id": "rules",
+          "title": "Rules",
+          "content": { "type": "uri", "value": "https://example.com/rules" }
+        }
+      ]
+    },
+    "promo": { "video_url": "https://example.com/promo.mp4" },
+    "replay_viewer": { "bundle": "viewer" }
+  },
+  "player": [
+    {
+      "type": "player",
+      "image": "example.com/golden-player@sha256:2222222222222222222222222222222222222222222222222222222222222222",
+      "run": ["python", "-m", "golden.player"],
+      "env": { "PLAYER_MODE": "golden" },
+      "source_url": "https://example.com/golden/player/source",
+      "resources": {
+        "requests": {
+          "cpu": "1",
+          "memory": "1Gi",
+          "ephemeral-storage": "2Gi"
+        },
+        "limits": { "cpu": "2" }
+      },
+      "id": "golden-player",
+      "name": "Golden Player",
+      "description": "Bundled player covering every role-spec field.",
+      "repository_url": "https://example.com/golden/player"
+    }
+  ],
+  "reporter": [
+    { "reporter": "user123/summary@1" },
+    {
+      "wasm": "reporters/summary.wasm",
+      "id": "summary",
+      "display_name": "Summary Reporter",
+      "description": "Produces a summary report.",
+      "attributes": {
+        "purpose": "Summarize the golden episode",
+        "outputs": [{ "name": "summary", "type": "markdown", "description": "Episode summary" }]
+      }
+    }
+  ],
+  "commissioner": [
+    {
+      "type": "commissioner",
+      "image": "example.com/commissioner:1",
+      "id": "commissioner",
+      "name": "Commissioner",
+      "description": "Golden commissioner."
+    }
+  ],
+  "grader": [
+    {
+      "type": "grader",
+      "image": "example.com/grader:1",
+      "id": "grader",
+      "name": "Grader",
+      "description": "Golden grader."
+    }
+  ],
+  "diagnoser": [
+    {
+      "type": "diagnoser",
+      "image": "example.com/diagnoser:1",
+      "id": "diagnoser",
+      "name": "Diagnoser",
+      "description": "Golden diagnoser."
+    }
+  ],
+  "optimizer": [
+    {
+      "type": "optimizer",
+      "image": "example.com/optimizer:1",
+      "id": "optimizer",
+      "name": "Optimizer",
+      "description": "Golden optimizer."
+    }
+  ],
+  "variants": [
+    {
+      "id": "default",
+      "name": "Default",
+      "game_config": { "mode": "golden" },
+      "description": "Golden default variant."
+    }
+  ],
+  "certification": {
+    "game_config": { "mode": "golden" },
+    "players": [{ "player_id": "golden-player" }]
+  },
+  "players_per_user": 2,
+  "episode_timeout_minutes": 30
+}
