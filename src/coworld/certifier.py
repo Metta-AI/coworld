@@ -64,6 +64,7 @@ from coworld.types import (
     CoworldReporterPlatformReference,
     CoworldRunnableSpec,
     CoworldTranscript,
+    SourceUrlResult,
     StepResult,
     TranscriptStep,
     coworld_episode_request_schema,
@@ -193,29 +194,74 @@ def validate_players_ran(package: CoworldPackage, artifacts: EpisodeArtifacts) -
         raise ValueError("Required player runnables did not run on the smoke episode:\n- " + "\n- ".join(issues))
 
 
-def validate_source_references(package: CoworldPackage) -> list[str]:
-    issues = []
-    resolved_sources = []
-    github_sources: list[tuple[str, str, GitHubSource]] = []
+def inspect_source_references(package: CoworldPackage) -> list[SourceUrlResult]:
+    results: list[SourceUrlResult] = []
     for label, source_url in _source_references(package):
+        if source_url is None:
+            results.append(
+                SourceUrlResult(
+                    runnable=label,
+                    source_url=None,
+                    status="not_declared",
+                    publicly_accessible=False,
+                    detail="No source_url declared.",
+                )
+            )
+            continue
         source = _github_source(source_url)
         if source is None:
+            results.append(
+                SourceUrlResult(
+                    runnable=label,
+                    source_url=source_url,
+                    status="unsupported",
+                    publicly_accessible=False,
+                    detail="Certification currently verifies public GitHub source URLs only.",
+                )
+            )
             continue
-        github_sources.append((label, source_url, source))
-
-    for label, source_url, source in github_sources:
-        resolved_source, contents = _github_contents(source)
+        resolved_source, contents, error = _github_contents(source)
+        if resolved_source is None:
+            assert error is not None
+            results.append(
+                SourceUrlResult(
+                    runnable=label,
+                    source_url=source_url,
+                    status="unresolved",
+                    publicly_accessible=False,
+                    detail=error,
+                )
+            )
+            continue
+        issues = []
         if not contents:
-            issues.append(f"{label}: Empty source directory ({source_url})")
+            issues.append("source directory is empty")
         if not _source_or_ancestor_has_dockerfile(resolved_source, contents):
-            issues.append(f"{label}: No Dockerfile found ({source_url})")
-        resolved_sources.append(f"{label}: {resolved_source.ref or '<default branch>'}")
+            issues.append("no Dockerfile found at the source path or an ancestor")
+        if issues:
+            results.append(
+                SourceUrlResult(
+                    runnable=label,
+                    source_url=source_url,
+                    status="unresolved",
+                    publicly_accessible=False,
+                    detail="; ".join(issues),
+                )
+            )
+            continue
+        detail = f"Resolved at {resolved_source.ref or '<default branch>'}."
         if warning := _source_ref_warning(label, resolved_source):
-            resolved_sources.append(warning)
-
-    if issues:
-        raise ValueError("Coworld source references are not certifiable:\n- " + "\n- ".join(issues))
-    return resolved_sources
+            detail += f" {warning}"
+        results.append(
+            SourceUrlResult(
+                runnable=label,
+                source_url=source_url,
+                status="resolved",
+                publicly_accessible=True,
+                detail=detail,
+            )
+        )
+    return results
 
 
 def validate_reporter_references(package: CoworldPackage) -> list[str]:
@@ -426,8 +472,16 @@ def certify_coworld(
         status: Literal["pass", "fail"],
         failure_reason: str | None = None,
         feedback: str | None = None,
+        source_url_results: list[SourceUrlResult] | None = None,
     ) -> StepResult:
-        result = StepResult(id=step.id, kind=step.kind, status=status, failure_reason=failure_reason, feedback=feedback)
+        result = StepResult(
+            id=step.id,
+            kind=step.kind,
+            status=status,
+            failure_reason=failure_reason,
+            feedback=feedback,
+            source_url_results=source_url_results,
+        )
         step_results.append(result)
         if on_step is not None:
             on_step(result, step)
@@ -437,6 +491,7 @@ def certify_coworld(
         step_id: str,
         action: Callable[[], object],
         pass_feedback: Callable[[object], str | None] | str | None = None,
+        source_url_results: Callable[[object], list[SourceUrlResult]] | None = None,
     ) -> object:
         step = _transcript_step(transcript, step_id)
         announce(step)
@@ -451,7 +506,12 @@ def certify_coworld(
             )
             raise
         feedback = pass_feedback(value) if callable(pass_feedback) else pass_feedback
-        record(step, status="pass", feedback=feedback)
+        record(
+            step,
+            status="pass",
+            feedback=feedback,
+            source_url_results=source_url_results(value) if source_url_results is not None else None,
+        )
         return value
 
     package = cast(
@@ -464,13 +524,23 @@ def certify_coworld(
     )
     matriculated_at = datetime.now(timezone.utc)
 
-    def source_refs_feedback(resolved: object) -> str:
-        sources = cast(list[str], resolved)
-        if not sources:
-            return "No GitHub source_url references declared."
-        return "GitHub source_url references resolved:\n- " + "\n- ".join(sources)
+    def source_refs_feedback(checked: object) -> str:
+        results = cast(list[SourceUrlResult], checked)
+        verified = sum(result.publicly_accessible for result in results)
+        lines = [
+            f"{result.runnable}: {result.status}"
+            + (f" ({result.source_url})" if result.source_url is not None else "")
+            + f" — {result.detail}"
+            for result in results
+        ]
+        return f"Public source verified for {verified}/{len(results)} runnables:\n- " + "\n- ".join(lines)
 
-    run_step("source-resolves", lambda: validate_source_references(package), source_refs_feedback)
+    run_step(
+        "source-resolves",
+        lambda: inspect_source_references(package),
+        source_refs_feedback,
+        source_url_results=lambda value: cast(list[SourceUrlResult], value),
+    )
     run_step("images-reachable", lambda: check_images_reachable(package), "All declared images are reachable.")
     run_step(
         "fixture-conforms",
@@ -581,7 +651,6 @@ def _step_failure_reason(step_id: str, exc: Exception) -> str:
         return "replay_missing"
     return {
         "matriculate": "manifest_invalid",
-        "source-resolves": "source_unresolved",
         "images-reachable": "image_unreachable",
         "fixture-conforms": "fixture_invalid",
         "players-run": "players_missing",
@@ -757,18 +826,14 @@ def _image_references(package: CoworldPackage) -> list[tuple[str, str]]:
     return list(dict.fromkeys(references))
 
 
-def _source_references(package: CoworldPackage) -> list[tuple[str, str]]:
-    references = []
-    game_source_url = package.manifest.game.runnable.source_url
-    if game_source_url is not None:
-        references.append(("game.runnable.source_url", game_source_url))
+def _source_references(package: CoworldPackage) -> list[tuple[str, str | None]]:
+    references = [("game.runnable", package.manifest.game.runnable.source_url)]
     for section in ("player", "commissioner", "grader", "diagnoser", "optimizer"):
         references.extend(
-            (f"Coworld {section}[{index}].source_url", source_url)
+            (f"{section}[{index}]", runnable.source_url)
             for index, runnable in enumerate(getattr(package.manifest, section))
-            if (source_url := runnable.source_url) is not None
         )
-    return list(dict.fromkeys(references))
+    return references
 
 
 def _github_source(source_url: str) -> GitHubSource | None:
@@ -803,7 +868,9 @@ def _source_ref_warning(label: str, source: GitHubSource) -> str | None:
     return None
 
 
-def _github_contents(source: GitHubSource) -> tuple[GitHubSource, list[dict[str, object]]]:
+def _github_contents(
+    source: GitHubSource,
+) -> tuple[GitHubSource | None, list[dict[str, object]], str | None]:
     api_url = _github_contents_url(source)
     for candidate in _github_source_candidates(source):
         api_url = _github_contents_url(candidate)
@@ -811,16 +878,20 @@ def _github_contents(source: GitHubSource) -> tuple[GitHubSource, list[dict[str,
         if response.status_code == 404:
             continue
         if response.status_code != 200:
-            raise RuntimeError(f"GitHub source URL is not readable: {api_url} returned HTTP {response.status_code}")
+            return (
+                None,
+                [],
+                f"GitHub source URL is not publicly readable: {api_url} returned HTTP {response.status_code}",
+            )
 
         contents = response.json()
         if isinstance(contents, list):
-            return candidate, cast(list[dict[str, object]], contents)
+            return candidate, cast(list[dict[str, object]], contents), None
         if isinstance(contents, dict):
-            return candidate, [cast(dict[str, object], contents)]
+            return candidate, [cast(dict[str, object], contents)], None
         raise TypeError(f"Expected GitHub contents object or list from {api_url}")
 
-    raise RuntimeError(f"GitHub source URL is not readable: {api_url} returned HTTP 404")
+    return None, [], f"GitHub source URL is not publicly readable: {api_url} returned HTTP 404"
 
 
 def _source_or_ancestor_has_dockerfile(source: GitHubSource, contents: list[dict[str, object]]) -> bool:
@@ -828,7 +899,7 @@ def _source_or_ancestor_has_dockerfile(source: GitHubSource, contents: list[dict
         return True
 
     for ancestor in _github_ancestor_sources(source):
-        _, ancestor_contents = _github_contents(ancestor)
+        _, ancestor_contents, _ = _github_contents(ancestor)
         if any(_is_dockerfile(item) for item in ancestor_contents):
             return True
     return False

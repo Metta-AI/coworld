@@ -7,12 +7,12 @@ from coworld.certifier import (
     build_episode_request,
     build_player_launch_specs,
     certify_coworld,
+    inspect_source_references,
     load_coworld_package,
     load_executable_transcript,
     load_results,
     validate_image_references,
     validate_players_ran,
-    validate_source_references,
 )
 from coworld.play import (
     PlayLinks,
@@ -36,6 +36,7 @@ from coworld.types import (
     CoworldManifestRoleSpec,
     CoworldRunnableSpec,
     CoworldTranscript,
+    SourceUrlResult,
     StepResult,
     TranscriptStep,
 )
@@ -47,6 +48,7 @@ __all__ = [
     "CoworldManifestRoleSpec",
     "CoworldRunnableSpec",
     "CoworldTranscript",
+    "SourceUrlResult",
     "StepResult",
     "TranscriptStep",
     "EpisodeArtifacts",
@@ -62,6 +64,7 @@ __all__ = [
     "build_player_launch_specs",
     "build_play_links",
     "certify_coworld",
+    "inspect_source_references",
     "load_executable_transcript",
     "load_results",
     "load_coworld_package",
@@ -71,5 +74,4 @@ __all__ = [
     "run_coworld_episode",
     "validate_image_references",
     "validate_players_ran",
-    "validate_source_references",
 ]

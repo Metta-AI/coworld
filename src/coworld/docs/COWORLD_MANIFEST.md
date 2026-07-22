@@ -211,12 +211,17 @@ additional host TCP services beyond Coworld HTTP on container port 8080. Use com
 the resolved mappings back into the game container as `COWORLD_LOCAL_PORT_<container_port>` and
 `COWORLD_LOCAL_PORTS_JSON`. Hosted/Kubernetes runners do not support arbitrary extra host ports yet.
 
-`source_url` is provenance for humans inspecting a runnable, not a runtime input: runners do not clone or execute code
-from it. `coworld certify` checks GitHub URLs as a lightweight provenance test. A GitHub `source_url` may point at a
+`source_url` is optional provenance for humans inspecting a runnable, not a runtime input: runners do not clone or
+execute code from it. `coworld certify` records a structured result for every runnable: `resolved`, `unresolved`,
+`unsupported`, or `not_declared`, plus whether the source was verified as publicly accessible. Source availability is
+informational and does not gate certification. This keeps the provenance fact available for future league policy or UI
+without making public source a requirement for every Coworld.
+
+For declared GitHub URLs, certification performs a lightweight provenance test. A GitHub `source_url` may point at a
 full commit SHA, a short SHA, a branch, a tag, or the bare repository URL. The source must resolve through GitHub's
 contents API, have non-empty contents, and include a Dockerfile at that path or an ancestor build root. Full commit SHAs
-are preferred because they make provenance stable, but mutable refs and bare repository URLs pass certification with a
-warning because certification checked whatever the ref or default branch resolved to at run time. Point `source_url` at
+are preferred because they make provenance stable; mutable refs and bare repository URLs are recorded with a warning
+because certification checked whatever the ref or default branch resolved to at run time. Point `source_url` at
 the repository, directory, or file that implements the runnable, not just a documentation page. See
 [REBUILDING_COWORLDS.md](REBUILDING_COWORLDS.md) for the current repo map and source-owner rules.
 
@@ -237,7 +242,7 @@ Coworld runtime ownership and role implementation ownership are separate:
   specific optimizer has moved beside its game.
 
 At episode or round runtime, the runner does not clone those repositories. It executes the image, command, and env
-already recorded in the manifest. Catalogs are an authoring/provenance source: manifest authors copy the selected
+already recorded in the manifest. Catalogs are an authoring/provenance source: manifest authors may copy the selected
 implementation's `image` and `source_url` into the runnable, then `coworld build` pins the source ref when the matching
 source context is provided.
 

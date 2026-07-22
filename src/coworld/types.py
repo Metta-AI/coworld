@@ -117,7 +117,10 @@ class CoworldRunnableSpec(BaseModel):
     )
     source_url: str | None = Field(
         default=None,
-        description="Optional public source repository, directory, or file URL for this runnable.",
+        description=(
+            "Optional public source repository, directory, or file URL for this runnable. "
+            "Certification records whether it can verify the source as publicly accessible but does not require it."
+        ),
     )
     resources: CoworldRunnableResources | None = Field(
         default=None,
@@ -544,6 +547,16 @@ class CoworldTranscript(BaseModel):
     steps: list[TranscriptStep] = Field(min_length=1)
 
 
+class SourceUrlResult(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    runnable: str = Field(description="Manifest path identifying the runnable whose source was checked.")
+    source_url: str | None = Field(description="Declared source URL, or null when the runnable omitted it.")
+    status: Literal["resolved", "unresolved", "unsupported", "not_declared"]
+    publicly_accessible: bool = Field(description="Whether certification verified a public source for this runnable.")
+    detail: str = Field(description="Human-readable resolution evidence or reason the source was not verified.")
+
+
 class StepResult(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -552,6 +565,7 @@ class StepResult(BaseModel):
     status: Literal["running", "pass", "fail"] = "pass"
     failure_reason: str | None = None
     feedback: str | None = None
+    source_url_results: list[SourceUrlResult] | None = None
 
 
 def coworld_manifest_schema() -> dict[str, Any]:

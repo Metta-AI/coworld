@@ -45,6 +45,20 @@ def test_runnable_and_manifest_role_fields_are_flat() -> None:
     assert set(CoworldRunnableSpec.model_fields) == {"type", "image", "run", "env", "source_url", "resources"}
 
 
+def test_manifest_schema_does_not_require_runnable_source_url() -> None:
+    manifest = _manifest_data()
+    manifest["game"]["runnable"].pop("source_url", None)
+    manifest["player"][0].pop("source_url")
+    manifest["grader"][0].pop("source_url")
+
+    typed = CoworldManifest.model_validate(manifest)
+    validate_json_schema(manifest, coworld_manifest_schema())
+
+    assert typed.game.runnable.source_url is None
+    assert typed.player[0].source_url is None
+    assert typed.grader[0].source_url is None
+
+
 def test_runnable_resources_round_trip_through_as_runnable_spec() -> None:
     spec = CoworldRunnableSpec.model_validate(
         {

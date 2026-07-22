@@ -155,9 +155,10 @@ template must **not** set `game.version` — the build stamps it. Fill in the se
 - `game.protocols` needs both `player` and `global` entries.
 - Declare at least one variant (the default board players will actually compete on — typically seed-free), and a
   `certification` fixture that seats **every** declared player.
-- Every runnable's `source_url` should resolve to a public repo path containing a Dockerfile, pinned to a commit SHA.
-  Mutable refs (branches, `/tree/main/`) certify with warnings today; pin anyway — provenance that moves is provenance
-  you can't trust.
+- `source_url` is optional. When you want public provenance, point each runnable at a public repo path containing a
+  Dockerfile and pin it to a commit SHA. Certification records resolved, unresolved, unsupported, and omitted sources
+  in its transcript without failing the Coworld. Mutable refs (branches, `/tree/main/`) are recorded with warnings;
+  pin anyway — provenance that moves is provenance you can't trust.
 
 **The build.** Keep `compose.yaml` and `coworld_manifest_template.json` in the owning project, then run
 `coworld build --version <version>`. The command builds and pulls the images, resolves mutable image references,
@@ -284,7 +285,8 @@ Your Coworld is done when all of these are true, in this order:
 - [ ] `coworld run-episode` completes; results validate; logs show real play; replay artifact exists.
 - [ ] `coworld play` works for player, global, and replay surfaces in a browser, with hidden info redacted.
 - [ ] `coworld certify` passes, and you watched the certification replay actually play.
-- [ ] The manifest pins `source_url`s to pushed commit SHAs and its certification fixture seats every declared player.
+- [ ] Any declared `source_url`s are pushed and pinned to commit SHAs; the certification fixture seats every declared
+      player.
 - [ ] `coworld upload-coworld` succeeded.
 - [ ] A hosted experience run reached `completed` with scored episodes and a replay you watched in a browser.
 - [ ] The bundled baseline demonstrably beats a trivial policy.

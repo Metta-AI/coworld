@@ -65,7 +65,8 @@ game container contract in [GAME.md](roles/GAME.md).
 ## Certification
 
 Coworld certification turns the manifest's `certification` fixture into one local episode. It first validates the
-manifest, GitHub `source_url` resolvability, image reachability, and the certification fixture itself. It then uses the
+manifest, records GitHub `source_url` availability without gating, checks image reachability and the certification
+fixture itself, and then uses the
 same execution shape as a normal episode: the runner starts the game, starts the bundled player images from the fixture,
 waits for the game to finish, validates final results, checks that a replay was produced, and checks that the replay
 viewer can start.

@@ -150,7 +150,8 @@ Each step has two halves: the **declaration** (frozen in the markdown, part of t
 | `kind` | Carried from the declaration. |
 | `status` | `running` (announced, in progress), `pass` (the step's `pass` criterion was met), or `fail` (it was not). |
 | `failure_reason` | On `fail`: a typed, machine-readable reason the step did not pass. For the runtime steps that wrap a dispatched episode, this is the episode error taxonomy (`player_error`, `game_unhealthy`, `results_malformed`, `replay_unloadable`, …); for the static steps it is the step's own failure class. Absent on `pass`. |
-| `feedback` | On `fail`: a human-readable explanation — *what* failed and, where the certifier can tell, *how to fix it* — written for the Coworld developer reading the transcript to understand why their Coworld did not graduate. Absent on `pass`. |
+| `feedback` | Human-readable detail about the outcome. On `fail`, it explains what failed and, where possible, how to fix it. Informational passing steps may also record evidence here. |
+| `source_url_results` | On `source-resolves`: one typed result per runnable with its declared URL, `resolved` / `unresolved` / `unsupported` / `not_declared` status, public-accessibility boolean, and detail. |
 
 The certifier maps each `id` to its executor; the markdown is the source of truth for *meaning*, the code is the
 *implementation*. When the **declared** fields change, the file's hash changes, and that is a new definition of
@@ -167,7 +168,8 @@ result, then stops; later steps that never ran simply have no result.
 
 ```text
  1. matriculate       [auto]  manifest conforms to the Coworld schema        pass: schema validates
- 2. source-resolves   [auto]  every source_url resolves + has a Dockerfile   pass: all resolve
+ 2. source-resolves   [auto]  record whether each optional source_url        pass: availability recorded
+                              resolves to publicly accessible source
  3. images-reachable  [auto]  every declared image is pullable/inspectable   pass: all reachable
  4. fixture-conforms  [auto]  certification game_config validates against    pass: schema validates
                               config_schema (before any container launches)
@@ -181,6 +183,11 @@ result, then stops; later steps that never ran simply have no result.
 10. supporting-roles  [auto]  each declared supporting runnable runs and     pass: every declared
                               honors its contract (per-runnable)                  supporting role passes
 ```
+
+`source-resolves` is informational when inspection completes: omitted or unverifiable source does not prevent the
+Executable degree. Its structured results preserve provenance evidence so a later league policy or UI can distinguish
+public source without redefining the base certification degree. Unexpected inspection errors still abort certification
+instead of being converted into passing provenance results.
 
 The split into independently-attributable steps is deliberate: `smoke-episode` only *runs* the episode, and
 `results-conform` / `replay-present` / `replay-loadable` are separate gates, so a transcript `fail` names the
@@ -313,4 +320,3 @@ until they do (updated for spec 0061: the reporter check is static reference val
   viability gate this certifier attests).
 - [`src/coworld/certifier.py`](src/coworld/certifier.py) — the existing automated Executable procedure.
 - [`tests/test_coworld_certifier.py`](tests/test_coworld_certifier.py) — current certifier behavior.
-

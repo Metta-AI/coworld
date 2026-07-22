@@ -399,7 +399,7 @@
             }
           ],
           "default": null,
-          "description": "Optional public source repository, directory, or file URL for this runnable.",
+          "description": "Optional public source repository, directory, or file URL for this runnable. Certification records whether it can verify the source as publicly accessible but does not require it.",
           "title": "Source Url"
         },
         "resources": {
@@ -739,7 +739,7 @@
             }
           ],
           "default": null,
-          "description": "Optional public source repository, directory, or file URL for this runnable.",
+          "description": "Optional public source repository, directory, or file URL for this runnable. Certification records whether it can verify the source as publicly accessible but does not require it.",
           "title": "Source Url"
         },
         "resources": {
