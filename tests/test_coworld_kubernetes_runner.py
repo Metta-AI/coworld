@@ -1281,6 +1281,9 @@ def test_create_player_pod_injects_policy_secret_env(monkeypatch):
     assert "COWORLD_PLAYER_ARTIFACT_UPLOAD_URL" not in env
     assert container.resources.requests == {"cpu": "2", "memory": "2Gi"}
     assert pod.metadata.annotations == {"karpenter.sh/do-not-disrupt": "true"}
+    assert pod.metadata.labels["job-id"] == "job-id"
+    assert pod.metadata.labels["coworld-component"] == "player"
+    assert pod.metadata.labels["coworld-player-slot"] == "0"
     assert pod.spec.node_selector == {"workload-type": "jobs", "karpenter.sh/capacity-type": "on-demand"}
     assert pod.spec.service_account_name == "episode-runner"
     assert pod.spec.volumes is None

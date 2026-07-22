@@ -491,6 +491,7 @@ def _create_player_pod(
             namespace=namespace,
             annotations=pod_annotations,
             labels={
+                "job-id": job_id,
                 "coworld-job-id": job_id,
                 "coworld-component": "player",
                 "coworld-player-slot": str(slot),
