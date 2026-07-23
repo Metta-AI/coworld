@@ -1586,20 +1586,20 @@ def test_hosted_game_create_posts_play_session(httpserver: HTTPServer, monkeypat
         "/observatory/v2/coworlds/play/session",
         method="POST",
         headers={"Authorization": "Bearer token"},
-        json={
-            "coworld_id": coworld_id,
-            "variant_id": "default",
-            "allow_spectators": True,
-        },
+        json={"coworld_id": coworld_id},
     ).respond_with_json(
         {
             "session_id": "ps_00000000-0000-0000-0000-000000000011",
-            "join_url": "/observatory/v2/coworld-play/ps_00000000-0000-0000-0000-000000000011/join",
             "lobby_url": "/observatory/v2/coworld-play/ps_00000000-0000-0000-0000-000000000011",
             "player_count": 3,
-            "global_url": "https://api.example.com/v2/coworlds/play/session/ps_00000000/proxy/client/global",
         }
     )
+    httpserver.expect_request(
+        "/observatory/v2/coworlds/play/session/ps_00000000-0000-0000-0000-000000000011/config",
+        method="PUT",
+        headers={"Authorization": "Bearer token"},
+        json={"kind": "variant", "variant_id": "default"},
+    ).respond_with_json({"player_count": 3})
 
     result = CliRunner().invoke(
         app,
@@ -1621,7 +1621,7 @@ def test_hosted_game_create_posts_play_session(httpserver: HTTPServer, monkeypat
         "Player command: uv run coworld hosted-game join ps_00000000-0000-0000-0000-000000000011 --server "
         in result.output
     )
-    assert "Player URL: /observatory/v2/coworld-play/ps_00000000-0000-0000-0000-000000000011/join" in result.output
+    assert "Lobby URL: /observatory/v2/coworld-play/ps_00000000-0000-0000-0000-000000000011" in result.output
     assert "Spectator URL: /observatory/v2/coworld-play/ps_00000000-0000-0000-0000-000000000011" in result.output
 
 
@@ -1633,7 +1633,8 @@ def test_hosted_game_join_posts_join_session(httpserver: HTTPServer, monkeypatch
         headers={"Authorization": "Bearer token"},
     ).respond_with_json(
         {
-            "player_url": "https://api.example.com/v2/coworlds/play/session/ps_00000000/proxy/client/player",
+            "entrant_kind": "player",
+            "target_url": "https://api.example.com/v2/coworlds/play/session/ps_00000000/proxy/client/player",
             "slot": 1,
             "player": {"slot": 1, "label": "Player 2"},
         }

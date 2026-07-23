@@ -1202,7 +1202,7 @@ def hosted_game_create(
     typer.echo(f"Hosted game: {session.session_id}")
     typer.echo(f"Player slots: {session.player_count}")
     typer.echo(f"Player command: {_hosted_game_join_command(session.session_id, server)}")
-    typer.echo(f"Player URL: {observatory_web_url(server, session.join_url)}")
+    typer.echo(f"Lobby URL: {observatory_web_url(server, session.lobby_url)}")
     if allow_spectators:
         typer.echo(f"Spectator URL: {observatory_web_url(server, session.lobby_url)}")
     else:
@@ -1220,9 +1220,15 @@ def hosted_game_join(
     if json_output:
         emit_json(join.model_dump(mode="json"))
         return
-    typer.echo(f"Slot: {join.slot}")
-    typer.echo(f"Player: {join.player.label}")
-    typer.echo(f"URL: {join.player_url}")
+    if join.entrant_kind == "player":
+        assert join.slot is not None
+        assert join.player is not None
+        typer.echo(f"Slot: {join.slot}")
+        typer.echo(f"Player: {join.player.label}")
+    else:
+        assert join.spectator is not None
+        typer.echo(f"Spectator: {join.spectator.label}")
+    typer.echo(f"URL: {join.target_url}")
 
 
 def _echo_replay_paths(artifacts: EpisodeArtifacts) -> None:

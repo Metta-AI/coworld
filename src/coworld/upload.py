@@ -19,7 +19,7 @@ from dataclasses import dataclass
 from datetime import datetime
 from enum import Enum
 from pathlib import Path
-from typing import Any, Self
+from typing import Any, Literal, Self
 from urllib.parse import quote
 from uuid import UUID
 
@@ -184,10 +184,8 @@ class CoworldSecretResponse(BaseModel):
 
 class HostedGameCreateResponse(BaseModel):
     session_id: str
-    join_url: str
     lobby_url: str
     player_count: int
-    global_url: str | None
 
 
 class HostedGameJoinPlayer(BaseModel):
@@ -199,10 +197,19 @@ class HostedGameJoinPlayer(BaseModel):
     joined_at: datetime | None = None
 
 
+class HostedGameJoinSpectator(BaseModel):
+    label: str
+    player_id: str | None = None
+    player_name: str | None = None
+    joined_at: datetime
+
+
 class HostedGameJoinResponse(BaseModel):
-    player_url: str
-    slot: int
-    player: HostedGameJoinPlayer
+    entrant_kind: Literal["player", "spectator"]
+    target_url: str
+    slot: int | None = None
+    player: HostedGameJoinPlayer | None = None
+    spectator: HostedGameJoinSpectator | None = None
 
 
 class PolicyVersionRow(BaseModel):
@@ -658,15 +665,29 @@ class CoworldUploadClient:
         response = self._http_client.post(
             "/v2/coworlds/play/session",
             headers=self._headers(),
-            json={
-                "coworld_id": coworld_id,
-                "variant_id": variant_id,
-                "allow_spectators": allow_spectators,
-            },
+            json={"coworld_id": coworld_id},
             timeout=120.0,
         )
         _raise_for_status(response)
-        return HostedGameCreateResponse.model_validate(response.json())
+        created = HostedGameCreateResponse.model_validate(response.json())
+        if variant_id is not None:
+            config_response = self._http_client.put(
+                f"/v2/coworlds/play/session/{created.session_id}/config",
+                headers=self._headers(),
+                json={"kind": "variant", "variant_id": variant_id},
+                timeout=120.0,
+            )
+            _raise_for_status(config_response)
+            created.player_count = config_response.json()["player_count"]
+        if not allow_spectators:
+            spectators_response = self._http_client.put(
+                f"/v2/coworlds/play/session/{created.session_id}/config",
+                headers=self._headers(),
+                json={"kind": "spectators", "allow_spectators": False},
+                timeout=120.0,
+            )
+            _raise_for_status(spectators_response)
+        return created
 
     def join_hosted_game(self, session_id: str) -> HostedGameJoinResponse:
         response = self._http_client.post(
