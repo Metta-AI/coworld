@@ -63,9 +63,9 @@ The episode bundle stores replay bytes as `replay` inside the outer zip. Bundle 
 - Fallback replay server mode: same game image, with `COGAME_LOAD_REPLAY_URI` pointing at the replay bytes.
 - Replay viewer default: autoplay and loop from the recorded end back to tick 0.
 
-Certification checks that the replay file exists. During the static-viewer rollout, local certification still verifies
-that the game image can load it through `/client/replay` and `/replay`; hosted replay resolution prefers a declared
-static bundle.
+Certification checks that the replay file exists. Without a declared static bundle, it also verifies that the game
+image can load the replay through `/client/replay` and `/replay`. A declared static bundle replaces that legacy route
+requirement and must be verified in a browser before upload.
 
 ## See Also
 

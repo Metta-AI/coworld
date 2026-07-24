@@ -82,12 +82,13 @@ league round:
   and situational legality. On failure, tell the player why and re-request (bounded), then fall back to the baseline.
   Never crash the episode and never silently accept an illegal move — both destroy the improvement loop.
 - **Write artifacts last, and completely.** Results must validate against your `results_schema`; replay bytes must be
-  loadable by the same image in replay mode. Anything a player container needs to do at episode end (final messages, its
-  own artifact upload) must happen before you finish writing game artifacts — hosted runners tear player pods down as
-  soon as the game's outputs exist.
-- **Replay mode is the same image, restarted.** With `COGAME_LOAD_REPLAY_URI` set, serve `/client/replay` and `/replay`
-  and start playback automatically. The replay URI may be an `http(s)` URL, not a local path — load it accordingly. A
-  viewer stuck on its loading screen forever is the classic symptom of a replay loader that assumed a local file.
+  loadable by the declared static replay bundle or, when no bundle is declared, by the same image in replay mode.
+  Anything a player container needs to do at episode end (final messages, its own artifact upload) must happen before
+  you finish writing game artifacts — hosted runners tear player pods down as soon as the game's outputs exist.
+- **Replay server mode is the same image, restarted.** When no static replay bundle is declared, set
+  `COGAME_LOAD_REPLAY_URI`, serve `/client/replay` and `/replay`, and start playback automatically. The replay URI may
+  be an `http(s)` URL, not a local path — load it accordingly. A viewer stuck on its loading screen forever is the
+  classic symptom of a replay loader that assumed a local file.
 - **Log for the public.** Game stdout/stderr are exposed through the [game logs](artifacts/GAME_LOGS.md) artifact to
   anyone with episode access. Put authoritative state in the structured artifacts, diagnostics in the logs, and secrets
   in neither.

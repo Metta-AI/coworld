@@ -34,10 +34,10 @@ It must:
 - Serve player HTML clients at `GET /client/player?slot=...&token=...`.
 - Serve player WebSocket connections at `/player?slot=...&token=...`.
 - Serve a live global viewer at `GET /client/global` and `/global`.
-- Support replay mode with `COGAME_LOAD_REPLAY_URI`, `GET /client/replay`, and `/replay`. Local certification still
-  probes this path; when `game.replay_viewer.bundle` is absent, hosted viewers also use it as the version-matched
-  container fallback.
-- Make `GET /client/replay` start playback automatically and loop from the recorded end back to tick 0 by default.
+- When `game.replay_viewer.bundle` is absent, support replay mode with `COGAME_LOAD_REPLAY_URI`, `GET /client/replay`,
+  and `/replay`. Certification probes this version-matched container fallback.
+- For replay-server mode, make `GET /client/replay` start playback automatically and loop from the recorded end back
+  to tick 0 by default.
 - Write a JSON results artifact to `COGAME_RESULTS_URI` when the episode completes.
 - Write replay bytes to `COGAME_SAVE_REPLAY_URI`.
 - When its own rules make a player failure terminal, write a typed `GamePlayerFailure` to
@@ -119,9 +119,9 @@ seek, speed, and loop controls, but the default browser replay surface should
 begin playing and wrap back to tick 0 when it reaches the recorded end.
 
 `coworld certify` validates replay liveness for game authors. For Coworlds without a static bundle, it starts the same
-game image in replay mode, loads `GET /client/replay`, and waits for `/replay`. Static-bundle certification validates
-and loads the inferred `index.html` entrypoint with the produced replay. Authors should still inspect the browser
-replay before uploading, because only the game author can confirm the game state and controls.
+game image in replay mode, loads `GET /client/replay`, and waits for `/replay`. When a static bundle is declared,
+certification skips those legacy routes; authors must inspect the browser replay before uploading to confirm the bundle
+loads the produced replay with the expected game state and controls.
 
 The example Paint Arena protocol docs link here because the exact in-game messages are game-specific, while the route
 families and token semantics are Coworld-wide.

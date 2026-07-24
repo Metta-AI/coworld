@@ -114,9 +114,10 @@ class CoworldPackage:
 # (which holds the registry state), since the daemonless certifier pod has no Docker CLI. Raises on
 # an unreachable image so the certifier maps the raise to the images-reachable step failure.
 CertifierImageReachabilityChecker = Callable[[CoworldPackage], None]
-# Verifies the just-produced replay loads in the game's replay server. Local flow runs the game in
-# replay mode via Docker (verify_replay_loadable); Observatory flow injects a checker that asks the
-# backend to boot and probe a one-shot replay runtime for the smoke episode job.
+# Verifies the just-produced replay loads in the game's replay server when the manifest does not
+# declare a static replay bundle. Local flow runs the game in replay mode via Docker
+# (verify_replay_loadable); Observatory flow injects a checker that asks the backend to boot and
+# probe a one-shot replay runtime for the smoke episode job.
 CertifierReplayLoadableChecker = Callable[[CoworldPackage, EpisodeArtifacts], None]
 # Checks the supporting roles (reporter references + commissioner). Local flow statically
 # validates reporter references and probes commissioners via Docker
@@ -580,11 +581,18 @@ def certify_coworld(
         lambda: _assert_replay_present(artifacts),
         f"Replay artifact exists at {artifacts.replay_path}.",
     )
-    run_step(
-        "replay-loadable",
-        lambda: check_replay_loadable(package, artifacts),
-        "Replay loads through /client/replay and /replay.",
-    )
+    if package.manifest.game.replay_viewer is None:
+        run_step(
+            "replay-loadable",
+            lambda: check_replay_loadable(package, artifacts),
+            "Replay loads through /client/replay and /replay.",
+        )
+    else:
+        run_step(
+            "replay-loadable",
+            lambda: None,
+            "Static replay bundle declared; legacy replay routes are not required.",
+        )
     run_step("players-run", lambda: validate_players_ran(package, artifacts), "Game and declared players started.")
 
     supporting_result = cast(

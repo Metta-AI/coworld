@@ -177,6 +177,53 @@ def test_coworld_certify_prints_replay_liveness_and_inspection_command(
     assert "<details" in html
 
 
+def test_coworld_certify_prints_static_replay_liveness_and_static_inspection_hint(
+    monkeypatch: MonkeyPatch, tmp_path: Path
+) -> None:
+    opened_urls: list[str] = []
+    cached_manifests: list[Path] = []
+    manifest_path = tmp_path / "coworld_manifest.json"
+    manifest_path.write_text('{"game": {"name": "unit"}}\n', encoding="utf-8")
+    workspace = tmp_path / "workspace"
+    artifacts = SimpleNamespace(
+        workspace=workspace,
+        results_path=workspace / "results.json",
+        replay_path=workspace / "replay.json",
+        logs_dir=workspace / "logs",
+    )
+    transcript = load_executable_transcript()
+    step_results = [StepResult(id=step.id, kind=step.kind, status="pass") for step in transcript.steps]
+    package = SimpleNamespace(
+        manifest=SimpleNamespace(game=SimpleNamespace(replay_viewer=SimpleNamespace(bundle="dist/replay-viewer"))),
+    )
+
+    def fake_certify_coworld(_manifest_path: Path, **_kwargs: object) -> SimpleNamespace:
+        return SimpleNamespace(
+            package=package,
+            transcript=transcript,
+            step_results=step_results,
+            artifacts=artifacts,
+            reporter_references=[],
+        )
+
+    monkeypatch.setattr("coworld.cli.certify_coworld", fake_certify_coworld)
+    monkeypatch.setattr("coworld.cli.cache_certified_manifest", cached_manifests.append)
+    monkeypatch.setattr("coworld.cli.webbrowser.open", opened_urls.append)
+
+    result = CliRunner().invoke(app, ["certify", str(manifest_path), "--open-report"])
+
+    assert result.exit_code == 0, result.output
+    assert (
+        "Replay liveness: skipped (static replay bundle declared; /client/replay and /replay not required)"
+        in result.output
+    )
+    assert f"Inspect replay: open {workspace / 'replay.json'} in your static replay viewer bundle" in result.output
+    assert "see STATIC_REPLAY_VIEWERS.md" in result.output
+    assert f"Inspect logs: ls {workspace / 'logs'}" in result.output
+    assert len(opened_urls) == 1
+    assert cached_manifests == [manifest_path.resolve()]
+
+
 def test_coworld_certify_failure_writes_report_and_suppresses_traceback(
     monkeypatch: MonkeyPatch, tmp_path: Path
 ) -> None:

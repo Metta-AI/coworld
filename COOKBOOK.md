@@ -1043,13 +1043,15 @@ uv run coworld upload-coworld packages/coworld/src/coworld/examples/paintarena/d
 
 `certify` runs the Executable transcript locally. It records whether every runnable's optional `source_url` resolves to
 publicly accessible source (GitHub refs are checked for a Dockerfile at the source path or an ancestor), validates the
-manifest's certification fixture before launching containers, runs one smoke
-episode, validates results, verifies the replay artifact is present and loadable, confirms declared players launched,
-and checks implemented supporting-role probes. Missing, unsupported, or unresolved sources are recorded in structured
-transcript data but do not gate certification. Mutable `source_url` refs and bare repository URLs are recorded with a
-warning because certification checks the ref or default branch as it exists at run time. Replay-load verification starts the
-game image in replay mode with `COGAME_LOAD_REPLAY_URI` and verifies `GET /client/replay`. It waits for a frame from the
-`/replay` WebSocket. Manifest reporter references are statically validated (spec 0061); commissioners are probed over
+manifest's certification fixture before launching containers, runs one smoke episode, validates results, verifies the
+replay artifact is present, confirms declared players launched, and checks implemented supporting-role probes. Missing,
+unsupported, or unresolved sources are recorded in structured transcript data but do not gate certification. Mutable
+`source_url` refs and bare repository URLs are recorded with a warning because certification checks the ref or default
+branch as it exists at run time. When no static replay viewer bundle is declared, replay-load verification starts the
+game image in replay mode with `COGAME_LOAD_REPLAY_URI`, verifies `GET /client/replay`, and waits for a frame from the
+`/replay` WebSocket. When a static replay viewer bundle is declared, legacy replay routes are not required and the
+certifier skips that probe. A declared static bundle skips that legacy route check. Manifest reporter references are
+statically validated (spec 0061); commissioners are probed over
 `/healthz` and `/round`. After a successful explicit `certify`, the exact manifest, certifier code, transcript, and
 local image IDs are cached. `upload-coworld` reuses that proof when nothing changed; otherwise it certifies before
 creating or pushing any Docker archive. After upload, the platform auto-queues a hosted certification run for the new

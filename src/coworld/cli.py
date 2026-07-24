@@ -347,11 +347,20 @@ def certify(
     typer.echo(f"Artifacts: {result.artifacts.workspace}")
     typer.echo(f"Results: {result.artifacts.results_path}")
     _echo_replay_paths(result.artifacts)
-    typer.echo("Replay liveness: verified /client/replay and /replay")
+    uses_static_replay_viewer_bundle = _uses_static_replay_viewer_bundle(result)
+    if uses_static_replay_viewer_bundle:
+        typer.echo("Replay liveness: skipped (static replay bundle declared; /client/replay and /replay not required)")
+    else:
+        typer.echo("Replay liveness: verified /client/replay and /replay")
     typer.echo(f"Logs: {result.artifacts.logs_dir}")
     for reference_line in result.reporter_references:
         typer.echo(f"Reporter reference: {reference_line}")
-    _echo_feedback_commands(manifest_uri, result.artifacts, server=server)
+    _echo_feedback_commands(
+        manifest_uri,
+        result.artifacts,
+        server=server,
+        uses_static_replay_viewer_bundle=uses_static_replay_viewer_bundle,
+    )
     if open_report:
         webbrowser.open(transcript_report.uri)
 
@@ -490,7 +499,12 @@ def play(
     typer.echo(f"Results: {result.session.artifacts.results_path}")
     _echo_replay_paths(result.session.artifacts)
     typer.echo(f"Logs: {result.session.artifacts.logs_dir}")
-    _echo_feedback_commands(manifest_uri, result.session.artifacts, server=server)
+    _echo_feedback_commands(
+        manifest_uri,
+        result.session.artifacts,
+        server=server,
+        uses_static_replay_viewer_bundle=_uses_static_replay_viewer_bundle(result),
+    )
 
 
 @app.command("list")
@@ -998,7 +1012,12 @@ def run_episode(
         _echo_results_summary(artifacts)
         _echo_replay_paths(artifacts)
         typer.echo(f"Logs: {artifacts.logs_dir}")
-        _echo_feedback_commands(manifest_uri, artifacts, server=server)
+        _echo_feedback_commands(
+            manifest_uri,
+            artifacts,
+            server=server,
+            uses_static_replay_viewer_bundle=package.manifest.game.replay_viewer is not None,
+        )
     if episodes > 1:
         typer.echo(f"Artifacts root: {artifacts_root}")
 
@@ -1250,12 +1269,35 @@ def _echo_results_summary(artifacts: EpisodeArtifacts) -> None:
     typer.echo("Scores: " + ", ".join(score_labels))
 
 
-def _echo_feedback_commands(manifest_uri: str, artifacts: EpisodeArtifacts, *, server: str) -> None:
-    replay_command = ["uv", "run", "coworld", "replay", manifest_uri, str(artifacts.replay_path)]
-    if server.rstrip("/") != DEFAULT_SUBMIT_SERVER.rstrip("/"):
-        replay_command.extend(["--server", server])
-    typer.echo("Inspect replay: " + shlex.join(replay_command))
+def _echo_feedback_commands(
+    manifest_uri: str,
+    artifacts: EpisodeArtifacts,
+    *,
+    server: str,
+    uses_static_replay_viewer_bundle: bool,
+) -> None:
+    if uses_static_replay_viewer_bundle:
+        typer.echo(
+            f"Inspect replay: open {artifacts.replay_path} in your static replay viewer bundle "
+            "(see STATIC_REPLAY_VIEWERS.md)"
+        )
+    else:
+        replay_command = ["uv", "run", "coworld", "replay", manifest_uri, str(artifacts.replay_path)]
+        if server.rstrip("/") != DEFAULT_SUBMIT_SERVER.rstrip("/"):
+            replay_command.extend(["--server", server])
+        typer.echo("Inspect replay: " + shlex.join(replay_command))
     typer.echo("Inspect logs: " + shlex.join(["ls", str(artifacts.logs_dir)]))
+
+
+def _uses_static_replay_viewer_bundle(result: object) -> bool:
+    package = getattr(result, "package", None)
+    if package is None:
+        session = getattr(result, "session", None)
+        package = getattr(session, "package", None) if session is not None else None
+    manifest = getattr(package, "manifest", None) if package is not None else None
+    game = getattr(manifest, "game", None) if manifest is not None else None
+    replay_viewer = getattr(game, "replay_viewer", None) if game is not None else None
+    return getattr(replay_viewer, "bundle", None) is not None
 
 
 def _print_play_session(session: PlaySession) -> None:

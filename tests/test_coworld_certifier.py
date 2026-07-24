@@ -1034,6 +1034,27 @@ def test_certify_coworld_records_transcript_steps(tmp_path: Path, monkeypatch: p
     assert result.transcript.name == "coworld-executable"
 
 
+def test_certify_coworld_skips_replay_server_for_static_viewer(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    coworld_manifest_path = _write_package_files(tmp_path)
+    manifest = json.loads(coworld_manifest_path.read_text(encoding="utf-8"))
+    manifest["game"]["replay_viewer"] = {"bundle": f"sha256:{'a' * 64}"}
+    coworld_manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
+    _stub_executable_pipeline(monkeypatch)
+
+    def fail_if_called(package, artifacts):
+        raise AssertionError("static replay viewers do not use the game replay server")
+
+    result = certify_coworld(
+        coworld_manifest_path,
+        workspace=tmp_path / "cert",
+        replay_loadable_checker=fail_if_called,
+    )
+
+    replay_step = next(step for step in result.step_results if step.id == "replay-loadable")
+    assert replay_step.status == "pass"
+    assert replay_step.feedback == "Static replay bundle declared; legacy replay routes are not required."
+
+
 def test_certify_coworld_announces_running_before_pass(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     coworld_manifest_path = _write_package_files(tmp_path)
     _stub_executable_pipeline(monkeypatch)

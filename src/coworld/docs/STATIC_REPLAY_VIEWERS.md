@@ -132,9 +132,10 @@ Before uploading a new Coworld version:
 | Build integration | Run `coworld build`; confirm the hook runs and the hydrated manifest points at the generated bundle |
 | Upload integration | Run `coworld upload-coworld`; confirm it finds that bundle and the stored manifest contains its digest |
 
-Run the browser test on both x86 and ARM when the viewer contains WASM or architecture-sensitive assets. During the
-current rollout, also retain and test the game image's legacy replay mode: local certification still probes
-`/client/replay` and `/replay`, while hosted Observatory prefers the declared static bundle.
+Run the browser test on both x86 and ARM when the viewer contains WASM or architecture-sensitive assets. When a static
+bundle is declared, `coworld certify` does not require the game image to expose the legacy `/client/replay` and
+`/replay` routes. Browser verification of the bundle is therefore the game author's evidence that its replay viewer
+works.
 
 ## Agent Handoff Checklist
 
