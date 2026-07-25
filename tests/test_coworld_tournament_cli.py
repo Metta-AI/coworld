@@ -1020,7 +1020,6 @@ def _episode_request(
         "participants": [
             {
                 "position": 0,
-                "kind": "policy",
                 "policy_version_id": policy_version_id,
                 "policy_id": policy_id,
                 "policy_name": policy_name,
@@ -1030,7 +1029,6 @@ def _episode_request(
             },
             {
                 "position": 1,
-                "kind": "policy",
                 "policy_version_id": OTHER_POLICY_VERSION_ID,
                 "policy_id": OTHER_POLICY_ID,
                 "policy_name": "otherbot",

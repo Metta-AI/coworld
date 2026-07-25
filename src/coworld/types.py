@@ -484,19 +484,6 @@ class CoworldManifest(BaseModel):
         return self
 
 
-class CoworldHumanPlayerSpec(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-
-    type: Literal["human"]
-    token: str = Field(
-        min_length=16,
-        description="Private runner-injected token used by the owning browser for this seat.",
-    )
-
-
-CoworldEpisodePlayerSpec = CoworldRunnableSpec | CoworldHumanPlayerSpec
-
-
 class CoworldEpisodeJobSpec(BaseModel):
     model_config = ConfigDict(
         extra="forbid",
@@ -511,18 +498,18 @@ class CoworldEpisodeJobSpec(BaseModel):
     schema_: str | None = Field(default=None, alias="$schema")
     manifest: CoworldManifest
     game_config: dict[str, Any]
-    players: list[CoworldEpisodePlayerSpec] = Field(min_length=1)
+    players: list[Annotated[CoworldRunnableSpec, Field(json_schema_extra=_runnable_type_schema("player"))]]
     episode_tags: dict[str, str] = Field(default_factory=dict)
 
     @field_validator("players", mode="after")
     @classmethod
-    def normalize_players(cls, players: list[CoworldEpisodePlayerSpec]) -> list[CoworldEpisodePlayerSpec]:
-        return [player.as_runnable_spec() if isinstance(player, CoworldRunnableSpec) else player for player in players]
+    def normalize_players(cls, players: list[CoworldRunnableSpec]) -> list[CoworldRunnableSpec]:
+        return [player.as_runnable_spec() for player in players]
 
     @model_validator(mode="after")
     def validate_player_types(self) -> "CoworldEpisodeJobSpec":
         for index, player in enumerate(self.players):
-            if isinstance(player, CoworldRunnableSpec) and player.type != "player":
+            if player.type != "player":
                 raise ValueError(f"players.{index}.type must be 'player'")
         return self
 

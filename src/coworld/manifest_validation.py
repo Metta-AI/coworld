@@ -39,7 +39,7 @@ def infer_token_count_for_game_config(
     length, and returns `None` when the manifest is variable-length and the
     caller must supply the seated roster size.
     """
-    min_items, max_items = token_count_bounds(config_schema)
+    min_items, max_items = _token_bounds(_token_array_schema(config_schema))
     players = game_config.get("players")
     if isinstance(players, list):
         player_count = len(players)
@@ -191,7 +191,7 @@ def _player_config_objects(value: Any, field_name: str) -> list[dict[str, Any]]:
 
 def validate_coworld_manifest_game_configs(manifest: CoworldManifest) -> None:
     _reject_legacy_name_config_schema(manifest.game.config_schema)
-    token_count_bounds(manifest.game.config_schema)
+    _token_bounds(_token_array_schema(manifest.game.config_schema))
     variant_ids: set[str] = set()
     for variant in manifest.variants:
         if variant.id in variant_ids:
@@ -216,12 +216,12 @@ def _placeholder_token_count(config_schema: JsonSchema, game_config: dict[str, A
     if isinstance(players, list):
         return len(players)
 
-    min_items, _max_items = token_count_bounds(config_schema)
+    tokens = _token_array_schema(config_schema)
+    min_items, _max_items = _token_bounds(tokens)
     return min_items
 
 
-def token_count_bounds(config_schema: JsonSchema) -> tuple[int, int]:
-    tokens = _token_array_schema(config_schema)
+def _token_bounds(tokens: dict[str, Any]) -> tuple[int, int]:
     min_items = tokens.get("minItems")
     max_items = tokens.get("maxItems")
     if not isinstance(min_items, int) or not isinstance(max_items, int):

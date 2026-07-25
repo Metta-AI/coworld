@@ -11,7 +11,7 @@ import time
 import zipfile
 from io import BytesIO
 from pathlib import Path
-from typing import Mapping, cast
+from typing import Mapping
 
 import httpx
 from kubernetes import client, config
@@ -29,7 +29,7 @@ from coworld.runner.bedrock_sidecar_wiring import (
     build_bedrock_sidecar,
     resolve_image_attribution_key,
 )
-from coworld.runner.io import RunnerEpisodeError, RunnerError, RunnerErrorType, read_data, upload_data
+from coworld.runner.io import RunnerEpisodeError, RunnerError, read_data, upload_data
 from coworld.runner.phase_timings import EpisodePhaseTimings
 from coworld.runner.runner import (
     EpisodeArtifacts,
@@ -40,12 +40,12 @@ from coworld.runner.runner import (
     _require_http_ok,
     _validate_results_file,
     coworld_game_config,
-    episode_player_tokens,
+    generate_tokens,
 )
 from coworld.runner.runner import (
     _player_query as _episode_player_query,
 )
-from coworld.types import CoworldEpisodeJobSpec, CoworldHumanPlayerSpec
+from coworld.types import CoworldEpisodeJobSpec
 
 WORKDIR = Path(os.environ.get("COWORLD_WORKDIR", "/coworld"))
 STATE_PATH = WORKDIR / "state.json"
@@ -85,22 +85,6 @@ _PLAYER_THREAD_POOL_ENV_VARS = (
     "OPENBLAS_NUM_THREADS",
     "NUMEXPR_NUM_THREADS",
 )
-_WAIT_FOR_GAME_SERVICE_SCRIPT = """
-import os
-import socket
-import time
-
-deadline = time.monotonic() + float(os.environ["COWORLD_GAME_WAIT_TIMEOUT_SECONDS"])
-host = os.environ["COWORLD_GAME_HOST"]
-port = int(os.environ["COWORLD_GAME_PORT"])
-while time.monotonic() < deadline:
-    with socket.socket() as connection:
-        connection.settimeout(1)
-        if connection.connect_ex((host, port)) == 0:
-            raise SystemExit(0)
-    time.sleep(0.5)
-raise SystemExit(f"Timed out waiting for {host}:{port}")
-""".strip()
 
 
 def _player_thread_pool_env(cpu_limit: str) -> dict[str, str]:
@@ -134,7 +118,7 @@ def _start_worker_health_server(port: int) -> None:
 
 def init_config_from_env() -> None:
     job = _read_job_spec()
-    tokens = episode_player_tokens(job)
+    tokens = generate_tokens(len(job.players))
     upload_data(
         os.environ["COGAME_CONFIG_URI"],
         json.dumps(coworld_game_config(job, tokens), indent=2),
@@ -175,7 +159,7 @@ def _write_error_info(exc: Exception) -> None:
         return
     if isinstance(exc, RunnerEpisodeError):
         runner_error = RunnerError(
-            error_type=cast(RunnerErrorType, exc.error_type),
+            error_type=exc.error_type,
             message=str(exc)[:2000],
             failed_policy_index=exc.failed_policy_index,
         )
@@ -252,11 +236,7 @@ def _run_kubernetes_episode(
     pod_name = os.environ["POD_NAME"]
     owner_references = _owner_references()
     tokens = json.loads(STATE_PATH.read_text(encoding="utf-8"))["tokens"]
-    policy_players = [
-        (slot, PlayerLaunchSpec.from_model(player))
-        for slot, player in enumerate(job.players)
-        if not isinstance(player, CoworldHumanPlayerSpec)
-    ]
+    players = [PlayerLaunchSpec.from_model(player) for player in job.players]
     policy_secrets = _policy_secrets_from_env()
     player_cpu_request = os.environ.get("COWORLD_PLAYER_CPU_REQUEST", DEFAULT_PLAYER_CPU_REQUEST)
     player_memory_request = os.environ.get("COWORLD_PLAYER_MEMORY_REQUEST", DEFAULT_PLAYER_MEMORY_REQUEST)
@@ -269,12 +249,12 @@ def _run_kubernetes_episode(
         _create_game_service(core_v1, namespace, service_name, job_id, owner_references)
         _wait_for_health(core_v1, namespace, pod_name, timeout_seconds=timeout_seconds)
         game_ready = time.monotonic()
-        if job.players:
+        if players:
             _require_http_ok(_player_client_url(0, tokens[0]))
             asyncio.run(_require_bad_player_rejected(f"ws://127.0.0.1:{GAME_PORT}/player?slot=0&token=bad"))
         _require_http_ok(f"http://127.0.0.1:{GAME_PORT}/client/global")
 
-        for slot, player in policy_players:
+        for slot, player in enumerate(players):
             name = f"{service_name}-player-{slot}"
             child_names.append(name)
             _create_player_pod(
@@ -308,7 +288,6 @@ def _run_kubernetes_episode(
             namespace,
             pod_name,
             child_names,
-            player_count=len(job.players),
             timeout_seconds=timeout_seconds,
             require_replay=os.environ.get("REPLAY_URI") is not None,
         )
@@ -422,8 +401,8 @@ def _create_player_pod(
             for key, value in player_env.items()
             if key not in _DIRECT_BEDROCK_APP_ENV and key not in RESERVED_SIDECAR_APP_ENV
         }
-        endpoint_env: dict[str, str] = {
-            cast(str, ev.name): cast(str, ev.value)
+        endpoint_env = {
+            ev.name: ev.value
             for ev in bedrock_app_endpoint_env(bedrock_sidecar_port, os.environ["COWORLD_BEDROCK_REGION"])
         }
         player_env = player_env | {"USE_BEDROCK": "true"} | endpoint_env
@@ -469,40 +448,16 @@ def _create_player_pod(
             ),
         )
     ]
-    # The game is healthy on loopback before this pod is created, but Kubernetes service
-    # endpoints can lag that signal. Do not start a one-shot player until the service path
-    # it will actually use is reachable.
-    init_containers = [
-        client.V1Container(
-            name="wait-for-game-service",
-            image=os.environ["COWORLD_COORDINATOR_IMAGE"],
-            image_pull_policy="IfNotPresent",
-            command=["python", "-c", _WAIT_FOR_GAME_SERVICE_SCRIPT],
-            env=[
-                client.V1EnvVar(
-                    name="COWORLD_GAME_HOST",
-                    value=service_name,
-                ),
-                client.V1EnvVar(
-                    name="COWORLD_GAME_PORT",
-                    value=str(GAME_PORT),
-                ),
-                client.V1EnvVar(
-                    name="COWORLD_GAME_WAIT_TIMEOUT_SECONDS",
-                    value=os.environ["COWORLD_TIMEOUT_SECONDS"],
-                ),
-            ],
-        )
-    ]
     # Native sidecar: an initContainer with restartPolicy=Always, NOT a regular container —
     # a regular container running the long-lived proxy would keep this restartPolicy=Never pod
     # Running after the player exits instead of letting it reach a terminal phase.
+    init_containers: list[client.V1Container] | None = None
     if bedrock_sidecar_enabled:
         # Skip the player app AND the sidecar: the sidecar self-provides its full IRSA env, so
         # the webhook must not also inject a conflicting token path.
         pod_annotations["eks.amazonaws.com/skip-containers"] = f"player,{BEDROCK_SIDECAR_CONTAINER_NAME}"
         pod_volumes = [bedrock_sidecar_token_volume()]
-        init_containers.append(
+        init_containers = [
             build_bedrock_sidecar(
                 attribution=BedrockSidecarAttribution(
                     image_digest=resolve_image_attribution_key(player.image),
@@ -529,7 +484,7 @@ def _create_player_pod(
                 # the sidecar meters spend with the same rates the server reports.
                 pricing_json=os.environ.get("BEDROCK_SIDECAR_PRICING_JSON") or None,
             )
-        )
+        ]
     pod = client.V1Pod(
         metadata=client.V1ObjectMeta(
             name=name,
@@ -618,14 +573,14 @@ def _wait_for_episode_artifacts(
     *,
     timeout_seconds: float,
     require_replay: bool,
-    player_count: int | None = None,
 ) -> None:
     # The game owns whether a player failure ends an episode. Required output artifacts
     # win; otherwise a game may publish a typed terminal failure through player_failure.json.
     # Player pod state remains a timeout fallback for games that do not make that choice.
     deadline = time.monotonic() + timeout_seconds
     expected = (artifacts.results_path, artifacts.replay_path) if require_replay else (artifacts.results_path,)
-    player_count = player_count if player_count is not None else len(player_pod_names or ())
+    player_count = len(player_pod_names or ())
+
     while time.monotonic() < deadline:
         missing = [path for path in expected if not path.exists()]
 
@@ -667,11 +622,6 @@ def _wait_for_episode_artifacts(
     )
 
 
-def _player_pod_slot(player_pod_name: str, fallback: int) -> int:
-    suffix = player_pod_name.rpartition("-player-")[2]
-    return int(suffix) if suffix.isdigit() else fallback
-
-
 def _raise_if_no_players_started(core_v1, namespace: str, player_pod_names: tuple[str, ...] | list[str]) -> None:
     """Fail a degenerate episode where the game wrote results but no player ever joined.
 
@@ -685,8 +635,7 @@ def _raise_if_no_players_started(core_v1, namespace: str, player_pod_names: tupl
     if not player_pod_names:
         return
     waiting_reasons: list[str] = []
-    for index, player_pod_name in enumerate(player_pod_names):
-        slot = _player_pod_slot(player_pod_name, index)
+    for slot, player_pod_name in enumerate(player_pod_names):
         try:
             player_pod = core_v1.read_namespaced_pod(name=player_pod_name, namespace=namespace)
         except ApiException as exc:
@@ -716,8 +665,7 @@ def _player_waiting_reason(pod) -> str | None:
 
 
 def _raise_if_player_pod_failed(core_v1, namespace: str, player_pod_names: tuple[str, ...] | list[str]) -> None:
-    for index, player_pod_name in enumerate(player_pod_names):
-        slot = _player_pod_slot(player_pod_name, index)
+    for slot, player_pod_name in enumerate(player_pod_names):
         try:
             player_pod = core_v1.read_namespaced_pod(name=player_pod_name, namespace=namespace)
         except ApiException as exc:
@@ -775,8 +723,7 @@ def _collect_logs(
     game_log = _read_pod_log(core_v1, namespace, pod_name, "game")
     if game_log is not None:
         artifacts.game_stdout_path.write_text(game_log, encoding="utf-8")
-    for index, player_pod_name in enumerate(player_pod_names):
-        slot = _player_pod_slot(player_pod_name, index)
+    for slot, player_pod_name in enumerate(player_pod_names):
         try:
             player_pod = core_v1.read_namespaced_pod(name=player_pod_name, namespace=namespace)
         except ApiException as exc:

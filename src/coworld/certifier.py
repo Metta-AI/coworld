@@ -59,7 +59,6 @@ from coworld.schema_validation import (
 )
 from coworld.types import (
     CoworldEpisodeJobSpec,
-    CoworldEpisodePlayerSpec,
     CoworldManifest,
     CoworldProtocolDocs,
     CoworldReporterPlatformReference,
@@ -389,15 +388,13 @@ def build_manifest_episode_job_spec(
     return CoworldEpisodeJobSpec(
         manifest=package.manifest.model_copy(deep=True),
         game_config=game_config,
-        players=cast(list[CoworldEpisodePlayerSpec], players),
+        players=players,
     )
 
 
 def build_player_launch_specs(episode_request: JsonObject) -> list[PlayerLaunchSpec]:
     job_spec = build_coworld_episode_job_spec(episode_request)
-    return [
-        PlayerLaunchSpec.from_model(player) for player in job_spec.players if isinstance(player, CoworldRunnableSpec)
-    ]
+    return [PlayerLaunchSpec.from_model(player) for player in job_spec.players]
 
 
 def build_coworld_episode_job_spec(episode_request: JsonObject) -> CoworldEpisodeJobSpec:
@@ -629,14 +626,12 @@ def _run_local_certifier_episode(
     artifacts: EpisodeArtifacts,
     timeout_seconds: float,
 ) -> None:
-    assert all(isinstance(player, CoworldRunnableSpec) for player in job.players)
-    players = cast(list[CoworldRunnableSpec], job.players)
     tokens = generate_tokens(len(job.players))
     game_config = game_config_with_tokens(job.game_config, tokens)
     artifacts.config_path.write_text(json.dumps(game_config, indent=2), encoding="utf-8")
     run_spec = EpisodeRunSpec(
         game=RunnableLaunchSpec.from_model(job.game_runnable),
-        players=[PlayerLaunchSpec.from_model(player) for player in players],
+        players=[PlayerLaunchSpec.from_model(player) for player in job.players],
         tokens=tokens,
         artifacts=artifacts,
         timeout_seconds=timeout_seconds,

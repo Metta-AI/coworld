@@ -54,7 +54,7 @@ from coworld.runner.runner import (
     replay_session_path,
 )
 from coworld.schema_validation import validate_json_schema
-from coworld.types import CoworldEpisodeJobSpec, CoworldManifest, CoworldRunnableSpec, SourceUrlResult, TranscriptStep
+from coworld.types import CoworldEpisodeJobSpec, CoworldManifest, SourceUrlResult, TranscriptStep
 
 CANONICAL_ENGINE_RUNTIMES = ("mettagrid", "cogweb", "bitworld", "nimgrid")
 
@@ -1490,12 +1490,10 @@ def test_build_manifest_episode_job_spec_deep_copies_config_and_player_env(tmp_p
     package = load_coworld_package(coworld_manifest_path)
 
     spec = build_manifest_episode_job_spec(package)
-    assert isinstance(spec.players[0], CoworldRunnableSpec)
     spec.game_config["players"][0]["name"] = "mutated"
     spec.players[0].env["PLAYER_MODE"] = "mutated"
 
     next_spec = build_manifest_episode_job_spec(package)
-    assert isinstance(next_spec.players[0], CoworldRunnableSpec)
     assert next_spec.game_config["players"][0]["name"] == "one"
     assert next_spec.players[0].env == {"PLAYER_MODE": "test"}
 
@@ -1523,7 +1521,6 @@ def test_load_manifest_episode_job_spec_uses_request_file(tmp_path: Path) -> Non
     )
 
     spec = load_manifest_episode_job_spec(package, request_path)
-    assert isinstance(spec.players[0], CoworldRunnableSpec)
 
     assert spec.game_config == {"difficulty": "request"}
     assert spec.players[0].image == "request-player:latest"
@@ -1542,7 +1539,7 @@ def test_episode_request_allows_no_runner_managed_players() -> None:
     episode_request = {
         "manifest": _coworld_manifest(),
         "game_config": {"difficulty": "easy", "players": []},
-        "players": [{"type": "human", "token": "human-player-token"}],
+        "players": [],
     }
 
     CoworldEpisodeJobSpec.model_validate(episode_request)

@@ -206,25 +206,6 @@
       "title": "CoworldGameManifest",
       "type": "object"
     },
-    "CoworldHumanPlayerSpec": {
-      "additionalProperties": false,
-      "properties": {
-        "type": {
-          "const": "human",
-          "title": "Type",
-          "type": "string"
-        },
-        "token": {
-          "description": "Private runner-injected token used by the owning browser for this seat.",
-          "minLength": 16,
-          "title": "Token",
-          "type": "string"
-        }
-      },
-      "required": ["type", "token"],
-      "title": "CoworldHumanPlayerSpec",
-      "type": "object"
-    },
     "CoworldManifest": {
       "$schema": "https://json-schema.org/draft/2020-12/schema",
       "additionalProperties": false,
@@ -878,16 +859,13 @@
     },
     "players": {
       "items": {
-        "anyOf": [
-          {
-            "$ref": "#/$defs/CoworldRunnableSpec"
-          },
-          {
-            "$ref": "#/$defs/CoworldHumanPlayerSpec"
+        "$ref": "#/$defs/CoworldRunnableSpec",
+        "properties": {
+          "type": {
+            "const": "player"
           }
-        ]
+        }
       },
-      "minItems": 1,
       "title": "Players",
       "type": "array"
     },

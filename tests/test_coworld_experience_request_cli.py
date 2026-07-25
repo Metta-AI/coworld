@@ -30,7 +30,6 @@ def _episode_request() -> dict[str, object]:
         "participants": [
             {
                 "position": 0,
-                "kind": "policy",
                 "policy_version_id": POLICY_VERSION_ID,
                 "policy_id": POLICY_ID,
                 "policy_name": "paintbot",

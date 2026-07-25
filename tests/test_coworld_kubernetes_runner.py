@@ -3,14 +3,11 @@ import json
 import os
 import socket
 import subprocess
-import sys
-import threading
-import time
 import zipfile
 from io import BytesIO
 from pathlib import Path
 from types import SimpleNamespace
-from typing import Any, cast
+from typing import Any
 
 import pytest
 from kubernetes.client import Configuration
@@ -32,13 +29,6 @@ from coworld.runner.kubernetes_runner import (
 )
 from coworld.runner.phase_timings import EpisodePhaseTimings
 from coworld.runner.runner import EpisodeArtifacts, EpisodeRunSpec, PlayerLaunchSpec, RunnableLaunchSpec
-from coworld.types import CoworldEpisodeJobSpec, CoworldHumanPlayerSpec
-
-
-@pytest.fixture(autouse=True)
-def _player_service_wait_env(monkeypatch):
-    monkeypatch.setenv("COWORLD_COORDINATOR_IMAGE", "coworld-coordinator:latest")
-    monkeypatch.setenv("COWORLD_TIMEOUT_SECONDS", "60")
 
 
 def test_load_incluster_config_sets_retries_without_rewriting_auth(monkeypatch):
@@ -62,10 +52,8 @@ def test_load_incluster_config_sets_retries_without_rewriting_auth(monkeypatch):
     assert load_calls == [True]
     assert saved == [loaded]
     # Retries set for 429 backoff...
-    retries = loaded.retries
-    assert retries is not None
-    assert 429 in retries.status_forcelist
-    assert retries.respect_retry_after_header is True
+    assert 429 in loaded.retries.status_forcelist
+    assert loaded.retries.respect_retry_after_header is True
     # ...but the auth fields the refresh hook manages are untouched.
     assert loaded.api_key == {"BearerToken": "sa-token"}
     assert loaded.api_key_prefix == {"BearerToken": "Bearer"}
@@ -448,9 +436,7 @@ def test_run_episode_containers_adds_fixed_extra_local_ports(tmp_path, monkeypat
     ]
     assert _env_value(game_command, "COWORLD_LOCAL_PORT_3724") == "127.0.0.1:3724"
     assert _env_value(game_command, "COWORLD_LOCAL_PORT_8085") == "127.0.0.1:8085"
-    local_ports = _env_value(game_command, runner_module.LOCAL_PORTS_JSON_ENV_VAR)
-    assert local_ports is not None
-    assert json.loads(local_ports) == {
+    assert json.loads(_env_value(game_command, runner_module.LOCAL_PORTS_JSON_ENV_VAR)) == {
         "3724": {"host": "127.0.0.1", "port": 3724},
         "8085": {"host": "127.0.0.1", "port": 8085},
     }
@@ -1183,8 +1169,8 @@ def test_run_kubernetes_episode_defaults_player_resource_requests(monkeypatch, t
     artifacts = EpisodeArtifacts.create(tmp_path)
     artifacts.results_path.write_text("{}", encoding="utf-8")
     state_path = tmp_path / "state.json"
-    state_path.write_text(json.dumps({"tokens": ["human-token", "policy-token"]}), encoding="utf-8")
-    created: list[tuple[int, str, str, str]] = []
+    state_path.write_text(json.dumps({"tokens": ["slot-token"]}), encoding="utf-8")
+    created: list[tuple[str, str]] = []
 
     async def noop_async(*_args, **_kwargs):
         return None
@@ -1215,7 +1201,7 @@ def test_run_kubernetes_episode_defaults_player_resource_requests(monkeypatch, t
         _core_v1,
         _namespace,
         _name,
-        slot,
+        _slot,
         _token,
         _player,
         _policy_secret_env,
@@ -1226,27 +1212,21 @@ def test_run_kubernetes_episode_defaults_player_resource_requests(monkeypatch, t
         player_cpu_limit,
         _owner_references,
     ):
-        created.append((slot, player_cpu_request, player_memory_request, player_cpu_limit))
+        created.append((player_cpu_request, player_memory_request, player_cpu_limit))
 
     monkeypatch.setattr(kubernetes_runner, "_create_player_pod", create_player_pod)
-    job = cast(
-        CoworldEpisodeJobSpec,
-        SimpleNamespace(
-            players=[
-                CoworldHumanPlayerSpec(type="human", token="private-browser-seat-token"),
-                SimpleNamespace(image="paintbot:latest", run=[], env={}),
-            ],
-            results_schema={},
-        ),
+    job = SimpleNamespace(
+        players=[SimpleNamespace(image="paintbot:latest", run=[], env={})],
+        results_schema={},
     )
 
     kubernetes_runner._run_kubernetes_episode(job, artifacts, timeout_seconds=1.0)
 
-    assert created == [(1, "2", "2Gi", "")]
+    assert created == [("2", "2Gi", "")]
 
 
 def test_create_player_pod_injects_policy_secret_env(monkeypatch):
-    created: dict[str, Any] = {}
+    created: dict[str, object] = {}
     core_v1 = SimpleNamespace(
         create_namespaced_pod=lambda *, namespace, body: created.update({"namespace": namespace, "body": body})
     )
@@ -1308,50 +1288,10 @@ def test_create_player_pod_injects_policy_secret_env(monkeypatch):
     assert pod.spec.service_account_name == "episode-runner"
     assert pod.spec.volumes is None
     assert pod.spec.automount_service_account_token is None
-    wait_for_game = pod.spec.init_containers[0]
-    assert wait_for_game.name == "wait-for-game-service"
-    assert wait_for_game.image == "coworld-coordinator:latest"
-    wait_env = {env_var.name: env_var.value for env_var in wait_for_game.env}
-    assert wait_env == {
-        "COWORLD_GAME_HOST": "game-service",
-        "COWORLD_GAME_PORT": "8080",
-        "COWORLD_GAME_WAIT_TIMEOUT_SECONDS": "60",
-    }
-
-
-def test_player_service_gate_waits_for_delayed_endpoint():
-    listener = socket.socket()
-    listener.bind(("127.0.0.1", 0))
-    port = listener.getsockname()[1]
-
-    def make_service_ready() -> None:
-        time.sleep(0.1)
-        listener.listen()
-        connection, _ = listener.accept()
-        connection.close()
-        listener.close()
-
-    thread = threading.Thread(target=make_service_ready, daemon=True)
-    thread.start()
-    completed = subprocess.run(
-        [sys.executable, "-c", kubernetes_runner._WAIT_FOR_GAME_SERVICE_SCRIPT],
-        env={
-            **os.environ,
-            "COWORLD_GAME_HOST": "127.0.0.1",
-            "COWORLD_GAME_PORT": str(port),
-            "COWORLD_GAME_WAIT_TIMEOUT_SECONDS": "2",
-        },
-        check=False,
-        timeout=3,
-    )
-    thread.join(timeout=1)
-
-    assert completed.returncode == 0
-    assert not thread.is_alive()
 
 
 def test_create_player_pod_applies_cpu_limit_and_pins_thread_pools(monkeypatch):
-    created: dict[str, Any] = {}
+    created: dict[str, object] = {}
     core_v1 = SimpleNamespace(create_namespaced_pod=lambda *, namespace, body: created.update({"body": body}))
     monkeypatch.delenv("BEDROCK_SIDECAR_ENABLED", raising=False)
     # An author who pins their own thread count keeps it; the limit only fills the unset knobs.
@@ -1374,7 +1314,7 @@ def test_create_player_pod_applies_cpu_limit_and_pins_thread_pools(monkeypatch):
 
 
 def test_create_player_pod_without_cpu_limit_omits_limit_and_thread_env(monkeypatch):
-    created: dict[str, Any] = {}
+    created: dict[str, object] = {}
     core_v1 = SimpleNamespace(create_namespaced_pod=lambda *, namespace, body: created.update({"body": body}))
     monkeypatch.delenv("BEDROCK_SIDECAR_ENABLED", raising=False)
     player = PlayerLaunchSpec(image="paintbot:latest", run=(), env={})
@@ -1392,7 +1332,7 @@ def test_create_player_pod_without_cpu_limit_omits_limit_and_thread_env(monkeypa
 
 
 def test_create_player_pod_with_bedrock_sidecar_inverts_bedrock_access(monkeypatch):
-    created: dict[str, Any] = {}
+    created: dict[str, object] = {}
     core_v1 = SimpleNamespace(create_namespaced_pod=lambda *, namespace, body: created.update({"body": body}))
     monkeypatch.setenv("COWORLD_BEDROCK_REGION", "us-west-2")
     monkeypatch.setenv("BEDROCK_SIDECAR_ENABLED", "true")
@@ -1451,12 +1391,9 @@ def test_create_player_pod_with_bedrock_sidecar_inverts_bedrock_access(monkeypat
     # The player app is the only regular container; the sidecar is a native sidecar
     # (initContainer with restartPolicy=Always) so the restartPolicy=Never pod can still finish.
     assert [container.name for container in pod.spec.containers] == ["player"]
-    assert [c.name for c in pod.spec.init_containers] == [
-        "wait-for-game-service",
-        BEDROCK_SIDECAR_CONTAINER_NAME,
-    ]
+    assert [c.name for c in pod.spec.init_containers] == [BEDROCK_SIDECAR_CONTAINER_NAME]
     player_container: Any = pod.spec.containers[0]
-    sidecar: Any = pod.spec.init_containers[1]
+    sidecar: Any = pod.spec.init_containers[0]
     assert sidecar.restart_policy == "Always"
 
     env = {env_var.name: env_var.value for env_var in player_container.env}
@@ -1508,7 +1445,7 @@ def test_create_player_pod_with_bedrock_sidecar_inverts_bedrock_access(monkeypat
 def test_create_player_pod_sidecar_forwards_completion_s3_env(monkeypatch):
     """When the dispatcher forwards the S3 completions env into the worker, the player
     sidecar carries it (so player-side Bedrock latency lands in S3) plus a POD_NAME field-ref."""
-    created: dict[str, Any] = {}
+    created: dict[str, object] = {}
     core_v1 = SimpleNamespace(create_namespaced_pod=lambda *, namespace, body: created.update({"body": body}))
     monkeypatch.setenv("COWORLD_BEDROCK_REGION", "us-west-2")
     monkeypatch.setenv("BEDROCK_SIDECAR_ENABLED", "true")
@@ -1537,11 +1474,7 @@ def test_create_player_pod_sidecar_forwards_completion_s3_env(monkeypatch):
         [],
     )
 
-    sidecar: Any = next(
-        container
-        for container in created["body"].spec.init_containers
-        if container.name == BEDROCK_SIDECAR_CONTAINER_NAME
-    )
+    sidecar: Any = created["body"].spec.init_containers[0]
     sidecar_values = {env_var.name: env_var.value for env_var in sidecar.env}
     assert sidecar_values["BEDROCK_SIDECAR_COMPLETIONS_BUCKET"] == "softmax-bedrock-logs-583928386201"
     assert sidecar_values["BEDROCK_SIDECAR_COMPLETIONS_PREFIX"] == "sidecar-completions"
@@ -1552,7 +1485,7 @@ def test_create_player_pod_sidecar_forwards_completion_s3_env(monkeypatch):
 
 
 def test_create_player_pod_forwards_artifact_upload_url_for_its_slot(monkeypatch):
-    created: dict[str, Any] = {}
+    created: dict[str, object] = {}
     core_v1 = SimpleNamespace(create_namespaced_pod=lambda *, namespace, body: created.update({"body": body}))
     monkeypatch.setenv(
         "PLAYER_ARTIFACT_UPLOAD_URLS",
@@ -1581,7 +1514,7 @@ def test_create_player_pod_forwards_artifact_upload_url_for_its_slot(monkeypatch
 
 
 def test_create_player_pod_tags_bedrock_request_metadata_with_slot(monkeypatch):
-    created: dict[str, Any] = {}
+    created: dict[str, object] = {}
     core_v1 = SimpleNamespace(create_namespaced_pod=lambda *, namespace, body: created.update({"body": body}))
     monkeypatch.setenv(
         "BEDROCK_REQUEST_METADATA",
@@ -1604,7 +1537,7 @@ def test_create_player_pod_tags_bedrock_request_metadata_with_slot(monkeypatch):
 
 
 def test_create_player_pod_omits_bedrock_request_metadata_when_unset(monkeypatch):
-    created: dict[str, Any] = {}
+    created: dict[str, object] = {}
     core_v1 = SimpleNamespace(create_namespaced_pod=lambda *, namespace, body: created.update({"body": body}))
     monkeypatch.delenv("BEDROCK_REQUEST_METADATA", raising=False)
     player = PlayerLaunchSpec(image="paintbot:latest", run=(), env={})
@@ -1689,7 +1622,7 @@ def test_write_error_info_uses_typed_episode_error(monkeypatch, tmp_path):
 
 
 def test_create_player_pod_keeps_default_service_account_without_bedrock():
-    created: dict[str, Any] = {}
+    created: dict[str, object] = {}
     core_v1 = SimpleNamespace(
         create_namespaced_pod=lambda *, namespace, body: created.update({"namespace": namespace, "body": body})
     )
