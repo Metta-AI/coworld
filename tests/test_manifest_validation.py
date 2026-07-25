@@ -5,6 +5,7 @@ from coworld.manifest_validation import (
     game_config_with_named_players,
     game_config_with_overwritten_named_players,
     infer_token_count_for_game_config,
+    token_count_bounds,
     validate_authored_game_config,
     validate_coworld_manifest_game_configs,
 )
@@ -213,6 +214,7 @@ def test_infer_token_count_returns_none_for_variable_tokens_without_players() ->
     game_config = {"seed": 1, "maxGames": 1, "maxTicks": 1200}
 
     assert infer_token_count_for_game_config(schema, game_config) is None
+    assert token_count_bounds(schema) == (0, 9)
 
 
 def test_validate_manifest_requires_token_bounds() -> None:

@@ -26,7 +26,7 @@ from websockets.exceptions import ConnectionClosed, InvalidHandshake, InvalidSta
 
 from coworld.runner.io import GamePlayerFailure, RunnerEpisodeError, RunnerErrorType
 from coworld.schema_validation import validate_json_schema
-from coworld.types import CoworldEpisodeJobSpec, CoworldRunnableSpec
+from coworld.types import CoworldEpisodeJobSpec, CoworldHumanPlayerSpec, CoworldRunnableSpec
 
 CONTAINER_WORKDIR = "/coworld"
 CONFIG_ENV_VAR = "COGAME_CONFIG_URI"
@@ -240,6 +240,8 @@ def assert_episode_images_reachable(job: CoworldEpisodeJobSpec, *, require_linux
         )
     ]
     for slot, player in enumerate(job.players):
+        if isinstance(player, CoworldHumanPlayerSpec):
+            continue
         image_platforms.append(
             (
                 player.image,
@@ -283,13 +285,19 @@ def run_coworld_episode(
     container_prefix: str = LOCAL_EPISODE_CONTAINER_PREFIX,
     secret_env: Mapping[str, str] | None = None,
 ) -> None:
+    if any(isinstance(player, CoworldHumanPlayerSpec) for player in job.players):
+        raise ValueError("Human player seats require the hosted Kubernetes episode runner")
     assert_episode_images_reachable(job)
     tokens = generate_tokens(len(job.players))
     write_coworld_game_config(job, artifacts, tokens)
 
     run_spec = EpisodeRunSpec(
         game=RunnableLaunchSpec.from_model(job.game_runnable),
-        players=[PlayerLaunchSpec.from_model(player) for player in job.players],
+        players=[
+            PlayerLaunchSpec.from_model(player)
+            for player in job.players
+            if not isinstance(player, CoworldHumanPlayerSpec)
+        ],
         tokens=tokens,
         artifacts=artifacts,
         timeout_seconds=timeout_seconds,
@@ -308,6 +316,14 @@ def run_coworld_episode(
 
 def generate_tokens(player_count: int) -> list[str]:
     return [secrets.token_urlsafe(16) for _ in range(player_count)]
+
+
+def episode_player_tokens(job: CoworldEpisodeJobSpec) -> list[str]:
+    tokens = generate_tokens(len(job.players))
+    for slot, player in enumerate(job.players):
+        if isinstance(player, CoworldHumanPlayerSpec):
+            tokens[slot] = player.token
+    return tokens
 
 
 def coworld_game_config(job: CoworldEpisodeJobSpec, tokens: list[str]) -> dict[str, object]:

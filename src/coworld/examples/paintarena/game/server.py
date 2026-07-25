@@ -140,6 +140,7 @@ class GameState:
         self.tick = 0
         self.started = False
         self.done = False
+        self.end_requested = False
         self.paused = False
         self.tick_rate = float(TICK_RATE)
 
@@ -208,6 +209,12 @@ async def admin(websocket: WebSocket) -> None:
         await websocket.send_json(_snapshot())
 
 
+@app.post("/control/end")
+async def end_game() -> dict[str, bool]:
+    state.end_requested = True
+    return {"ending": True}
+
+
 @app.websocket("/replay")
 async def replay_viewer(websocket: WebSocket) -> None:
     await websocket.accept()
@@ -250,7 +257,7 @@ async def _start_after_player_connect_timeout() -> None:
 
 async def _play_game() -> None:
     await asyncio.sleep(0.5)
-    while state.tick < MAX_TICKS:
+    while state.tick < MAX_TICKS and not state.end_requested:
         if state.paused:
             await asyncio.sleep(0.1)
             continue

@@ -240,6 +240,7 @@
   socket = new WebSocket(websocketUrl)
   socket.onopen = () => {
     status.textContent = 'Connected'
+    sendMove('stay')
   }
   socket.onmessage = (event) => {
     const message = JSON.parse(event.data)
