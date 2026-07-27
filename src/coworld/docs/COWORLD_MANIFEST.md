@@ -257,16 +257,33 @@ mechanics; see [`COWORLD_MECHANICS.md`](../../../../../app_backend/src/metta/app
 
 ## Validation And Regeneration
 
+Manifest author schemas are versioned by `apiVersion`. Existing unversioned manifests are v0; first-party writers
+continue emitting v0 until a separate writer-activation change. The backend accepts v1, whose only new field is
+`"apiVersion": "coworld.softmax.com/v1"`, and converts both versions to a canonical runtime model.
+
+For any schema change, the schema author must do all of the following in one place:
+
+1. Change the active version's Pydantic reader, or add a new versioned reader for a breaking or semantically uncertain
+   change.
+2. Append one entry to that version's `manifest/v*/declarations.yaml`.
+3. Add the declaration's changed-surface fixture under `tests/manifest_versions/v*/`.
+4. Update the version's real `to_runtime()` converter if runtime semantics changed.
+5. Regenerate all checked-in schemas and run the checker against a fetched `origin/main`.
+
 The normal validation path is:
 
 ```bash
 uv run --project packages/coworld python packages/coworld/scripts/generate_coworld_schemas.py
+uv run coworld manifest-schema check --against origin/main
+uv run metta pytest packages/coworld/tests/test_manifest_versions.py packages/coworld/tests/test_manifest_schema_check.py
 uv run --project packages/coworld pytest packages/coworld/tests/test_types.py
 ```
 
 The first command regenerates:
 
 - `packages/coworld/src/coworld/coworld_manifest_schema.json`
+- `packages/coworld/src/coworld/manifest/v0/schema.json`
+- `packages/coworld/src/coworld/manifest/v1/schema.json`
 - `packages/coworld/src/coworld/runner/episode_request_schema.json`
 
 The tests validate important schema behavior and include a guard that every generated manifest-model field carries a

@@ -32,6 +32,7 @@ from coworld.deploy_audit import (
     format_deploy_audit_markdown,
     github_token_from_env,
 )
+from coworld.manifest.schema_check import check_manifest_schema
 from coworld.manifest_uri import materialized_manifest_path, materialized_replay_path
 from coworld.optimizer.runtime import OptimizerSetupError, run_optimizer_session
 from coworld.play import PlaySession, ReplaySession, _resolve_bedrock_aws_env, play_coworld, replay_coworld
@@ -61,6 +62,20 @@ app = typer.Typer(no_args_is_help=True, pretty_exceptions_enable=False)
 register_tournament_commands(app)
 hosted_game_app = typer.Typer(no_args_is_help=True, help="Create and join hosted Coworld games.")
 app.add_typer(hosted_game_app, name="hosted-game")
+manifest_schema_app = typer.Typer(no_args_is_help=True, help="Check versioned Coworld manifest schemas.")
+app.add_typer(manifest_schema_app, name="manifest-schema")
+
+
+@manifest_schema_app.command("check")
+def manifest_schema_check(
+    against: Annotated[str, typer.Option(help="Git ref containing the base schema.")] = "origin/main",
+) -> None:
+    failures = check_manifest_schema(against)
+    if failures:
+        for failure in failures:
+            typer.echo(f"error: {failure}", err=True)
+        raise typer.Exit(1)
+    typer.echo(f"Coworld manifest schema declarations are valid against {against}.")
 
 
 class _DockerCommand(TyperCommand):

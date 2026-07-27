@@ -1,0 +1,4 @@
+- schema_hash: d777cbdd538ed03d584db4ddc115445d8281eebecffa5afd935c48021a898b60
+  kind: initial
+  summary: Existing unversioned Coworld manifest contract, now named v0.
+  fixture: packages/coworld/tests/manifest_versions/v0/minimal_manifest.json

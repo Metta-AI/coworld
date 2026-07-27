@@ -76,6 +76,24 @@ uv run --project packages/coworld python packages/coworld/scripts/generate_cowor
 uv run metta pytest packages/coworld/tests/test_types.py -v
 ```
 
+Every generated Coworld manifest schema change also requires one append-only declaration and one fixture that exercises
+the changed surface. The CI command is:
+
+```bash
+uv run coworld manifest-schema check --against origin/main
+```
+
+The checker compares against the schema committed on the base ref. Ensure that ref is fetched before running it. Edit
+the active version's `src/coworld/manifest/v*/declarations.yaml`, add the referenced fixture under
+`tests/manifest_versions/v*/`, update that version's converter when runtime semantics change, regenerate schemas, and
+run the version/checker tests. A breaking or semantically uncertain change requires a new `apiVersion`, reader,
+converter, declaration, and fixtures; do not modify an older reader to reinterpret already-stored documents.
+
+V0 and `RuntimeManifest` deliberately alias today's `CoworldManifest`. On the first change that must not apply to v0,
+copy only the affected class or classes into `src/coworld/manifest/v0/model.py` and freeze them there. All backend reads
+of stored Coworld rows must go through `Coworld.runtime_manifest()`; all strict upload parsing must go through
+`validate_upload_manifest()`. Directly validating `coworld.manifest` against today's model defeats versioning.
+
 Schema changes must also preserve validation and runner serialization for the exhaustive and minimal golden manifests:
 
 ```bash

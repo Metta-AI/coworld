@@ -56,6 +56,7 @@ pyproject_test(
         "test_coworld_artifact_docs": {"data": ["//packages/coworld:docs_files"]},
         "test_coworld_certify_docs": {"data": ["//packages/coworld:docs_files"]},
         "test_coworld_templates": {"data": ["//packages/coworld:package_metadata_files"]},
+        "test_manifest_versions": {"data": [":manifest_version_fixtures"]},
         "test_types": {"data": ["//packages/coworld:generated_schema_files"]},
     },
     # `coworld` isn't in .ruff.toml's known-first-party (third-party from
@@ -67,7 +68,12 @@ pyproject_test(
 
 filegroup(
     name = "manifest_compatibility_fixtures",
-    srcs = glob(["manifest_compatibility/*.json"]),
+    srcs = glob(["manifest_versions/v0/*.json"]),
+)
+
+filegroup(
+    name = "manifest_version_fixtures",
+    srcs = glob(["manifest_versions/**/*.json"]),
 )
 
 # Curated golden fixtures are committed runfiles, so this schema gate is hermetic

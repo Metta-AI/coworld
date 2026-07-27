@@ -10,6 +10,7 @@ from typing import Any
 from urllib.parse import urlparse, urlunparse
 
 from coworld.image_refs import image_ref_without_tag, is_digest_pinned_image_ref, is_mutable_registry_image_ref
+from coworld.manifest import validate_upload_manifest
 from coworld.schema_validation import load_json_object
 from coworld.types import CoworldManifest, CoworldRunnableSpec
 
@@ -110,7 +111,7 @@ def _load_template_manifest(
             runnable["image"] = image_placeholders[image]
         elif image.startswith("{{") and image.endswith("}}"):
             raise RuntimeError(f"Coworld image placeholder does not match a Compose service: {image}")
-    return CoworldManifest.model_validate(manifest_json)
+    return validate_upload_manifest(manifest_json).runtime_manifest
 
 
 def _compose_services(compose_file: Path) -> dict[str, dict[str, Any]]:

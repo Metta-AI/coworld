@@ -1,0 +1,834 @@
+{
+  "$defs": {
+    "CoworldCertificationFixture": {
+      "additionalProperties": false,
+      "properties": {
+        "game_config": {
+          "additionalProperties": true,
+          "description": "Token-free game config used for certification and default local episode runs.",
+          "title": "Game Config",
+          "type": "object"
+        },
+        "players": {
+          "description": "Ordered bundled-player slots for the certification episode.",
+          "items": {
+            "$ref": "#/$defs/CoworldCertificationPlayer"
+          },
+          "minItems": 1,
+          "title": "Players",
+          "type": "array"
+        }
+      },
+      "required": ["game_config", "players"],
+      "title": "CoworldCertificationFixture",
+      "type": "object"
+    },
+    "CoworldCertificationPlayer": {
+      "additionalProperties": false,
+      "properties": {
+        "player_id": {
+          "description": "ID of a bundled player runnable to use for this certification slot.",
+          "minLength": 1,
+          "title": "Player Id",
+          "type": "string"
+        }
+      },
+      "required": ["player_id"],
+      "title": "CoworldCertificationPlayer",
+      "type": "object"
+    },
+    "CoworldDocPage": {
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "description": "Stable supplemental document page id.",
+          "minLength": 1,
+          "title": "Id",
+          "type": "string"
+        },
+        "title": {
+          "description": "Human-readable page title.",
+          "minLength": 1,
+          "title": "Title",
+          "type": "string"
+        },
+        "content": {
+          "description": "Inline or URI-backed page content.",
+          "discriminator": {
+            "mapping": {
+              "text": "#/$defs/CoworldTextDoc",
+              "uri": "#/$defs/CoworldUriDoc"
+            },
+            "propertyName": "type"
+          },
+          "oneOf": [
+            {
+              "$ref": "#/$defs/CoworldTextDoc"
+            },
+            {
+              "$ref": "#/$defs/CoworldUriDoc"
+            }
+          ],
+          "title": "Content"
+        }
+      },
+      "required": ["id", "title", "content"],
+      "title": "CoworldDocPage",
+      "type": "object"
+    },
+    "CoworldDocs": {
+      "additionalProperties": false,
+      "properties": {
+        "readme": {
+          "description": "Required top-level README.md document for game rules, strategy, player guidance, and FAQs.",
+          "discriminator": {
+            "mapping": {
+              "text": "#/$defs/CoworldTextDoc",
+              "uri": "#/$defs/CoworldUriDoc"
+            },
+            "propertyName": "type"
+          },
+          "oneOf": [
+            {
+              "$ref": "#/$defs/CoworldTextDoc"
+            },
+            {
+              "$ref": "#/$defs/CoworldUriDoc"
+            }
+          ],
+          "title": "Readme"
+        },
+        "pages": {
+          "description": "Optional public documentation pages. Use game-authored pages for supplemental material; Softmax leagues may also list a platform-owned play_*.md guide for setup, upload, and submission.",
+          "items": {
+            "$ref": "#/$defs/CoworldDocPage"
+          },
+          "title": "Pages",
+          "type": "array"
+        }
+      },
+      "required": ["readme"],
+      "title": "CoworldDocs",
+      "type": "object"
+    },
+    "CoworldGameManifest": {
+      "additionalProperties": false,
+      "properties": {
+        "name": {
+          "description": "Short Coworld name.",
+          "minLength": 1,
+          "title": "Name",
+          "type": "string"
+        },
+        "version": {
+          "description": "Coworld package version. Pydantic validation requires a valid PEP 440 version.",
+          "minLength": 1,
+          "title": "Version",
+          "type": "string"
+        },
+        "description": {
+          "description": "Human-readable game description surfaced by product UIs.",
+          "minLength": 1,
+          "title": "Description",
+          "type": "string"
+        },
+        "owner": {
+          "description": "Maintainer email or handle.",
+          "minLength": 1,
+          "title": "Owner",
+          "type": "string"
+        },
+        "config_schema": {
+          "additionalProperties": true,
+          "description": "JSON Schema for runtime game configs. It must require a string-array `tokens` field for runner-injected player auth with minItems/maxItems validity bounds; variants and certification configs omit tokens because the runner injects them.",
+          "title": "Config Schema",
+          "type": "object"
+        },
+        "results_schema": {
+          "additionalProperties": true,
+          "description": "JSON Schema for the game-written results artifact. Cross-game consumers require `scores`.",
+          "title": "Results Schema",
+          "type": "object"
+        },
+        "runnable": {
+          "$ref": "#/$defs/CoworldRunnableSpec",
+          "description": "Game container runnable. Its `type` must be `game`.",
+          "properties": {
+            "type": {
+              "const": "game"
+            }
+          }
+        },
+        "protocols": {
+          "$ref": "#/$defs/CoworldProtocolDocs",
+          "description": "Protocol documentation for game-owned WebSocket surfaces."
+        },
+        "docs": {
+          "$ref": "#/$defs/CoworldDocs",
+          "description": "Game-authored documentation surfaced through Coworld tools and UIs."
+        },
+        "promo": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/CoworldPromo"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Optional promotional material for the game. When set, product UIs (e.g. the Observatory league page) surface a Video Promo tab for the promo video."
+        },
+        "replay_viewer": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/CoworldReplayViewer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Optional opaque static replay-viewer bundle. Observatory infers its index.html entrypoint."
+        }
+      },
+      "required": [
+        "name",
+        "version",
+        "description",
+        "owner",
+        "config_schema",
+        "results_schema",
+        "runnable",
+        "protocols",
+        "docs"
+      ],
+      "title": "CoworldGameManifest",
+      "type": "object"
+    },
+    "CoworldManifestRoleSpec": {
+      "additionalProperties": false,
+      "properties": {
+        "type": {
+          "description": "Manifest role section this runnable belongs to.",
+          "enum": ["player", "commissioner", "grader", "diagnoser", "optimizer"],
+          "title": "Type",
+          "type": "string"
+        },
+        "image": {
+          "description": "Docker image reference to run for this role.",
+          "title": "Image",
+          "type": "string"
+        },
+        "run": {
+          "description": "Optional process command overriding the image entrypoint or default command.",
+          "items": {
+            "type": "string"
+          },
+          "title": "Run",
+          "type": "array"
+        },
+        "env": {
+          "additionalProperties": {
+            "type": "string"
+          },
+          "description": "Public environment variables passed to the runnable. Do not put secrets here.",
+          "title": "Env",
+          "type": "object"
+        },
+        "source_url": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Optional public source repository, directory, or file URL for this runnable. Certification records whether it can verify the source as publicly accessible but does not require it.",
+          "title": "Source Url"
+        },
+        "resources": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/CoworldRunnableResources"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Optional compute request profile for this runnable. Omit to inherit the role's default profile. Declared requests are clamped to per-role bounds by the backend."
+        },
+        "id": {
+          "description": "Stable runnable identifier within this manifest. Certification fixtures reference player ids.",
+          "minLength": 1,
+          "title": "Id",
+          "type": "string"
+        },
+        "name": {
+          "description": "Human-readable runnable name for CLIs and UIs.",
+          "minLength": 1,
+          "title": "Name",
+          "type": "string"
+        },
+        "description": {
+          "description": "Human-readable summary of what this runnable does.",
+          "minLength": 1,
+          "title": "Description",
+          "type": "string"
+        },
+        "repository_url": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Optional Git repository the local optimizer tooling clones and runs. Used by `coworld optimize` to resolve a game-specific optimizer workbench; informational for other roles.",
+          "title": "Repository Url"
+        }
+      },
+      "required": ["type", "image", "id", "name", "description"],
+      "title": "CoworldManifestRoleSpec",
+      "type": "object"
+    },
+    "CoworldPromo": {
+      "additionalProperties": false,
+      "properties": {
+        "video_url": {
+          "description": "Public HTTP(S) URL for a promotional video. Product UIs (e.g. the Observatory league page) surface a Video Promo tab that embeds this URL.",
+          "pattern": "^https?://",
+          "title": "Video Url",
+          "type": "string"
+        }
+      },
+      "required": ["video_url"],
+      "title": "CoworldPromo",
+      "type": "object"
+    },
+    "CoworldProtocolDocs": {
+      "additionalProperties": false,
+      "properties": {
+        "player": {
+          "description": "Public player WebSocket protocol documentation.",
+          "discriminator": {
+            "mapping": {
+              "text": "#/$defs/CoworldTextDoc",
+              "uri": "#/$defs/CoworldUriDoc"
+            },
+            "propertyName": "type"
+          },
+          "oneOf": [
+            {
+              "$ref": "#/$defs/CoworldTextDoc"
+            },
+            {
+              "$ref": "#/$defs/CoworldUriDoc"
+            }
+          ],
+          "title": "Player"
+        },
+        "global": {
+          "description": "Public global viewer protocol documentation.",
+          "discriminator": {
+            "mapping": {
+              "text": "#/$defs/CoworldTextDoc",
+              "uri": "#/$defs/CoworldUriDoc"
+            },
+            "propertyName": "type"
+          },
+          "oneOf": [
+            {
+              "$ref": "#/$defs/CoworldTextDoc"
+            },
+            {
+              "$ref": "#/$defs/CoworldUriDoc"
+            }
+          ],
+          "title": "Global"
+        },
+        "engine_runtime": {
+          "anyOf": [
+            {
+              "enum": ["mettagrid", "cogweb", "bitworld", "nimgrid"],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Optional canonical engine runtime identifier for this game. Supported values are `mettagrid`, `cogweb`, `bitworld`, and `nimgrid`.",
+          "title": "Engine Runtime"
+        }
+      },
+      "required": ["player", "global"],
+      "title": "CoworldProtocolDocs",
+      "type": "object"
+    },
+    "CoworldReplayViewer": {
+      "additionalProperties": false,
+      "description": "Opaque static replay-viewer bundle (spec 0068).",
+      "properties": {
+        "bundle": {
+          "description": "Package-relative static replay-viewer output directory generated by coworld build, then rewritten to a content digest on upload. The bundle entrypoint is index.html; all other bundle internals are game-owned.",
+          "minLength": 1,
+          "title": "Bundle",
+          "type": "string"
+        }
+      },
+      "required": ["bundle"],
+      "title": "CoworldReplayViewer",
+      "type": "object"
+    },
+    "CoworldReporterPlatformReference": {
+      "additionalProperties": false,
+      "description": "Reference to an already-submitted platform reporter version (spec 0061).",
+      "properties": {
+        "reporter": {
+          "description": "Platform reporter version reference, \"owner/name@version\". Reporter names are unique per owner, so the owner (the owning user's id) qualifies the name.",
+          "minLength": 1,
+          "pattern": "^[a-z0-9]+/[a-z0-9][a-z0-9_.-]*@[1-9][0-9]*$",
+          "title": "Reporter",
+          "type": "string"
+        }
+      },
+      "required": ["reporter"],
+      "title": "CoworldReporterPlatformReference",
+      "type": "object"
+    },
+    "CoworldReporterWasmReference": {
+      "additionalProperties": false,
+      "description": "A wasm component this package builds; `coworld upload-coworld` submits it\nthrough the standard reporter upload flow (creating or extending a platform\nreporter named `{coworld-name}-{id}` owned by the submitter \u2014 names cannot\ncontain \"/\", the owner separator) and rewrites the entry to an owner-qualified\nplatform reference before the manifest is uploaded (spec 0061).",
+      "properties": {
+        "wasm": {
+          "description": "Package-relative path to a wasm component targeting the softmax:reporter world.",
+          "minLength": 1,
+          "title": "Wasm",
+          "type": "string"
+        },
+        "id": {
+          "description": "Reporter id; the platform name becomes {coworld-name}-{id}.",
+          "minLength": 1,
+          "title": "Id",
+          "type": "string"
+        },
+        "display_name": {
+          "anyOf": [
+            {
+              "maxLength": 200,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Human-facing title shown on the Reporters list. Defaults to a humanized `id` (e.g. 'round-recap' -> 'Round Recap') when omitted.",
+          "title": "Display Name"
+        },
+        "description": {
+          "anyOf": [
+            {
+              "maxLength": 2000,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Long-form description shown on the Reporters list. Defaults to `attributes.purpose` when omitted.",
+          "title": "Description"
+        },
+        "attributes": {
+          "additionalProperties": true,
+          "description": "Reporter version attributes submitted with the component: purpose, world, outputs[] (name/type/description), requested_limits. Validated by the platform at submission.",
+          "title": "Attributes",
+          "type": "object"
+        }
+      },
+      "required": ["wasm", "id", "attributes"],
+      "title": "CoworldReporterWasmReference",
+      "type": "object"
+    },
+    "CoworldResourceLimits": {
+      "additionalProperties": false,
+      "properties": {
+        "cpu": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Kubernetes CPU limit quantity, e.g. '8'. Caps the container's compute regardless of how many cores the node has, so the runnable behaves the same on every node size. The backend also pins the container's math-library thread pools (OMP/MKL/OpenBLAS/NumExpr) to this many cores. Omit for no limit (the container may burst to the whole node).",
+          "title": "Cpu"
+        }
+      },
+      "title": "CoworldResourceLimits",
+      "type": "object"
+    },
+    "CoworldResourceRequests": {
+      "additionalProperties": false,
+      "properties": {
+        "cpu": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Kubernetes CPU request quantity, e.g. '2' or '500m'. Omit to use the role default.",
+          "title": "Cpu"
+        },
+        "memory": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Kubernetes memory request quantity, e.g. '512Mi' or '4Gi'. Omit to use the role default.",
+          "title": "Memory"
+        },
+        "ephemeral-storage": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Kubernetes node-local scratch disk request, e.g. '10Gi'. Covers the unpacked image plus workdir. Omit to use the role default.",
+          "title": "Ephemeral-Storage"
+        }
+      },
+      "title": "CoworldResourceRequests",
+      "type": "object"
+    },
+    "CoworldRunnableResources": {
+      "additionalProperties": false,
+      "properties": {
+        "requests": {
+          "$ref": "#/$defs/CoworldResourceRequests",
+          "description": "Scheduler reservation for this runnable. The backend clamps each field to the role's bounds and rejects an upload whose request exceeds a role maximum. Omit to take the role defaults \u2014 e.g. a limits-only profile that just caps CPU."
+        },
+        "limits": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/CoworldResourceLimits"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Optional hard compute ceiling. Today only the player role honors a CPU limit; declaring one caps every player pod at that many cores and pins its thread pools to match. Clamped to the role's limit bounds by the backend."
+        }
+      },
+      "title": "CoworldRunnableResources",
+      "type": "object"
+    },
+    "CoworldRunnableSpec": {
+      "additionalProperties": false,
+      "properties": {
+        "type": {
+          "description": "Role contract implemented by this runnable.",
+          "enum": ["game", "player", "commissioner", "grader", "diagnoser", "optimizer"],
+          "title": "Type",
+          "type": "string"
+        },
+        "image": {
+          "description": "Docker image reference to run for this role.",
+          "title": "Image",
+          "type": "string"
+        },
+        "run": {
+          "description": "Optional process command overriding the image entrypoint or default command.",
+          "items": {
+            "type": "string"
+          },
+          "title": "Run",
+          "type": "array"
+        },
+        "env": {
+          "additionalProperties": {
+            "type": "string"
+          },
+          "description": "Public environment variables passed to the runnable. Do not put secrets here.",
+          "title": "Env",
+          "type": "object"
+        },
+        "source_url": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Optional public source repository, directory, or file URL for this runnable. Certification records whether it can verify the source as publicly accessible but does not require it.",
+          "title": "Source Url"
+        },
+        "resources": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/CoworldRunnableResources"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Optional compute request profile for this runnable. Omit to inherit the role's default profile. Declared requests are clamped to per-role bounds by the backend."
+        }
+      },
+      "required": ["type", "image"],
+      "title": "CoworldRunnableSpec",
+      "type": "object"
+    },
+    "CoworldTextDoc": {
+      "additionalProperties": false,
+      "properties": {
+        "type": {
+          "const": "text",
+          "description": "Document reference kind for inline text.",
+          "title": "Type",
+          "type": "string"
+        },
+        "value": {
+          "description": "Inline document text, usually Markdown.",
+          "minLength": 1,
+          "title": "Value",
+          "type": "string"
+        }
+      },
+      "required": ["type", "value"],
+      "title": "CoworldTextDoc",
+      "type": "object"
+    },
+    "CoworldUriDoc": {
+      "additionalProperties": false,
+      "properties": {
+        "type": {
+          "const": "uri",
+          "description": "Document reference kind for a public HTTP(S) document.",
+          "title": "Type",
+          "type": "string"
+        },
+        "value": {
+          "description": "Public HTTP(S) URL for the document.",
+          "minLength": 1,
+          "pattern": "^https?://",
+          "title": "Value",
+          "type": "string"
+        }
+      },
+      "required": ["type", "value"],
+      "title": "CoworldUriDoc",
+      "type": "object"
+    },
+    "CoworldVariant": {
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "description": "Stable variant identifier used by CLIs and league configuration.",
+          "minLength": 1,
+          "title": "Id",
+          "type": "string"
+        },
+        "name": {
+          "description": "Human-readable variant name.",
+          "minLength": 1,
+          "title": "Name",
+          "type": "string"
+        },
+        "game_config": {
+          "additionalProperties": true,
+          "description": "Token-free game config that validates against game.config_schema.",
+          "title": "Game Config",
+          "type": "object"
+        },
+        "description": {
+          "description": "Human-readable variant description.",
+          "minLength": 1,
+          "title": "Description",
+          "type": "string"
+        }
+      },
+      "required": ["id", "name", "game_config", "description"],
+      "title": "CoworldVariant",
+      "type": "object"
+    }
+  },
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "description": "Schema for a complete game world in the Softmax universe.",
+  "properties": {
+    "$schema": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "description": "Optional JSON Schema URI for IDE tooling.",
+      "title": "$Schema"
+    },
+    "tags": {
+      "description": "Tags describing the Coworld for discovery and classification. When present, at least three are required.",
+      "items": {
+        "minLength": 1,
+        "type": "string"
+      },
+      "minItems": 3,
+      "title": "Tags",
+      "type": "array"
+    },
+    "game": {
+      "$ref": "#/$defs/CoworldGameManifest",
+      "description": "Game runnable and protocol metadata. Role docs: docs/roles/GAME.md.",
+      "markdownDescription": "See the [Game role](docs/roles/GAME.md) documentation for this role's contract.",
+      "x-coworld-role-doc": "docs/roles/GAME.md"
+    },
+    "player": {
+      "description": "Bundled player runnables. Role docs: docs/roles/PLAYER.md.",
+      "items": {
+        "$ref": "#/$defs/CoworldManifestRoleSpec"
+      },
+      "markdownDescription": "See the [Player role](docs/roles/PLAYER.md) documentation for this role's contract.",
+      "minItems": 1,
+      "title": "Player",
+      "type": "array",
+      "x-coworld-role-doc": "docs/roles/PLAYER.md"
+    },
+    "reporter": {
+      "description": "Reporter references (spec 0061): platform reporter versions, or wasm components this package builds and submits at upload. Optional; there are no default reporters. Role docs: docs/roles/REPORTER.md.",
+      "items": {
+        "anyOf": [
+          {
+            "$ref": "#/$defs/CoworldReporterPlatformReference"
+          },
+          {
+            "$ref": "#/$defs/CoworldReporterWasmReference"
+          }
+        ]
+      },
+      "markdownDescription": "See the [Reporter role](docs/roles/REPORTER.md) documentation for this role's contract.",
+      "title": "Reporter",
+      "type": "array",
+      "x-coworld-role-doc": "docs/roles/REPORTER.md"
+    },
+    "commissioner": {
+      "description": "Commissioner runnables. Optional. Role docs: docs/roles/COMMISSIONER.md.",
+      "items": {
+        "$ref": "#/$defs/CoworldManifestRoleSpec"
+      },
+      "markdownDescription": "See the [Commissioner role](docs/roles/COMMISSIONER.md) documentation for this role's contract.",
+      "title": "Commissioner",
+      "type": "array",
+      "x-coworld-role-doc": "docs/roles/COMMISSIONER.md"
+    },
+    "grader": {
+      "description": "Grader runnables. Optional; include entries when the Coworld ships grader containers. Role docs: docs/roles/GRADER.md.",
+      "items": {
+        "$ref": "#/$defs/CoworldManifestRoleSpec"
+      },
+      "markdownDescription": "See the [Grader role](docs/roles/GRADER.md) documentation for this role's contract.",
+      "title": "Grader",
+      "type": "array",
+      "x-coworld-role-doc": "docs/roles/GRADER.md"
+    },
+    "diagnoser": {
+      "$comment": "Optional in the current schema; intended to become required as this role stabilizes.",
+      "description": "Diagnoser runnables. Optional today, but expected to become required once the diagnoser contract stabilizes. Role docs: docs/roles/DIAGNOSER.md.",
+      "items": {
+        "$ref": "#/$defs/CoworldManifestRoleSpec"
+      },
+      "markdownDescription": "See the [Diagnoser role](docs/roles/DIAGNOSER.md) documentation for this role's contract.",
+      "title": "Diagnoser",
+      "type": "array",
+      "x-coworld-future-required": true,
+      "x-coworld-role-doc": "docs/roles/DIAGNOSER.md"
+    },
+    "optimizer": {
+      "$comment": "Optional in the current schema; intended to become required as this role stabilizes.",
+      "description": "Optimizer runnables. Optional today, but expected to become required once the optimizer contract stabilizes. Role docs: docs/roles/OPTIMIZER.md.",
+      "items": {
+        "$ref": "#/$defs/CoworldManifestRoleSpec"
+      },
+      "markdownDescription": "See the [Optimizer role](docs/roles/OPTIMIZER.md) documentation for this role's contract.",
+      "title": "Optimizer",
+      "type": "array",
+      "x-coworld-future-required": true,
+      "x-coworld-role-doc": "docs/roles/OPTIMIZER.md"
+    },
+    "variants": {
+      "description": "Named token-free game configs.",
+      "items": {
+        "$ref": "#/$defs/CoworldVariant"
+      },
+      "minItems": 1,
+      "title": "Variants",
+      "type": "array"
+    },
+    "certification": {
+      "$ref": "#/$defs/CoworldCertificationFixture",
+      "description": "Smoke-test episode used by coworld certify and default local episode runs."
+    },
+    "players_per_user": {
+      "anyOf": [
+        {
+          "minimum": 1,
+          "type": "integer"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "description": "Maximum number of simultaneously active policy memberships a single user may hold in this Coworld's league. Unset means the platform default applies.",
+      "title": "Players Per User"
+    },
+    "episode_timeout_minutes": {
+      "anyOf": [
+        {
+          "maximum": 100,
+          "minimum": 1,
+          "type": "integer"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "description": "Maximum wall-clock minutes a hosted episode of this Coworld may run before the platform kills it. Also bounds hosted certification runs. Must be between 1 and 100. Unset means the platform default (20 minutes).",
+      "title": "Episode Timeout Minutes"
+    }
+  },
+  "required": ["game", "player", "variants", "certification"],
+  "title": "Coworld Manifest",
+  "type": "object"
+}

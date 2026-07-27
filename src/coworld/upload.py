@@ -32,10 +32,10 @@ from coworld.certifier import EXECUTABLE_TRANSCRIPT_PATH, certify_coworld, load_
 from coworld.cli_support import validate_run_argv
 from coworld.config import DEFAULT_SUBMIT_SERVER
 from coworld.image_refs import is_digest_pinned_image_ref, is_mutable_registry_image_ref
+from coworld.manifest import validate_upload_manifest
 from coworld.manifest_validation import validate_coworld_manifest_game_configs
 from coworld.runner.runner import assert_docker_image_reachable
-from coworld.schema_validation import validate_json_schema
-from coworld.types import MANIFEST_ROLE_SECTIONS, CoworldManifest, coworld_manifest_schema
+from coworld.types import MANIFEST_ROLE_SECTIONS
 
 _LOCAL_TAG_SEPARATOR_RE = re.compile(r"[^a-z0-9._-]+")
 _IMAGE_ID_RE = re.compile(r"^img_[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$")
@@ -1161,9 +1161,7 @@ def _resolve_stored_coworld(client: CoworldUploadClient, coworld_ref: str) -> Co
 
 
 def _validate_manifest_document(manifest: dict[str, object]) -> None:
-    validate_json_schema(manifest, coworld_manifest_schema())
-    typed_manifest = CoworldManifest.model_validate(manifest)
-    validate_coworld_manifest_game_configs(typed_manifest)
+    validate_coworld_manifest_game_configs(validate_upload_manifest(manifest).runtime_manifest)
 
 
 def _apply_manifest_updates(

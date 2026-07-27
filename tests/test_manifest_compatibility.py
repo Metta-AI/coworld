@@ -32,7 +32,7 @@ from coworld.types import (
     coworld_manifest_schema,
 )
 
-FIXTURE_ROOT = Path(__file__).parent / "manifest_compatibility"
+FIXTURE_ROOT = Path(__file__).parent / "manifest_versions" / "v0"
 ALL_FIELDS_MANIFEST = FIXTURE_ROOT / "all_fields_manifest.json"
 MINIMAL_MANIFEST = FIXTURE_ROOT / "minimal_manifest.json"
 MANIFEST_SCHEMA = coworld_manifest_schema()

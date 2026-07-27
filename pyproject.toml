@@ -16,6 +16,7 @@ dependencies = [
   "packaging>=24.0.0",
   "pyarrow>=16.1.0",
   "pydantic>=2.11.5",
+  "pyyaml>=6.0.2",
   # referencing is a runtime resolver used by jsonschema's referencing
   # machinery; reachable via jsonschema but kept explicit since coworld's
   # schema_validation.py interacts with it directly.
@@ -61,6 +62,8 @@ coworld = [
   "*.json",
   "*.md",
   "docs/**/*.md",
+  "manifest/**/*.json",
+  "manifest/**/*.yaml",
   "transcripts/*.md",
   "runner/*.md",
   "examples/**/*",

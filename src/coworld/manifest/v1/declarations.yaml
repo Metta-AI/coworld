@@ -1,0 +1,4 @@
+- schema_hash: 0cb275a0254f0ae325c703fdddf11841e9c3374cd9235043e5b9cf6fef25d2a7
+  kind: initial
+  summary: Add the required apiVersion discriminator.
+  fixture: packages/coworld/tests/manifest_versions/v1/minimal_manifest.json

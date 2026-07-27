@@ -317,7 +317,7 @@ def test_coworld_certify_schema_failure_prints_actionable_detail(monkeypatch: Mo
     assert result.exit_code == 1, result.output
     assert "Failed step: matriculate" in result.output
     assert "Failure reason: manifest_invalid" in result.output
-    assert "Details: $: 'game' is a required property" in result.output
+    assert "Details: $.game: Field required" in result.output
     assert "Failed validating" not in result.output
     assert "Traceback" not in result.output
 

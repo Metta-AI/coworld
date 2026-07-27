@@ -18,6 +18,7 @@ from uuid import UUID
 import httpx
 import websockets
 from jsonschema.exceptions import ValidationError as JsonSchemaValidationError
+from pydantic import ValidationError as PydanticValidationError
 
 from coworld.commissioner.protocol import (
     CommissionerMessage,
@@ -27,6 +28,7 @@ from coworld.commissioner.protocol import (
     ScheduleRoundsRequest,
     ScheduleRoundsResponse,
 )
+from coworld.manifest import validate_upload_manifest
 from coworld.manifest_validation import (
     game_config_with_tokens,
     infer_token_count_for_game_config,
@@ -68,7 +70,6 @@ from coworld.types import (
     StepResult,
     TranscriptStep,
     coworld_episode_request_schema,
-    coworld_manifest_schema,
 )
 
 EXECUTABLE_TRANSCRIPT_PATH = Path(__file__).parent / "transcripts" / "coworld-executable.transcript.md"
@@ -148,8 +149,7 @@ class CertificationResult:
 def load_coworld_package(manifest_path: Path, *, require_certification_tags: bool = False) -> CoworldPackage:
     manifest_path = manifest_path.resolve()
     manifest = load_json_object(manifest_path)
-    validate_json_schema(manifest, coworld_manifest_schema())
-    typed_manifest = CoworldManifest.model_validate(manifest)
+    typed_manifest = validate_upload_manifest(manifest).runtime_manifest
     if require_certification_tags and typed_manifest.tags is None:
         raise ValueError("Coworld certification requires at least three manifest tags")
     validate_coworld_manifest_game_configs(typed_manifest)
@@ -672,6 +672,14 @@ def _certification_failure_feedback(exc: Exception) -> str:
         for part in exc.absolute_path:
             path += f"[{part}]" if isinstance(part, int) else f".{part}"
         return f"{path}: {exc.message}"
+    if isinstance(exc, PydanticValidationError):
+        details = []
+        for error in exc.errors():
+            path = "$"
+            for part in error["loc"]:
+                path += f"[{part}]" if isinstance(part, int) else f".{part}"
+            details.append(f"{path}: {error['msg']}")
+        return "; ".join(details)
     return str(exc)
 
 

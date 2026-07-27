@@ -15,6 +15,7 @@ import httpx
 import pytest
 from fastapi.testclient import TestClient
 from jsonschema.exceptions import ValidationError as JsonSchemaValidationError
+from pydantic import ValidationError as PydanticValidationError
 from websockets.exceptions import ConnectionClosedOK
 
 from coworld.certifier import (
@@ -98,7 +99,7 @@ def test_load_coworld_package_requires_protocol_uri_doc_urls(tmp_path: Path) -> 
     }
     coworld_manifest_path.write_text(json.dumps(manifest))
 
-    with pytest.raises(JsonSchemaValidationError, match="not valid"):
+    with pytest.raises(PydanticValidationError, match="String should match pattern"):
         load_coworld_package(coworld_manifest_path)
 
 
@@ -155,7 +156,7 @@ def test_load_coworld_package_requires_global_protocol_with_engine_runtime(
     manifest["game"]["protocols"]["engine_runtime"] = engine_runtime
     coworld_manifest_path.write_text(json.dumps(manifest))
 
-    with pytest.raises(JsonSchemaValidationError, match="'global' is a required property"):
+    with pytest.raises(PydanticValidationError, match="Field required"):
         load_coworld_package(coworld_manifest_path)
 
 
@@ -165,7 +166,7 @@ def test_load_coworld_package_rejects_unknown_engine_runtime(tmp_path: Path) -> 
     manifest["game"]["protocols"]["engine_runtime"] = "python-grid"
     coworld_manifest_path.write_text(json.dumps(manifest))
 
-    with pytest.raises(JsonSchemaValidationError, match="not valid"):
+    with pytest.raises(PydanticValidationError, match="Input should be"):
         load_coworld_package(coworld_manifest_path)
 
 
@@ -175,7 +176,7 @@ def test_load_coworld_package_requires_global_protocol(tmp_path: Path) -> None:
     del manifest["game"]["protocols"]["global"]
     coworld_manifest_path.write_text(json.dumps(manifest))
 
-    with pytest.raises(JsonSchemaValidationError, match="'global' is a required property"):
+    with pytest.raises(PydanticValidationError, match="Field required"):
         load_coworld_package(coworld_manifest_path)
 
 
@@ -225,7 +226,7 @@ def test_load_coworld_package_rejects_invalid_certification_player_entry(tmp_pat
         },
     )
 
-    with pytest.raises(JsonSchemaValidationError, match="player_id"):
+    with pytest.raises(PydanticValidationError, match="player_id"):
         load_coworld_package(coworld_manifest_path)
 
 
@@ -238,7 +239,7 @@ def test_load_coworld_package_rejects_extra_certification_player_fields(tmp_path
         },
     )
 
-    with pytest.raises(JsonSchemaValidationError, match="Additional properties are not allowed"):
+    with pytest.raises(PydanticValidationError, match="Extra inputs are not permitted"):
         load_coworld_package(coworld_manifest_path)
 
 
