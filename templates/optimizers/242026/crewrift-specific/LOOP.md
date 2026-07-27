@@ -187,9 +187,10 @@ action without the internal state that decides it?
   to a previously verified-good build proves byte-identical behavior — skip re-validation.
 - Stale-cache trap: a buildx compile error whose line number doesn't match the current file means
   a stale `COPY . .` layer — rebuild with `--no-cache`.
-- Bake `CREWRIFT_BEDROCK_MODEL=us.anthropic.claude-sonnet-4-6` into the image ENV (the advisor's
-  default opus model is not enabled in the runner account and dies silently); verify with
-  `docker inspect`.
+- Bake `CREWRIFT_BEDROCK_MODEL=us.anthropic.claude-haiku-4-5-20251001-v1:0` into the image ENV;
+  Crewrift policies must not use Sonnet or Opus. Keep the whole policy episode below **1,800
+  quota-weighted tokens** (`input + cache-write + 5 × output`), across every advisor call, and
+  verify the model and token settings with `docker inspect`.
 - Upload: use current `coworld upload-policy`; it consumes the server's `authorization_token` ECR push response. Keep
   the manual path from skill `build-and-upload-policy` only as a fallback for older pinned installs.
   A null `pre_signed_info` means that exact image hash was already pushed — not an error. An
@@ -398,7 +399,7 @@ finish only the remainder.
 **The advisor looks dead / the bot plays as a skip-bot.** Check in order: is `--use-bedrock` /
 USE_BEDROCK actually wired (locally `coworld run-episode --use-bedrock --aws-profile softmax-org`
 injects creds); is the configured Bedrock model id invokable from the execution account
-(opus default was not — pin sonnet via env); is concurrency degrading it (high per-box load drove
+(pin the required Haiku profile via env); is concurrency degrading it (high per-box load drove
 84–100% invalid rates — run advisor-sensitive evals at low concurrency). Synthetic burst probes do
 NOT reproduce sustained in-game load failures. Local realtime runs CAN validate the advisor
 (check game stdout for `speed=1x`); the lab verifies the mechanism fires, never deduction

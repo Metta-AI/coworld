@@ -4,6 +4,12 @@ Heuristics that are only true or only actionable with crewrift / crewborg / Amon
 
 _Load every session. 3 always-on heuristics. ⚠ marks session-derived, unverified items._
 
+**Mandatory Crewrift LLM profile:** always use Haiku 4.5
+(`us.anthropic.claude-haiku-4-5-20251001-v1:0`) and keep each policy pod below
+1,800 quota-weighted tokens per episode across all calls
+(input + cache-write + 5 × output tokens), with deterministic fallback when the
+remaining budget is insufficient.
+
 ## A/B methodology & attribution
 
 #### 1. Never judge Crewrift on a merged crew+imposter win rate; decompose by role

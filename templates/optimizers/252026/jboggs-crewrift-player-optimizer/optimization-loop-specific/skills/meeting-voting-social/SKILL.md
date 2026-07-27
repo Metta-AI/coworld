@@ -7,6 +7,12 @@ description: "Use for meeting voting social recipes in scripted Coworld policy o
 
 On-demand recipes (4). Trigger→action heuristics; pull the relevant one when its situation arises.
 
+For Crewrift, LLM decisions must use Haiku 4.5
+(`us.anthropic.claude-haiku-4-5-20251001-v1:0`) and remain below 1,800
+quota-weighted tokens per policy episode across all calls
+(input + cache-write + 5 × output tokens), with deterministic fallback when the
+remaining budget is insufficient.
+
 #### 1. Set Crewrift roles via game_config_overrides.slots as a full per-slot array
 `loop` · **negative result**
 

@@ -2,6 +2,11 @@
 
 Reference notes, design rationale, and negative results (6).
 
+For Crewrift, LLM decisions must use Haiku 4.5
+(`us.anthropic.claude-haiku-4-5-20251001-v1:0`) and remain below 1,800
+quota-weighted tokens per policy episode across all calls
+(input + cache-write + 5 × output tokens).
+
 #### 1. Treat engine source as ground truth for game rules; parameterize over config
 `loop` · **negative result**
 

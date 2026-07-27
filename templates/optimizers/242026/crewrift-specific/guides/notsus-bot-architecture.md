@@ -410,9 +410,11 @@ even with no creds/Bedrock.**
 
 ### Model + region (advisor.py:22)
 
-Model id comes from env `CREWRIFT_BEDROCK_MODEL`, defaulting to
-`us.anthropic.claude-opus-4-7`. **The model can be swapped via env injection
-WITHOUT an image rebuild** — check for the env path before rebuilding. Region:
+Model id comes from env `CREWRIFT_BEDROCK_MODEL`. For Crewrift it must be
+`us.anthropic.claude-haiku-4-5-20251001-v1:0`; the source default is not a valid
+hosted configuration. **Pin Haiku via env injection without an image rebuild** and keep the
+whole episode below **1,800 quota-weighted tokens** (`input + cache-write + 5 × output`).
+Region:
 `AWS_REGION` / `AWS_DEFAULT_REGION` / `us-east-1`. boto3 client config:
 `read_timeout=5`, `connect_timeout=2`, `retries={max_attempts:4, mode:standard}` —
 bounded to stay inside the `LLMVoteDeadlineTicks = 150` (~6s @ 24fps) vote deadline.

@@ -10,6 +10,15 @@ Recurring how-to recipes live in **skills/** (`run-league-ab-eval`, `build-and-u
 lives in **guides/**. Executable harness code lives in **tools/**. This file is only the framing and
 guardrails that shape *every* hypothesis — keep it loaded; everything else is on-demand.
 
+## Mandatory Crewrift LLM budget
+
+Any LLM-powered Crewrift policy must use the US Bedrock Haiku 4.5 profile
+`us.anthropic.claude-haiku-4-5-20251001-v1:0`; do not use Sonnet or Opus. Each policy pod must keep
+its whole episode below **1,800 quota-weighted tokens**, calculated as
+`input tokens + cache-write tokens + 5 × output tokens`. This is the token equivalent of the
+`$0.0018` per-policy, per-episode cap. Track the cumulative total across calls and switch to the
+scripted fallback before another request would exceed the remaining budget.
+
 ## The scoring & win model
 
 Every hypothesis is shaped by how the game and leaderboard actually score.

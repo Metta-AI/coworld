@@ -17,6 +17,11 @@ Bedrock and telemetry can upload. The advisor's model is selected at runtime by
 `CREWRIFT_BEDROCK_MODEL` (defaulted in `advisor.py`); this Dockerfile provides the
 boto3 + Python runtime that env relies on.
 
+For Crewrift builds, set
+`CREWRIFT_BEDROCK_MODEL=us.anthropic.claude-haiku-4-5-20251001-v1:0`; never ship
+Sonnet or Opus. Configure the advisor so cumulative episode usage remains below
+**1,800 quota-weighted tokens** (`input + cache-write + 5 × output`) per policy pod.
+
 **Status: CURRENT.** The amd64-capable build for the deployed notsus policy
 (arch-branching covers amd64 and arm64; league/k8s runs need the amd64 image).
 Relevant memory: `libcurl4` is required because telemetry upload must use curly/

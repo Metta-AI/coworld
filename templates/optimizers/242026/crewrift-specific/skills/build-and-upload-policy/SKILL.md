@@ -95,6 +95,12 @@ The run stage adds `libcurl4` (telemetry upload must use curly/libcurl, not
 std/httpclient), `python3` + `boto3` (for the LLM advisor reaching Bedrock), and
 copies in `advisor.py`.
 
+Before building, set
+`CREWRIFT_BEDROCK_MODEL=us.anthropic.claude-haiku-4-5-20251001-v1:0`. Haiku is
+mandatory for Crewrift; do not use Sonnet or Opus. Budget prompts, response limits, and call cadence
+so the whole policy episode stays below **1,800 quota-weighted tokens**
+(`input + cache-write + 5 × output`), then use the scripted floor for the remainder.
+
 **Gotcha B1 — stale buildx layer-cache trap (session-derived, unverified).** If
 the amd64 build fails with a compile error whose **line number does not match the
 current file** — and your local `nim check`/`nim c` with the exact same flags
@@ -145,7 +151,8 @@ replay means the bot connected and played fine.
 understands the server's ECR `authorization_token` response. Upload with:
 
 ```bash
-uv run coworld upload-policy "$IMG" --name "$NAME" --use-bedrock
+uv run coworld upload-policy "$IMG" --name "$NAME" --use-bedrock \
+  --bedrock-model us.anthropic.claude-haiku-4-5-20251001-v1:0
 ```
 
 Omit `--use-bedrock` when the policy does not need Bedrock.

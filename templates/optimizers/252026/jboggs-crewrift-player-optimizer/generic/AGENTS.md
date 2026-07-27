@@ -4,6 +4,12 @@ Heuristics true for ANY software / coding-agent / research work, independent of 
 
 _Load every session. 9 always-on heuristics. ⚠ marks session-derived, unverified items._
 
+When this package is used for Crewrift, every LLM path must use Haiku 4.5
+(`us.anthropic.claude-haiku-4-5-20251001-v1:0`) and keep each policy pod below
+1,800 quota-weighted tokens per episode across all calls
+(input + cache-write + 5 × output tokens), with deterministic fallback when the
+remaining budget is insufficient.
+
 ## Experiment discipline
 
 #### 1. Re-run the full regression suite after every tweak, and prove a change is scoped before trusting it

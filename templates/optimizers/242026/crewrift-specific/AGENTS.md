@@ -70,10 +70,13 @@ a rival's entire 41%-vs-18% edge was a single button press).
   `guides/crew-strategy-and-open-levers.md`; the banked **refuted levers** (do not rebuild) are in
   `guides/refuted-levers-do-not-rebuild.md` and `performance/LOG.md`. Both are crewrift-measured —
   check them before proposing any crew change.
-- **Bedrock model pin:** bake `CREWRIFT_BEDROCK_MODEL=us.anthropic.claude-sonnet-4-6` into the image
-  ENV — the advisor's default opus model is not enabled in the runner account and dies silently
-  (the bot becomes a pure skip-bot with a clean-looking results.json). See skill
-  `diagnose-llm-advisor-health` and `build-and-upload-policy`.
+- **Haiku and episode budget are mandatory:** bake
+  `CREWRIFT_BEDROCK_MODEL=us.anthropic.claude-haiku-4-5-20251001-v1:0` into the image; never use
+  Sonnet or Opus for Crewrift. Across the entire policy episode, keep
+  `input tokens + cache-write tokens + 5 × output tokens` below **1,800** (the token equivalent of
+  the `$0.0018` per-policy, per-episode cap). Stop calling the advisor and use the scripted floor
+  when another request would exceed the remaining budget. See `diagnose-llm-advisor-health` and
+  `build-and-upload-policy`.
 - **Use current `coworld upload-policy` for policy uploads.** The CLI now consumes the server's
   `authorization_token` ECR push response; the manual ECR path in skill `build-and-upload-policy` is a legacy fallback
   for older pinned installs.

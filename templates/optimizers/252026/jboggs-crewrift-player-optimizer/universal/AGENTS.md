@@ -4,6 +4,12 @@ Load this every session. These are the heuristics that pay their always-on conte
 
 _28 always-on heuristics. Tier tags: `crewrift` / `loop` / `generic`. ⚠ marks session-derived items not yet human-verified._
 
+**Mandatory Crewrift LLM profile:** always use Haiku 4.5
+(`us.anthropic.claude-haiku-4-5-20251001-v1:0`) and keep each policy pod below
+1,800 quota-weighted tokens per episode across all calls
+(input + cache-write + 5 × output tokens), with deterministic fallback when the
+remaining budget is insufficient.
+
 ## A/B methodology & attribution
 
 #### 1. Scale seed count to the decision, keep a fixed standard set, and reserve a true holdout
