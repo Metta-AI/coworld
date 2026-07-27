@@ -160,6 +160,21 @@ def league_list(
     console.print(table)
 
 
+@league_app.command("game-of-week")
+def league_game_of_week(
+    coworld_name: Annotated[str, typer.Argument(help="Coworld whose league becomes the game of the week.")],
+    server: Annotated[str, typer.Option("--server", help="Observatory API server URL.")] = DEFAULT_SUBMIT_SERVER,
+    json_output: Annotated[bool, typer.Option("--json", help="Print raw JSON.")] = False,
+) -> None:
+    """Make this coworld's league the single Observatory game of the week."""
+    with CoworldUploadClient.from_login(server_url=server) as client:
+        seed = client.set_league_game_of_week(coworld_name=coworld_name)
+    if json_output:
+        emit_json(seed.model_dump(mode="json"))
+        return
+    console.print(f"[green]Game of the week[/green] is now [bold]{seed.coworld_name}[/bold]")
+
+
 @league_app.command("update")
 def league_update(
     coworld_name: Annotated[str, typer.Argument(help="Canonical coworld name whose league seed should change.")],

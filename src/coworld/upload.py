@@ -606,6 +606,15 @@ class CoworldUploadClient:
         _raise_for_status(response)
         return [CoworldLeagueSeedResponse.model_validate(item) for item in response.json()]
 
+    def set_league_game_of_week(self, *, coworld_name: str) -> CoworldLeagueSeedResponse:
+        response = self._http_client.put(
+            f"/v2/coworld-league-seeds/{quote(coworld_name, safe='')}/game-of-week",
+            headers=self._headers(),
+            timeout=120.0,
+        )
+        _raise_for_status(response)
+        return CoworldLeagueSeedResponse.model_validate(response.json())
+
     def update_league_seed(
         self,
         *,

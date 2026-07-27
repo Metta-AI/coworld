@@ -121,6 +121,19 @@ def test_list_coworld_league_seeds(httpserver: HTTPServer) -> None:
     assert "commissioner_driven" in result.output
 
 
+def test_set_coworld_game_of_week_uses_dedicated_route(httpserver: HTTPServer) -> None:
+    httpserver.expect_request(
+        "/observatory/v2/coworld-league-seeds/newworld/game-of-week",
+        method="PUT",
+        headers={"Authorization": "Bearer token"},
+    ).respond_with_json(SEED_RESPONSE)
+
+    result = CliRunner().invoke(app, ["league", "game-of-week", "newworld", "--server", httpserver.url_for("")])
+
+    assert result.exit_code == 0, result.output
+    assert "Game of the week is now newworld" in result.output
+
+
 def test_update_coworld_league_seed_replaces_overrides(httpserver: HTTPServer) -> None:
     response = {
         **SEED_RESPONSE,
