@@ -85,6 +85,24 @@ _PLAYER_THREAD_POOL_ENV_VARS = (
     "OPENBLAS_NUM_THREADS",
     "NUMEXPR_NUM_THREADS",
 )
+_WAIT_FOR_GAME_SERVICE_SCRIPT = """
+import contextlib
+import os
+import socket
+import time
+
+deadline = time.monotonic() + float(os.environ["COWORLD_GAME_WAIT_TIMEOUT_SECONDS"])
+host = os.environ["COWORLD_GAME_HOST"]
+port = int(os.environ["COWORLD_GAME_PORT"])
+while time.monotonic() < deadline:
+    with contextlib.suppress(socket.gaierror):
+        with socket.socket() as connection:
+            connection.settimeout(1)
+            if connection.connect_ex((host, port)) == 0:
+                raise SystemExit(0)
+    time.sleep(0.5)
+raise SystemExit(f"Timed out waiting for {host}:{port}")
+""".strip()
 
 
 def _player_thread_pool_env(cpu_limit: str) -> dict[str, str]:
@@ -448,16 +466,40 @@ def _create_player_pod(
             ),
         )
     ]
+    # The game is healthy on loopback before this pod is created, but Kubernetes service
+    # endpoints can lag that signal. Do not start a one-shot player until the service path
+    # it will actually use is reachable.
+    init_containers = [
+        client.V1Container(
+            name="wait-for-game-service",
+            image=os.environ["COWORLD_COORDINATOR_IMAGE"],
+            image_pull_policy="IfNotPresent",
+            command=["python", "-c", _WAIT_FOR_GAME_SERVICE_SCRIPT],
+            env=[
+                client.V1EnvVar(
+                    name="COWORLD_GAME_HOST",
+                    value=service_name,
+                ),
+                client.V1EnvVar(
+                    name="COWORLD_GAME_PORT",
+                    value=str(GAME_PORT),
+                ),
+                client.V1EnvVar(
+                    name="COWORLD_GAME_WAIT_TIMEOUT_SECONDS",
+                    value=os.environ["COWORLD_TIMEOUT_SECONDS"],
+                ),
+            ],
+        )
+    ]
     # Native sidecar: an initContainer with restartPolicy=Always, NOT a regular container —
     # a regular container running the long-lived proxy would keep this restartPolicy=Never pod
     # Running after the player exits instead of letting it reach a terminal phase.
-    init_containers: list[client.V1Container] | None = None
     if bedrock_sidecar_enabled:
         # Skip the player app AND the sidecar: the sidecar self-provides its full IRSA env, so
         # the webhook must not also inject a conflicting token path.
         pod_annotations["eks.amazonaws.com/skip-containers"] = f"player,{BEDROCK_SIDECAR_CONTAINER_NAME}"
         pod_volumes = [bedrock_sidecar_token_volume()]
-        init_containers = [
+        init_containers.append(
             build_bedrock_sidecar(
                 attribution=BedrockSidecarAttribution(
                     image_digest=resolve_image_attribution_key(player.image),
@@ -484,7 +526,7 @@ def _create_player_pod(
                 # the sidecar meters spend with the same rates the server reports.
                 pricing_json=os.environ.get("BEDROCK_SIDECAR_PRICING_JSON") or None,
             )
-        ]
+        )
     pod = client.V1Pod(
         metadata=client.V1ObjectMeta(
             name=name,

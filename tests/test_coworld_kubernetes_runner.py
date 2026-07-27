@@ -3,6 +3,9 @@ import json
 import os
 import socket
 import subprocess
+import sys
+import threading
+import time
 import zipfile
 from io import BytesIO
 from pathlib import Path
@@ -29,6 +32,12 @@ from coworld.runner.kubernetes_runner import (
 )
 from coworld.runner.phase_timings import EpisodePhaseTimings
 from coworld.runner.runner import EpisodeArtifacts, EpisodeRunSpec, PlayerLaunchSpec, RunnableLaunchSpec
+
+
+@pytest.fixture(autouse=True)
+def _player_service_wait_env(monkeypatch):
+    monkeypatch.setenv("COWORLD_COORDINATOR_IMAGE", "coworld-coordinator:latest")
+    monkeypatch.setenv("COWORLD_TIMEOUT_SECONDS", "60")
 
 
 def test_load_incluster_config_sets_retries_without_rewriting_auth(monkeypatch):
@@ -1226,7 +1235,7 @@ def test_run_kubernetes_episode_defaults_player_resource_requests(monkeypatch, t
 
 
 def test_create_player_pod_injects_policy_secret_env(monkeypatch):
-    created: dict[str, object] = {}
+    created: dict[str, Any] = {}
     core_v1 = SimpleNamespace(
         create_namespaced_pod=lambda *, namespace, body: created.update({"namespace": namespace, "body": body})
     )
@@ -1288,6 +1297,85 @@ def test_create_player_pod_injects_policy_secret_env(monkeypatch):
     assert pod.spec.service_account_name == "episode-runner"
     assert pod.spec.volumes is None
     assert pod.spec.automount_service_account_token is None
+    wait_for_game = pod.spec.init_containers[0]
+    assert wait_for_game.name == "wait-for-game-service"
+    assert wait_for_game.image == "coworld-coordinator:latest"
+    wait_env = {env_var.name: env_var.value for env_var in wait_for_game.env}
+    assert wait_env == {
+        "COWORLD_GAME_HOST": "game-service",
+        "COWORLD_GAME_PORT": "8080",
+        "COWORLD_GAME_WAIT_TIMEOUT_SECONDS": "60",
+    }
+
+
+def test_player_service_gate_waits_for_delayed_endpoint():
+    listener = socket.socket()
+    listener.bind(("127.0.0.1", 0))
+    port = listener.getsockname()[1]
+
+    def make_service_ready() -> None:
+        time.sleep(0.1)
+        listener.listen()
+        connection, _ = listener.accept()
+        connection.close()
+        listener.close()
+
+    thread = threading.Thread(target=make_service_ready, daemon=True)
+    thread.start()
+    completed = subprocess.run(
+        [sys.executable, "-c", kubernetes_runner._WAIT_FOR_GAME_SERVICE_SCRIPT],
+        env={
+            **os.environ,
+            "COWORLD_GAME_HOST": "127.0.0.1",
+            "COWORLD_GAME_PORT": str(port),
+            "COWORLD_GAME_WAIT_TIMEOUT_SECONDS": "2",
+        },
+        check=False,
+        timeout=3,
+    )
+    thread.join(timeout=1)
+
+    assert completed.returncode == 0
+    assert not thread.is_alive()
+
+
+def test_player_service_gate_retries_transient_dns_failure():
+    flaky_socket_setup = """
+import socket
+
+outcomes = iter([socket.gaierror(), 0])
+
+class FlakySocket:
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *args):
+        pass
+
+    def settimeout(self, timeout):
+        pass
+
+    def connect_ex(self, address):
+        outcome = next(outcomes)
+        if isinstance(outcome, Exception):
+            raise outcome
+        return outcome
+
+socket.socket = FlakySocket
+"""
+    completed = subprocess.run(
+        [sys.executable, "-c", f"{flaky_socket_setup}\n{kubernetes_runner._WAIT_FOR_GAME_SERVICE_SCRIPT}"],
+        env={
+            **os.environ,
+            "COWORLD_GAME_HOST": "game-service",
+            "COWORLD_GAME_PORT": "8080",
+            "COWORLD_GAME_WAIT_TIMEOUT_SECONDS": "2",
+        },
+        check=False,
+        timeout=3,
+    )
+
+    assert completed.returncode == 0
 
 
 def test_create_player_pod_applies_cpu_limit_and_pins_thread_pools(monkeypatch):
@@ -1391,9 +1479,12 @@ def test_create_player_pod_with_bedrock_sidecar_inverts_bedrock_access(monkeypat
     # The player app is the only regular container; the sidecar is a native sidecar
     # (initContainer with restartPolicy=Always) so the restartPolicy=Never pod can still finish.
     assert [container.name for container in pod.spec.containers] == ["player"]
-    assert [c.name for c in pod.spec.init_containers] == [BEDROCK_SIDECAR_CONTAINER_NAME]
+    assert [c.name for c in pod.spec.init_containers] == [
+        "wait-for-game-service",
+        BEDROCK_SIDECAR_CONTAINER_NAME,
+    ]
     player_container: Any = pod.spec.containers[0]
-    sidecar: Any = pod.spec.init_containers[0]
+    sidecar: Any = pod.spec.init_containers[1]
     assert sidecar.restart_policy == "Always"
 
     env = {env_var.name: env_var.value for env_var in player_container.env}
@@ -1474,7 +1565,11 @@ def test_create_player_pod_sidecar_forwards_completion_s3_env(monkeypatch):
         [],
     )
 
-    sidecar: Any = created["body"].spec.init_containers[0]
+    sidecar: Any = next(
+        container
+        for container in created["body"].spec.init_containers
+        if container.name == BEDROCK_SIDECAR_CONTAINER_NAME
+    )
     sidecar_values = {env_var.name: env_var.value for env_var in sidecar.env}
     assert sidecar_values["BEDROCK_SIDECAR_COMPLETIONS_BUCKET"] == "softmax-bedrock-logs-583928386201"
     assert sidecar_values["BEDROCK_SIDECAR_COMPLETIONS_PREFIX"] == "sidecar-completions"
