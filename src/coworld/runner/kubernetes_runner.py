@@ -311,11 +311,10 @@ def _run_kubernetes_episode(
         )
         gameplay_done = time.monotonic()
         _validate_results_file(artifacts.results_path, job.results_schema)
-        # A game that tolerates absent seats (connect-timeout auto-start) still writes a normal
-        # results.json when its player pods never came up — producing a silent, blank, zero-progress
-        # episode that the platform would otherwise record as a success. The orchestrator owns the
-        # truth here (it scheduled the pods), so fail loudly with a typed error instead.
-        _raise_if_no_players_started(core_v1, namespace, child_names)
+        # A game that tolerates absent seats (connect-timeout auto-start) still writes normal
+        # results when a player pod never came up. The orchestrator owns whether Kubernetes
+        # started each process, so platform startup failures cannot become competitive evidence.
+        _raise_if_players_never_started(core_v1, namespace, child_names)
         core_timings = {
             "game_boot_s": game_ready - worker_start,
             "player_launch_s": players_launched - game_ready,
@@ -664,18 +663,16 @@ def _wait_for_episode_artifacts(
     )
 
 
-def _raise_if_no_players_started(core_v1, namespace: str, player_pod_names: tuple[str, ...] | list[str]) -> None:
-    """Fail a degenerate episode where the game wrote results but no player ever joined.
+def _raise_if_players_never_started(core_v1, namespace: str, player_pod_names: tuple[str, ...] | list[str]) -> None:
+    """Fail an episode where the game wrote results before every player process started.
 
     Connect-timeout-tolerant games auto-start and write a normal results.json even when every
     player pod failed to come up (e.g. a cold image pull lost the race against the connect
     deadline), yielding a blank, zero-progress episode with no error trail. The orchestrator
     scheduled these pods, so it can tell "the policies never started" from k8s state alone —
-    independent of any game-specific results shape. Only fires when there are seats to fill and
-    not one of them started; a partially-filled episode is left to the game's own scoring.
+    independent of any game-specific results shape.
     """
-    if not player_pod_names:
-        return
+    _raise_if_player_pod_failed(core_v1, namespace, player_pod_names)
     waiting_reasons: list[str] = []
     for slot, player_pod_name in enumerate(player_pod_names):
         try:
@@ -686,13 +683,14 @@ def _raise_if_no_players_started(core_v1, namespace: str, player_pod_names: tupl
                 continue
             raise
         if _container_has_started(player_pod, "player"):
-            return
+            continue
         reason = _player_waiting_reason(player_pod) or "never scheduled"
         waiting_reasons.append(f"slot {slot}: {reason}")
+    if not waiting_reasons:
+        return
     raise RunnerEpisodeError(
-        "No player pods started for any seat before the episode ended; "
-        "policies never joined the game (" + "; ".join(waiting_reasons) + ")",
-        error_type="no_players_connected",
+        "Kubernetes did not start every player process before the episode ended (" + "; ".join(waiting_reasons) + ")",
+        error_type="player_never_started",
     )
 
 
@@ -719,22 +717,20 @@ def _raise_if_player_pod_failed(core_v1, namespace: str, player_pod_names: tuple
                 continue
             state = status.state
             terminated = state.terminated
+            if terminated is None and status.last_state is not None:
+                terminated = status.last_state.terminated
             if terminated is not None:
                 if terminated.exit_code == 0:
                     continue
                 parts = [
-                    f"Player pod {player_pod_name} for slot {slot} terminated with exit code "
-                    f"{terminated.exit_code} before episode artifacts were written"
+                    f"Player pod {player_pod_name} for slot {slot} terminated with exit code {terminated.exit_code}"
                 ]
                 parts.extend(part for part in (terminated.reason, terminated.message) if part)
                 raise PlayerPodFailure(slot, ": ".join(parts))
             waiting = state.waiting
             waiting_reason = waiting.reason if waiting is not None else None
             if waiting_reason in _PLAYER_WAITING_POLICY_FAILURE_REASONS:
-                parts = [
-                    f"Player pod {player_pod_name} for slot {slot} waiting: {waiting_reason} "
-                    "before episode artifacts were written"
-                ]
+                parts = [f"Player pod {player_pod_name} for slot {slot} waiting: {waiting_reason}"]
                 if waiting.message:
                     parts.append(waiting.message)
                 raise PlayerPodFailure(slot, ": ".join(parts))
@@ -805,7 +801,11 @@ def _container_has_started(pod, container_name: str) -> bool:
     for status in pod.status.container_statuses or []:
         if status.name != container_name:
             continue
-        return status.state.running is not None or status.state.terminated is not None
+        return (
+            status.state.running is not None
+            or status.state.terminated is not None
+            or (status.last_state is not None and status.last_state.terminated is not None)
+        )
     return False
 
 

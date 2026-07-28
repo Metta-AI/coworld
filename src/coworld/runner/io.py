@@ -14,7 +14,7 @@ _RETRYABLE_WRITE_STATUS_CODES = {429, 500, 502, 503, 504}
 
 RunnerErrorType = Literal[
     "player_error",
-    "no_players_connected",
+    "player_never_started",
     "game_unhealthy",
     "game_contract_violation",
     "results_missing",
