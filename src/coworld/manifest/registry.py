@@ -11,7 +11,7 @@ from pydantic import BaseModel, TypeAdapter
 
 from coworld.manifest.runtime import RuntimeManifest
 from coworld.manifest.v0.converter import to_runtime as v0_to_runtime
-from coworld.manifest.v0.model import V0Manifest
+from coworld.manifest.v0.model import V0Manifest, V0StoredManifest
 from coworld.manifest.v1.converter import to_runtime as v1_to_runtime
 from coworld.manifest.v1.model import COWORLD_MANIFEST_V1, V1Manifest
 
@@ -23,6 +23,9 @@ ManifestVersion: TypeAlias = Literal["coworld.softmax.com/v0", "coworld.softmax.
 class _ManifestReader:
     model: type[BaseModel]
     converter: Callable[[Any], RuntimeManifest]
+    # Stored-read model: same contract plus lifts for historical shapes that
+    # predate the authoring contract (v0 only today). Uploads never use it.
+    stored_model: type[BaseModel]
 
 
 @dataclass(frozen=True)
@@ -33,8 +36,8 @@ class ValidatedManifest:
 
 
 _READERS: dict[ManifestVersion, _ManifestReader] = {
-    COWORLD_MANIFEST_V0: _ManifestReader(V0Manifest, v0_to_runtime),
-    COWORLD_MANIFEST_V1: _ManifestReader(V1Manifest, v1_to_runtime),
+    COWORLD_MANIFEST_V0: _ManifestReader(V0Manifest, v0_to_runtime, stored_model=V0StoredManifest),
+    COWORLD_MANIFEST_V1: _ManifestReader(V1Manifest, v1_to_runtime, stored_model=V1Manifest),
 }
 _VERSION_ADAPTER = TypeAdapter(ManifestVersion)
 
@@ -67,5 +70,5 @@ def to_runtime_manifest(api_version: str, document: dict[str, Any]) -> RuntimeMa
     """Read a certified stored manifest, tolerating newer fields at every model depth."""
     version = _VERSION_ADAPTER.validate_python(api_version)
     reader = _READERS[version]
-    author_manifest = reader.model.model_validate(document, extra="ignore")
+    author_manifest = reader.stored_model.model_validate(document, extra="ignore")
     return reader.converter(author_manifest)

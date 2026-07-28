@@ -96,3 +96,43 @@ def test_v0_and_v1_baselines_convert_to_the_same_runtime(fixture_name: str) -> N
     v1_runtime = validate_upload_manifest(_fixture("v1", fixture_name)).runtime_manifest
 
     assert v1_runtime == v0_runtime
+
+
+def _pre_v0_document(*, drop_docs: bool, string_protocols: bool) -> dict[str, object]:
+    """A stored-corpus shape from before the current authoring contract."""
+    document = _fixture("v0")
+    game = document["game"]
+    assert isinstance(game, dict)
+    if drop_docs:
+        del game["docs"]
+    else:
+        docs = game["docs"]
+        assert isinstance(docs, dict)
+        del docs["readme"]
+    if string_protocols:
+        game["protocols"] = {"player": "# Player protocol", "global": "# Global protocol"}
+    return document
+
+
+@pytest.mark.parametrize(
+    ("drop_docs", "string_protocols"),
+    [(True, False), (False, False), (True, True)],
+    ids=["docs-missing", "readme-missing", "docs-missing-and-string-protocols"],
+)
+def test_stored_read_lifts_pre_v0_shapes(drop_docs: bool, string_protocols: bool) -> None:
+    document = _pre_v0_document(drop_docs=drop_docs, string_protocols=string_protocols)
+    original = json.dumps(document, sort_keys=True)
+
+    manifest = to_runtime_manifest(COWORLD_MANIFEST_V0, document)
+
+    assert manifest.game.docs.readme.value  # lifted from description
+    assert manifest.game.protocols.player.value
+    # The raw stored document is never mutated by the lift.
+    assert json.dumps(document, sort_keys=True) == original
+
+
+def test_upload_still_rejects_pre_v0_shapes() -> None:
+    document = _pre_v0_document(drop_docs=True, string_protocols=True)
+
+    with pytest.raises(ValidationError):
+        validate_upload_manifest(document)
