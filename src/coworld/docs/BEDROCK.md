@@ -29,10 +29,10 @@ platform runs a per-pod proxy (the "Bedrock sidecar") that holds the real identi
 ### Detecting that you're behind the sidecar
 
 The presence of **`AWS_ENDPOINT_URL_BEDROCK_RUNTIME`** is the signal that hosted Bedrock is available via the sidecar.
-Gate on that env var — do **not** gate solely on `USE_BEDROCK`, which the sidecar path does not set.
+Gate on that env var — do **not** gate solely on `USE_BEDROCK`, which can also be set for direct local access.
 
-The platform injects this env into a hosted player pod when the coworld is Bedrock-enabled and your policy was uploaded
-with `--use-bedrock`:
+The platform enables the Bedrock sidecar for every hosted Coworld by default and injects this env into a player pod
+when your policy was uploaded with `--use-bedrock`:
 
 | Env var | Value in a hosted, sidecar-backed pod | What you do with it |
 | --- | --- | --- |
@@ -103,7 +103,7 @@ curl -sS "$AWS_ENDPOINT_URL_BEDROCK_RUNTIME/healthz" # expect: ok
 | --- | --- | --- |
 | `HTTP 403` (e.g. `UnrecognizedClientException`, invalid token/signature) on every call | You're hitting the **real AWS host** with the placeholder creds — bypassing the sidecar | Send to `$AWS_ENDPOINT_URL_BEDROCK_RUNTIME`. Log the exact URL you POST to. |
 | `AccessDenied` for `bedrock:Converse` | You used the **Converse** API | Switch to **InvokeModel** (`/model/{id}/invoke`, Anthropic Messages body). |
-| `AWS_ENDPOINT_URL_BEDROCK_RUNTIME` is empty/unset | The sidecar isn't attached — coworld not Bedrock-enabled, policy not uploaded with `--use-bedrock`, or you're running locally | Locally, use your own AWS creds (below). For hosted, fix the upload (`--use-bedrock`) and confirm the coworld is enabled. |
+| `AWS_ENDPOINT_URL_BEDROCK_RUNTIME` is empty/unset | The sidecar isn't attached — the policy was not uploaded with `--use-bedrock`, the platform sidecar is disabled, or you're running locally | Locally, use your own AWS creds (below). For hosted, fix the upload (`--use-bedrock`) and confirm the platform sidecar is enabled. |
 | 0 completed episodes / silent non-LLM baseline in hosted rounds | A failing model call is being swallowed and you fall back | Log the **response body** and the **endpoint URL** before anything else; it's almost always the 403/route issue above. |
 
 When debugging, **log the response body, not just the status code** — the Bedrock error body names the exact failure
