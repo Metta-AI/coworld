@@ -23,6 +23,7 @@ from coworld.certifier import (
     load_executable_transcript,
     load_manifest_episode_job_spec,
 )
+from coworld.api_client import CoworldApiClient
 from coworld.cli_support import active_docker_context, console, emit_json, observatory_web_url, validate_run_argv
 from coworld.config import DEFAULT_OPTIMIZER_PORT, DEFAULT_SUBMIT_SERVER
 from coworld.deploy_audit import (
@@ -106,8 +107,128 @@ def _parse_override(value: str) -> tuple[str, object]:
 league_app = typer.Typer(no_args_is_help=True, help="Create and inspect Coworld league seeds (team only).")
 app.add_typer(league_app, name="league")
 
+counterfactual_app = typer.Typer(
+    no_args_is_help=True,
+    help="Trigger and inspect counterfactual evals (candidate vs baseline on a league).",
+)
+app.add_typer(counterfactual_app, name="counterfactual")
+
 secret_app = typer.Typer(no_args_is_help=True, help="Manage hosted Coworld secrets.")
 app.add_typer(secret_app, name="secret")
+
+
+def _parse_policy_ref(ref: str) -> tuple[str, int] | str:
+    """Return (name, version) for name:vN / name@N, else the raw UUID/string."""
+    if ":v" in ref:
+        name, _, version_text = ref.rpartition(":v")
+        if name and version_text.isdigit():
+            return name, int(version_text)
+    if "@" in ref and not ref.startswith("@"):
+        name, _, version_text = ref.rpartition("@")
+        if name and version_text.isdigit():
+            return name, int(version_text)
+    return ref
+
+
+def _resolve_policy_version_id(client: CoworldApiClient, ref: str) -> str:
+    parsed = _parse_policy_ref(ref)
+    if isinstance(parsed, str):
+        return parsed
+    name, version = parsed
+    row = client.lookup_policy_version(name=name, version=version)
+    if row is None:
+        raise typer.BadParameter(f"policy version not found (mine): {name}:v{version}")
+    return str(row.resolved_id)
+
+
+def _resolve_league_id(client: CoworldApiClient, league: str) -> str:
+    if league.startswith("league_"):
+        return league
+    matches = [row for row in client.list_leagues() if row.name.lower() == league.lower()]
+    if not matches:
+        raise typer.BadParameter(f"league not found: {league}")
+    if len(matches) > 1:
+        ids = ", ".join(row.id for row in matches)
+        raise typer.BadParameter(f"ambiguous league name {league!r}; use one of: {ids}")
+    return matches[0].id
+
+
+@counterfactual_app.command("create")
+def counterfactual_create(
+    candidate: Annotated[
+        str,
+        typer.Argument(help="Candidate policy: name:vN (e.g. ctf-autoresearch:v47) or policy_version UUID."),
+    ],
+    baseline: Annotated[
+        str,
+        typer.Argument(help="Baseline policy: name:vN or policy_version UUID."),
+    ],
+    league: Annotated[
+        str,
+        typer.Option("--league", "-l", help="League name (e.g. Ctf) or league_… id."),
+    ],
+    n: Annotated[
+        int | None,
+        typer.Option("--n", help="Number of matched fields (defaults to league default_n)."),
+    ] = None,
+    idempotency_key: Annotated[
+        str | None,
+        typer.Option("--idempotency-key", help="Idempotency key (default: generated)."),
+    ] = None,
+    server: Annotated[str, typer.Option("--server", help="Observatory API server URL.")] = DEFAULT_SUBMIT_SERVER,
+    json_output: Annotated[bool, typer.Option("--json", help="Print raw JSON.")] = False,
+) -> None:
+    """Start a measurement counterfactual eval of candidate vs baseline on a league."""
+    import time
+    import uuid
+
+    with CoworldApiClient.from_login(server_url=server) as client:
+        candidate_id = _resolve_policy_version_id(client, candidate)
+        baseline_id = _resolve_policy_version_id(client, baseline)
+        league_id = _resolve_league_id(client, league)
+        key = idempotency_key or f"cli:{candidate_id}:{baseline_id}:{league_id}:{int(time.time())}:{uuid.uuid4().hex[:8]}"
+        result = client.create_counterfactual_eval(
+            candidate_policy_version_id=candidate_id,
+            baseline_policy_version_id=baseline_id,
+            league_id=league_id,
+            n=n,
+            idempotency_key=key,
+        )
+    if json_output:
+        emit_json(result)
+        return
+    cf_id = result["id"]
+    detail_url = observatory_web_url(server, f"/observatory/v2?detail=counterfactual-eval:{cf_id}")
+    console.print(f"[green]Created[/green] {cf_id}  status={result.get('status')}")
+    console.print(f"[dim]candidate[/dim] {candidate_id}")
+    console.print(f"[dim]baseline[/dim]  {baseline_id}")
+    console.print(f"[dim]league[/dim]    {league_id}")
+    console.print(f"[dim]UI[/dim]        {detail_url}", soft_wrap=True)
+
+
+@counterfactual_app.command("get")
+def counterfactual_get(
+    counterfactual_eval_id: Annotated[str, typer.Argument(help="cfeval_… id")],
+    server: Annotated[str, typer.Option("--server", help="Observatory API server URL.")] = DEFAULT_SUBMIT_SERVER,
+    json_output: Annotated[bool, typer.Option("--json", help="Print raw JSON.")] = False,
+) -> None:
+    with CoworldApiClient.from_login(server_url=server) as client:
+        result = client.get_counterfactual_eval(counterfactual_eval_id)
+    if json_output:
+        emit_json(result)
+        return
+    console.print(
+        f"{result['id']}  status={result.get('status')}  verdict={result.get('verdict')}  "
+        f"n_paired={result.get('n_paired')}/{result.get('n_requested')}"
+    )
+    if result.get("skip_reason"):
+        console.print(f"[yellow]skip[/yellow] {result['skip_reason']}")
+    if result.get("error"):
+        console.print(f"[red]error[/red] {result['error']}")
+    detail_url = observatory_web_url(
+        server, f"/observatory/v2?detail=counterfactual-eval:{result['id']}"
+    )
+    console.print(f"[dim]UI[/dim] {detail_url}", soft_wrap=True)
 
 
 @league_app.command("create")

@@ -778,6 +778,43 @@ class CoworldApiClient:
         response = self._get("/stats/policy-versions", PolicyVersionsResponse, params=params)
         return response.entries[0] if response.entries else None
 
+    def create_counterfactual_eval(
+        self,
+        *,
+        candidate_policy_version_id: str | UUID,
+        baseline_policy_version_id: str | UUID,
+        league_id: str,
+        n: int | None = None,
+        idempotency_key: str,
+        source: str = "tournament",
+    ) -> dict[str, Any]:
+        body: dict[str, Any] = {
+            "candidate_policy_version_id": str(candidate_policy_version_id),
+            "baseline_policy_version_id": str(baseline_policy_version_id),
+            "league_id": league_id,
+            "source": source,
+            "idempotency_key": idempotency_key,
+        }
+        if n is not None:
+            body["n"] = n
+        response = self._http_client.post(
+            "/v2/counterfactual-evals",
+            headers=self._headers(),
+            json=body,
+            timeout=60.0,
+        )
+        _raise_for_status(response)
+        return response.json()
+
+    def get_counterfactual_eval(self, counterfactual_eval_id: str) -> dict[str, Any]:
+        response = self._http_client.get(
+            f"/v2/counterfactual-evals/{counterfactual_eval_id}",
+            headers=self._headers(),
+            timeout=30.0,
+        )
+        _raise_for_status(response)
+        return response.json()
+
 
 def _raise_for_status(response: httpx.Response) -> None:
     if response.status_code == 401:
