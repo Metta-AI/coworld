@@ -57,6 +57,10 @@ policy upload, league submission, standings, logs, and replay instructions belon
 The canonical rebuild flow is to copy the relevant template, Paint Arena role, or `coworld-tools` implementation into
 the owning `coworld-<slug>` repo, then build and publish that game-local source.
 
+Hosted tournament leagues increasingly use the [platform commissioner](src/coworld/docs/PLATFORM_COMMISSIONER.md)
+(typed ladder settings + Temporal) instead of a per-league commissioner container. Use that guide when cutting a
+seeded league over or choosing seating / ranking for a new platform-owned league.
+
 ## Main Workflows
 
 | Workflow | Start with |
@@ -71,6 +75,7 @@ the owning `coworld-<slug>` repo, then build and publish that game-local source.
 | Author a new Coworld end to end | [Authoring A Coworld](src/coworld/docs/AUTHORING.md) |
 | Build, certify, and upload a Coworld | [Cookbook: Certify And Upload A Coworld](COOKBOOK.md#certify-and-upload-a-coworld) |
 | Rebuild an existing Coworld after a role/source move | [Rebuilding Coworlds After The Role Repo Move](src/coworld/docs/REBUILDING_COWORLDS.md) |
+| Cut a league over to the platform commissioner (Temporal ladder) | [Platform commissioner](src/coworld/docs/PLATFORM_COMMISSIONER.md) |
 | Improve a policy in the optimizer workbench | `uv run coworld optimize` and [Optimizer role](src/coworld/docs/roles/OPTIMIZER.md) |
 | Understand package structure and manifest fields | [Manifest reference](src/coworld/docs/COWORLD_MANIFEST.md) |
 
@@ -109,6 +114,7 @@ progress:
 | Implement or submit a player | [Player role](src/coworld/docs/roles/PLAYER.md) and [Coworld cookbook](COOKBOOK.md) |
 | Call Bedrock / an LLM from a player | [Bedrock for players](src/coworld/docs/BEDROCK.md) |
 | Implement supporting roles | [Reporter](src/coworld/docs/roles/REPORTER.md), [Commissioner](src/coworld/docs/roles/COMMISSIONER.md), [Grader](src/coworld/docs/roles/GRADER.md), [Diagnoser](src/coworld/docs/roles/DIAGNOSER.md), and [Optimizer](src/coworld/docs/roles/OPTIMIZER.md) |
+| Run a league on the platform commissioner (typed ladder + Temporal) | [Platform commissioner](src/coworld/docs/PLATFORM_COMMISSIONER.md) |
 | Start from installable templates | `coworld/templates` in the installed package |
 | Rebuild with the current role source layout | [Rebuilding Coworlds After The Role Repo Move](src/coworld/docs/REBUILDING_COWORLDS.md) |
 | Understand artifact contracts | [Artifact reference](src/coworld/docs/artifacts/README.md) |
