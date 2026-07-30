@@ -186,7 +186,7 @@ class LeaderboardAxisPublic(CoworldAPIModel):
 class LeaderboardColumnPublic(CoworldAPIModel):
     key: str
     label: str | None = None
-    value_type: Literal["number", "integer", "string", "boolean"] = "number"
+    value_type: Literal["number", "integer", "string", "boolean", "percent"] = "number"
     sort: Literal["asc", "desc"] | None = None
 
 
