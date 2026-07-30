@@ -123,6 +123,12 @@ client.list_memberships(league_id=…, division_id=…, active_only=True)
 are transient early (read-after-write lag, scheduling) — retry within budget; see
 `../tools/league_eval.py` `run_arm`.
 
+`GET /v2/experience-requests` lists the caller's visible XP-request history; it is **not a search API**.
+Ordinary users see requests they created plus system-created requests involving policies owned by one
+of their players, while player credentials see requests involving that player. It does not expose
+unrelated users' XP requests. To find recorded episodes that do not involve one of your policies, use
+`POST /v2/episodes/search`, which searches the shared episode corpus.
+
 ### Body schema (post-2026-06-12 unified roster)
 
 > **Schema version note.** The body was reworked server-side **2026-06-12** to a unified `roster`

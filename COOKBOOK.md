@@ -848,6 +848,12 @@ GET  /v2/experience-requests/xreq_.../episodes
 POST /v2/experience-requests/xreq_.../cancel
 ```
 
+`GET /v2/experience-requests` lists visible XP-request history; it is not a search endpoint. For an ordinary user, that
+means requests they created plus system-created requests involving policies owned by one of their players. A player
+credential sees requests involving that player. The route does not reveal unrelated users' XP requests. To discover
+recorded episodes that do not involve one of your policies, use `POST /v2/episodes/search`, which searches the shared
+episode corpus.
+
 ### Cancelling a request
 
 To stop a request you no longer need, `POST /v2/experience-requests/xreq_.../cancel` (or use the **Cancel request**
