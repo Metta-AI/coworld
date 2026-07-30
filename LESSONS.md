@@ -3,6 +3,15 @@
 Durable coding-agent and codebase guidance distilled from merged work. Keep entries short, current, and useful for
 future changes in this area.
 
+## 2026-07-29
+
+- Don't hand-roll curl against the platform API — use the CLI/`CoworldApiClient`, which knows the host _and_ the path.
+  When curl is genuinely needed, the prod base is `https://softmax.com/api/observatory` (so
+  `/api/observatory/v2/reporters/outputs`, not `/api/v2/...`), because the client appends `/observatory` to
+  `server_url`. Omitting it returns a Next.js **HTML 404** — looks like a bad reporter key or a dead endpoint, but is
+  only a wrong base URL. This has now cost two sessions (the Muster league run and a reporter upload). (branch
+  maxwell/ctf-log-reporter-wire)
+
 ## 2026-05-21
 
 - Reporter reference PRs should add separate manifest role entries and dependencies without taking ownership of sibling

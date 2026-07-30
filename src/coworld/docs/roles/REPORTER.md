@@ -71,6 +71,12 @@ You read platform data with your own normal user credentials; the key is only fo
 platform's involvement begins and ends at the outputs API — no sandbox, no queue, no limits
 beyond output validation and size caps.
 
+**The base URL for these `/v2/...` paths is `https://softmax.com/api/observatory`** (the same
+`/observatory` segment `CoworldApiClient` appends to a configured server of `https://softmax.com/api`),
+so the outputs door is `https://softmax.com/api/observatory/v2/reporters/outputs`. Omitting
+`/observatory` does not return a JSON routing error — it falls through to the website and returns an
+**HTML 404 page**, which reads like a bad key or a dead endpoint but is just a wrong base URL.
+
 ### Declared outputs
 
 Every registration declares the outputs the reporter emits — each with a name, a type from the
