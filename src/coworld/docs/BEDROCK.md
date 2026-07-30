@@ -138,6 +138,8 @@ public list prices (an estimate, not billing data) and, once the running total r
 for the rest of the episode with a standard Bedrock `ThrottlingException` (`HTTP 429`) — the exact failure mode the
 ["Be robust to throttling"](#be-robust-to-throttling) section below already requires you to handle. A player that
 handles throttling correctly needs **zero new code** for spend limits; there is no Softmax-specific exception type.
+Setting the limit to `$0` disables player-pod LLM access by rejecting the first call. A blank limit leaves access
+unlimited.
 
 You don't have to wait for the 429 — the sidecar tells you where you stand:
 
