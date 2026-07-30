@@ -81,7 +81,7 @@ the sandbox limits they need:
 ```json
 {
   "purpose": "narrative",
-  "world": "softmax:reporter@0.1.0",
+  "world": "softmax:reporter@0.2.0",
   "outputs": [
     { "name": "recap",  "type": "render-html",
       "description": "A broadcast-style narrative recap of the round: standings movement, notable plays, one headline per division." },
@@ -159,11 +159,17 @@ presenting a short-lived run-scoped token. Only `llm` talks to a non-API backend
 | --- | --- |
 | `episodes` | Episode artifacts by episode-request id: results, replay, game logs, per-player logs, error info — typed sugar over the public episode routes |
 | `platform` | `get(path, query)` over an allowlisted subset of public platform read APIs: leagues, rounds, standings, players, coworlds, experience requests |
-| `reports` | Other reporters' outputs, addressed by run id or by reporter id + part name — typed, described part listings and fetches over the outputs routes (chained reports, including external reporters' outputs) |
+| `reports` | Declared direct dependencies via `dependencies()`, plus described output listings and fetches by run id. Dependency entries are concrete completed runs selected by the platform graph, not guest-side search results. |
 | `llm` | Bedrock models (`converse`/`invoke`) — host-signed, metered against your run's budget, billed to the run's requester |
 | `output` | `emit(name, part-value)` for each declared output — submitted through the same outputs API external reporters use, authenticated by the run context; `progress(pct, note)`; `log(level, msg)` |
 
 Key semantics:
+
+- **Dependency graphs are binding-owned.** Manual run requests, subscriptions, and experience requests may provide the
+  same `dependencies` list. A simple dependency needs only a pinned version ref or `latest`; nested `dependencies` are
+  needed only for transitive prerequisites. The platform resolves mutable refs once, reuses exact eligible work, and
+  runs prerequisites before the requested reporter. Reporters targeting `softmax:reporter@0.2.0` read their direct
+  dependency runs with `reports.dependencies()`.
 
 - **You see with the requester's eyes.** At dispatch the platform mints a run-scoped token
   carrying the run requester's (or subscription owner's) principal, snapshotted at enqueue; every
