@@ -2,6 +2,13 @@
 
 **Status:** live
 
+> **Platform vs container.** Many hosted Coworld leagues now use the **platform
+> commissioner** (typed `League.settings.ladder` + shared Temporal worker) instead
+> of a per-league commissioner container. Authors and operators cutting a league
+> over should start at [Platform commissioner](../PLATFORM_COMMISSIONER.md).
+> This page documents the **container** WebSocket runnable contract
+> (`commissioner_key=container`).
+
 ## What it does
 
 The commissioner role decides the structure of a league: when new rounds should be created for each division, which
