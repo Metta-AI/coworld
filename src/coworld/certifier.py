@@ -798,6 +798,11 @@ async def request_commissioner_once(
 def certification_schedule_rounds_request() -> ScheduleRoundsRequest:
     division = DivisionInfo(id=_CERTIFICATION_DIVISION_ID, name="Certification", level=1)
     return ScheduleRoundsRequest(
+        # Pinned to "container" deliberately, and unaffected by the seed default flipping to
+        # "platform": this is the synthetic request handed to a commissioner *container* over its
+        # WebSocket. The protocol field is optional and containers default it to "container"
+        # anyway, so we send it explicitly to match a real container league. A platform ladder
+        # league has no commissioner image to certify.
         league=LeagueInfo(id=_CERTIFICATION_LEAGUE_ID, commissioner_key="container"),
         divisions=[division],
         active_memberships=[

@@ -766,7 +766,9 @@ in the long-lived commissioner pod specification. A secret URI naming another Co
 
 When a Coworld with a commissioner is deployed:
 
-1. Platform creates a `League` with `commissioner_key = "container"` and stores the Coworld release reference. If
+1. Platform creates a `League` with `commissioner_key = "container"` — only when the league seed asks for it by
+   name; an unstated key creates a platform-ladder league that runs no commissioner container at all. It stores the
+   Coworld release reference. If
    `commissioner_config.commissioner_runnable_id` is omitted or does not match a `manifest.commissioner[].id`, container
    scheduling fails before a round is created.
 2. On the first scheduling tick for a new commissioner runtime/config, the platform asks the selected commissioner to

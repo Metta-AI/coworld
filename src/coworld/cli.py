@@ -269,6 +269,12 @@ def league_create(
         console.print(
             "[yellow]No league materialized yet; reconcile creates it once the coworld is canonical.[/yellow]"
         )
+    if (seed.overrides or {}).get("commissioner_key") == "platform":
+        console.print(
+            "[yellow]Platform ladder league — it schedules nothing yet.[/yellow] Declare divisions "
+            "(PUT /v2/leagues/{league_id}/divisions), then POST /v2/leagues/{league_id}/settings "
+            "with ladder.enabled = true."
+        )
 
 
 @league_app.command("list")
