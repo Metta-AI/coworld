@@ -2,9 +2,11 @@ import pytest
 from jsonschema.exceptions import ValidationError as JsonSchemaValidationError
 
 from coworld.manifest_validation import (
+    authored_game_config_validation_error,
     game_config_with_named_players,
     game_config_with_overwritten_named_players,
     infer_token_count_for_game_config,
+    token_count_bounds,
     validate_authored_game_config,
     validate_coworld_manifest_game_configs,
 )
@@ -44,6 +46,30 @@ FIXED_NAMED_PLAYERS_SCHEMA = {
         },
     },
 }
+
+
+def test_authored_game_config_validation_error_reports_client_input_without_raising() -> None:
+    schema = {
+        "type": "object",
+        "required": ["tokens", "width"],
+        "properties": {
+            "tokens": {
+                "type": "array",
+                "minItems": 2,
+                "maxItems": 2,
+                "items": {"type": "string"},
+            },
+            "width": {"type": "integer"},
+        },
+    }
+
+    assert authored_game_config_validation_error({"tokens": []}, schema) == (
+        "game_config must not include runner-managed tokens"
+    )
+    assert authored_game_config_validation_error({"width": "wide"}, schema) == (
+        "at width: 'wide' is not of type 'integer'"
+    )
+    assert authored_game_config_validation_error({"width": 12}, schema) is None
 
 
 def test_game_config_with_named_players_uses_declared_players_name_field() -> None:
@@ -213,6 +239,7 @@ def test_infer_token_count_returns_none_for_variable_tokens_without_players() ->
     game_config = {"seed": 1, "maxGames": 1, "maxTicks": 1200}
 
     assert infer_token_count_for_game_config(schema, game_config) is None
+    assert token_count_bounds(schema) == (0, 9)
 
 
 def test_validate_manifest_requires_token_bounds() -> None:

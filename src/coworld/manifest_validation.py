@@ -3,7 +3,7 @@ from __future__ import annotations
 import copy
 from typing import Any, cast
 
-from coworld.schema_validation import JsonObject, JsonSchema, validate_json_schema
+from coworld.schema_validation import JsonObject, JsonSchema, json_schema_validation_errors, validate_json_schema
 from coworld.types import CoworldManifest
 
 
@@ -39,7 +39,7 @@ def infer_token_count_for_game_config(
     length, and returns `None` when the manifest is variable-length and the
     caller must supply the seated roster size.
     """
-    min_items, max_items = _token_bounds(_token_array_schema(config_schema))
+    min_items, max_items = token_count_bounds(config_schema)
     players = game_config.get("players")
     if isinstance(players, list):
         player_count = len(players)
@@ -81,6 +81,36 @@ def validate_authored_game_config(
         game_config_with_tokens(game_config, [f"token-{slot}" for slot in range(token_count)]),
         config_schema,
     )
+
+
+def authored_game_config_validation_error(
+    game_config: dict[str, Any],
+    config_schema: JsonSchema,
+    *,
+    token_count: int | None = None,
+) -> str | None:
+    """Return an actionable client error while preserving malformed-schema failures."""
+
+    _token_array_schema(config_schema)
+    if "tokens" in game_config:
+        return "game_config must not include runner-managed tokens"
+    if token_count is None:
+        players = game_config.get("players")
+        if isinstance(players, list):
+            min_items, max_items = token_count_bounds(config_schema)
+            if not min_items <= len(players) <= max_items:
+                return "game_config.players length must fit game.config_schema.properties.tokens bounds"
+            token_count = len(players)
+        else:
+            token_count = _placeholder_token_count(config_schema, game_config)
+    playable_config = copy.deepcopy(game_config)
+    playable_config["tokens"] = [f"token-{slot}" for slot in range(token_count)]
+    errors = json_schema_validation_errors(playable_config, config_schema)
+    if not errors:
+        return None
+    error = errors[0]
+    location = ".".join(str(part) for part in error.absolute_path) or "config"
+    return f"at {location}: {error.message}"
 
 
 def game_config_with_named_players(
@@ -191,7 +221,7 @@ def _player_config_objects(value: Any, field_name: str) -> list[dict[str, Any]]:
 
 def validate_coworld_manifest_game_configs(manifest: CoworldManifest) -> None:
     _reject_legacy_name_config_schema(manifest.game.config_schema)
-    _token_bounds(_token_array_schema(manifest.game.config_schema))
+    token_count_bounds(manifest.game.config_schema)
     variant_ids: set[str] = set()
     for variant in manifest.variants:
         if variant.id in variant_ids:
@@ -216,12 +246,12 @@ def _placeholder_token_count(config_schema: JsonSchema, game_config: dict[str, A
     if isinstance(players, list):
         return len(players)
 
-    tokens = _token_array_schema(config_schema)
-    min_items, _max_items = _token_bounds(tokens)
+    min_items, _max_items = token_count_bounds(config_schema)
     return min_items
 
 
-def _token_bounds(tokens: dict[str, Any]) -> tuple[int, int]:
+def token_count_bounds(config_schema: JsonSchema) -> tuple[int, int]:
+    tokens = _token_array_schema(config_schema)
     min_items = tokens.get("minItems")
     max_items = tokens.get("maxItems")
     if not isinstance(min_items, int) or not isinstance(max_items, int):
