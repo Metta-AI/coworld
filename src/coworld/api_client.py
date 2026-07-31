@@ -60,6 +60,28 @@ class LeaguePublic(CoworldAPIModel):
     disabled_at: datetime | None = None
 
 
+class LeagueLockSettings(CoworldAPIModel):
+    """A league's two independent locks.
+
+    ``submissions_locked``: the league accepts no new policy submissions.
+    ``game_version_locked``: the league keeps running ``locked_game_version`` instead of
+    following whichever Coworld row is canonical for its game.
+
+    Hand-maintained mirror of ``LeagueLockSettings`` in
+    ``app_backend/src/metta/app_backend/v2/routes/leagues.py`` — change both together.
+    OpenAPI marks all five required (nullable, but never absent), so none carry a default
+    here: a server-side rename should fail loudly rather than silently read as None.
+    """
+
+    submissions_locked: bool
+    submissions_locked_at: datetime | None
+    game_version_locked: bool
+    # The pinned game version while locked; None when unlocked.
+    locked_game_version: str | None
+    # The version the league would run if unlocked — the current canonical row.
+    canonical_game_version: str
+
+
 class DivisionCommissionerDescriptionPublic(CoworldAPIModel):
     round_schedule: str | None = None
     next_round: str | None = None
@@ -526,6 +548,41 @@ class CoworldApiClient:
 
     def get_game_of_week_league(self) -> LeaguePublic | None:
         return self._get("/v2/leagues/game-of-week", LeaguePublic | None)
+
+    def get_league_locks(self, league_id: str) -> LeagueLockSettings:
+        """Read the league's submission and game-version locks.
+
+        Principals reachable from this client: the league's owner, or a Softmax team member
+        (pass ``--elevated`` / :meth:`set_elevated`). The route also accepts that league's
+        commissioner token and the platform-commissioner machine, neither of which a CLI
+        caller holds.
+        """
+        return self._get(f"/v2/leagues/{league_id}/locks", LeagueLockSettings)
+
+    def set_league_locks(
+        self,
+        league_id: str,
+        *,
+        submissions_locked: bool,
+        game_version_locked: bool,
+    ) -> LeagueLockSettings:
+        """Set both league locks; returns the resulting state. Same principals as
+        :meth:`get_league_locks`.
+
+        The server takes both flags on every call, so pass the full desired state rather
+        than a partial update — read with :meth:`get_league_locks` first if you only mean
+        to change one. Idempotent: re-locking keeps the original submission-lock timestamp
+        and the originally pinned game version, and enabling the game-version lock pins
+        whichever Coworld row is canonical at that moment.
+        """
+        return self._post(
+            f"/v2/leagues/{league_id}/locks",
+            LeagueLockSettings,
+            json={
+                "submissions_locked": submissions_locked,
+                "game_version_locked": game_version_locked,
+            },
+        )
 
     def get_league_division_ladder(self, league_id: str) -> list[DivisionLadderEntryPublic]:
         return self._get(f"/v2/leagues/{league_id}/division-ladder", list[DivisionLadderEntryPublic])
