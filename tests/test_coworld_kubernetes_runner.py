@@ -10,7 +10,7 @@ import zipfile
 from io import BytesIO
 from pathlib import Path
 from types import SimpleNamespace
-from typing import Any
+from typing import Any, cast
 
 import pytest
 from kubernetes.client import Configuration
@@ -32,6 +32,7 @@ from coworld.runner.kubernetes_runner import (
 )
 from coworld.runner.phase_timings import EpisodePhaseTimings
 from coworld.runner.runner import EpisodeArtifacts, EpisodeRunSpec, PlayerLaunchSpec, RunnableLaunchSpec
+from coworld.types import CoworldEpisodeJobSpec, CoworldHumanPlayerSpec
 
 
 @pytest.fixture(autouse=True)
@@ -61,8 +62,10 @@ def test_load_incluster_config_sets_retries_without_rewriting_auth(monkeypatch):
     assert load_calls == [True]
     assert saved == [loaded]
     # Retries set for 429 backoff...
-    assert 429 in loaded.retries.status_forcelist
-    assert loaded.retries.respect_retry_after_header is True
+    retries = loaded.retries
+    assert retries is not None
+    assert 429 in retries.status_forcelist
+    assert retries.respect_retry_after_header is True
     # ...but the auth fields the refresh hook manages are untouched.
     assert loaded.api_key == {"BearerToken": "sa-token"}
     assert loaded.api_key_prefix == {"BearerToken": "Bearer"}
@@ -334,6 +337,47 @@ def test_require_global_message_blames_game_contract_when_players_healthy(monkey
     assert exc_info.value.error_type == "game_contract_violation"
 
 
+@pytest.mark.parametrize(
+    ("episode_timeout_seconds", "startup_timeout_seconds", "expected_timeout_seconds"),
+    [
+        (5.0, runner_module.DEFAULT_RUNTIME_STARTUP_TIMEOUT_SECONDS, 5.0),
+        (120.0, runner_module.DEFAULT_RUNTIME_STARTUP_TIMEOUT_SECONDS, 10.0),
+        (120.0, runner_module.LOBBY_RUNTIME_STARTUP_TIMEOUT_SECONDS, 60.0),
+    ],
+)
+def test_require_global_message_uses_the_selected_startup_timeout(
+    monkeypatch, episode_timeout_seconds, startup_timeout_seconds, expected_timeout_seconds
+):
+    class GlobalWebSocket:
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *_args):
+            return None
+
+        async def recv(self):
+            return b"frame"
+
+    observed_timeouts: list[float] = []
+
+    async def wait_for(awaitable, *, timeout):
+        observed_timeouts.append(timeout)
+        return await awaitable
+
+    monkeypatch.setattr(runner_module.websockets, "connect", lambda *_args, **_kwargs: GlobalWebSocket())
+    monkeypatch.setattr(runner_module.asyncio, "wait_for", wait_for)
+
+    asyncio.run(
+        runner_module._require_global_message(
+            "ws://example.test/global",
+            timeout_seconds=episode_timeout_seconds,
+            startup_timeout_seconds=startup_timeout_seconds,
+        )
+    )
+
+    assert observed_timeouts == [expected_timeout_seconds]
+
+
 def test_run_episode_containers_uses_docker_dns_and_omits_policy_names_env(tmp_path, monkeypatch):
     commands: list[list[str]] = []
     run_commands: list[list[str]] = []
@@ -451,7 +495,9 @@ def test_run_episode_containers_adds_fixed_extra_local_ports(tmp_path, monkeypat
     ]
     assert _env_value(game_command, "COWORLD_LOCAL_PORT_3724") == "127.0.0.1:3724"
     assert _env_value(game_command, "COWORLD_LOCAL_PORT_8085") == "127.0.0.1:8085"
-    assert json.loads(_env_value(game_command, runner_module.LOCAL_PORTS_JSON_ENV_VAR)) == {
+    local_ports = _env_value(game_command, runner_module.LOCAL_PORTS_JSON_ENV_VAR)
+    assert local_ports is not None
+    assert json.loads(local_ports) == {
         "3724": {"host": "127.0.0.1", "port": 3724},
         "8085": {"host": "127.0.0.1", "port": 8085},
     }
@@ -716,6 +762,7 @@ def test_wait_for_episode_artifacts_skips_pod_status_after_results_when_replay_n
         _FailingCoreV1(),
         "default",
         "game-pod",
+        player_count=0,
         timeout_seconds=0.01,
         require_replay=False,
     )
@@ -731,6 +778,7 @@ def test_wait_for_episode_artifacts_returns_after_results_written_when_replay_no
         core_v1,
         "default",
         "game-pod",
+        player_count=0,
         timeout_seconds=1.0,
         require_replay=False,
     )
@@ -749,6 +797,7 @@ def test_wait_for_episode_artifacts_waits_for_replay_after_results(tmp_path, mon
         core_v1,
         "default",
         "game-pod",
+        player_count=0,
         timeout_seconds=1.0,
         require_replay=True,
     )
@@ -763,7 +812,7 @@ def test_wait_for_episode_artifacts_fails_when_game_exits_without_replay(tmp_pat
         artifact_writes=[[artifacts.results_path]],
         game_exit_codes=[0],
         player_statuses={
-            "player-0": [_container_status("player", exit_code=0, reason="Completed")],
+            "job-player-0": [_container_status("player", exit_code=0, reason="Completed")],
         },
     )
 
@@ -773,7 +822,8 @@ def test_wait_for_episode_artifacts_fails_when_game_exits_without_replay(tmp_pat
             core_v1,
             "default",
             "game-pod",
-            ["player-0"],
+            ["job-player-0"],
+            player_count=1,
             timeout_seconds=1.0,
             require_replay=True,
         )
@@ -792,6 +842,7 @@ def test_wait_for_episode_artifacts_reports_results_missing_when_game_exits_with
             "default",
             "game-pod",
             [],
+            player_count=0,
             timeout_seconds=1.0,
             require_replay=False,
         )
@@ -822,7 +873,8 @@ def test_wait_for_episode_artifacts_sees_failure_written_during_clean_game_exit(
             DeclaringCoreV1(),
             "default",
             "game-pod",
-            ["player-0"],
+            ["job-player-0"],
+            player_count=1,
             timeout_seconds=1.0,
             require_replay=False,
         )
@@ -842,6 +894,7 @@ def test_wait_for_episode_artifacts_reports_game_unhealthy_when_game_exits_nonze
             "default",
             "game-pod",
             [],
+            player_count=0,
             timeout_seconds=1.0,
             require_replay=False,
         )
@@ -883,7 +936,7 @@ def test_validate_results_file_reports_results_malformed(tmp_path):
 )
 def test_wait_for_episode_artifacts_reports_failed_player_on_timeout(tmp_path, player_status, expected_message):
     artifacts = EpisodeArtifacts.create(tmp_path)
-    core_v1 = _FakeCoreV1(player_statuses={"player-0": [player_status]})
+    core_v1 = _FakeCoreV1(player_statuses={"job-player-0": [player_status]})
 
     with pytest.raises(kubernetes_runner.PlayerPodFailure) as exc_info:
         _wait_for_episode_artifacts(
@@ -891,7 +944,8 @@ def test_wait_for_episode_artifacts_reports_failed_player_on_timeout(tmp_path, p
             core_v1,
             "default",
             "game-pod",
-            ["player-0"],
+            ["job-player-0"],
+            player_count=1,
             timeout_seconds=0.01,
             require_replay=False,
         )
@@ -957,13 +1011,13 @@ def test_raise_if_players_never_started_fails_when_no_player_ever_ran():
     # still have written a tolerant zero-progress result, but the orchestrator knows nobody joined.
     core_v1 = _FakeLogCoreV1(
         statuses={
-            "player-0": [_container_status("player", waiting=True, reason="ContainerCreating")],
-            "player-1": [_container_status("player", waiting=True, reason="ContainerCreating")],
+            "job-player-0": [_container_status("player", waiting=True, reason="ContainerCreating")],
+            "job-player-1": [_container_status("player", waiting=True, reason="ContainerCreating")],
         }
     )
 
     with pytest.raises(runner_io.RunnerEpisodeError) as exc_info:
-        kubernetes_runner._raise_if_players_never_started(core_v1, "default", ["player-0", "player-1"])
+        kubernetes_runner._raise_if_players_never_started(core_v1, "default", ["job-player-0", "job-player-1"])
 
     assert exc_info.value.error_type == "player_never_started"
     assert "ContainerCreating" in str(exc_info.value)
@@ -972,23 +1026,23 @@ def test_raise_if_players_never_started_fails_when_no_player_ever_ran():
 def test_raise_if_players_never_started_fails_when_only_some_players_started():
     core_v1 = _FakeLogCoreV1(
         statuses={
-            "player-0": [_container_status("player", running=True)],
-            "player-1": [_container_status("player", waiting=True, reason="ContainerCreating")],
+            "job-player-0": [_container_status("player", running=True)],
+            "job-player-1": [_container_status("player", waiting=True, reason="ContainerCreating")],
         }
     )
 
     with pytest.raises(runner_io.RunnerEpisodeError, match="slot 1") as exc_info:
-        kubernetes_runner._raise_if_players_never_started(core_v1, "default", ["player-0", "player-1"])
+        kubernetes_runner._raise_if_players_never_started(core_v1, "default", ["job-player-0", "job-player-1"])
 
     assert exc_info.value.error_type == "player_never_started"
 
 
 @pytest.mark.parametrize("reason", sorted(kubernetes_runner._PLAYER_WAITING_POLICY_FAILURE_REASONS))
 def test_raise_if_players_never_started_preserves_policy_waiting_failures(reason: str):
-    core_v1 = _FakeLogCoreV1(statuses={"player-0": [_container_status("player", waiting=True, reason=reason)]})
+    core_v1 = _FakeLogCoreV1(statuses={"job-player-0": [_container_status("player", waiting=True, reason=reason)]})
 
     with pytest.raises(kubernetes_runner.PlayerPodFailure) as exc_info:
-        kubernetes_runner._raise_if_players_never_started(core_v1, "default", ["player-0"])
+        kubernetes_runner._raise_if_players_never_started(core_v1, "default", ["job-player-0"])
 
     assert exc_info.value.failed_policy_index == 0
     assert reason in str(exc_info.value)
@@ -997,7 +1051,7 @@ def test_raise_if_players_never_started_preserves_policy_waiting_failures(reason
 def test_raise_if_players_never_started_preserves_last_player_termination():
     core_v1 = _FakeLogCoreV1(
         statuses={
-            "player-0": [
+            "job-player-0": [
                 _container_status(
                     "player",
                     waiting=True,
@@ -1010,7 +1064,7 @@ def test_raise_if_players_never_started_preserves_last_player_termination():
     )
 
     with pytest.raises(kubernetes_runner.PlayerPodFailure) as exc_info:
-        kubernetes_runner._raise_if_players_never_started(core_v1, "default", ["player-0"])
+        kubernetes_runner._raise_if_players_never_started(core_v1, "default", ["job-player-0"])
 
     assert exc_info.value.failed_policy_index == 0
     assert "terminated with exit code 1" in str(exc_info.value)
@@ -1019,7 +1073,7 @@ def test_raise_if_players_never_started_preserves_last_player_termination():
 def test_raise_if_players_never_started_accepts_clean_last_player_termination():
     core_v1 = _FakeLogCoreV1(
         statuses={
-            "player-0": [
+            "job-player-0": [
                 _container_status(
                     "player",
                     waiting=True,
@@ -1030,18 +1084,18 @@ def test_raise_if_players_never_started_accepts_clean_last_player_termination():
         }
     )
 
-    kubernetes_runner._raise_if_players_never_started(core_v1, "default", ["player-0"])
+    kubernetes_runner._raise_if_players_never_started(core_v1, "default", ["job-player-0"])
 
 
 def test_raise_if_players_never_started_passes_when_every_player_started():
     core_v1 = _FakeLogCoreV1(
         statuses={
-            "player-0": [_container_status("player", running=True)],
-            "player-1": [_container_status("player", exit_code=0, reason="Completed")],
+            "job-player-0": [_container_status("player", running=True)],
+            "job-player-1": [_container_status("player", exit_code=0, reason="Completed")],
         }
     )
 
-    kubernetes_runner._raise_if_players_never_started(core_v1, "default", ["player-0", "player-1"])
+    kubernetes_runner._raise_if_players_never_started(core_v1, "default", ["job-player-0", "job-player-1"])
 
 
 def test_raise_if_players_never_started_noop_without_player_pods():
@@ -1049,11 +1103,18 @@ def test_raise_if_players_never_started_noop_without_player_pods():
     kubernetes_runner._raise_if_players_never_started(_FakeLogCoreV1(statuses={}), "default", [])
 
 
+def test_player_pod_slot_requires_the_production_name_shape():
+    assert kubernetes_runner._player_pod_slot("episode-player-3") == 3
+
+    with pytest.raises(ValueError, match="does not end in '-player-<slot>'"):
+        kubernetes_runner._player_pod_slot("player-3")
+
+
 def test_raise_if_players_never_started_treats_missing_pod_as_not_started():
-    core_v1 = _FakeLogCoreV1(statuses={}, missing_pods={"player-0"})
+    core_v1 = _FakeLogCoreV1(statuses={}, missing_pods={"job-player-0"})
 
     with pytest.raises(runner_io.RunnerEpisodeError) as exc_info:
-        kubernetes_runner._raise_if_players_never_started(core_v1, "default", ["player-0"])
+        kubernetes_runner._raise_if_players_never_started(core_v1, "default", ["job-player-0"])
 
     assert exc_info.value.error_type == "player_never_started"
 
@@ -1062,7 +1123,7 @@ def test_wait_for_episode_artifacts_ignores_clean_player_exit_on_timeout(tmp_pat
     artifacts = EpisodeArtifacts.create(tmp_path)
     core_v1 = _FakeCoreV1(
         player_statuses={
-            "player-0": [_container_status("player", exit_code=0, reason="Completed")],
+            "job-player-0": [_container_status("player", exit_code=0, reason="Completed")],
         }
     )
 
@@ -1072,7 +1133,8 @@ def test_wait_for_episode_artifacts_ignores_clean_player_exit_on_timeout(tmp_pat
             core_v1,
             "default",
             "game-pod",
-            ["player-0"],
+            ["job-player-0"],
+            player_count=1,
             timeout_seconds=0.01,
             require_replay=False,
         )
@@ -1097,7 +1159,8 @@ def test_wait_for_episode_artifacts_ignores_player_pods(tmp_path, monkeypatch):
         core_v1,
         "default",
         "game-pod",
-        ["player-0"],
+        ["job-player-0"],
+        player_count=1,
         timeout_seconds=1.0,
         require_replay=True,
     )
@@ -1109,8 +1172,8 @@ def test_collect_logs_skips_player_pods_that_have_not_started(tmp_path):
     artifacts = EpisodeArtifacts.create(tmp_path)
     core_v1 = _FakeLogCoreV1(
         {
-            "player-waiting": [_container_status("player", waiting=True)],
-            "player-running": [_container_status("player", running=True)],
+            "job-player-0": [_container_status("player", waiting=True)],
+            "job-player-1": [_container_status("player", running=True)],
         }
     )
 
@@ -1118,16 +1181,16 @@ def test_collect_logs_skips_player_pods_that_have_not_started(tmp_path):
         core_v1,
         "default",
         "game-pod",
-        ["player-waiting", "player-running"],
+        ["job-player-0", "job-player-1"],
         artifacts,
     )
 
     assert artifacts.game_stdout_path.read_text(encoding="utf-8") == "game-pod game combined stdout stderr logs"
     assert not artifacts.policy_log_path(0).exists()
     assert artifacts.policy_log_path(1).read_text(encoding="utf-8") == (
-        "player-running player combined stdout stderr logs"
+        "job-player-1 player combined stdout stderr logs"
     )
-    assert core_v1.log_calls == [("game-pod", "game"), ("player-running", "player")]
+    assert core_v1.log_calls == [("game-pod", "game"), ("job-player-1", "player")]
 
 
 def test_collect_logs_skips_missing_player_pods(tmp_path):
@@ -1135,25 +1198,25 @@ def test_collect_logs_skips_missing_player_pods(tmp_path):
     core_v1 = _FakeLogCoreV1(
         {
             "game-pod": [],
-            "player-running": [_container_status("player", running=True)],
+            "job-player-1": [_container_status("player", running=True)],
         },
-        missing_pods={"player-missing"},
+        missing_pods={"job-player-0"},
     )
 
     _collect_logs(
         core_v1,
         "default",
         "game-pod",
-        ["player-missing", "player-running"],
+        ["job-player-0", "job-player-1"],
         artifacts,
     )
 
     assert artifacts.game_stdout_path.read_text(encoding="utf-8") == "game-pod game combined stdout stderr logs"
     assert not artifacts.policy_log_path(0).exists()
     assert artifacts.policy_log_path(1).read_text(encoding="utf-8") == (
-        "player-running player combined stdout stderr logs"
+        "job-player-1 player combined stdout stderr logs"
     )
-    assert core_v1.log_calls == [("game-pod", "game"), ("player-running", "player")]
+    assert core_v1.log_calls == [("game-pod", "game"), ("job-player-1", "player")]
 
 
 def test_collect_logs_records_player_log_errors_without_failing(tmp_path):
@@ -1161,31 +1224,31 @@ def test_collect_logs_records_player_log_errors_without_failing(tmp_path):
     core_v1 = _FakeLogCoreV1(
         {
             "game-pod": [],
-            "player-broken": [_container_status("player", running=True)],
-            "player-running": [_container_status("player", running=True)],
+            "job-player-0": [_container_status("player", running=True)],
+            "job-player-1": [_container_status("player", running=True)],
         },
-        log_errors={("player-broken", "player"): ApiException(status=500, reason="kubelet timeout")},
+        log_errors={("job-player-0", "player"): ApiException(status=500, reason="kubelet timeout")},
     )
 
     _collect_logs(
         core_v1,
         "default",
         "game-pod",
-        ["player-broken", "player-running"],
+        ["job-player-0", "job-player-1"],
         artifacts,
     )
 
     assert artifacts.game_stdout_path.read_text(encoding="utf-8") == "game-pod game combined stdout stderr logs"
-    assert "Failed to collect Kubernetes logs for pod player-broken container player" in artifacts.policy_log_path(
+    assert "Failed to collect Kubernetes logs for pod job-player-0 container player" in artifacts.policy_log_path(
         0
     ).read_text(encoding="utf-8")
     assert artifacts.policy_log_path(1).read_text(encoding="utf-8") == (
-        "player-running player combined stdout stderr logs"
+        "job-player-1 player combined stdout stderr logs"
     )
     assert core_v1.log_calls == [
         ("game-pod", "game"),
-        ("player-broken", "player"),
-        ("player-running", "player"),
+        ("job-player-0", "player"),
+        ("job-player-1", "player"),
     ]
 
 
@@ -1194,7 +1257,7 @@ def test_collect_logs_records_game_log_read_failures(tmp_path):
     core_v1 = _FakeLogCoreV1(
         {
             "game-pod": [],
-            "player-running": [_container_status("player", running=True)],
+            "job-player-0": [_container_status("player", running=True)],
         },
         log_errors={("game-pod", "game"): ApiException(status=500, reason="kubelet timeout")},
     )
@@ -1203,7 +1266,7 @@ def test_collect_logs_records_game_log_read_failures(tmp_path):
         core_v1,
         "default",
         "game-pod",
-        ["player-running"],
+        ["job-player-0"],
         artifacts,
     )
 
@@ -1211,9 +1274,9 @@ def test_collect_logs_records_game_log_read_failures(tmp_path):
         "Failed to collect Kubernetes logs for pod game-pod container game:"
     )
     assert artifacts.policy_log_path(0).read_text(encoding="utf-8") == (
-        "player-running player combined stdout stderr logs"
+        "job-player-0 player combined stdout stderr logs"
     )
-    assert core_v1.log_calls == [("game-pod", "game"), ("player-running", "player")]
+    assert core_v1.log_calls == [("game-pod", "game"), ("job-player-0", "player")]
 
 
 def test_new_workspace_does_not_require_repo_depth(monkeypatch, tmp_path):
@@ -1247,11 +1310,15 @@ def test_run_kubernetes_episode_defaults_player_resource_requests(monkeypatch, t
     artifacts = EpisodeArtifacts.create(tmp_path)
     artifacts.results_path.write_text("{}", encoding="utf-8")
     state_path = tmp_path / "state.json"
-    state_path.write_text(json.dumps({"tokens": ["slot-token"]}), encoding="utf-8")
-    created: list[tuple[str, str]] = []
+    state_path.write_text(json.dumps({"tokens": ["human-token", "policy-token"]}), encoding="utf-8")
+    created: list[tuple[int, str, str, str]] = []
+    startup_timeouts: list[float] = []
 
     async def noop_async(*_args, **_kwargs):
         return None
+
+    async def record_global_startup_timeout(*_args, startup_timeout_seconds, **_kwargs):
+        startup_timeouts.append(startup_timeout_seconds)
 
     monkeypatch.setattr(kubernetes_runner, "STATE_PATH", state_path)
     monkeypatch.setattr(kubernetes_runner, "_load_incluster_config", lambda: None)
@@ -1260,7 +1327,7 @@ def test_run_kubernetes_episode_defaults_player_resource_requests(monkeypatch, t
     monkeypatch.setattr(kubernetes_runner, "_wait_for_health", lambda *_args, **_kwargs: None)
     monkeypatch.setattr(kubernetes_runner, "_require_http_ok", lambda *_args, **_kwargs: None)
     monkeypatch.setattr(kubernetes_runner, "_require_bad_player_rejected", noop_async)
-    monkeypatch.setattr(kubernetes_runner, "_require_global_message", noop_async)
+    monkeypatch.setattr(kubernetes_runner, "_require_global_message", record_global_startup_timeout)
     monkeypatch.setattr(kubernetes_runner, "_wait_for_episode_artifacts", lambda *_args, **_kwargs: None)
     monkeypatch.setattr(kubernetes_runner, "_validate_results_file", lambda *_args: None)
     monkeypatch.setattr(kubernetes_runner, "_raise_if_players_never_started", lambda *_args, **_kwargs: None)
@@ -1279,7 +1346,7 @@ def test_run_kubernetes_episode_defaults_player_resource_requests(monkeypatch, t
         _core_v1,
         _namespace,
         _name,
-        _slot,
+        slot,
         _token,
         _player,
         _policy_secret_env,
@@ -1290,17 +1357,24 @@ def test_run_kubernetes_episode_defaults_player_resource_requests(monkeypatch, t
         player_cpu_limit,
         _owner_references,
     ):
-        created.append((player_cpu_request, player_memory_request, player_cpu_limit))
+        created.append((slot, player_cpu_request, player_memory_request, player_cpu_limit))
 
     monkeypatch.setattr(kubernetes_runner, "_create_player_pod", create_player_pod)
-    job = SimpleNamespace(
-        players=[SimpleNamespace(image="paintbot:latest", run=[], env={})],
-        results_schema={},
+    job = cast(
+        CoworldEpisodeJobSpec,
+        SimpleNamespace(
+            players=[
+                CoworldHumanPlayerSpec(type="human", token="private-browser-seat-token"),
+                SimpleNamespace(image="paintbot:latest", run=[], env={}),
+            ],
+            results_schema={},
+        ),
     )
 
     kubernetes_runner._run_kubernetes_episode(job, artifacts, timeout_seconds=1.0)
 
-    assert created == [("2", "2Gi", "")]
+    assert created == [(1, "2", "2Gi", "")]
+    assert startup_timeouts == [runner_module.LOBBY_RUNTIME_STARTUP_TIMEOUT_SECONDS]
 
 
 def test_create_player_pod_injects_policy_secret_env(monkeypatch):
@@ -1448,7 +1522,7 @@ socket.socket = FlakySocket
 
 
 def test_create_player_pod_applies_cpu_limit_and_pins_thread_pools(monkeypatch):
-    created: dict[str, object] = {}
+    created: dict[str, Any] = {}
     core_v1 = SimpleNamespace(create_namespaced_pod=lambda *, namespace, body: created.update({"body": body}))
     monkeypatch.delenv("BEDROCK_SIDECAR_ENABLED", raising=False)
     # An author who pins their own thread count keeps it; the limit only fills the unset knobs.
@@ -1471,7 +1545,7 @@ def test_create_player_pod_applies_cpu_limit_and_pins_thread_pools(monkeypatch):
 
 
 def test_create_player_pod_without_cpu_limit_omits_limit_and_thread_env(monkeypatch):
-    created: dict[str, object] = {}
+    created: dict[str, Any] = {}
     core_v1 = SimpleNamespace(create_namespaced_pod=lambda *, namespace, body: created.update({"body": body}))
     monkeypatch.delenv("BEDROCK_SIDECAR_ENABLED", raising=False)
     player = PlayerLaunchSpec(image="paintbot:latest", run=(), env={})
@@ -1489,7 +1563,7 @@ def test_create_player_pod_without_cpu_limit_omits_limit_and_thread_env(monkeypa
 
 
 def test_create_player_pod_with_bedrock_sidecar_inverts_bedrock_access(monkeypatch):
-    created: dict[str, object] = {}
+    created: dict[str, Any] = {}
     core_v1 = SimpleNamespace(create_namespaced_pod=lambda *, namespace, body: created.update({"body": body}))
     monkeypatch.setenv("COWORLD_BEDROCK_REGION", "us-west-2")
     monkeypatch.setenv("BEDROCK_SIDECAR_ENABLED", "true")
@@ -1605,7 +1679,7 @@ def test_create_player_pod_with_bedrock_sidecar_inverts_bedrock_access(monkeypat
 def test_create_player_pod_sidecar_forwards_completion_s3_env(monkeypatch):
     """When the dispatcher forwards the S3 completions env into the worker, the player
     sidecar carries it (so player-side Bedrock latency lands in S3) plus a POD_NAME field-ref."""
-    created: dict[str, object] = {}
+    created: dict[str, Any] = {}
     core_v1 = SimpleNamespace(create_namespaced_pod=lambda *, namespace, body: created.update({"body": body}))
     monkeypatch.setenv("COWORLD_BEDROCK_REGION", "us-west-2")
     monkeypatch.setenv("BEDROCK_SIDECAR_ENABLED", "true")
@@ -1649,7 +1723,7 @@ def test_create_player_pod_sidecar_forwards_completion_s3_env(monkeypatch):
 
 
 def test_create_player_pod_forwards_artifact_upload_url_for_its_slot(monkeypatch):
-    created: dict[str, object] = {}
+    created: dict[str, Any] = {}
     core_v1 = SimpleNamespace(create_namespaced_pod=lambda *, namespace, body: created.update({"body": body}))
     monkeypatch.setenv(
         "PLAYER_ARTIFACT_UPLOAD_URLS",
@@ -1678,7 +1752,7 @@ def test_create_player_pod_forwards_artifact_upload_url_for_its_slot(monkeypatch
 
 
 def test_create_player_pod_tags_bedrock_request_metadata_with_slot(monkeypatch):
-    created: dict[str, object] = {}
+    created: dict[str, Any] = {}
     core_v1 = SimpleNamespace(create_namespaced_pod=lambda *, namespace, body: created.update({"body": body}))
     monkeypatch.setenv(
         "BEDROCK_REQUEST_METADATA",
@@ -1701,7 +1775,7 @@ def test_create_player_pod_tags_bedrock_request_metadata_with_slot(monkeypatch):
 
 
 def test_create_player_pod_omits_bedrock_request_metadata_when_unset(monkeypatch):
-    created: dict[str, object] = {}
+    created: dict[str, Any] = {}
     core_v1 = SimpleNamespace(create_namespaced_pod=lambda *, namespace, body: created.update({"body": body}))
     monkeypatch.delenv("BEDROCK_REQUEST_METADATA", raising=False)
     player = PlayerLaunchSpec(image="paintbot:latest", run=(), env={})
@@ -1786,7 +1860,7 @@ def test_write_error_info_uses_typed_episode_error(monkeypatch, tmp_path):
 
 
 def test_create_player_pod_keeps_default_service_account_without_bedrock():
-    created: dict[str, object] = {}
+    created: dict[str, Any] = {}
     core_v1 = SimpleNamespace(
         create_namespaced_pod=lambda *, namespace, body: created.update({"namespace": namespace, "body": body})
     )

@@ -15,6 +15,7 @@ from coworld.manifest.v1.model import V1Manifest
 from coworld.schema_validation import validate_json_schema
 from coworld.types import (
     CoworldEpisodeJobSpec,
+    CoworldHumanPlayerSpec,
     CoworldManifest,
     CoworldRunnableSpec,
     CoworldVariant,
@@ -284,9 +285,23 @@ def test_episode_job_players_are_flat_runnable_payloads() -> None:
     ]
 
 
+def test_episode_job_accepts_human_player_seats() -> None:
+    job = CoworldEpisodeJobSpec(
+        manifest=_manifest(),
+        game_config={},
+        players=[
+            _manifest().player[0],
+            CoworldHumanPlayerSpec(type="human", token="private-browser-seat-token"),
+        ],
+    )
+
+    assert job.model_dump(exclude_defaults=True)["players"][1] == {
+        "type": "human",
+        "token": "private-browser-seat-token",
+    }
+
+
 def test_episode_job_rejects_non_player_runnable() -> None:
-    schema = coworld_episode_request_schema()["properties"]["players"]["items"]["properties"]["type"]
-    assert schema["const"] == "player"
     with pytest.raises(ValidationError, match="players.0.type"):
         CoworldEpisodeJobSpec(
             manifest=_manifest(),

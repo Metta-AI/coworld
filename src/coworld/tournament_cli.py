@@ -139,9 +139,7 @@ def register_tournament_commands(app: typer.Typer) -> None:
             list[str] | None,
             typer.Option("--type", help="Keep reporters producing this output type (repeatable), e.g. render-html."),
         ] = None,
-        mode: Annotated[
-            str, typer.Option("--mode", help="Filter by hosting mode: all, hosted, or external.")
-        ] = "all",
+        mode: Annotated[str, typer.Option("--mode", help="Filter by hosting mode: all, hosted, or external.")] = "all",
         author: Annotated[str | None, typer.Option("--author", help="Owner user id (exact).")] = None,
         limit: Annotated[int, typer.Option("--limit", min=1, max=500, help="Maximum rows to return.")] = 200,
         offset: Annotated[int, typer.Option("--offset", min=0, help="Rows to skip.")] = 0,
@@ -1069,7 +1067,10 @@ def _filter_episode_requests(
 
 
 def _episode_has_policy(row: V2EpisodeRequestListRow, policy_version_ids: set[UUID]) -> bool:
-    return any(participant.policy_version_id in policy_version_ids for participant in row.participants)
+    return any(
+        participant.kind == "policy" and participant.policy_version_id in policy_version_ids
+        for participant in row.participants
+    )
 
 
 def _print_episodes(rows: list[V2EpisodeRequestListRow]) -> None:
@@ -1085,7 +1086,8 @@ def _print_episodes(rows: list[V2EpisodeRequestListRow]) -> None:
         scores = {score.policy_version_id: score.score for score in row.scores}
         participant_labels = ", ".join(participant.label for participant in row.participants)
         score_labels = ", ".join(
-            f"{participant.label}={_format_score(scores.get(participant.policy_version_id))}"
+            f"{participant.label}="
+            f"{_format_score(scores.get(participant.policy_version_id)) if participant.kind == 'policy' else '-'}"
             for participant in row.participants
         )
         table.add_row(
@@ -1179,7 +1181,7 @@ def _print_episode_stats(episode_request_id: str, stats: EpisodeStatsResponse) -
 
 def _policy_version_id_for_agent(episode: V2EpisodeRequestRow, agent_idx: int) -> UUID:
     for participant in episode.participants:
-        if participant.position == agent_idx:
+        if participant.position == agent_idx and participant.kind == "policy":
             return participant.policy_version_id
     console.print(f"[red]Agent {agent_idx} is not a participant in this episode.[/red]")
     raise typer.Exit(1)
@@ -1283,7 +1285,9 @@ def _download_episode_artifacts(
 
 def _agent_indices_for_policies(row: V2EpisodeRequestListRow, policy_version_ids: set[UUID]) -> set[int]:
     return {
-        participant.position for participant in row.participants if participant.policy_version_id in policy_version_ids
+        participant.position
+        for participant in row.participants
+        if participant.kind == "policy" and participant.policy_version_id in policy_version_ids
     }
 
 

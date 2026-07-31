@@ -55,7 +55,7 @@ from coworld.runner.runner import (
     replay_session_path,
 )
 from coworld.schema_validation import validate_json_schema
-from coworld.types import CoworldEpisodeJobSpec, CoworldManifest, SourceUrlResult, TranscriptStep
+from coworld.types import CoworldEpisodeJobSpec, CoworldManifest, CoworldRunnableSpec, SourceUrlResult, TranscriptStep
 
 CANONICAL_ENGINE_RUNTIMES = ("mettagrid", "cogweb", "bitworld", "nimgrid")
 
@@ -1491,10 +1491,12 @@ def test_build_manifest_episode_job_spec_deep_copies_config_and_player_env(tmp_p
     package = load_coworld_package(coworld_manifest_path)
 
     spec = build_manifest_episode_job_spec(package)
+    assert isinstance(spec.players[0], CoworldRunnableSpec)
     spec.game_config["players"][0]["name"] = "mutated"
     spec.players[0].env["PLAYER_MODE"] = "mutated"
 
     next_spec = build_manifest_episode_job_spec(package)
+    assert isinstance(next_spec.players[0], CoworldRunnableSpec)
     assert next_spec.game_config["players"][0]["name"] == "one"
     assert next_spec.players[0].env == {"PLAYER_MODE": "test"}
 
@@ -1522,6 +1524,7 @@ def test_load_manifest_episode_job_spec_uses_request_file(tmp_path: Path) -> Non
     )
 
     spec = load_manifest_episode_job_spec(package, request_path)
+    assert isinstance(spec.players[0], CoworldRunnableSpec)
 
     assert spec.game_config == {"difficulty": "request"}
     assert spec.players[0].image == "request-player:latest"
@@ -1540,11 +1543,33 @@ def test_episode_request_allows_no_runner_managed_players() -> None:
     episode_request = {
         "manifest": _coworld_manifest(),
         "game_config": {"difficulty": "easy", "players": []},
-        "players": [],
+        "players": [{"type": "human", "token": "human-player-token"}],
     }
 
     CoworldEpisodeJobSpec.model_validate(episode_request)
     assert build_player_launch_specs(episode_request) == []
+
+
+def test_play_coworld_rejects_human_episode_request(tmp_path: Path) -> None:
+    coworld_manifest_path = _write_package_files(tmp_path)
+    request_path = tmp_path / "episode_request.json"
+    request_path.write_text(
+        json.dumps(
+            {
+                "manifest": json.loads(coworld_manifest_path.read_text(encoding="utf-8")),
+                "game_config": {"difficulty": "watch"},
+                "players": [{"type": "human", "token": "human-player-token"}],
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    with pytest.raises(ValueError, match="Human player seats require the hosted Kubernetes episode runner"):
+        play_coworld(
+            coworld_manifest_path,
+            episode_request_path=request_path,
+            on_ready=lambda _session: None,
+        )
 
 
 def test_build_play_links_point_directly_at_engine_client_routes(tmp_path: Path) -> None:

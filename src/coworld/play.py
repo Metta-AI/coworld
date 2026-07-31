@@ -8,7 +8,7 @@ import subprocess
 from contextlib import ExitStack
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Callable, Mapping
+from typing import Callable, Mapping, cast
 from urllib.parse import urlencode
 
 from coworld.certifier import (
@@ -56,6 +56,7 @@ from coworld.runner.runner import (
     write_coworld_game_config,
 )
 from coworld.schema_validation import JsonObject
+from coworld.types import CoworldHumanPlayerSpec, CoworldRunnableSpec
 
 
 @dataclass(frozen=True)
@@ -140,10 +141,12 @@ def play_coworld(
             player_run=player_run,
         )
         variant_label = variant_id if variant_id is not None else "certification"
+    if any(isinstance(player, CoworldHumanPlayerSpec) for player in job_spec.players):
+        raise ValueError("Human player seats require the hosted Kubernetes episode runner")
     assert_episode_images_reachable(job_spec)
     tokens = generate_tokens(len(job_spec.players))
     write_coworld_game_config(job_spec, artifacts, tokens)
-    players = [PlayerLaunchSpec.from_model(player) for player in job_spec.players]
+    players = [PlayerLaunchSpec.from_model(player) for player in cast(list[CoworldRunnableSpec], job_spec.players)]
     game_port = _free_local_port()
     local_ports = resolve_local_extra_ports(
         package.game.env,

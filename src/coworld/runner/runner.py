@@ -26,7 +26,7 @@ from websockets.exceptions import ConnectionClosed, InvalidHandshake, InvalidSta
 
 from coworld.runner.io import GamePlayerFailure, RunnerEpisodeError, RunnerErrorType
 from coworld.schema_validation import validate_json_schema
-from coworld.types import CoworldEpisodeJobSpec, CoworldRunnableSpec
+from coworld.types import CoworldEpisodeJobSpec, CoworldHumanPlayerSpec, CoworldRunnableSpec
 
 CONTAINER_WORKDIR = "/coworld"
 CONFIG_ENV_VAR = "COGAME_CONFIG_URI"
@@ -47,6 +47,8 @@ LOCAL_PORTS_JSON_ENV_VAR = "COWORLD_LOCAL_PORTS_JSON"
 LOCAL_PORT_HOST = "127.0.0.1"
 MAX_TCP_PORT = 65535
 DEFAULT_PLAYER_EXIT_TIMEOUT_SECONDS = 30.0
+DEFAULT_RUNTIME_STARTUP_TIMEOUT_SECONDS = 10.0
+LOBBY_RUNTIME_STARTUP_TIMEOUT_SECONDS = 60.0
 
 # Hosted Coworld manifests store images as backend container-image ids: the "img_" prefix followed by a
 # UUID (see ContainerImageId / PrefixedId in metta-app-backend-client). The backend substitutes a pullable
@@ -242,6 +244,8 @@ def assert_episode_images_reachable(job: CoworldEpisodeJobSpec, *, require_linux
         )
     ]
     for slot, player in enumerate(job.players):
+        if isinstance(player, CoworldHumanPlayerSpec):
+            continue
         image_platforms.append(
             (
                 player.image,
@@ -285,13 +289,19 @@ def run_coworld_episode(
     container_prefix: str = LOCAL_EPISODE_CONTAINER_PREFIX,
     secret_env: Mapping[str, str] | None = None,
 ) -> None:
+    if any(isinstance(player, CoworldHumanPlayerSpec) for player in job.players):
+        raise ValueError("Human player seats require the hosted Kubernetes episode runner")
     assert_episode_images_reachable(job)
     tokens = generate_tokens(len(job.players))
     write_coworld_game_config(job, artifacts, tokens)
 
     run_spec = EpisodeRunSpec(
         game=RunnableLaunchSpec.from_model(job.game_runnable),
-        players=[PlayerLaunchSpec.from_model(player) for player in job.players],
+        players=[
+            PlayerLaunchSpec.from_model(player)
+            for player in job.players
+            if not isinstance(player, CoworldHumanPlayerSpec)
+        ],
         tokens=tokens,
         artifacts=artifacts,
         timeout_seconds=timeout_seconds,
@@ -310,6 +320,14 @@ def run_coworld_episode(
 
 def generate_tokens(player_count: int) -> list[str]:
     return [secrets.token_urlsafe(16) for _ in range(player_count)]
+
+
+def episode_player_tokens(job: CoworldEpisodeJobSpec) -> list[str]:
+    tokens = generate_tokens(len(job.players))
+    for slot, player in enumerate(job.players):
+        if isinstance(player, CoworldHumanPlayerSpec):
+            tokens[slot] = player.token
+    return tokens
 
 
 def coworld_game_config(job: CoworldEpisodeJobSpec, tokens: list[str]) -> dict[str, object]:
@@ -659,14 +677,21 @@ async def _require_bad_player_rejected(url: str) -> None:
 
 
 async def _require_global_message(
-    url: str, *, timeout_seconds: float, on_connect_failure: Callable[[], None] | None = None
+    url: str,
+    *,
+    timeout_seconds: float,
+    startup_timeout_seconds: float = DEFAULT_RUNTIME_STARTUP_TIMEOUT_SECONDS,
+    on_connect_failure: Callable[[], None] | None = None,
 ) -> None:
     try:
         # max_size=None: a game's first global snapshot can exceed the 1 MiB
         # websockets default (high-resolution sprite protocols ship multi-MB
         # init frames), and this probe only checks that a message arrives.
         async with websockets.connect(url, open_timeout=5, max_size=None) as websocket:
-            message = await asyncio.wait_for(websocket.recv(), timeout=min(timeout_seconds, 10.0))
+            message = await asyncio.wait_for(
+                websocket.recv(),
+                timeout=min(timeout_seconds, startup_timeout_seconds),
+            )
     except (OSError, asyncio.TimeoutError, ConnectionClosed, InvalidHandshake, InvalidStatus) as exc:
         # A player that crashes before the game emits its first global message
         # starves this socket, so the timeout/close is the player's fault, not

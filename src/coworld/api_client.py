@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from collections.abc import Iterable
 from datetime import datetime
-from typing import Any, Literal, Self
+from typing import Annotated, Any, Literal, Self
 from uuid import UUID
 
 import httpx
@@ -214,19 +214,39 @@ class DivisionLeaderboardsPublic(CoworldAPIModel):
     views: list[LeaderboardViewPublic]
 
 
-class V2EpisodeRequestParticipant(CoworldAPIModel):
+class V2EpisodeRequestPolicyParticipant(CoworldAPIModel):
     position: int
+    kind: Literal["policy"] = "policy"
     policy_version_id: UUID
     policy_id: UUID
     policy_name: str
     version: int
     player_id: str | None = None
     player_name: str | None = None
+    is_filler: bool = False
 
     @computed_field  # type: ignore[prop-decorator]
     @property
     def label(self) -> str:
         return f"{self.policy_name}:v{self.version}"
+
+
+class V2EpisodeRequestHumanParticipant(CoworldAPIModel):
+    position: int
+    kind: Literal["human"] = "human"
+    user_id: str
+    name: str
+
+    @computed_field  # type: ignore[prop-decorator]
+    @property
+    def label(self) -> str:
+        return self.name
+
+
+V2EpisodeRequestParticipant = Annotated[
+    V2EpisodeRequestPolicyParticipant | V2EpisodeRequestHumanParticipant,
+    Field(discriminator="kind"),
+]
 
 
 class EpisodeRequestScore(CoworldAPIModel):

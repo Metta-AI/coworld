@@ -11,7 +11,7 @@ import time
 import zipfile
 from io import BytesIO
 from pathlib import Path
-from typing import Mapping
+from typing import Mapping, cast
 
 import httpx
 from kubernetes import client, config
@@ -29,9 +29,11 @@ from coworld.runner.bedrock_sidecar_wiring import (
     build_bedrock_sidecar,
     resolve_image_attribution_key,
 )
-from coworld.runner.io import RunnerEpisodeError, RunnerError, read_data, upload_data
+from coworld.runner.io import RunnerEpisodeError, RunnerError, RunnerErrorType, read_data, upload_data
 from coworld.runner.phase_timings import EpisodePhaseTimings
 from coworld.runner.runner import (
+    DEFAULT_RUNTIME_STARTUP_TIMEOUT_SECONDS,
+    LOBBY_RUNTIME_STARTUP_TIMEOUT_SECONDS,
     EpisodeArtifacts,
     PlayerLaunchSpec,
     _raise_if_game_declared_player_failure,
@@ -40,12 +42,12 @@ from coworld.runner.runner import (
     _require_http_ok,
     _validate_results_file,
     coworld_game_config,
-    generate_tokens,
+    episode_player_tokens,
 )
 from coworld.runner.runner import (
     _player_query as _episode_player_query,
 )
-from coworld.types import CoworldEpisodeJobSpec
+from coworld.types import CoworldEpisodeJobSpec, CoworldHumanPlayerSpec
 
 WORKDIR = Path(os.environ.get("COWORLD_WORKDIR", "/coworld"))
 STATE_PATH = WORKDIR / "state.json"
@@ -136,7 +138,7 @@ def _start_worker_health_server(port: int) -> None:
 
 def init_config_from_env() -> None:
     job = _read_job_spec()
-    tokens = generate_tokens(len(job.players))
+    tokens = episode_player_tokens(job)
     upload_data(
         os.environ["COGAME_CONFIG_URI"],
         json.dumps(coworld_game_config(job, tokens), indent=2),
@@ -177,7 +179,7 @@ def _write_error_info(exc: Exception) -> None:
         return
     if isinstance(exc, RunnerEpisodeError):
         runner_error = RunnerError(
-            error_type=exc.error_type,
+            error_type=cast(RunnerErrorType, exc.error_type),
             message=str(exc)[:2000],
             failed_policy_index=exc.failed_policy_index,
         )
@@ -261,7 +263,15 @@ def _run_kubernetes_episode(
     pod_name = os.environ["POD_NAME"]
     owner_references = _owner_references()
     tokens = json.loads(STATE_PATH.read_text(encoding="utf-8"))["tokens"]
-    players = [PlayerLaunchSpec.from_model(player) for player in job.players]
+    policy_players = [
+        (slot, PlayerLaunchSpec.from_model(player))
+        for slot, player in enumerate(job.players)
+        if not isinstance(player, CoworldHumanPlayerSpec)
+    ]
+    is_lobby = len(policy_players) != len(job.players)
+    startup_timeout_seconds = (
+        LOBBY_RUNTIME_STARTUP_TIMEOUT_SECONDS if is_lobby else DEFAULT_RUNTIME_STARTUP_TIMEOUT_SECONDS
+    )
     policy_secrets = _policy_secrets_from_env()
     player_cpu_request = os.environ.get("COWORLD_PLAYER_CPU_REQUEST", DEFAULT_PLAYER_CPU_REQUEST)
     player_memory_request = os.environ.get("COWORLD_PLAYER_MEMORY_REQUEST", DEFAULT_PLAYER_MEMORY_REQUEST)
@@ -274,12 +284,12 @@ def _run_kubernetes_episode(
         _create_game_service(core_v1, namespace, service_name, job_id, owner_references)
         _wait_for_health(core_v1, namespace, pod_name, timeout_seconds=timeout_seconds)
         game_ready = time.monotonic()
-        if players:
+        if job.players:
             _require_http_ok(_player_client_url(0, tokens[0]))
             asyncio.run(_require_bad_player_rejected(f"ws://127.0.0.1:{GAME_PORT}/player?slot=0&token=bad"))
         _require_http_ok(f"http://127.0.0.1:{GAME_PORT}/client/global")
 
-        for slot, player in enumerate(players):
+        for slot, player in policy_players:
             name = f"{service_name}-player-{slot}"
             child_names.append(name)
             _create_player_pod(
@@ -303,6 +313,7 @@ def _run_kubernetes_episode(
             _require_global_message(
                 f"ws://127.0.0.1:{GAME_PORT}/global",
                 timeout_seconds=timeout_seconds,
+                startup_timeout_seconds=startup_timeout_seconds,
                 on_connect_failure=lambda: _raise_if_player_pod_failed(core_v1, namespace, child_names),
             )
         )
@@ -313,6 +324,7 @@ def _run_kubernetes_episode(
             namespace,
             pod_name,
             child_names,
+            player_count=len(job.players),
             timeout_seconds=timeout_seconds,
             require_replay=os.environ.get("REPLAY_URI") is not None,
         )
@@ -425,8 +437,8 @@ def _create_player_pod(
             for key, value in player_env.items()
             if key not in _DIRECT_BEDROCK_APP_ENV and key not in RESERVED_SIDECAR_APP_ENV
         }
-        endpoint_env = {
-            ev.name: ev.value
+        endpoint_env: dict[str, str] = {
+            cast(str, ev.name): cast(str, ev.value)
             for ev in bedrock_app_endpoint_env(bedrock_sidecar_port, os.environ["COWORLD_BEDROCK_REGION"])
         }
         player_env = player_env | {"USE_BEDROCK": "true"} | endpoint_env
@@ -619,6 +631,7 @@ def _wait_for_episode_artifacts(
     pod_name: str,
     player_pod_names: list[str] | None = None,
     *,
+    player_count: int,
     timeout_seconds: float,
     require_replay: bool,
 ) -> None:
@@ -627,8 +640,6 @@ def _wait_for_episode_artifacts(
     # Player pod state remains a timeout fallback for games that do not make that choice.
     deadline = time.monotonic() + timeout_seconds
     expected = (artifacts.results_path, artifacts.replay_path) if require_replay else (artifacts.results_path,)
-    player_count = len(player_pod_names or ())
-
     while time.monotonic() < deadline:
         missing = [path for path in expected if not path.exists()]
 
@@ -670,6 +681,13 @@ def _wait_for_episode_artifacts(
     )
 
 
+def _player_pod_slot(player_pod_name: str) -> int:
+    suffix = player_pod_name.rpartition("-player-")[2]
+    if not suffix.isdigit():
+        raise ValueError(f"Player pod name does not end in '-player-<slot>': {player_pod_name}")
+    return int(suffix)
+
+
 def _raise_if_players_never_started(core_v1, namespace: str, player_pod_names: tuple[str, ...] | list[str]) -> None:
     """Fail an episode where the game wrote results before every player process started.
 
@@ -681,7 +699,8 @@ def _raise_if_players_never_started(core_v1, namespace: str, player_pod_names: t
     """
     _raise_if_player_pod_failed(core_v1, namespace, player_pod_names)
     waiting_reasons: list[str] = []
-    for slot, player_pod_name in enumerate(player_pod_names):
+    for player_pod_name in player_pod_names:
+        slot = _player_pod_slot(player_pod_name)
         try:
             player_pod = core_v1.read_namespaced_pod(name=player_pod_name, namespace=namespace)
         except ApiException as exc:
@@ -712,7 +731,8 @@ def _player_waiting_reason(pod) -> str | None:
 
 
 def _raise_if_player_pod_failed(core_v1, namespace: str, player_pod_names: tuple[str, ...] | list[str]) -> None:
-    for slot, player_pod_name in enumerate(player_pod_names):
+    for player_pod_name in player_pod_names:
+        slot = _player_pod_slot(player_pod_name)
         try:
             player_pod = core_v1.read_namespaced_pod(name=player_pod_name, namespace=namespace)
         except ApiException as exc:
@@ -768,7 +788,8 @@ def _collect_logs(
     game_log = _read_pod_log(core_v1, namespace, pod_name, "game")
     if game_log is not None:
         artifacts.game_stdout_path.write_text(game_log, encoding="utf-8")
-    for slot, player_pod_name in enumerate(player_pod_names):
+    for player_pod_name in player_pod_names:
+        slot = _player_pod_slot(player_pod_name)
         try:
             player_pod = core_v1.read_namespaced_pod(name=player_pod_name, namespace=namespace)
         except ApiException as exc:
