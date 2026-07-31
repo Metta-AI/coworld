@@ -15,10 +15,9 @@ it. Full contract, copy-paste examples, and the 403 troubleshooting table: [`BED
 ## Coworlds Expert Agent
 
 A distributable Claude Code agent for coworld developers is available at
-[`docs/coworlds-expert-agent/`](docs/coworlds-expert-agent/). It knows coworld design principles
-(the derivation chain, grader philosophy, player policy design, schema contracts) and can be
-installed into any coworld project's `.claude/agents/` directory. See its
-[README](docs/coworlds-expert-agent/README.md) for install instructions.
+[`docs/coworlds-expert-agent/`](docs/coworlds-expert-agent/). It knows coworld design principles (the derivation chain,
+grader philosophy, player policy design, schema contracts) and can be installed into any coworld project's
+`.claude/agents/` directory. See its [README](docs/coworlds-expert-agent/README.md) for install instructions.
 
 ## Before Editing
 
@@ -49,13 +48,12 @@ uv run coworld player list / use <player-id> / unset
 
 Auth-backed commands require `uv run softmax login` first. The `auth` extra pulls in `softmax-cli`.
 
-`coworld player` is softmax-cli's player subapp mounted for discoverability (player identity is a
-Softmax-platform concept; `softmax player ...` is the same thing, implemented in
-`packages/softmax-cli/src/softmax/players.py`). `player use <player-id>` mints (or reuses) a 24h player
-session and stores it as the active player in `~/.softmax/credentials.yaml` (`player_sessions`). Every
-identity-bearing command then acts as that player, because they all resolve their token through
-`softmax.auth.load_current_token`. `player unset` clears the active pointer, reverting to your main user
-credential.
+`coworld player` is softmax-cli's player subapp mounted for discoverability (player identity is a Softmax-platform
+concept; `softmax player ...` is the same thing, implemented in `packages/softmax-cli/src/softmax/players.py`).
+`player use <player-id>` mints (or reuses) a 24h player session and stores it as the active player in
+`~/.softmax/credentials.yaml` (`player_sessions`). Every identity-bearing command then acts as that player, because they
+all resolve their token through `softmax.auth.load_current_token`. `player unset` clears the active pointer, reverting
+to your main user credential.
 
 ## Validation
 
@@ -101,9 +99,9 @@ uv run metta pytest packages/coworld/tests/test_manifest_compatibility.py -v
 ```
 
 The test is hermetic and runs on every PR. Update the exhaustive fixture when adding a field, and preserve the minimal
-fixture's omission of optional fields. Do not weaken compatibility coverage merely to make a schema change pass.
-Migrate affected stored manifests or enforce a new requirement at certification/upload boundaries instead of making
-historical data unreadable.
+fixture's omission of optional fields. Do not weaken compatibility coverage merely to make a schema change pass. Migrate
+affected stored manifests or enforce a new requirement at certification/upload boundaries instead of making historical
+data unreadable.
 
 Do not hand-edit `src/coworld/coworld_manifest_schema.json` or `src/coworld/runner/episode_request_schema.json` as the
 source of truth. They are generated docs and `$schema` targets; `test_types.py` checks that they match `types.py`.
@@ -126,24 +124,25 @@ source of truth. They are generated docs and `$schema` targets; `test_types.py` 
 ## Documentation Map
 
 - [README.md](README.md) - package landing page, player-first orientation, and navigation.
-- [COOKBOOK.md](COOKBOOK.md) - task recipes for local play, policy upload/submission, tournament results, and
-  Coworld upload.
+- [COOKBOOK.md](COOKBOOK.md) - task recipes for local play, policy upload/submission, tournament results, and Coworld
+  upload.
 - [src/coworld/docs/README.md](src/coworld/docs/README.md) - Coworld concept map, role statuses, artifact flow, and
   cross-links.
 - [src/coworld/docs/AUTHORING.md](src/coworld/docs/AUTHORING.md) - end-to-end guide for building and testing a new
   Coworld (design, game/player implementation, packaging, local testing, certification, upload, hosted verification).
 - [src/coworld/docs/STATIC_REPLAY_VIEWERS.md](src/coworld/docs/STATIC_REPLAY_VIEWERS.md) - static replay bundle,
   manifest, Coworld build-hook, source-sharing, and browser-verification contract.
-- [src/coworld/docs/COWORLD_MANIFEST.md](src/coworld/docs/COWORLD_MANIFEST.md) - manifest semantics and schema source
-  of truth.
+- [src/coworld/docs/COWORLD_MANIFEST.md](src/coworld/docs/COWORLD_MANIFEST.md) - manifest semantics and schema source of
+  truth.
 - [src/coworld/docs/BEDROCK.md](src/coworld/docs/BEDROCK.md) - **how a player calls Bedrock at runtime** (the
   `AWS_ENDPOINT_URL_BEDROCK_RUNTIME` sidecar endpoint, InvokeModel-not-Converse, 403 troubleshooting), the hosted
   Bedrock upload contract, and robustness to shared-quota throttling. Required reading before building an LLM player.
 - [src/coworld/docs/LIFECYCLE.md](src/coworld/docs/LIFECYCLE.md) - local and hosted episode lifecycle.
+- [src/coworld/docs/TOURNAMENTS.md](src/coworld/docs/TOURNAMENTS.md) - league bracket tournaments (`tour_...` objects,
+  waves, bracket matches) and how to read their episodes via the v2 API.
 - `src/coworld/docs/roles/*.md` - per-role contracts.
 - `src/coworld/docs/artifacts/*.md` - artifact contracts.
-- `src/coworld/runner/RUNNER_README.md` and `src/coworld/runner/KUBERNETES_RUNNER_README.md` - runner-specific
-  behavior.
+- `src/coworld/runner/RUNNER_README.md` and `src/coworld/runner/KUBERNETES_RUNNER_README.md` - runner-specific behavior.
 
 ## Manifest And Role Contracts
 

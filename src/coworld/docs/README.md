@@ -3,14 +3,14 @@
 This page is the conceptual home for Coworld documentation: what a complete Coworld is, which roles it contains, how the
 manifest describes those roles, and how an episode turns into artifacts that player builders can learn from.
 
-For usage-oriented guidance, use the package [README](../../../README.md) and the [Coworld cookbook](../../../COOKBOOK.md).
-For the end-to-end guide to building and testing a new Coworld, use [Authoring A Coworld](AUTHORING.md).
-For browser-only replay bundles and their Coworld build hook, use
-[Static Replay Viewers](STATIC_REPLAY_VIEWERS.md).
-The package documentation uses [Paint Arena](../examples/paintarena/README.md) as its canonical example. Installable
-starter templates for every role ship under `coworld/templates`.
-When rebuilding an existing Coworld after the June 2026 repo consolidation, use
-[Rebuilding Coworlds After The Role Repo Move](REBUILDING_COWORLDS.md).
+For usage-oriented guidance, use the package [README](../../../README.md) and the
+[Coworld cookbook](../../../COOKBOOK.md). For the end-to-end guide to building and testing a new Coworld, use
+[Authoring A Coworld](AUTHORING.md). For browser-only replay bundles and their Coworld build hook, use
+[Static Replay Viewers](STATIC_REPLAY_VIEWERS.md). The package documentation uses
+[Paint Arena](../examples/paintarena/README.md) as its canonical example. Installable starter templates for every role
+ship under `coworld/templates`. When rebuilding an existing Coworld after the June 2026 repo consolidation, use
+[Rebuilding Coworlds After The Role Repo Move](REBUILDING_COWORLDS.md). For league bracket tournaments (`tour_…`
+objects, waves, and how to read their episodes), use [Bracket Tournaments](TOURNAMENTS.md).
 
 ## What Is A Complete Coworld?
 
@@ -27,23 +27,23 @@ A complete Coworld includes:
 - episode artifacts that preserve what happened and make the improvement loop repeatable.
 
 The manifest is the map of the Coworld, not the whole idea. Most player builders should begin with the game-specific
-player docs and cookbook workflows, then use the manifest when they need to inspect exact runnables, variants, protocols,
-or artifact contracts.
+player docs and cookbook workflows, then use the manifest when they need to inspect exact runnables, variants,
+protocols, or artifact contracts.
 
 ## Roles
 
-Every Coworld is built from seven roles. Three roles participate during episode execution; four roles consume or organize
-episode artifacts after the episode ends.
+Every Coworld is built from seven roles. Three roles participate during episode execution; four roles consume or
+organize episode artifacts after the episode ends.
 
-| Role | Lifecycle | Status | Purpose | Details |
-| ---- | --------- | ------ | ------- | ------- |
-| **game** | per episode, WebSocket server | live | Runs the episode, serves browser clients, and writes result/replay artifacts. | [Game role](roles/GAME.md) |
-| **player** | per episode, WebSocket client | live | Connects to the game and acts in one player slot. | [Player role](roles/PLAYER.md) |
-| **commissioner** | per round, WebSocket server | live for container leagues | Schedules league-round episodes and ranks policy memberships. | [Commissioner role](roles/COMMISSIONER.md) |
-| **reporter** | per run, submitted Wasm program | live (reporter v2, spec 0061) | Turns platform evidence into declared, typed output parts — narrative renders, event logs, machine documents — via a capability-scoped tool belt. | [Reporter role](roles/REPORTER.md) |
-| **grader** | post episode, on demand | contract defined, runtime pending | Scores how useful or interesting an episode is. | [Grader role](roles/GRADER.md) |
-| **diagnoser** | post episode, on demand | reserved | Evaluates a target policy and emits policy-facing advice. | [Diagnoser role](roles/DIAGNOSER.md) |
-| **optimizer** | workbench, long running | reserved | Drives longer-running policy-improvement work. | [Optimizer role](roles/OPTIMIZER.md) |
+| Role             | Lifecycle                       | Status                            | Purpose                                                                                                                                           | Details                                    |
+| ---------------- | ------------------------------- | --------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------ |
+| **game**         | per episode, WebSocket server   | live                              | Runs the episode, serves browser clients, and writes result/replay artifacts.                                                                     | [Game role](roles/GAME.md)                 |
+| **player**       | per episode, WebSocket client   | live                              | Connects to the game and acts in one player slot.                                                                                                 | [Player role](roles/PLAYER.md)             |
+| **commissioner** | per round, WebSocket server     | live for container leagues        | Schedules league-round episodes and ranks policy memberships.                                                                                     | [Commissioner role](roles/COMMISSIONER.md) |
+| **reporter**     | per run, submitted Wasm program | live (reporter v2, spec 0061)     | Turns platform evidence into declared, typed output parts — narrative renders, event logs, machine documents — via a capability-scoped tool belt. | [Reporter role](roles/REPORTER.md)         |
+| **grader**       | post episode, on demand         | contract defined, runtime pending | Scores how useful or interesting an episode is.                                                                                                   | [Grader role](roles/GRADER.md)             |
+| **diagnoser**    | post episode, on demand         | reserved                          | Evaluates a target policy and emits policy-facing advice.                                                                                         | [Diagnoser role](roles/DIAGNOSER.md)       |
+| **optimizer**    | workbench, long running         | reserved                          | Drives longer-running policy-improvement work.                                                                                                    | [Optimizer role](roles/OPTIMIZER.md)       |
 
 ## Role Status
 
@@ -61,14 +61,15 @@ New documents and code in this package should use these status labels consistent
 - **target contract documented, runtime pending**: the role has a written target contract informed by external or
   prototype implementations, but the platform integration has not shipped yet. Existing examples may still use a
   transitional contract while the target runtime is being built.
-- **reserved**: the role is declared in the manifest schema and has a purpose statement in `docs/roles/<ROLE>.md`, but no
-  input/output contract or platform integration exists yet. The schema may accept an omitted or empty section until the
-  role has a concrete runnable contract.
+- **reserved**: the role is declared in the manifest schema and has a purpose statement in `docs/roles/<ROLE>.md`, but
+  no input/output contract or platform integration exists yet. The schema may accept an omitted or empty section until
+  the role has a concrete runnable contract.
 
 ## Manifest
 
-Every Coworld package has a `coworld_manifest.json`. The manifest names the game, role runnables, variants, game-authored
-docs, protocol docs, schemas, and the certification fixture used by `coworld certify` and default local episode runs.
+Every Coworld package has a `coworld_manifest.json`. The manifest names the game, role runnables, variants,
+game-authored docs, protocol docs, schemas, and the certification fixture used by `coworld certify` and default local
+episode runs.
 
 The manifest conceptually covers all seven roles. The current schema requires the stable in-flight role sections and
 keeps supporting role sections optional until product workflows need concrete runnables for them. See the
@@ -79,7 +80,8 @@ keeps supporting role sections optional until product workflows need concrete ru
 
 The short version:
 
-1. A Coworld author packages a game, role runnables, variants, docs, schemas, and a certification fixture into a manifest.
+1. A Coworld author packages a game, role runnables, variants, docs, schemas, and a certification fixture into a
+   manifest.
 2. A player author builds or selects a player image for that Coworld.
 3. A runner starts one game container and one player container per slot for each bounded episode. Persistent leagues may
    instead reconcile one commissioner-requested player runtime per stable player across many scoring windows.
@@ -142,27 +144,27 @@ For each scheduled bounded episode, the runner starts:
   with older players.
 
 Players connect to the game's `/player` WebSocket and speak the game-defined player protocol. Observations flow from the
-game, actions flow from the player, and the exchange continues until the episode ends. The game writes results and replay
-artifacts to the URIs provided by the runner; the runner captures logs and hosted failure information. A player may also
-upload an optional [artifact](artifacts/PLAYER_ARTIFACT.md) to `COWORLD_PLAYER_ARTIFACT_UPLOAD_URL` before its container
-is torn down. Each completed episode's `scores` are routed back to the commissioner as an `episode_result` message; the
-commissioner can schedule more episodes or emit `round_complete` with per-division rankings and policy membership events.
+game, actions flow from the player, and the exchange continues until the episode ends. The game writes results and
+replay artifacts to the URIs provided by the runner; the runner captures logs and hosted failure information. A player
+may also upload an optional [artifact](artifacts/PLAYER_ARTIFACT.md) to `COWORLD_PLAYER_ARTIFACT_UPLOAD_URL` before its
+container is torn down. Each completed episode's `scores` are routed back to the commissioner as an `episode_result`
+message; the commissioner can schedule more episodes or emit `round_complete` with per-division rankings and policy
+membership events.
 
 Persistent leagues separate execution from accounting. Their scheduling response publishes a complete desired set of
 long-lived player runtimes. The platform reconciles at most one runtime per stable league player and replaces it when
-that player's selected policy changes. Sealed game windows become completed recorded episodes and round evidence
-without passing through the episode runner or spawning duplicate players.
+that player's selected policy changes. Sealed game windows become completed recorded episodes and round evidence without
+passing through the episode runner or spawning duplicate players.
 
 For the in-flight contracts, see the [game role](roles/GAME.md), the [player role](roles/PLAYER.md), and the
-[commissioner role](roles/COMMISSIONER.md). For artifact contracts, see the
-[artifact reference](artifacts/README.md).
+[commissioner role](roles/COMMISSIONER.md). For artifact contracts, see the [artifact reference](artifacts/README.md).
 
 ### After The Episode
 
 Once an episode ends, the runner has produced per-URI artifacts but has not assembled them into a bundle. Bundling is a
 consumption-time concern. When a consumer wants one episode's artifacts as a unit, it asks the bundling layer for a
-bundle. The bundling layer assembles a `.zip` on demand, applies include-filter and access-control rules, and returns the
-zip to the consumer.
+bundle. The bundling layer assembles a `.zip` on demand, applies include-filter and access-control rules, and returns
+the zip to the consumer.
 
 See the [episode bundle reference](artifacts/EPISODE_BUNDLE.md) for the bundle shape, include tokens, inner
 `manifest.json` schema, access-control rules, hosted API, and planned CLI surface.
@@ -196,12 +198,12 @@ These boundaries are useful when deciding where a new feature, artifact, or debu
 - **Players are clients, not episode orchestrators.** A player connects to the game's `/player` WebSocket for one slot
   and does not modify the game-owned episode artifacts. It may upload its own optional
   [artifact](artifacts/PLAYER_ARTIFACT.md), but it does not own episode truth.
-- **Bundle and reporter handoffs are consumption-time views.** Everything before handoff is game and runner output.
-  User downloads, graders, and diagnosers use bundle zips; reporters read through their `episodes` tool with the same
+- **Bundle and reporter handoffs are consumption-time views.** Everything before handoff is game and runner output. User
+  downloads, graders, and diagnosers use bundle zips; reporters read through their `episodes` tool with the same
   access-control rules (enforced under the run requester's permissions).
 - **Supporting runnables do not all share one input shape.** Graders and diagnosers currently consume
-  `COGAME_EPISODE_BUNDLE_URI`. Reporters (v2, spec 0061) are Wasm programs whose only inputs are the run request and
-  the tool belt.
+  `COGAME_EPISODE_BUNDLE_URI`. Reporters (v2, spec 0061) are Wasm programs whose only inputs are the run request and the
+  tool belt.
 - **The optimizer is a workbench, not a one-shot artifact writer.** Final candidate policies leave an optimizer through
   the standard `coworld upload-policy` path.
 
@@ -213,7 +215,8 @@ These boundaries are useful when deciding where a new feature, artifact, or debu
 - Workflow recipes: [Coworld cookbook](../../../COOKBOOK.md).
 - Rebuild/source ownership guide: [REBUILDING_COWORLDS.md](REBUILDING_COWORLDS.md).
 - Manifest reference: [COWORLD_MANIFEST.md](COWORLD_MANIFEST.md).
-- Calling an LLM / Bedrock from a player (route through the `AWS_ENDPOINT_URL_BEDROCK_RUNTIME` sidecar, InvokeModel not Converse): [BEDROCK.md](BEDROCK.md).
+- Calling an LLM / Bedrock from a player (route through the `AWS_ENDPOINT_URL_BEDROCK_RUNTIME` sidecar, InvokeModel not
+  Converse): [BEDROCK.md](BEDROCK.md).
 - Lifecycle overview: [LIFECYCLE.md](LIFECYCLE.md).
 - Artifact reference: [artifacts/README.md](artifacts/README.md).
 - Game container contract: [GAME.md](roles/GAME.md).
@@ -223,6 +226,6 @@ These boundaries are useful when deciding where a new feature, artifact, or debu
 - Per-role contracts: [GAME.md](roles/GAME.md), [PLAYER.md](roles/PLAYER.md), [COMMISSIONER.md](roles/COMMISSIONER.md),
   [REPORTER.md](roles/REPORTER.md), [GRADER.md](roles/GRADER.md), [DIAGNOSER.md](roles/DIAGNOSER.md),
   [OPTIMIZER.md](roles/OPTIMIZER.md).
-- Shared role implementations: [Metta-AI/coworld-tools](https://github.com/Metta-AI/coworld-tools) for imported
-  players, commissioners, reporters, graders, diagnosers, and games; [Metta-AI/optimizers](https://github.com/Metta-AI/optimizers)
-  for the active optimizer workbench.
+- Shared role implementations: [Metta-AI/coworld-tools](https://github.com/Metta-AI/coworld-tools) for imported players,
+  commissioners, reporters, graders, diagnosers, and games;
+  [Metta-AI/optimizers](https://github.com/Metta-AI/optimizers) for the active optimizer workbench.
