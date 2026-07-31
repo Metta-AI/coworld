@@ -8,7 +8,7 @@
 // Worlds are versioned and accepted side by side; signatures here are
 // request/response-shaped so a future WASI 0.3 world (async, stream<u8>) is an
 // additive re-release.
-package softmax:reporter@0.2.0;
+package softmax:reporter@0.2.1;
 
 interface types {
   /// One run's input, as passed to the exported `run`.
@@ -60,6 +60,13 @@ interface episodes {
 
   /// results.json bytes for a terminal episode.
   results: func(ereq: string) -> result<list<u8>, tool-error>;
+  /// The per-tick event stream the GAME wrote as it played, as JSON lines.
+  ///
+  /// First-party: produced by the binary that ran the match, so it cannot skew
+  /// from the rules that produced it the way a re-simulation can. Returns
+  /// not-found for episodes played before emission shipped, and for coworlds
+  /// that emit none — both are ordinary, not errors.
+  events: func(ereq: string) -> result<list<u8>, tool-error>;
   /// Decompressed replay bytes.
   replay: func(ereq: string) -> result<list<u8>, tool-error>;
   /// Combined game log text.
