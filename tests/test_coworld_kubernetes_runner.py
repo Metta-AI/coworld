@@ -1888,3 +1888,47 @@ def _env_value(command: list[str], key: str) -> str | None:
         if index > 0 and command[index - 1] == "-e" and value.startswith(prefix):
             return value.removeprefix(prefix)
     return None
+
+
+def _upload_env(monkeypatch, **overrides: str | None) -> list[tuple[str, bytes, str]]:
+    """Arrange `_upload_outputs` with only the URIs a case cares about."""
+    uploads: list[tuple[str, bytes, str]] = []
+    monkeypatch.setattr(
+        kubernetes_runner,
+        "upload_data",
+        lambda uri, data, *, content_type: uploads.append((uri, data, content_type)),
+    )
+    for name in ("RESULTS_URI", "REPLAY_URI", "EVENTS_URI", "DEBUG_URI", "POLICY_LOG_URLS"):
+        monkeypatch.delenv(name, raising=False)
+    for name, value in overrides.items():
+        if value is not None:
+            monkeypatch.setenv(name, value)
+    return uploads
+
+
+def test_upload_outputs_uploads_the_event_stream_when_the_game_wrote_one(tmp_path, monkeypatch):
+    artifacts = EpisodeArtifacts.create(tmp_path)
+    payload = b'{"tick":364,"kind":"shot","x":478.0,"y":411.0}\n'
+    artifacts.events_path.write_bytes(payload)
+    uploads = _upload_env(monkeypatch, EVENTS_URI="file:///tmp/events-out.json")
+
+    _upload_outputs(artifacts)
+
+    assert uploads == [("file:///tmp/events-out.json", payload, "application/json")]
+
+
+def test_upload_outputs_skips_the_event_stream_when_the_game_wrote_none(tmp_path, monkeypatch):
+    """Absence is an ORDINARY outcome, not a failure.
+
+    Most coworlds emit no event stream at all, and one that does can still play
+    an episode that produces no events. Treating a missing file the way results
+    and replay are treated would raise FileNotFoundError and fail the upload
+    step — turning "this game has no events" into "this episode broke".
+    """
+    artifacts = EpisodeArtifacts.create(tmp_path)
+    assert not artifacts.events_path.exists()
+    uploads = _upload_env(monkeypatch, EVENTS_URI="file:///tmp/events-out.json")
+
+    _upload_outputs(artifacts)
+
+    assert uploads == []

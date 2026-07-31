@@ -88,6 +88,7 @@ class EpisodeArtifacts:
     config_path: Path
     results_path: Path
     replay_path: Path
+    events_path: Path
     player_failure_path: Path
     logs_dir: Path
     game_stdout_path: Path
@@ -104,6 +105,7 @@ class EpisodeArtifacts:
             config_path=workspace / "config.json",
             results_path=workspace / "results.json",
             replay_path=workspace / "replay",
+            events_path=workspace / "events.json",
             player_failure_path=workspace / "player_failure.json",
             logs_dir=logs_dir,
             game_stdout_path=logs_dir / "game.stdout.log",

@@ -218,6 +218,13 @@ def _upload_outputs(artifacts: EpisodeArtifacts) -> None:
             content_type="application/octet-stream",
         )
 
+    # Existence-gated, unlike results/replay: most coworlds emit no event stream
+    # at all, and a coworld that emits one may still finish an episode without a
+    # single event. Both are ordinary outcomes, not a failed upload.
+    events_uri = os.environ.get("EVENTS_URI")
+    if events_uri is not None and artifacts.events_path.exists():
+        upload_data(events_uri, artifacts.events_path.read_bytes(), content_type="application/json")
+
     debug_uri = os.environ.get("DEBUG_URI")
     if debug_uri is not None:
         upload_data(debug_uri, _zip_logs(artifacts.logs_dir), content_type="application/zip")
