@@ -665,6 +665,14 @@ def _wait_for_episode_artifacts(
         exit_code = _game_container_exit_code(core_v1, namespace, pod_name)
 
         if exit_code is not None:
+            # Re-check the declaration AFTER observing the exit: a game that
+            # declares a player failure writes player_failure.json and then
+            # exits non-zero, and both can land between this iteration's
+            # declaration check above and the exit-code read. Blaming the
+            # exit first would convert an attributed player_error into an
+            # unattributed game_unhealthy — exactly the everyone-punished /
+            # no-DQ-strikes outcome the declaration protocol exists to avoid.
+            _raise_if_game_declared_player_failure(artifacts, expected, player_count=player_count)
             if exit_code != 0:
                 raise RunnerEpisodeError(f"Game container exited with code {exit_code}", error_type="game_unhealthy")
             missing = [path for path in expected if not path.exists()]
