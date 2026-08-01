@@ -49,6 +49,7 @@ MAX_TCP_PORT = 65535
 DEFAULT_PLAYER_EXIT_TIMEOUT_SECONDS = 30.0
 DEFAULT_RUNTIME_STARTUP_TIMEOUT_SECONDS = 10.0
 LOBBY_RUNTIME_STARTUP_TIMEOUT_SECONDS = 60.0
+CERTIFICATION_EPISODE_SOURCE = "coworld_certification"
 
 # Hosted Coworld manifests store images as backend container-image ids: the "img_" prefix followed by a
 # UUID (see ContainerImageId / PrefixedId in metta-app-backend-client). The backend substitutes a pullable

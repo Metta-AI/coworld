@@ -1119,6 +1119,49 @@ def test_raise_if_players_never_started_treats_missing_pod_as_not_started():
     assert exc_info.value.error_type == "player_never_started"
 
 
+def test_wait_for_players_to_complete_observes_clean_process_completion():
+    statuses = iter(
+        [
+            [_container_status("player", running=True)],
+            [_container_status("player", exit_code=0, reason="Completed")],
+        ]
+    )
+
+    class SequencedCoreV1:
+        def read_namespaced_pod(self, *, name: str, namespace: str):
+            return SimpleNamespace(status=SimpleNamespace(container_statuses=next(statuses)))
+
+    kubernetes_runner._wait_for_players_to_complete(
+        SequencedCoreV1(),
+        "default",
+        ["job-player-0"],
+        timeout_seconds=1.0,
+    )
+
+
+def test_wait_for_players_to_complete_rejects_late_player_crash():
+    statuses = iter(
+        [
+            [_container_status("player", running=True)],
+            [_container_status("player", exit_code=1, reason="Error", message="policy crashed")],
+        ]
+    )
+
+    class SequencedCoreV1:
+        def read_namespaced_pod(self, *, name: str, namespace: str):
+            return SimpleNamespace(status=SimpleNamespace(container_statuses=next(statuses)))
+
+    with pytest.raises(kubernetes_runner.PlayerPodFailure, match="policy crashed") as exc_info:
+        kubernetes_runner._wait_for_players_to_complete(
+            SequencedCoreV1(),
+            "default",
+            ["job-player-0"],
+            timeout_seconds=1.0,
+        )
+
+    assert exc_info.value.failed_policy_index == 0
+
+
 def test_wait_for_episode_artifacts_ignores_clean_player_exit_on_timeout(tmp_path):
     artifacts = EpisodeArtifacts.create(tmp_path)
     core_v1 = _FakeCoreV1(
@@ -1368,6 +1411,7 @@ def test_run_kubernetes_episode_defaults_player_resource_requests(monkeypatch, t
                 SimpleNamespace(image="paintbot:latest", run=[], env={}),
             ],
             results_schema={},
+            episode_tags={},
         ),
     )
 

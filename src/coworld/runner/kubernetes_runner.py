@@ -32,6 +32,8 @@ from coworld.runner.bedrock_sidecar_wiring import (
 from coworld.runner.io import RunnerEpisodeError, RunnerError, RunnerErrorType, read_data, upload_data
 from coworld.runner.phase_timings import EpisodePhaseTimings
 from coworld.runner.runner import (
+    CERTIFICATION_EPISODE_SOURCE,
+    DEFAULT_PLAYER_EXIT_TIMEOUT_SECONDS,
     DEFAULT_RUNTIME_STARTUP_TIMEOUT_SECONDS,
     LOBBY_RUNTIME_STARTUP_TIMEOUT_SECONDS,
     EpisodeArtifacts,
@@ -334,6 +336,13 @@ def _run_kubernetes_episode(
         # results when a player pod never came up. The orchestrator owns whether Kubernetes
         # started each process, so platform startup failures cannot become competitive evidence.
         _raise_if_players_never_started(core_v1, namespace, child_names)
+        if job.episode_tags.get("source") == CERTIFICATION_EPISODE_SOURCE:
+            _wait_for_players_to_complete(
+                core_v1,
+                namespace,
+                child_names,
+                timeout_seconds=DEFAULT_PLAYER_EXIT_TIMEOUT_SECONDS,
+            )
         core_timings = {
             "game_boot_s": game_ready - worker_start,
             "player_launch_s": players_launched - game_ready,
@@ -766,6 +775,52 @@ def _raise_if_player_pod_failed(core_v1, namespace: str, player_pod_names: tuple
                 if waiting.message:
                     parts.append(waiting.message)
                 raise PlayerPodFailure(slot, ": ".join(parts))
+
+
+def _wait_for_players_to_complete(
+    core_v1,
+    namespace: str,
+    player_pod_names: tuple[str, ...] | list[str],
+    *,
+    timeout_seconds: float,
+) -> None:
+    deadline = time.monotonic() + timeout_seconds
+    while True:
+        pending: list[tuple[int, str]] = []
+        for player_pod_name in player_pod_names:
+            slot = _player_pod_slot(player_pod_name)
+            try:
+                player_pod = core_v1.read_namespaced_pod(name=player_pod_name, namespace=namespace)
+            except ApiException as exc:
+                if exc.status == 404:
+                    raise PlayerPodFailure(
+                        slot,
+                        f"Player pod {player_pod_name} for slot {slot} disappeared before completing certification",
+                    ) from exc
+                raise
+            player_status = next(
+                (status for status in player_pod.status.container_statuses or [] if status.name == "player"),
+                None,
+            )
+            terminated = player_status.state.terminated if player_status is not None else None
+            if terminated is None:
+                pending.append((slot, player_pod_name))
+                continue
+            if terminated.exit_code != 0:
+                parts = [
+                    f"Player pod {player_pod_name} for slot {slot} terminated with exit code {terminated.exit_code}"
+                ]
+                parts.extend(part for part in (terminated.reason, terminated.message) if part)
+                raise PlayerPodFailure(slot, ": ".join(parts))
+        if not pending:
+            return
+        if time.monotonic() >= deadline:
+            slot, player_pod_name = pending[0]
+            raise PlayerPodFailure(
+                slot,
+                f"Timed out waiting for player pod {player_pod_name} for slot {slot} to complete certification",
+            )
+        time.sleep(_ARTIFACT_POLL_SECONDS)
 
 
 def _game_container_exit_code(core_v1, namespace: str, pod_name: str) -> int | None:

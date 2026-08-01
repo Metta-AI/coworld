@@ -1472,6 +1472,7 @@ def test_build_manifest_episode_job_spec_defaults_to_certification_config(tmp_pa
     spec = build_manifest_episode_job_spec(package)
 
     assert spec.game_config == {"difficulty": "smoke"}
+    assert spec.episode_tags == {"source": "coworld_certification"}
 
 
 def test_build_manifest_episode_job_spec_deep_copies_config_and_player_env(tmp_path: Path) -> None:

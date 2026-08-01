@@ -36,6 +36,7 @@ from coworld.manifest_validation import (
 )
 from coworld.runner.io import RunnerEpisodeError
 from coworld.runner.runner import (
+    CERTIFICATION_EPISODE_SOURCE,
     GAME_HOST,
     GAME_HOST_ENV_VAR,
     GAME_PORT,
@@ -390,6 +391,7 @@ def build_manifest_episode_job_spec(
         manifest=package.manifest.model_copy(deep=True),
         game_config=game_config,
         players=cast(list[CoworldEpisodePlayerSpec], players),
+        episode_tags={"source": CERTIFICATION_EPISODE_SOURCE},
     )
 
 

@@ -69,7 +69,8 @@ manifest, records GitHub `source_url` availability without gating, checks image 
 fixture itself, and then uses the
 same execution shape as a normal episode: the runner starts the game, starts the bundled player images from the fixture,
 waits for the game to finish, validates final results, checks that a replay was produced, and checks that the replay
-viewer can start.
+viewer can start. The hosted certification runner also waits for every fixture player process to terminate successfully,
+so a player that crashes after the game writes its artifacts cannot certify from logs alone.
 
 Certification is a package smoke test, not a gameplay benchmark. It should be short, deterministic enough to debug, and
 strong enough to prove that the manifest, game image, bundled players, HTTP routes, player-token rejection, results, and
