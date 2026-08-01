@@ -1377,6 +1377,23 @@ def test_run_kubernetes_episode_defaults_player_resource_requests(monkeypatch, t
     assert startup_timeouts == [runner_module.LOBBY_RUNTIME_STARTUP_TIMEOUT_SECONDS]
 
 
+def test_create_game_service_exposes_human_proxy_without_rerouting_policy_players(monkeypatch):
+    created: dict[str, Any] = {}
+    core_v1 = SimpleNamespace(
+        create_namespaced_service=lambda *, namespace, body: created.update({"namespace": namespace, "body": body})
+    )
+    monkeypatch.setenv("COWORLD_HUMAN_PLAYER_PROXY_PORT", "8081")
+
+    kubernetes_runner._create_game_service(core_v1, "jobs", "game-service", "job-id", [])
+
+    service: Any = created["body"]
+    ports = {port.name: port for port in service.spec.ports}
+    assert ports["http"].port == 8080
+    assert ports["http"].target_port == 8080
+    assert ports["human-player"].port == 8081
+    assert ports["human-player"].target_port == 8081
+
+
 def test_create_player_pod_injects_policy_secret_env(monkeypatch):
     created: dict[str, Any] = {}
     core_v1 = SimpleNamespace(

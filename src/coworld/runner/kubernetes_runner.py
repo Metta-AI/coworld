@@ -387,6 +387,11 @@ def _create_game_service(
     job_id: str,
     owner_references: list[client.V1OwnerReference],
 ) -> None:
+    ports = [client.V1ServicePort(name="http", port=GAME_PORT, target_port=GAME_PORT)]
+    human_player_proxy_port = os.environ.get("COWORLD_HUMAN_PLAYER_PROXY_PORT")
+    if human_player_proxy_port is not None:
+        proxy_port = int(human_player_proxy_port)
+        ports.append(client.V1ServicePort(name="human-player", port=proxy_port, target_port=proxy_port))
     service = client.V1Service(
         metadata=client.V1ObjectMeta(
             name=service_name,
@@ -396,7 +401,7 @@ def _create_game_service(
         ),
         spec=client.V1ServiceSpec(
             selector={"job-id": job_id, "coworld-component": "game"},
-            ports=[client.V1ServicePort(name="http", port=GAME_PORT, target_port=GAME_PORT)],
+            ports=ports,
         ),
     )
     core_v1.create_namespaced_service(namespace=namespace, body=service)
