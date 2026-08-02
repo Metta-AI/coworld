@@ -12,6 +12,8 @@ import typer
 from pydantic import BaseModel, Field
 from rich.console import Console
 
+from coworld.api_client import CoworldApiClient
+
 console = Console()
 
 
@@ -34,6 +36,19 @@ def active_docker_context() -> str:
 
 def emit_json(payload: Any) -> None:
     sys.stdout.write(json.dumps(payload, indent=2) + "\n")
+
+
+def resolve_league_id(client: CoworldApiClient, league: str) -> str:
+    """Accept a `league_...` id or a unique (case-insensitive) league name."""
+    if league.startswith("league_"):
+        return league
+    matches = [row for row in client.list_leagues() if row.name.lower() == league.lower()]
+    if not matches:
+        raise typer.BadParameter(f"league not found: {league}")
+    if len(matches) > 1:
+        ids = ", ".join(row.id for row in matches)
+        raise typer.BadParameter(f"ambiguous league name {league!r}; use one of: {ids}")
+    return matches[0].id
 
 
 def validate_run_argv(run: list[str] | None) -> None:

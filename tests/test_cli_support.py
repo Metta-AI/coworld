@@ -1,9 +1,12 @@
 from pathlib import Path
+from types import SimpleNamespace
+from typing import cast
 
 import pytest
 import typer
 
-from coworld.cli_support import active_docker_context, observatory_web_url, validate_run_argv
+from coworld.api_client import CoworldApiClient
+from coworld.cli_support import active_docker_context, observatory_web_url, resolve_league_id, validate_run_argv
 
 
 def test_active_docker_context_reads_docker_config(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -81,3 +84,30 @@ def test_observatory_web_url_strips_legacy_api_observatory_prefix() -> None:
 def test_observatory_web_url_passes_through_absolute_urls() -> None:
     absolute = "https://api.example.com/v2/coworlds/proxy/client/global"
     assert observatory_web_url("https://softmax.com/api", absolute) == absolute
+
+
+class _StubLeagueClient:
+    def __init__(self, names: list[str]) -> None:
+        self._rows = [SimpleNamespace(id=f"league_{i}", name=name) for i, name in enumerate(names)]
+
+    def list_leagues(self):
+        return self._rows
+
+
+def _stub_client(names: list[str]) -> CoworldApiClient:
+    return cast(CoworldApiClient, _StubLeagueClient(names))
+
+
+def test_resolve_league_id_passes_ids_through_without_lookup() -> None:
+    assert resolve_league_id(_stub_client([]), "league_abc") == "league_abc"
+
+
+def test_resolve_league_id_matches_unique_name_case_insensitively() -> None:
+    assert resolve_league_id(_stub_client(["CTF Campaign", "Other"]), "ctf campaign") == "league_0"
+
+
+def test_resolve_league_id_rejects_unknown_and_ambiguous_names() -> None:
+    with pytest.raises(typer.BadParameter, match="not found"):
+        resolve_league_id(_stub_client(["A"]), "missing")
+    with pytest.raises(typer.BadParameter, match="ambiguous"):
+        resolve_league_id(_stub_client(["Dup", "dup"]), "DUP")

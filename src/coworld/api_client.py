@@ -135,6 +135,123 @@ class LeagueSubmissionPublic(CoworldAPIModel):
     created_at: datetime
 
 
+# The Campaign*Public models are hand-maintained mirrors of the campaign route
+# responses in app_backend v2/routes/campaign.py — change both together. Fields
+# the server always emits carry no default here, so a server-side rename fails
+# loudly at parse time instead of silently reading as None (see LeagueLockSettings).
+
+
+class CampaignConfigPublic(CoworldAPIModel):
+    width: int
+    height: int
+    max_invasions: int
+    round_interval_seconds: int
+    strategist_model: str
+    outcomes: str
+
+
+class CampaignPlayerPublic(CoworldAPIModel):
+    id: str
+    name: str
+    symbol: str | None = None
+    # Standing-orders prompt; the server only sets it for players the viewer owns.
+    prompt: str | None = None
+
+
+class CampaignBoardPublic(CoworldAPIModel):
+    league_id: str
+    enabled: bool
+    config: CampaignConfigPublic
+    players: list[CampaignPlayerPublic]
+    viewer_player_ids: list[str]
+    map_refs: list[str]
+    modes: list[str]
+    map_seeds: list[int | None]
+    map_sizes: list[str | None]
+    round: int
+    frames: list[dict[str, Any]]
+    events: list[dict[str, Any]]
+    pending_round: dict[str, Any] | None
+
+
+class CampaignPromptPublic(CoworldAPIModel):
+    player_id: str
+    prompt: str
+    is_default: bool
+
+
+class CampaignFullPromptPublic(CoworldAPIModel):
+    player_id: str
+    model: str
+    prompt: str
+    system: str
+    tools: list[dict[str, Any]]
+    context: str
+
+
+class CampaignConversationPublic(CoworldAPIModel):
+    league_id: str
+    player_id: str
+    round: int
+    pending: bool
+    model: str | None
+    system: str | None
+    context: str | None
+    response: list[dict[str, Any]] | None
+    stop_reason: str | None
+    reasoning: str
+    error: str | None
+    latency_s: float | None
+    rounds_available: list[int]
+
+
+class CampaignHistoryBattlePublic(CoworldAPIModel):
+    round: int
+    round_id: str | None
+    kind: str
+    mode: str
+    role: str
+    target: str
+    source: str | None
+    staked: bool
+    outcome: str
+    result: str
+    winner: str | None
+    opponents: list[str]
+    allies: list[str]
+    episode_ids: list[str] | None
+    replay_urls: list[str] | None
+
+
+class CampaignHistoryTransferPublic(CoworldAPIModel):
+    round: int
+    cell: str
+    from_player: str | None
+    to_player: str
+    why: str
+
+
+class CampaignTerritoryPointPublic(CoworldAPIModel):
+    round: int
+    cells: int
+
+
+class CampaignHeadToHeadPublic(CoworldAPIModel):
+    wins: int
+    losses: int
+
+
+class CampaignHistoryPublic(CoworldAPIModel):
+    league_id: str
+    player_id: str
+    round: int
+    battles: list[CampaignHistoryBattlePublic]
+    transfers: list[CampaignHistoryTransferPublic]
+    territory: list[CampaignTerritoryPointPublic]
+    head_to_head: dict[str, CampaignHeadToHeadPublic]
+    names: dict[str, str]
+
+
 class RoundPublic(CoworldAPIModel):
     id: str
     round_number: int
@@ -584,6 +701,42 @@ class CoworldApiClient:
             },
         )
 
+    def get_campaign_board(self, league_id: str) -> CampaignBoardPublic:
+        return self._get(f"/v2/leagues/{league_id}/campaign", CampaignBoardPublic)
+
+    def get_campaign_history(
+        self, league_id: str, *, player_id: str, rounds: int | None = None
+    ) -> CampaignHistoryPublic:
+        params: dict[str, str | int] = {"player_id": player_id}
+        if rounds is not None:
+            params["rounds"] = rounds
+        return self._get(f"/v2/leagues/{league_id}/campaign/history", CampaignHistoryPublic, params=params)
+
+    def get_campaign_conversation(
+        self, league_id: str, *, player_id: str, round_no: int | None = None
+    ) -> CampaignConversationPublic:
+        params: dict[str, str | int] = {"player_id": player_id}
+        if round_no is not None:
+            params["round"] = round_no
+        return self._get(f"/v2/leagues/{league_id}/campaign/conversation", CampaignConversationPublic, params=params)
+
+    def get_campaign_prompt(self, league_id: str, *, player_id: str) -> CampaignPromptPublic:
+        return self._get(
+            f"/v2/leagues/{league_id}/campaign/prompt", CampaignPromptPublic, params={"player_id": player_id}
+        )
+
+    def set_campaign_prompt(self, league_id: str, *, player_id: str, prompt: str) -> None:
+        self._post(
+            f"/v2/leagues/{league_id}/campaign/prompt",
+            dict[str, Any],
+            json={"player_id": player_id, "prompt": prompt},
+        )
+
+    def get_campaign_full_prompt(self, league_id: str, *, player_id: str) -> CampaignFullPromptPublic:
+        return self._get(
+            f"/v2/leagues/{league_id}/campaign/full-prompt", CampaignFullPromptPublic, params={"player_id": player_id}
+        )
+
     def get_league_division_ladder(self, league_id: str) -> list[DivisionLadderEntryPublic]:
         return self._get(f"/v2/leagues/{league_id}/division-ladder", list[DivisionLadderEntryPublic])
 
@@ -893,14 +1046,31 @@ class CoworldApiClient:
         return response.json()
 
 
+def _detail(response: httpx.Response) -> str | None:
+    """The backend's JSON error detail, when the body carries one."""
+    try:
+        body = response.json()
+    except ValueError:
+        return None
+    detail = body.get("detail") if isinstance(body, dict) else None
+    return detail if isinstance(detail, str) else None
+
+
 def _raise_for_status(response: httpx.Response) -> None:
+    detail = _detail(response)
     if response.status_code == 401:
         raise RuntimeError("Authentication failed (401). Your token may be expired. Run: uv run softmax login")
     if response.status_code == 403:
+        # A domain 403 (e.g. "You can only view your own player's prompt") is
+        # not a stale token — surface it verbatim instead of login advice.
+        if detail:
+            raise RuntimeError(f"Access denied (403): {detail}")
         raise RuntimeError(
             f"Access denied (403) for {response.request.url.path}. "
             "You may lack permissions, or your token may be expired. Run: uv run softmax login"
         )
+    if response.is_error and detail:
+        raise RuntimeError(f"Request failed ({response.status_code}) for {response.request.url.path}: {detail}")
     response.raise_for_status()
 
 

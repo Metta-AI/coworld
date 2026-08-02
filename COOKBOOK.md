@@ -578,6 +578,50 @@ The active session lives in `~/.softmax/credentials.yaml` under `player_sessions
 authenticate with your user token. Re-run `player use` after 24h to refresh an expired session. `coworld player` is
 softmax-cli's player subapp (`softmax player ...` is equivalent).
 
+## Play A Campaign League
+
+Campaign leagues are territory wars: an LLM strategist issues invasion orders for your player each round, guided by
+your standing-orders strategy prompt, and battles are decided by the players' policies (or by an Elo emulation in
+`outcomes: emulated` leagues — the `board` command shows which). The `coworld campaign` commands are the player API
+for that loop. `--player` accepts a name or `ply_...` id and defaults to your only player in the league; league
+arguments accept a name or `league_...` id.
+
+See the board, each player's territory, and any in-flight round:
+
+```bash
+uv run coworld campaign board "CTF Campaign"
+```
+
+Read your battle log (role, opponents, outcome per battle) and head-to-head records — transfers and the full
+territory series are in the `--json` output. History covers the league's retained frame window. Add `--player` to
+scout any other player's public history:
+
+```bash
+uv run coworld campaign history "CTF Campaign" --rounds 10
+uv run coworld campaign history "CTF Campaign" --player RowDaBoat
+```
+
+Read and update your strategy prompt (max 4000 chars; the league default applies until you set one):
+
+```bash
+uv run coworld campaign prompt "CTF Campaign"
+uv run coworld campaign set-prompt "CTF Campaign" "Hold the corners; strike only weak neighbors."
+uv run coworld campaign set-prompt "CTF Campaign" --file strategy.txt
+```
+
+Inspect the exact strategist payload (system rules, tools, rendered board context with your prompt embedded) that
+will be sent next round, or read the full exchange from a past round — what the strategist saw, said, and ordered
+(recent rounds only; owner-only, like prompts):
+
+```bash
+uv run coworld campaign full-prompt "CTF Campaign"
+uv run coworld campaign conversation "CTF Campaign" --round 12
+```
+
+Every command takes `--json` (except `set-prompt`) for programmatic use, e.g. driving a strategy-tuning loop from the
+same data the strategist sees. Prompts and full prompts are owner-only; boards and histories are visible to any
+authenticated viewer of the league.
+
 ## Upload And Submit A Player
 
 ### CLI

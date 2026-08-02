@@ -14,7 +14,9 @@ from rich import box
 from rich.table import Table
 from typer.core import TyperCommand
 
+from coworld.api_client import CoworldApiClient
 from coworld.bundle import build_coworld_manifest
+from coworld.campaign_cli import register_campaign_commands
 from coworld.certification_report import write_certification_report
 from coworld.certifier import (
     build_manifest_episode_job_spec,
@@ -23,8 +25,14 @@ from coworld.certifier import (
     load_executable_transcript,
     load_manifest_episode_job_spec,
 )
-from coworld.api_client import CoworldApiClient
-from coworld.cli_support import active_docker_context, console, emit_json, observatory_web_url, validate_run_argv
+from coworld.cli_support import (
+    active_docker_context,
+    console,
+    emit_json,
+    observatory_web_url,
+    resolve_league_id,
+    validate_run_argv,
+)
 from coworld.config import DEFAULT_OPTIMIZER_PORT, DEFAULT_SUBMIT_SERVER
 from coworld.deploy_audit import (
     DEFAULT_GITHUB_OWNER,
@@ -61,6 +69,7 @@ from softmax.players import player_app
 
 app = typer.Typer(no_args_is_help=True, pretty_exceptions_enable=False)
 register_tournament_commands(app)
+register_campaign_commands(app)
 hosted_game_app = typer.Typer(no_args_is_help=True, help="Create and join hosted Coworld games.")
 app.add_typer(hosted_game_app, name="hosted-game")
 manifest_schema_app = typer.Typer(no_args_is_help=True, help="Check versioned Coworld manifest schemas.")
@@ -141,18 +150,6 @@ def _resolve_policy_version_id(client: CoworldApiClient, ref: str) -> str:
     return str(row.resolved_id)
 
 
-def _resolve_league_id(client: CoworldApiClient, league: str) -> str:
-    if league.startswith("league_"):
-        return league
-    matches = [row for row in client.list_leagues() if row.name.lower() == league.lower()]
-    if not matches:
-        raise typer.BadParameter(f"league not found: {league}")
-    if len(matches) > 1:
-        ids = ", ".join(row.id for row in matches)
-        raise typer.BadParameter(f"ambiguous league name {league!r}; use one of: {ids}")
-    return matches[0].id
-
-
 @counterfactual_app.command("create")
 def counterfactual_create(
     candidate: Annotated[
@@ -185,8 +182,10 @@ def counterfactual_create(
     with CoworldApiClient.from_login(server_url=server) as client:
         candidate_id = _resolve_policy_version_id(client, candidate)
         baseline_id = _resolve_policy_version_id(client, baseline)
-        league_id = _resolve_league_id(client, league)
-        key = idempotency_key or f"cli:{candidate_id}:{baseline_id}:{league_id}:{int(time.time())}:{uuid.uuid4().hex[:8]}"
+        league_id = resolve_league_id(client, league)
+        key = (
+            idempotency_key or f"cli:{candidate_id}:{baseline_id}:{league_id}:{int(time.time())}:{uuid.uuid4().hex[:8]}"
+        )
         result = client.create_counterfactual_eval(
             candidate_policy_version_id=candidate_id,
             baseline_policy_version_id=baseline_id,
@@ -225,9 +224,7 @@ def counterfactual_get(
         console.print(f"[yellow]skip[/yellow] {result['skip_reason']}")
     if result.get("error"):
         console.print(f"[red]error[/red] {result['error']}")
-    detail_url = observatory_web_url(
-        server, f"/observatory/v2?detail=counterfactual-eval:{result['id']}"
-    )
+    detail_url = observatory_web_url(server, f"/observatory/v2?detail=counterfactual-eval:{result['id']}")
     console.print(f"[dim]UI[/dim] {detail_url}", soft_wrap=True)
 
 

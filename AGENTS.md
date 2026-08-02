@@ -43,6 +43,7 @@ uv run coworld reporters list [-q TEXT] [--type T] [--mode hosted|external] / se
 uv run coworld build / certify / upload-coworld
 uv run coworld upload-policy / submit
 uv run coworld league create / update / list
+uv run coworld campaign board / history / conversation / prompt / set-prompt / full-prompt
 uv run coworld player list / use <player-id> / unset
 ```
 
