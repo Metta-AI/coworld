@@ -103,7 +103,7 @@ def register_campaign_commands(app: typer.Typer) -> None:
             return
 
         def name(pid: str | None) -> str:
-            return history.names.get(pid or "", pid or "filler")
+            return history.names.get(pid or "", "Baseline" if pid in (None, "", "filler") else pid)
 
         console.print(f"[bold]{name(player_id)}[/bold] — campaign history through round {history.round}")
         if history.territory:
