@@ -39,9 +39,11 @@ from coworld.upload import (
     _manifest_image_fields,
     _manifest_with_local_images,
     _manifest_with_softmax_image_ids,
+    _OciImageIndex,
     _prepare_public_ecr_docker_config,
     _push_archive_to_registry,
     _replay_viewer_bundle_files,
+    _select_oci_image_manifest,
     _submit_replay_viewer_bundle,
     _submit_wasm_reporters,
     upload_coworld,
@@ -2127,15 +2129,24 @@ def test_local_image_client_hash_uses_content_addressed_docker_image_id(
     assert calls == [["docker", "image", "inspect", "--format", "{{.Id}}", "unit-test-runtime:latest"]]
 
 
-def test_push_archive_to_registry_uploads_layers_config_and_manifest(httpserver: HTTPServer) -> None:
+def test_push_archive_to_registry_reuses_layers_and_preserves_oci_manifest(httpserver: HTTPServer) -> None:
     config = b'{"architecture":"amd64","os":"linux"}'
-    layer_data = b"fake-layer-content"
-    archive_bytes = _docker_archive(config=config, layers=[layer_data])
+    reused_layer = b"existing-layer-content"
+    new_layer = b"new-layer-content"
+    manifest_descriptor, blobs = _oci_image(config=config, layers=[reused_layer, new_layer])
+    archive_bytes = _oci_archive(_oci_index([manifest_descriptor]), blobs)
 
-    layer_digest = _sha256_digest(layer_data)
-    config_digest = _sha256_digest(config)
+    reused_layer_digest = _sha256_digest(reused_layer)
+    new_layer_digest = _sha256_digest(new_layer)
 
-    # Layer blob upload: POST to initiate, PATCH to stream, PUT to finalize.
+    httpserver.expect_request(f"/v2/repo/test/blobs/{reused_layer_digest}", method="HEAD").respond_with_data(
+        "", status=200
+    )
+    httpserver.expect_request(f"/v2/repo/test/blobs/{new_layer_digest}", method="HEAD").respond_with_data(
+        "", status=404
+    )
+
+    # Only the missing layer is uploaded.
     httpserver.expect_request("/v2/repo/test/blobs/uploads/", method="POST").respond_with_data(
         "", status=202, headers={"Location": httpserver.url_for("/v2/repo/test/blobs/upload-session-layer")}
     )
@@ -2160,15 +2171,36 @@ def test_push_archive_to_registry_uploads_layers_config_and_manifest(httpserver:
     httpserver.expect_request("/v2/repo/test/manifests/v1", method="PUT").respond_with_data("", status=201)
 
     base_url = httpserver.url_for("/v2/repo/test")
-    archive_file = io.BytesIO(archive_bytes)
-    _push_archive_to_registry(archive_file, base_url, "v1", "dGVzdDp0ZXN0")
+    _push_archive_to_registry(io.BytesIO(archive_bytes), base_url, "v1", "dGVzdDp0ZXN0")
 
     manifest_req = next(req for req, _ in httpserver.log if "/manifests/" in req.path)
-    manifest_body = json.loads(manifest_req.data)
-    assert manifest_body["schemaVersion"] == 2
-    assert manifest_body["config"]["digest"] == config_digest
-    assert len(manifest_body["layers"]) == 1
-    assert manifest_body["layers"][0]["digest"] == layer_digest
+    assert json.loads(manifest_req.data) == json.loads(blobs[_oci_blob_name(manifest_descriptor["digest"])])
+
+
+@pytest.mark.parametrize("nested_index", [False, True], ids=["direct-index", "nested-index"])
+def test_select_oci_image_manifest_uses_linux_amd64(nested_index: bool) -> None:
+    amd64_config = b'{"architecture":"amd64","os":"linux"}'
+    amd64_layer = b"amd64-layer"
+    amd64_descriptor, amd64_blobs = _oci_image(config=amd64_config, layers=[amd64_layer])
+    amd64_descriptor["platform"] = {"architecture": "amd64", "os": "linux"}
+
+    arm64_descriptor, arm64_blobs = _oci_image(
+        config=b'{"architecture":"arm64","os":"linux"}',
+        layers=[b"arm64-layer"],
+    )
+    arm64_descriptor["platform"] = {"architecture": "arm64", "os": "linux"}
+
+    index = _oci_index([arm64_descriptor, amd64_descriptor])
+    blobs = arm64_blobs | amd64_blobs
+    if nested_index:
+        nested_descriptor = _oci_descriptor(index, "application/vnd.oci.image.index.v1+json")
+        blobs[_oci_blob_name(nested_descriptor["digest"])] = index
+        index = _oci_index([nested_descriptor])
+
+    with tarfile.open(fileobj=io.BytesIO(_oci_archive(index, blobs)), mode="r:*") as tar:
+        _, manifest = _select_oci_image_manifest(tar, _OciImageIndex.model_validate_json(index))
+    assert manifest.config.digest == _sha256_digest(amd64_config)
+    assert [layer.digest for layer in manifest.layers] == [_sha256_digest(amd64_layer)]
 
 
 def test_registry_upload_timeout_allows_slow_large_layer_writes() -> None:
@@ -2226,15 +2258,55 @@ def test_manifest_image_helpers_substitute_role_images() -> None:
     assert graders[0]["image"] == "img_grader"
 
 
-def _docker_archive(*, config: bytes, layers: list[bytes]) -> bytes:
+def _oci_image(*, config: bytes, layers: list[bytes]) -> tuple[dict[str, object], dict[str, bytes]]:
+    config_descriptor = _oci_descriptor(config, "application/vnd.oci.image.config.v1+json")
+    layer_descriptors = [_oci_descriptor(layer, "application/vnd.oci.image.layer.v1.tar") for layer in layers]
+    image_manifest = json.dumps(
+        {
+            "schemaVersion": 2,
+            "mediaType": "application/vnd.oci.image.manifest.v1+json",
+            "config": config_descriptor,
+            "layers": layer_descriptors,
+        },
+        separators=(",", ":"),
+    ).encode()
+    manifest_descriptor = _oci_descriptor(image_manifest, "application/vnd.oci.image.manifest.v1+json")
+    return manifest_descriptor, {
+        _oci_blob_name(config_descriptor["digest"]): config,
+        _oci_blob_name(manifest_descriptor["digest"]): image_manifest,
+        **{
+            _oci_blob_name(descriptor["digest"]): layer
+            for descriptor, layer in zip(layer_descriptors, layers, strict=True)
+        },
+    }
+
+
+def _oci_index(manifests: list[dict[str, object]]) -> bytes:
+    return json.dumps(
+        {
+            "schemaVersion": 2,
+            "mediaType": "application/vnd.oci.image.index.v1+json",
+            "manifests": manifests,
+        },
+        separators=(",", ":"),
+    ).encode()
+
+
+def _oci_archive(index: bytes, blobs: dict[str, bytes]) -> bytes:
     archive = io.BytesIO()
-    layer_names = [f"{index}/layer.tar" for index in range(len(layers))]
     with tarfile.open(fileobj=archive, mode="w") as tar:
-        _add_tar_file(tar, "manifest.json", json.dumps([{"Config": "config.json", "Layers": layer_names}]).encode())
-        _add_tar_file(tar, "config.json", config)
-        for name, content in zip(layer_names, layers, strict=True):
+        _add_tar_file(tar, "index.json", index)
+        for name, content in blobs.items():
             _add_tar_file(tar, name, content)
     return archive.getvalue()
+
+
+def _oci_descriptor(content: bytes, media_type: str) -> dict[str, object]:
+    return {"mediaType": media_type, "digest": _sha256_digest(content), "size": len(content)}
+
+
+def _oci_blob_name(digest: object) -> str:
+    return f"blobs/{cast(str, digest).replace(':', '/', 1)}"
 
 
 def _add_tar_file(tar: tarfile.TarFile, name: str, content: bytes) -> None:

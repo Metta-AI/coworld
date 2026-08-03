@@ -25,7 +25,7 @@ from uuid import UUID
 
 import httpx
 import typer
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from coworld.bundle import resolve_registry_image_ref
 from coworld.certifier import EXECUTABLE_TRANSCRIPT_PATH, certify_coworld, load_coworld_package
@@ -1797,14 +1797,37 @@ _logger = logging.getLogger(__name__)
 # pusher treats as fatal. All layers upload fine; only the manifest tag fails.
 #
 # Rather than shelling out to `docker push`, we implement the OCI distribution
-# spec directly via httpx: POST+PUT each blob, then PUT the manifest. This
-# sidesteps the HEAD check entirely. Once Docker fixes this upstream, this code
-# can be replaced with a simple `docker push` call again.
+# spec directly via httpx: reuse content-addressed layer blobs, upload missing
+# ones, then PUT the manifest without probing the tag. Once Docker fixes this
+# upstream, this code can be replaced with a simple `docker push` call again.
 
-_DOCKER_MANIFEST_MEDIA_TYPE = "application/vnd.docker.distribution.manifest.v2+json"
-_DOCKER_CONFIG_MEDIA_TYPE = "application/vnd.docker.container.image.v1+json"
-_DOCKER_LAYER_MEDIA_TYPE = "application/vnd.docker.image.rootfs.diff.tar.gzip"
 _REGISTRY_UPLOAD_TIMEOUT = httpx.Timeout(connect=600.0, read=600.0, write=3600.0, pool=600.0)
+_OCI_TARGET_PLATFORM = ("linux", "amd64")
+
+
+class _OciPlatform(BaseModel):
+    architecture: str
+    os: str
+
+
+class _OciDescriptor(BaseModel):
+    media_type: str = Field(alias="mediaType")
+    digest: str
+    size: int
+    platform: _OciPlatform | None = None
+
+
+class _OciImageIndex(BaseModel):
+    schema_version: Literal[2] = Field(alias="schemaVersion")
+    media_type: Literal["application/vnd.oci.image.index.v1+json"] = Field(alias="mediaType")
+    manifests: list[_OciDescriptor]
+
+
+class _OciImageManifest(BaseModel):
+    schema_version: Literal[2] = Field(alias="schemaVersion")
+    media_type: Literal["application/vnd.oci.image.manifest.v1+json"] = Field(alias="mediaType")
+    config: _OciDescriptor
+    layers: list[_OciDescriptor]
 
 
 def _push_container_image(source_image: str, push_info: EcrPushInfo) -> None:
@@ -1831,63 +1854,104 @@ def _push_archive_to_registry(archive: Any, base_url: str, tag: str, auth_header
     headers = {"Authorization": f"Basic {auth_header}"}
 
     with tarfile.open(fileobj=archive, mode="r:*") as tar, httpx.Client(timeout=_REGISTRY_UPLOAD_TIMEOUT) as client:
-        manifest_file = tar.extractfile("manifest.json")
-        if manifest_file is None:
-            raise RuntimeError("Docker image archive is missing manifest.json")
-        docker_manifest = json.load(manifest_file)
-        if not isinstance(docker_manifest, list) or len(docker_manifest) != 1:
-            raise RuntimeError("Docker image archive must contain exactly one image manifest")
-        entry = docker_manifest[0]
-        if not isinstance(entry, dict):
-            raise RuntimeError("Docker image archive manifest entry must be an object")
+        index_file = tar.extractfile("index.json")
+        if index_file is None:
+            raise RuntimeError("Docker image archive is missing index.json")
+        index = _OciImageIndex.model_validate_json(index_file.read())
+        manifest_bytes, manifest = _select_oci_image_manifest(tar, index)
 
-        config_name = entry["Config"]
-        layer_names = entry["Layers"]
-        if not isinstance(config_name, str) or not isinstance(layer_names, list):
-            raise RuntimeError("Docker image archive has invalid config or layers")
-        config_file = tar.extractfile(config_name)
-        if config_file is None:
-            raise RuntimeError(f"Docker image archive is missing {config_name}")
-        config_bytes = config_file.read()
-
-        layer_descriptors = []
-        for layer_name in layer_names:
-            if not isinstance(layer_name, str):
-                raise RuntimeError("Docker image archive manifest layers must be strings")
+        for descriptor in manifest.layers:
+            layer_name = _archive_blob_name(descriptor.digest)
             layer = tar.getmember(layer_name)
+            if layer.size != descriptor.size:
+                raise RuntimeError(f"Docker archive layer size does not match {descriptor.digest}")
+
+            resp = client.head(f"{base_url}/blobs/{descriptor.digest}", headers=headers)
+            if resp.status_code == 200:
+                _logger.info("Reused layer %s (%d bytes)", descriptor.digest, descriptor.size)
+                continue
+            if resp.status_code != 404:
+                resp.raise_for_status()
+
             layer_file = tar.extractfile(layer)
             if layer_file is None:
                 raise RuntimeError(f"Docker image archive is missing {layer_name}")
-            descriptor = _push_streaming_blob(
+            _push_streaming_blob(
                 client,
                 base_url,
                 headers,
                 layer_file,
-                size=layer.size,
-                media_type=_DOCKER_LAYER_MEDIA_TYPE,
+                size=descriptor.size,
+                expected_digest=descriptor.digest,
             )
-            layer_descriptors.append(descriptor)
-            _logger.info("Pushed layer %s (%d bytes)", descriptor["digest"], descriptor["size"])
+            _logger.info("Pushed layer %s (%d bytes)", descriptor.digest, descriptor.size)
 
-        config_descriptor = _push_blob(client, base_url, headers, config_bytes, _DOCKER_CONFIG_MEDIA_TYPE)
-        _logger.info("Pushed config %s", config_descriptor["digest"])
-
-        manifest = {
-            "schemaVersion": 2,
-            "mediaType": _DOCKER_MANIFEST_MEDIA_TYPE,
-            "config": config_descriptor,
-            "layers": layer_descriptors,
-        }
-        manifest_bytes = json.dumps(manifest, separators=(",", ":")).encode()
+        config_file = tar.extractfile(_archive_blob_name(manifest.config.digest))
+        if config_file is None:
+            raise RuntimeError(f"Docker image archive is missing config {manifest.config.digest}")
+        config_bytes = config_file.read()
+        config_descriptor = _push_blob(client, base_url, headers, config_bytes, manifest.config.media_type)
+        if config_descriptor["digest"] != manifest.config.digest or config_descriptor["size"] != manifest.config.size:
+            raise RuntimeError(f"Docker image archive config does not match {manifest.config.digest}")
+        _logger.info("Pushed config %s", manifest.config.digest)
 
         # PUT the manifest directly — no HEAD pre-check (which is what breaks docker push + ECR).
         resp = client.put(
             f"{base_url}/manifests/{tag}",
             content=manifest_bytes,
-            headers=headers | {"Content-Type": _DOCKER_MANIFEST_MEDIA_TYPE},
+            headers=headers | {"Content-Type": manifest.media_type},
         )
         resp.raise_for_status()
         _logger.info("Pushed manifest tagged %s", tag)
+
+
+def _select_oci_image_manifest(tar: tarfile.TarFile, index: _OciImageIndex) -> tuple[bytes, _OciImageManifest]:
+    candidates = list(_oci_image_manifest_candidates(tar, index))
+
+    linux_amd64 = [
+        (manifest_bytes, manifest)
+        for platform, manifest_bytes, manifest in candidates
+        if platform is not None and (platform.os, platform.architecture) == _OCI_TARGET_PLATFORM
+    ]
+    if len(linux_amd64) == 1:
+        return linux_amd64[0]
+    if not linux_amd64 and len(candidates) == 1 and candidates[0][0] is None:
+        _, manifest_bytes, manifest = candidates[0]
+        return manifest_bytes, manifest
+    raise RuntimeError("Docker image archive must contain exactly one linux/amd64 image manifest")
+
+
+def _oci_image_manifest_candidates(
+    tar: tarfile.TarFile,
+    index: _OciImageIndex,
+    inherited_platform: _OciPlatform | None = None,
+) -> Iterator[tuple[_OciPlatform | None, bytes, _OciImageManifest]]:
+    for descriptor in index.manifests:
+        platform = descriptor.platform or inherited_platform
+        if platform is not None and (platform.os, platform.architecture) != _OCI_TARGET_PLATFORM:
+            continue
+
+        content = _read_oci_descriptor(tar, descriptor)
+        if descriptor.media_type == "application/vnd.oci.image.index.v1+json":
+            yield from _oci_image_manifest_candidates(
+                tar,
+                _OciImageIndex.model_validate_json(content),
+                platform,
+            )
+        elif descriptor.media_type == "application/vnd.oci.image.manifest.v1+json":
+            yield platform, content, _OciImageManifest.model_validate_json(content)
+        else:
+            raise RuntimeError(f"Unsupported OCI manifest media type: {descriptor.media_type}")
+
+
+def _read_oci_descriptor(tar: tarfile.TarFile, descriptor: _OciDescriptor) -> bytes:
+    blob_file = tar.extractfile(_archive_blob_name(descriptor.digest))
+    if blob_file is None:
+        raise RuntimeError(f"Docker image archive is missing manifest {descriptor.digest}")
+    content = blob_file.read()
+    if len(content) != descriptor.size or _sha256_digest(content) != descriptor.digest:
+        raise RuntimeError(f"Docker image archive manifest does not match {descriptor.digest}")
+    return content
 
 
 def _push_blob(
@@ -1917,8 +1981,8 @@ def _push_streaming_blob(
     data: Any,
     *,
     size: int,
-    media_type: str,
-) -> dict[str, Any]:
+    expected_digest: str,
+) -> None:
     resp = client.post(f"{base_url}/blobs/uploads/", headers=headers)
     resp.raise_for_status()
     upload_url = _absolute_registry_upload_url(base_url, resp.headers["Location"])
@@ -1948,10 +2012,18 @@ def _push_streaming_blob(
 
     upload_url = _absolute_registry_upload_url(base_url, resp.headers.get("Location", upload_url))
     digest = f"sha256:{hasher.hexdigest()}"
+    if digest != expected_digest:
+        raise RuntimeError(f"Docker archive layer does not match {expected_digest}")
     sep = "&" if "?" in upload_url else "?"
-    resp = client.put(f"{upload_url}{sep}digest={digest}", content=b"", headers=headers)
+    resp = client.put(f"{upload_url}{sep}digest={expected_digest}", content=b"", headers=headers)
     resp.raise_for_status()
-    return {"mediaType": media_type, "digest": digest, "size": size}
+
+
+def _archive_blob_name(digest: str) -> str:
+    algorithm, separator, encoded = digest.partition(":")
+    if algorithm != "sha256" or separator != ":" or re.fullmatch(r"[0-9a-f]{64}", encoded) is None:
+        raise RuntimeError(f"Unsupported OCI blob digest: {digest}")
+    return f"blobs/{algorithm}/{encoded}"
 
 
 def _absolute_registry_upload_url(base_url: str, upload_url: str) -> str:
