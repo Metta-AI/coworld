@@ -21,10 +21,10 @@ from urllib3.exceptions import HTTPError
 from urllib3.util import Retry
 
 from coworld.runner.bedrock_enablement import BedrockEnablement, resolve_player_bedrock
+from coworld.runner.bedrock_metadata import CoworldEpisodeBedrockMetadata, serialize_bedrock_request_metadata
 from coworld.runner.bedrock_sidecar_wiring import (
     BEDROCK_SIDECAR_CONTAINER_NAME,
     RESERVED_SIDECAR_APP_ENV,
-    BedrockSidecarAttribution,
     bedrock_app_endpoint_env,
     bedrock_sidecar_token_volume,
     build_bedrock_sidecar,
@@ -483,15 +483,22 @@ def _create_player_pod(
         if player_artifact_upload_url is not None
         else []
     )
-    # Tag this player's Bedrock invocations with the coworld/episode (forwarded by
-    # the worker) plus its slot, so model-invocation logs attribute player-side LLM
-    # usage to a coworld. A player image that uses @cogweb/llm sets it as the
-    # Converse requestMetadata; harmless for a non-Bedrock player.
-    metadata_base = os.environ.get("BEDROCK_REQUEST_METADATA")
-    metadata_env_vars = []
-    if metadata_base:
-        slot_metadata = json.dumps({**json.loads(metadata_base), "slot": str(slot)})
-        metadata_env_vars = [client.V1EnvVar(name="BEDROCK_REQUEST_METADATA", value=slot_metadata)]
+    player_bedrock_metadata = CoworldEpisodeBedrockMetadata.model_validate_json(
+        os.environ["BEDROCK_REQUEST_METADATA"]
+    ).model_copy(
+        update={
+            "metadata_origin": "coworld_runner",
+            "role": "player",
+            "slot": str(slot),
+            "image_digest": resolve_image_attribution_key(player.image),
+        }
+    )
+    metadata_env_vars = [
+        client.V1EnvVar(
+            name="BEDROCK_REQUEST_METADATA",
+            value=serialize_bedrock_request_metadata(player_bedrock_metadata),
+        )
+    ]
     pod_annotations = {"karpenter.sh/do-not-disrupt": "true"}
     pod_volumes: list[client.V1Volume] | None = None
     containers: list[client.V1Container] = [
@@ -550,12 +557,7 @@ def _create_player_pod(
         pod_volumes = [bedrock_sidecar_token_volume()]
         init_containers.append(
             build_bedrock_sidecar(
-                attribution=BedrockSidecarAttribution(
-                    image_digest=resolve_image_attribution_key(player.image),
-                    episode_request_id=job_id,
-                    role="player",
-                    slot=str(slot),
-                ),
+                metadata=player_bedrock_metadata.model_copy(update={"metadata_origin": "bedrock_sidecar"}),
                 region=os.environ["COWORLD_BEDROCK_REGION"],
                 listen_port=bedrock_sidecar_port,
                 upstream_endpoint=os.environ.get("BEDROCK_SIDECAR_UPSTREAM_ENDPOINT") or None,

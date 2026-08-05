@@ -1,7 +1,8 @@
 from __future__ import annotations
 
 from kubernetes import client
-from pydantic import BaseModel, ConfigDict
+
+from coworld.runner.bedrock_metadata import CoworldEpisodeBedrockMetadata, serialize_bedrock_request_metadata
 
 BEDROCK_SIDECAR_CONTAINER_NAME = "bedrock-sidecar"
 BEDROCK_SIDECAR_TOKEN_VOLUME_NAME = "bedrock-sidecar-aws-token"
@@ -33,15 +34,6 @@ RESERVED_SIDECAR_APP_ENV = frozenset(
 )
 
 
-class BedrockSidecarAttribution(BaseModel):
-    model_config = ConfigDict(extra="forbid", frozen=True)
-
-    image_digest: str
-    episode_request_id: str
-    role: str
-    slot: str
-
-
 def resolve_image_attribution_key(image: str) -> str:
     """Coworld stays app_backend-independent: parse pinned digests, else keep the image ref."""
     digest_marker = "@sha256:"
@@ -52,7 +44,7 @@ def resolve_image_attribution_key(image: str) -> str:
 
 def build_bedrock_sidecar(
     *,
-    attribution: BedrockSidecarAttribution,
+    metadata: CoworldEpisodeBedrockMetadata,
     region: str,
     listen_port: int,
     upstream_endpoint: str | None,
@@ -92,16 +84,14 @@ def build_bedrock_sidecar(
             client.V1EnvVar(name="BEDROCK_SIDECAR_LISTEN_PORT", value=str(listen_port)),
             client.V1EnvVar(name="BEDROCK_SIDECAR_REGION", value=region),
             client.V1EnvVar(name="BEDROCK_SIDECAR_UPSTREAM_ENDPOINT", value=upstream),
-            client.V1EnvVar(name="BEDROCK_SIDECAR_IMAGE_DIGEST", value=attribution.image_digest),
-            client.V1EnvVar(name="BEDROCK_SIDECAR_EPISODE_REQUEST_ID", value=attribution.episode_request_id),
-            client.V1EnvVar(name="BEDROCK_SIDECAR_ROLE", value=attribution.role),
-            client.V1EnvVar(name="BEDROCK_SIDECAR_SLOT", value=attribution.slot),
+            client.V1EnvVar(
+                name="BEDROCK_SIDECAR_REQUEST_METADATA",
+                value=serialize_bedrock_request_metadata(metadata),
+            ),
             *completion_env,
             client.V1EnvVar(
                 name="POD_NAME",
-                value_from=client.V1EnvVarSource(
-                    field_ref=client.V1ObjectFieldSelector(field_path="metadata.name")
-                ),
+                value_from=client.V1EnvVarSource(field_ref=client.V1ObjectFieldSelector(field_path="metadata.name")),
             ),
             # League-configured per-episode per-player-pod LLM spend ceiling (estimated USD),
             # enforced by the sidecar. Absent means no limit.

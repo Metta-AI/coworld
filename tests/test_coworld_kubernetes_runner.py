@@ -40,6 +40,12 @@ from coworld.types import CoworldEpisodeJobSpec, CoworldHumanPlayerSpec
 def _player_service_wait_env(monkeypatch):
     monkeypatch.setenv("COWORLD_COORDINATOR_IMAGE", "coworld-coordinator:latest")
     monkeypatch.setenv("COWORLD_TIMEOUT_SECONDS", "60")
+    monkeypatch.setenv(
+        "BEDROCK_REQUEST_METADATA",
+        '{"episode_request_id":"11111111-1111-1111-1111-111111111111","image_digest":"sha256:game",'
+        '"job_request_id":"22222222-2222-2222-2222-222222222222","metadata_origin":"dispatcher",'
+        '"role":"game","schema_version":"1","slot":"game","source":"coworld_episode"}',
+    )
 
 
 def test_load_incluster_config_sets_retries_without_rewriting_auth(monkeypatch):
@@ -1844,10 +1850,16 @@ def test_create_player_pod_with_bedrock_sidecar_inverts_bedrock_access(monkeypat
     assert sidecar_env["BEDROCK_SIDECAR_LISTEN_PORT"] == "19191"
     assert sidecar_env["BEDROCK_SIDECAR_REGION"] == "us-west-2"
     assert sidecar_env["BEDROCK_SIDECAR_UPSTREAM_ENDPOINT"] == "http://bedrock.local"
-    assert sidecar_env["BEDROCK_SIDECAR_IMAGE_DIGEST"] == "sha256:player123"
-    assert sidecar_env["BEDROCK_SIDECAR_EPISODE_REQUEST_ID"] == "job-id"
-    assert sidecar_env["BEDROCK_SIDECAR_ROLE"] == "player"
-    assert sidecar_env["BEDROCK_SIDECAR_SLOT"] == "0"
+    assert json.loads(sidecar_env["BEDROCK_SIDECAR_REQUEST_METADATA"]) == {
+        "metadata_origin": "bedrock_sidecar",
+        "episode_request_id": "11111111-1111-1111-1111-111111111111",
+        "image_digest": "sha256:player123",
+        "job_request_id": "22222222-2222-2222-2222-222222222222",
+        "role": "player",
+        "schema_version": "1",
+        "slot": "0",
+        "source": "coworld_episode",
+    }
     # The dispatcher-forwarded league spend limit and server pricing snapshot reach the sidecar.
     assert sidecar_env["BEDROCK_SIDECAR_SPEND_LIMIT_USD"] == "1.5"
     assert sidecar_env["BEDROCK_SIDECAR_PRICING_JSON"] == '{"claude-sonnet-4-6":[3.0,15.0,0.3,3.75]}'
@@ -1940,7 +1952,9 @@ def test_create_player_pod_tags_bedrock_request_metadata_with_slot(monkeypatch):
     core_v1 = SimpleNamespace(create_namespaced_pod=lambda *, namespace, body: created.update({"body": body}))
     monkeypatch.setenv(
         "BEDROCK_REQUEST_METADATA",
-        '{"coworld_id": "cow_abc", "coworld": "paintarena", "episode_id": "job-id"}',
+        '{"episode_request_id":"11111111-1111-1111-1111-111111111111","image_digest":"sha256:game",'
+        '"job_request_id":"22222222-2222-2222-2222-222222222222","metadata_origin":"dispatcher",'
+        '"role":"game","schema_version":"1","slot":"game","source":"coworld_episode"}',
     )
     player = PlayerLaunchSpec(image="paintbot:latest", run=(), env={})
 
@@ -1949,27 +1963,40 @@ def test_create_player_pod_tags_bedrock_request_metadata_with_slot(monkeypatch):
     )
 
     env = {env_var.name: env_var.value for env_var in created["body"].spec.containers[0].env}
-    # The worker forwards the coworld/episode base and adds this pod's slot.
     assert json.loads(env["BEDROCK_REQUEST_METADATA"]) == {
-        "coworld_id": "cow_abc",
-        "coworld": "paintarena",
-        "episode_id": "job-id",
+        "metadata_origin": "coworld_runner",
+        "episode_request_id": "11111111-1111-1111-1111-111111111111",
+        "image_digest": "paintbot:latest",
+        "job_request_id": "22222222-2222-2222-2222-222222222222",
+        "role": "player",
+        "schema_version": "1",
         "slot": "1",
+        "source": "coworld_episode",
     }
 
 
-def test_create_player_pod_omits_bedrock_request_metadata_when_unset(monkeypatch):
+def test_create_player_pod_requires_dispatcher_bedrock_metadata(monkeypatch):
     created: dict[str, Any] = {}
     core_v1 = SimpleNamespace(create_namespaced_pod=lambda *, namespace, body: created.update({"body": body}))
     monkeypatch.delenv("BEDROCK_REQUEST_METADATA", raising=False)
     player = PlayerLaunchSpec(image="paintbot:latest", run=(), env={})
 
-    kubernetes_runner._create_player_pod(
-        core_v1, "jobs", "job-player-0", 0, "slot-token", player, {}, "job-id", "game-service", "2", "2Gi", "", []
-    )
-
-    env = {env_var.name: env_var.value for env_var in created["body"].spec.containers[0].env}
-    assert "BEDROCK_REQUEST_METADATA" not in env
+    with pytest.raises(KeyError, match="BEDROCK_REQUEST_METADATA"):
+        kubernetes_runner._create_player_pod(
+            core_v1,
+            "jobs",
+            "job-player-0",
+            0,
+            "slot-token",
+            player,
+            {},
+            "job-id",
+            "game-service",
+            "2",
+            "2Gi",
+            "",
+            [],
+        )
 
 
 def test_kubernetes_runner_uses_direct_player_urls_without_address():

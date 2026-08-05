@@ -25,7 +25,7 @@ class CoworldEpisodeBedrockMetadata(BaseModel):
     schema_version: Literal["1"]
     source: Literal["coworld_episode"]
     metadata_origin: BedrockEpisodeMetadataOrigin
-    episode_request_id: UUID
+    episode_request_id: UUID | None = None
     job_request_id: UUID
     role: Literal["game", "player"]
     slot: str = Field(min_length=1)
@@ -53,7 +53,7 @@ _BEDROCK_REQUEST_METADATA_ADAPTER = TypeAdapter(BedrockRequestMetadata)
 
 def bedrock_request_metadata(metadata: BedrockRequestMetadata) -> dict[str, str]:
     """Return the Bedrock wire map after enforcing the service's metadata limits."""
-    values = metadata.model_dump(mode="json")
+    values = metadata.model_dump(mode="json", exclude_none=True)
     if len(values) > BEDROCK_REQUEST_METADATA_MAX_ENTRIES:
         raise ValueError(
             f"Bedrock request metadata has {len(values)} entries; maximum is {BEDROCK_REQUEST_METADATA_MAX_ENTRIES}"

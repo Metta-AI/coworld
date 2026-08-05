@@ -48,6 +48,21 @@ def test_episode_metadata_serializes_to_stable_flat_strings() -> None:
     assert len(bedrock_request_metadata(metadata)) <= BEDROCK_REQUEST_METADATA_MAX_ENTRIES
 
 
+def test_persistent_runtime_metadata_omits_absent_episode_request_id() -> None:
+    metadata = CoworldEpisodeBedrockMetadata(
+        schema_version="1",
+        source="coworld_episode",
+        metadata_origin="dispatcher",
+        job_request_id=JOB_REQUEST_ID,
+        role="game",
+        slot="game",
+        image_digest="sha256:abc123",
+    )
+
+    assert "episode_request_id" not in bedrock_request_metadata(metadata)
+    assert parse_bedrock_request_metadata(serialize_bedrock_request_metadata(metadata)) == metadata
+
+
 def test_reporter_metadata_round_trips_as_reporter_variant() -> None:
     metadata = ReporterRunBedrockMetadata(
         schema_version="1",
