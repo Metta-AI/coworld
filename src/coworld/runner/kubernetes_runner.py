@@ -11,12 +11,13 @@ import time
 import zipfile
 from io import BytesIO
 from pathlib import Path
-from typing import Callable, Mapping, cast
+from typing import Mapping, cast
 
 import httpx
 from kubernetes import client, config
 from kubernetes.client.rest import ApiException
 from kubernetes.utils import parse_quantity
+from urllib3.exceptions import HTTPError
 from urllib3.util import Retry
 
 from coworld.runner.bedrock_enablement import BedrockEnablement, resolve_player_bedrock
@@ -287,28 +288,7 @@ def _run_kubernetes_episode(
         if "player_connect_timeout_seconds" in job.game_config
         else DEFAULT_PLAYER_CONNECT_TIMEOUT_SECONDS
     )
-    player_start_deadline = worker_start + min(timeout_seconds, player_connect_timeout_seconds)
-    player_by_slot = dict(policy_players)
     child_names: list[str] = []
-
-    def _recreate_player_pod(stale_pod_name: str, delete_timeout_seconds: float) -> None:
-        slot = _player_pod_slot(stale_pod_name)
-        _delete_pod_and_wait(core_v1, namespace, stale_pod_name, timeout_seconds=delete_timeout_seconds)
-        _create_player_pod(
-            core_v1,
-            namespace,
-            stale_pod_name,
-            slot,
-            tokens[slot],
-            player_by_slot[slot],
-            policy_secrets.get(slot, {}),
-            job_id,
-            service_name,
-            player_cpu_request,
-            player_memory_request,
-            player_cpu_limit,
-            owner_references,
-        )
 
     try:
         _create_game_service(core_v1, namespace, service_name, job_id, owner_references)
@@ -338,6 +318,7 @@ def _run_kubernetes_episode(
                 owner_references,
             )
         players_launched = time.monotonic()
+        player_start_deadline = players_launched + min(timeout_seconds, player_connect_timeout_seconds)
 
         asyncio.run(
             _require_global_message(
@@ -351,7 +332,6 @@ def _run_kubernetes_episode(
                     core_v1,
                     namespace,
                     child_names,
-                    recreate_player_pod=_recreate_player_pod,
                     timeout_seconds=max(0.0, player_start_deadline - time.monotonic()),
                 ),
                 on_connect_failure=lambda: _raise_if_player_pod_failed(core_v1, namespace, child_names),
@@ -752,19 +732,17 @@ def _ensure_player_pods_started(
     namespace: str,
     player_pod_names: tuple[str, ...] | list[str],
     *,
-    recreate_player_pod: Callable[[str, float], None],
     timeout_seconds: float,
 ) -> None:
-    """Wait for every player container to start, recreating stuck pods once.
+    """Wait for every original player container to start.
 
-    A vanished pod is recreated immediately; a no-blame wait is recreated halfway through the
-    game's connection budget. Policy failures are never retried. Once a process has started, a
-    later 404 is inconclusive because terminated-pod GC may have reaped it.
+    Each player pod owns a one-shot game slot credential. Kubernetes status can lag the process
+    long enough for it to acquire that slot, so replacing a waiting or vanished pod could start a
+    second process while the original still owns the slot. Infrastructure retries therefore
+    create a fresh episode instead of replacing player pods inside a live episode. Once a process
+    has started, a later 404 is inconclusive because terminated-pod GC may have reaped it.
     """
-    start = time.monotonic()
-    deadline = start + timeout_seconds
-    recreate_stuck_at = start + timeout_seconds / 2
-    recreated: set[str] = set()
+    deadline = time.monotonic() + timeout_seconds
     started: set[str] = set()
     while True:
         waiting_reasons: list[str] = []
@@ -777,10 +755,6 @@ def _ensure_player_pods_started(
                     raise
                 if player_pod_name in started:
                     continue
-                # The object vanished before its container ran; try the seat once more.
-                if player_pod_name not in recreated:
-                    recreated.add(player_pod_name)
-                    recreate_player_pod(player_pod_name, max(0.0, (deadline - time.monotonic()) / 2))
                 waiting_reasons.append(f"slot {slot}: pod {player_pod_name} not found")
                 continue
             _raise_if_player_container_failed(player_pod, player_pod_name, slot)
@@ -789,9 +763,6 @@ def _ensure_player_pods_started(
             if player_pod_name in started:
                 continue
             reason = _player_waiting_reason(player_pod) or "never scheduled"
-            if time.monotonic() >= recreate_stuck_at and player_pod_name not in recreated:
-                recreated.add(player_pod_name)
-                recreate_player_pod(player_pod_name, max(0.0, (deadline - time.monotonic()) / 2))
             waiting_reasons.append(f"slot {slot}: {reason}")
         if not waiting_reasons:
             return
@@ -803,28 +774,6 @@ def _ensure_player_pods_started(
                 error_type="player_never_started",
             )
         time.sleep(_ARTIFACT_POLL_SECONDS)
-
-
-def _delete_pod_and_wait(core_v1, namespace: str, pod_name: str, *, timeout_seconds: float) -> None:
-    """Delete a pod and block until the name is free, so a recreate cannot 409 on it."""
-    try:
-        core_v1.delete_namespaced_pod(name=pod_name, namespace=namespace, grace_period_seconds=0)
-    except ApiException as exc:
-        if exc.status != 404:
-            raise
-    deadline = time.monotonic() + timeout_seconds
-    while time.monotonic() < deadline:
-        try:
-            core_v1.read_namespaced_pod(name=pod_name, namespace=namespace)
-        except ApiException as exc:
-            if exc.status == 404:
-                return
-            raise
-        time.sleep(_ARTIFACT_POLL_SECONDS)
-    raise RunnerEpisodeError(
-        f"Timed out waiting for stuck player pod {pod_name} to delete before recreating it",
-        error_type="player_never_started",
-    )
 
 
 def _player_waiting_reason(pod) -> str | None:
@@ -947,8 +896,8 @@ def _collect_logs(
         slot = _player_pod_slot(player_pod_name)
         try:
             player_pod = core_v1.read_namespaced_pod(name=player_pod_name, namespace=namespace)
-        except ApiException as exc:
-            if exc.status == 404:
+        except (ApiException, HTTPError) as exc:
+            if isinstance(exc, ApiException) and exc.status == 404:
                 continue
             artifacts.policy_log_path(slot).write_text(
                 _log_read_failure(player_pod_name, "player", exc),
@@ -970,13 +919,13 @@ def _read_pod_log(core_v1, namespace: str, pod_name: str, container: str) -> str
             container=container,
             tail_lines=10000,
         )
-    except ApiException as exc:
-        if exc.status == 404:
+    except (ApiException, HTTPError) as exc:
+        if isinstance(exc, ApiException) and exc.status == 404:
             return None
         return _log_read_failure(pod_name, container, exc)
 
 
-def _log_read_failure(pod_name: str, container: str, exc: ApiException) -> str:
+def _log_read_failure(pod_name: str, container: str, exc: Exception) -> str:
     return f"Failed to collect Kubernetes logs for pod {pod_name} container {container}: {exc}\n"
 
 

@@ -144,12 +144,18 @@ The coordinator creates one pod per player:
 
 The player query string includes only the generated slot token and slot index.
 
+Each slot gets exactly one player pod generation during an episode. The
+coordinator does not replace a waiting or vanished pod because Kubernetes
+status may lag a process that has already acquired its one-shot game slot; a
+replacement with the same credential could then be rejected as a duplicate.
+`player_never_started` remains infrastructure-retryable, so recovery creates a
+fresh episode with a fresh game and fresh slot credentials.
+
 After creating player pods, the coordinator opens the global viewer websocket and holds it open while waiting for every
 `player` container to start. The deadline is the minimum of `game_config.player_connect_timeout_seconds` (default 180s)
-and `COWORLD_TIMEOUT_SECONDS`. A vanished pod is recreated immediately; a no-blame wait such as `ContainerCreating` is
-recreated once halfway through the budget. Deletion gets at most half the remaining time, leaving the rest for the
-replacement. Policy failures remain `player_error`; exhausting the start deadline is retryable `player_never_started`.
-A missing pod after startup is inconclusive because Kubernetes may have reaped it.
+and `COWORLD_TIMEOUT_SECONDS`. A no-blame wait such as `ContainerCreating` retains the full budget. Policy failures
+remain `player_error`; exhausting the start deadline is retryable `player_never_started`. A missing pod after startup
+is inconclusive because Kubernetes may have reaped it.
 
 The `address` query parameter is only for browser client pages served through an HTTP proxy, such as hosted play. The
 Kubernetes runner does not use `address` for policy containers: `COWORLD_PLAYER_WS_URL` is the direct game websocket URL
@@ -234,6 +240,9 @@ Per-player logs are diagnostic only. After the game has produced valid results, 
 combined stdout/stderr lines from player pods whose `player` container has started and skips pods whose container is
 still waiting, such as `ContainerCreating`. Missing player logs do not fail an otherwise successful episode; result and
 replay upload remain the source of truth for episode success.
+Kubernetes API transport failures during log collection are written into the
+corresponding diagnostic log artifact and likewise do not change the episode
+outcome.
 
 There is no separate hosted media artifact for videos, screenshots, or rich human-readable reports in the episode runner
 path. Put compact, replay-critical bytes in the replay artifact, keep `results.json` small and schema-valid, and use
