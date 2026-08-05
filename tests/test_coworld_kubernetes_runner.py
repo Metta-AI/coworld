@@ -7,6 +7,7 @@ import sys
 import threading
 import time
 import zipfile
+from collections.abc import Callable
 from io import BytesIO
 from pathlib import Path
 from types import SimpleNamespace
@@ -1006,101 +1007,203 @@ def test_outputs_written_while_reading_malformed_player_failure_win(tmp_path, mo
     runner_module._raise_if_game_declared_player_failure(artifacts, (artifacts.results_path,), player_count=1)
 
 
-def test_raise_if_players_never_started_fails_when_no_player_ever_ran():
-    # Every seat's player container is stuck waiting on platform scheduling: the game may
-    # still have written a tolerant zero-progress result, but the orchestrator knows nobody joined.
-    core_v1 = _FakeLogCoreV1(
-        statuses={
-            "job-player-0": [_container_status("player", waiting=True, reason="ContainerCreating")],
-            "job-player-1": [_container_status("player", waiting=True, reason="ContainerCreating")],
+class _FakeGateCoreV1:
+    """Read scripts repeat their last entry; None means the pod is missing."""
+
+    def __init__(self, reads: dict[str, list]):
+        self.reads = {name: list(entries) for name, entries in reads.items()}
+        self.deleted: list[str] = []
+
+    def delete_namespaced_pod(self, *, name: str, namespace: str, grace_period_seconds: int):
+        self.deleted.append(name)
+
+    def read_namespaced_pod(self, *, name: str, namespace: str):
+        entries = self.reads[name]
+        entry = entries.pop(0) if len(entries) > 1 else entries[0]
+        if entry is None:
+            raise ApiException(status=404)
+        return SimpleNamespace(status=SimpleNamespace(container_statuses=entry))
+
+
+@pytest.fixture
+def gate_clock(monkeypatch):
+    clock = {"now": 0.0}
+    monkeypatch.setattr(kubernetes_runner.time, "monotonic", lambda: clock["now"])
+    monkeypatch.setattr(
+        kubernetes_runner.time, "sleep", lambda seconds: clock.__setitem__("now", clock["now"] + seconds)
+    )
+    return clock
+
+
+def _run_player_start_gate(
+    core_v1,
+    *,
+    pod_names: tuple[str, ...] = ("job-player-0",),
+    recreate: Callable[[str, float], None] = lambda name, _timeout: pytest.fail(f"unexpected recreate: {name}"),
+) -> None:
+    kubernetes_runner._ensure_player_pods_started(
+        core_v1,
+        "default",
+        pod_names,
+        recreate_player_pod=recreate,
+        timeout_seconds=10.0,
+    )
+
+
+def test_ensure_player_pods_started_passes_when_every_player_started(gate_clock):
+    core_v1 = _FakeGateCoreV1(
+        reads={
+            "job-player-0": [[_container_status("player", running=True)]],
+            "job-player-1": [[_container_status("player", exit_code=0, reason="Completed")]],
         }
     )
 
-    with pytest.raises(runner_io.RunnerEpisodeError) as exc_info:
-        kubernetes_runner._raise_if_players_never_started(core_v1, "default", ["job-player-0", "job-player-1"])
-
-    assert exc_info.value.error_type == "player_never_started"
-    assert "ContainerCreating" in str(exc_info.value)
+    _run_player_start_gate(core_v1, pod_names=("job-player-0", "job-player-1"))
 
 
-def test_raise_if_players_never_started_fails_when_only_some_players_started():
-    core_v1 = _FakeLogCoreV1(
-        statuses={
-            "job-player-0": [_container_status("player", running=True)],
-            "job-player-1": [_container_status("player", waiting=True, reason="ContainerCreating")],
-        }
+def test_ensure_player_pods_started_recreates_stuck_pod_with_time_left_for_replacement(gate_clock):
+    # A seat stuck in a no-blame waiting state (ContainerCreating) gets one fresh pod at the
+    # halfway budget; the fresh pod starting lets the gate pass.
+    core_v1 = _FakeGateCoreV1(
+        reads={"job-player-0": [[_container_status("player", waiting=True, reason="ContainerCreating")]]}
     )
+    recreated: list[str] = []
+    delete_timeouts: list[float] = []
 
-    with pytest.raises(runner_io.RunnerEpisodeError, match="slot 1") as exc_info:
-        kubernetes_runner._raise_if_players_never_started(core_v1, "default", ["job-player-0", "job-player-1"])
+    def recreate(pod_name: str, timeout_seconds: float) -> None:
+        recreated.append(pod_name)
+        delete_timeouts.append(timeout_seconds)
+        gate_clock["now"] += timeout_seconds
+        core_v1.reads[pod_name] = [[_container_status("player", running=True)]]
 
-    assert exc_info.value.error_type == "player_never_started"
+    _run_player_start_gate(core_v1, recreate=recreate)
+
+    assert recreated == ["job-player-0"]
+    assert delete_timeouts == [2.5]
+    assert gate_clock["now"] < 10.0
+
+
+def test_ensure_player_pods_started_recreates_disappeared_pod_immediately(gate_clock):
+    # The pod object vanished before its container ever ran (eviction, node loss): recreate
+    # right away instead of burning half the budget on an object that no longer exists.
+    core_v1 = _FakeGateCoreV1(reads={"job-player-0": [None]})
+    recreated: list[str] = []
+
+    def recreate(pod_name: str, _timeout_seconds: float) -> None:
+        recreated.append(pod_name)
+        core_v1.reads[pod_name] = [[_container_status("player", running=True)]]
+
+    _run_player_start_gate(core_v1, recreate=recreate)
+
+    assert recreated == ["job-player-0"]
+    assert gate_clock["now"] < 5.0
 
 
 @pytest.mark.parametrize("reason", sorted(kubernetes_runner._PLAYER_WAITING_POLICY_FAILURE_REASONS))
-def test_raise_if_players_never_started_preserves_policy_waiting_failures(reason: str):
-    core_v1 = _FakeLogCoreV1(statuses={"job-player-0": [_container_status("player", waiting=True, reason=reason)]})
+def test_ensure_player_pods_started_policy_failures_are_player_error_not_retried(gate_clock, reason: str):
+    core_v1 = _FakeGateCoreV1(reads={"job-player-0": [[_container_status("player", waiting=True, reason=reason)]]})
 
     with pytest.raises(kubernetes_runner.PlayerPodFailure) as exc_info:
-        kubernetes_runner._raise_if_players_never_started(core_v1, "default", ["job-player-0"])
+        _run_player_start_gate(core_v1)
 
     assert exc_info.value.failed_policy_index == 0
     assert reason in str(exc_info.value)
 
 
-def test_raise_if_players_never_started_preserves_last_player_termination():
-    core_v1 = _FakeLogCoreV1(
-        statuses={
+def test_ensure_player_pods_started_preserves_last_player_termination(gate_clock):
+    core_v1 = _FakeGateCoreV1(
+        reads={
             "job-player-0": [
-                _container_status(
-                    "player",
-                    waiting=True,
-                    last_exit_code=1,
-                    reason="Error",
-                    message="policy crashed",
-                )
+                [_container_status("player", waiting=True, last_exit_code=1, reason="Error", message="policy crashed")]
             ]
         }
     )
 
     with pytest.raises(kubernetes_runner.PlayerPodFailure) as exc_info:
-        kubernetes_runner._raise_if_players_never_started(core_v1, "default", ["job-player-0"])
+        _run_player_start_gate(core_v1)
 
     assert exc_info.value.failed_policy_index == 0
     assert "terminated with exit code 1" in str(exc_info.value)
 
 
-def test_raise_if_players_never_started_accepts_clean_last_player_termination():
-    core_v1 = _FakeLogCoreV1(
-        statuses={
+def test_ensure_player_pods_started_counts_clean_last_termination_as_started(gate_clock):
+    core_v1 = _FakeGateCoreV1(
+        reads={"job-player-0": [[_container_status("player", waiting=True, last_exit_code=0, reason="Completed")]]}
+    )
+
+    _run_player_start_gate(core_v1)
+
+
+@pytest.mark.parametrize(
+    ("reads", "message"),
+    [
+        ([[_container_status("player", waiting=True, reason="ContainerCreating")]], "slot 0: ContainerCreating"),
+        ([None], "pod job-player-0 not found"),
+    ],
+)
+def test_ensure_player_pods_started_times_out_typed_after_one_failed_recreate(gate_clock, reads, message):
+    core_v1 = _FakeGateCoreV1(reads={"job-player-0": reads})
+    recreated: list[str] = []
+
+    with pytest.raises(runner_io.RunnerEpisodeError) as exc_info:
+        _run_player_start_gate(core_v1, recreate=lambda name, _timeout: recreated.append(name))
+
+    assert exc_info.value.error_type == "player_never_started"
+    assert message in str(exc_info.value)
+    assert recreated == ["job-player-0"]
+
+
+def test_ensure_player_pods_started_treats_missing_started_pod_as_inconclusive(gate_clock):
+    # A started pod that is later reaped must not be re-derived as never-started — that was the
+    # bug that failed 30+ minute matches as player_never_started after terminated-pod GC.
+    core_v1 = _FakeGateCoreV1(
+        reads={
+            "job-player-0": [[_container_status("player", running=True)], None],
+            "job-player-1": [
+                [_container_status("player", waiting=True, reason="ContainerCreating")],
+                [_container_status("player", running=True)],
+            ],
+        }
+    )
+
+    _run_player_start_gate(core_v1, pod_names=("job-player-0", "job-player-1"))
+
+
+def test_ensure_player_pods_started_rejects_started_player_crash_while_another_starts(gate_clock):
+    core_v1 = _FakeGateCoreV1(
+        reads={
             "job-player-0": [
-                _container_status(
-                    "player",
-                    waiting=True,
-                    last_exit_code=0,
-                    reason="Completed",
-                )
-            ]
+                [_container_status("player", running=True)],
+                [_container_status("player", exit_code=1, reason="Error", message="policy crashed")],
+            ],
+            "job-player-1": [
+                [_container_status("player", waiting=True, reason="ContainerCreating")],
+                [_container_status("player", running=True)],
+            ],
         }
     )
 
-    kubernetes_runner._raise_if_players_never_started(core_v1, "default", ["job-player-0"])
+    with pytest.raises(kubernetes_runner.PlayerPodFailure, match="policy crashed") as exc_info:
+        _run_player_start_gate(core_v1, pod_names=("job-player-0", "job-player-1"))
+
+    assert exc_info.value.failed_policy_index == 0
 
 
-def test_raise_if_players_never_started_passes_when_every_player_started():
-    core_v1 = _FakeLogCoreV1(
-        statuses={
-            "job-player-0": [_container_status("player", running=True)],
-            "job-player-1": [_container_status("player", exit_code=0, reason="Completed")],
-        }
-    )
+def test_delete_pod_and_wait_blocks_until_name_is_free(gate_clock):
+    core_v1 = _FakeGateCoreV1(reads={"job-player-0": [[], None]})
 
-    kubernetes_runner._raise_if_players_never_started(core_v1, "default", ["job-player-0", "job-player-1"])
+    kubernetes_runner._delete_pod_and_wait(core_v1, "default", "job-player-0", timeout_seconds=10.0)
+
+    assert core_v1.deleted == ["job-player-0"]
 
 
-def test_raise_if_players_never_started_noop_without_player_pods():
-    # Self-play / player-less episodes have no seats to gate on.
-    kubernetes_runner._raise_if_players_never_started(_FakeLogCoreV1(statuses={}), "default", [])
+def test_delete_pod_and_wait_times_out_typed(gate_clock):
+    core_v1 = _FakeGateCoreV1(reads={"job-player-0": [[]]})
+
+    with pytest.raises(runner_io.RunnerEpisodeError) as exc_info:
+        kubernetes_runner._delete_pod_and_wait(core_v1, "default", "job-player-0", timeout_seconds=3.0)
+
+    assert exc_info.value.error_type == "player_never_started"
 
 
 def test_player_pod_slot_requires_the_production_name_shape():
@@ -1108,15 +1211,6 @@ def test_player_pod_slot_requires_the_production_name_shape():
 
     with pytest.raises(ValueError, match="does not end in '-player-<slot>'"):
         kubernetes_runner._player_pod_slot("player-3")
-
-
-def test_raise_if_players_never_started_treats_missing_pod_as_not_started():
-    core_v1 = _FakeLogCoreV1(statuses={}, missing_pods={"job-player-0"})
-
-    with pytest.raises(runner_io.RunnerEpisodeError) as exc_info:
-        kubernetes_runner._raise_if_players_never_started(core_v1, "default", ["job-player-0"])
-
-    assert exc_info.value.error_type == "player_never_started"
 
 
 def test_wait_for_players_to_complete_observes_clean_process_completion():
@@ -1160,6 +1254,12 @@ def test_wait_for_players_to_complete_rejects_late_player_crash():
         )
 
     assert exc_info.value.failed_policy_index == 0
+
+
+def test_post_artifact_player_check_treats_missing_pod_as_inconclusive():
+    core_v1 = _FakeGateCoreV1(reads={"job-player-0": [None]})
+
+    kubernetes_runner._raise_if_player_pod_failed(core_v1, "default", ["job-player-0"])
 
 
 def test_wait_for_episode_artifacts_ignores_clean_player_exit_on_timeout(tmp_path):
@@ -1349,13 +1449,24 @@ def test_policy_secrets_from_env_loads_and_removes_uri(monkeypatch, tmp_path):
     assert "POLICY_SECRETS_URI" not in os.environ
 
 
-def test_run_kubernetes_episode_defaults_player_resource_requests(monkeypatch, tmp_path):
+@pytest.mark.parametrize(
+    ("game_config", "expected_player_start_timeout"),
+    [
+        ({}, kubernetes_runner.DEFAULT_PLAYER_CONNECT_TIMEOUT_SECONDS),
+        ({"player_connect_timeout_seconds": 45}, 45.0),
+    ],
+)
+def test_run_kubernetes_episode_defaults_resources_and_bounds_start_gate_by_game_timeout(
+    monkeypatch, tmp_path, game_config, expected_player_start_timeout
+):
     artifacts = EpisodeArtifacts.create(tmp_path)
     artifacts.results_path.write_text("{}", encoding="utf-8")
     state_path = tmp_path / "state.json"
     state_path.write_text(json.dumps({"tokens": ["human-token", "policy-token"]}), encoding="utf-8")
     created: list[tuple[int, str, str, str]] = []
     startup_timeouts: list[float] = []
+    player_start_timeouts: list[float] = []
+    post_artifact_player_checks: list[tuple[str, list[str]]] = []
 
     async def noop_async(*_args, **_kwargs):
         return None
@@ -1364,6 +1475,7 @@ def test_run_kubernetes_episode_defaults_player_resource_requests(monkeypatch, t
         startup_timeouts.append(startup_timeout_seconds)
 
     monkeypatch.setattr(kubernetes_runner, "STATE_PATH", state_path)
+    monkeypatch.setattr(kubernetes_runner.time, "monotonic", lambda: 0.0)
     monkeypatch.setattr(kubernetes_runner, "_load_incluster_config", lambda: None)
     monkeypatch.setattr(kubernetes_runner.client, "CoreV1Api", lambda: object())
     monkeypatch.setattr(kubernetes_runner, "_create_game_service", lambda *_args: None)
@@ -1373,7 +1485,16 @@ def test_run_kubernetes_episode_defaults_player_resource_requests(monkeypatch, t
     monkeypatch.setattr(kubernetes_runner, "_require_global_message", record_global_startup_timeout)
     monkeypatch.setattr(kubernetes_runner, "_wait_for_episode_artifacts", lambda *_args, **_kwargs: None)
     monkeypatch.setattr(kubernetes_runner, "_validate_results_file", lambda *_args: None)
-    monkeypatch.setattr(kubernetes_runner, "_raise_if_players_never_started", lambda *_args, **_kwargs: None)
+    monkeypatch.setattr(
+        kubernetes_runner,
+        "_raise_if_player_pod_failed",
+        lambda _core_v1, namespace, pod_names: post_artifact_player_checks.append((namespace, pod_names)),
+    )
+    monkeypatch.setattr(
+        kubernetes_runner,
+        "_ensure_player_pods_started",
+        lambda *_args, timeout_seconds, **_kwargs: player_start_timeouts.append(timeout_seconds),
+    )
     monkeypatch.setattr(kubernetes_runner, "_collect_logs", lambda *_args: None)
     monkeypatch.setattr(kubernetes_runner, "_delete_child_resources", lambda *_args: None)
     monkeypatch.setattr(kubernetes_runner, "_policy_secrets_from_env", lambda: {})
@@ -1410,15 +1531,18 @@ def test_run_kubernetes_episode_defaults_player_resource_requests(monkeypatch, t
                 CoworldHumanPlayerSpec(type="human", token="private-browser-seat-token"),
                 SimpleNamespace(image="paintbot:latest", run=[], env={}),
             ],
+            game_config=game_config,
             results_schema={},
             episode_tags={},
         ),
     )
 
-    kubernetes_runner._run_kubernetes_episode(job, artifacts, timeout_seconds=1.0)
+    kubernetes_runner._run_kubernetes_episode(job, artifacts, timeout_seconds=600.0)
 
     assert created == [(1, "2", "2Gi", "")]
     assert startup_timeouts == [runner_module.LOBBY_RUNTIME_STARTUP_TIMEOUT_SECONDS]
+    assert player_start_timeouts == [expected_player_start_timeout]
+    assert post_artifact_player_checks == [("jobs", ["game-service-player-1"])]
 
 
 def test_create_game_service_exposes_human_proxy_without_rerouting_policy_players(monkeypatch):

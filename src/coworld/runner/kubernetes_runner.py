@@ -11,7 +11,7 @@ import time
 import zipfile
 from io import BytesIO
 from pathlib import Path
-from typing import Mapping, cast
+from typing import Callable, Mapping, cast
 
 import httpx
 from kubernetes import client, config
@@ -74,6 +74,8 @@ _DIRECT_BEDROCK_APP_ENV = {
 }
 DEFAULT_PLAYER_CPU_REQUEST = "2"
 DEFAULT_PLAYER_MEMORY_REQUEST = "2Gi"
+# Keep the process-start gate inside the game's all-connected-or-timeout start window.
+DEFAULT_PLAYER_CONNECT_TIMEOUT_SECONDS = 180.0
 _PLAYER_WAITING_POLICY_FAILURE_REASONS = {
     "CrashLoopBackOff",
     "CreateContainerConfigError",
@@ -280,7 +282,33 @@ def _run_kubernetes_episode(
     # Empty (the default) means no CPU limit: a player pod may burst to the whole node, so it
     # sees 8/12/16 cores depending on placement. A declared limit caps every player pod here.
     player_cpu_limit = os.environ.get("COWORLD_PLAYER_CPU_LIMIT", "")
+    player_connect_timeout_seconds = float(
+        job.game_config["player_connect_timeout_seconds"]
+        if "player_connect_timeout_seconds" in job.game_config
+        else DEFAULT_PLAYER_CONNECT_TIMEOUT_SECONDS
+    )
+    player_start_deadline = worker_start + min(timeout_seconds, player_connect_timeout_seconds)
+    player_by_slot = dict(policy_players)
     child_names: list[str] = []
+
+    def _recreate_player_pod(stale_pod_name: str, delete_timeout_seconds: float) -> None:
+        slot = _player_pod_slot(stale_pod_name)
+        _delete_pod_and_wait(core_v1, namespace, stale_pod_name, timeout_seconds=delete_timeout_seconds)
+        _create_player_pod(
+            core_v1,
+            namespace,
+            stale_pod_name,
+            slot,
+            tokens[slot],
+            player_by_slot[slot],
+            policy_secrets.get(slot, {}),
+            job_id,
+            service_name,
+            player_cpu_request,
+            player_memory_request,
+            player_cpu_limit,
+            owner_references,
+        )
 
     try:
         _create_game_service(core_v1, namespace, service_name, job_id, owner_references)
@@ -311,6 +339,15 @@ def _run_kubernetes_episode(
             )
         players_launched = time.monotonic()
 
+        # Prove every player process started while the evidence and connection window are live.
+        _ensure_player_pods_started(
+            core_v1,
+            namespace,
+            child_names,
+            recreate_player_pod=_recreate_player_pod,
+            timeout_seconds=max(0.0, player_start_deadline - time.monotonic()),
+        )
+
         asyncio.run(
             _require_global_message(
                 f"ws://127.0.0.1:{GAME_PORT}/global",
@@ -332,10 +369,9 @@ def _run_kubernetes_episode(
         )
         gameplay_done = time.monotonic()
         _validate_results_file(artifacts.results_path, job.results_schema)
-        # A game that tolerates absent seats (connect-timeout auto-start) still writes normal
-        # results when a player pod never came up. The orchestrator owns whether Kubernetes
-        # started each process, so platform startup failures cannot become competitive evidence.
-        _raise_if_players_never_started(core_v1, namespace, child_names)
+        # Preserve live policy-failure evidence without re-deriving startup from pods
+        # that terminated-pod GC may already have reaped. Missing pods are inconclusive.
+        _raise_if_player_pod_failed(core_v1, namespace, child_names)
         if job.episode_tags.get("source") == CERTIFICATION_EPISODE_SOURCE:
             _wait_for_players_to_complete(
                 core_v1,
@@ -710,34 +746,82 @@ def _player_pod_slot(player_pod_name: str) -> int:
     return int(suffix)
 
 
-def _raise_if_players_never_started(core_v1, namespace: str, player_pod_names: tuple[str, ...] | list[str]) -> None:
-    """Fail an episode where the game wrote results before every player process started.
+def _ensure_player_pods_started(
+    core_v1,
+    namespace: str,
+    player_pod_names: tuple[str, ...] | list[str],
+    *,
+    recreate_player_pod: Callable[[str, float], None],
+    timeout_seconds: float,
+) -> None:
+    """Wait for every player container to start, recreating stuck pods once.
 
-    Connect-timeout-tolerant games auto-start and write a normal results.json even when every
-    player pod failed to come up (e.g. a cold image pull lost the race against the connect
-    deadline), yielding a blank, zero-progress episode with no error trail. The orchestrator
-    scheduled these pods, so it can tell "the policies never started" from k8s state alone —
-    independent of any game-specific results shape.
+    A vanished pod is recreated immediately; a no-blame wait is recreated halfway through the
+    game's connection budget. Policy failures are never retried. Once a process has started, a
+    later 404 is inconclusive because terminated-pod GC may have reaped it.
     """
-    _raise_if_player_pod_failed(core_v1, namespace, player_pod_names)
-    waiting_reasons: list[str] = []
-    for player_pod_name in player_pod_names:
-        slot = _player_pod_slot(player_pod_name)
-        try:
-            player_pod = core_v1.read_namespaced_pod(name=player_pod_name, namespace=namespace)
-        except ApiException as exc:
-            if exc.status == 404:
+    start = time.monotonic()
+    deadline = start + timeout_seconds
+    recreate_stuck_at = start + timeout_seconds / 2
+    recreated: set[str] = set()
+    started: set[str] = set()
+    while True:
+        waiting_reasons: list[str] = []
+        for player_pod_name in player_pod_names:
+            slot = _player_pod_slot(player_pod_name)
+            try:
+                player_pod = core_v1.read_namespaced_pod(name=player_pod_name, namespace=namespace)
+            except ApiException as exc:
+                if exc.status != 404:
+                    raise
+                if player_pod_name in started:
+                    continue
+                # The object vanished before its container ran; try the seat once more.
+                if player_pod_name not in recreated:
+                    recreated.add(player_pod_name)
+                    recreate_player_pod(player_pod_name, max(0.0, (deadline - time.monotonic()) / 2))
                 waiting_reasons.append(f"slot {slot}: pod {player_pod_name} not found")
                 continue
+            _raise_if_player_container_failed(player_pod, player_pod_name, slot)
+            if _container_has_started(player_pod, "player"):
+                started.add(player_pod_name)
+            if player_pod_name in started:
+                continue
+            reason = _player_waiting_reason(player_pod) or "never scheduled"
+            if time.monotonic() >= recreate_stuck_at and player_pod_name not in recreated:
+                recreated.add(player_pod_name)
+                recreate_player_pod(player_pod_name, max(0.0, (deadline - time.monotonic()) / 2))
+            waiting_reasons.append(f"slot {slot}: {reason}")
+        if not waiting_reasons:
+            return
+        if time.monotonic() >= deadline:
+            raise RunnerEpisodeError(
+                "Kubernetes did not start every player process before the game's player-connect timeout ("
+                + "; ".join(waiting_reasons)
+                + ")",
+                error_type="player_never_started",
+            )
+        time.sleep(_ARTIFACT_POLL_SECONDS)
+
+
+def _delete_pod_and_wait(core_v1, namespace: str, pod_name: str, *, timeout_seconds: float) -> None:
+    """Delete a pod and block until the name is free, so a recreate cannot 409 on it."""
+    try:
+        core_v1.delete_namespaced_pod(name=pod_name, namespace=namespace, grace_period_seconds=0)
+    except ApiException as exc:
+        if exc.status != 404:
             raise
-        if _container_has_started(player_pod, "player"):
-            continue
-        reason = _player_waiting_reason(player_pod) or "never scheduled"
-        waiting_reasons.append(f"slot {slot}: {reason}")
-    if not waiting_reasons:
-        return
+    deadline = time.monotonic() + timeout_seconds
+    while time.monotonic() < deadline:
+        try:
+            core_v1.read_namespaced_pod(name=pod_name, namespace=namespace)
+        except ApiException as exc:
+            if exc.status == 404:
+                return
+            raise
+        time.sleep(_ARTIFACT_POLL_SECONDS)
     raise RunnerEpisodeError(
-        "Kubernetes did not start every player process before the episode ended (" + "; ".join(waiting_reasons) + ")",
+        f"Timed out waiting for stuck player pod {pod_name} to delete before recreating it",
         error_type="player_never_started",
     )
 
@@ -761,28 +845,30 @@ def _raise_if_player_pod_failed(core_v1, namespace: str, player_pod_names: tuple
             if exc.status == 404:
                 continue
             raise
-        for status in player_pod.status.container_statuses or []:
-            if status.name != "player":
+        _raise_if_player_container_failed(player_pod, player_pod_name, slot)
+
+
+def _raise_if_player_container_failed(player_pod, player_pod_name: str, slot: int) -> None:
+    for status in player_pod.status.container_statuses or []:
+        if status.name != "player":
+            continue
+        state = status.state
+        terminated = state.terminated
+        if terminated is None and status.last_state is not None:
+            terminated = status.last_state.terminated
+        if terminated is not None:
+            if terminated.exit_code == 0:
                 continue
-            state = status.state
-            terminated = state.terminated
-            if terminated is None and status.last_state is not None:
-                terminated = status.last_state.terminated
-            if terminated is not None:
-                if terminated.exit_code == 0:
-                    continue
-                parts = [
-                    f"Player pod {player_pod_name} for slot {slot} terminated with exit code {terminated.exit_code}"
-                ]
-                parts.extend(part for part in (terminated.reason, terminated.message) if part)
-                raise PlayerPodFailure(slot, ": ".join(parts))
-            waiting = state.waiting
-            waiting_reason = waiting.reason if waiting is not None else None
-            if waiting_reason in _PLAYER_WAITING_POLICY_FAILURE_REASONS:
-                parts = [f"Player pod {player_pod_name} for slot {slot} waiting: {waiting_reason}"]
-                if waiting.message:
-                    parts.append(waiting.message)
-                raise PlayerPodFailure(slot, ": ".join(parts))
+            parts = [f"Player pod {player_pod_name} for slot {slot} terminated with exit code {terminated.exit_code}"]
+            parts.extend(part for part in (terminated.reason, terminated.message) if part)
+            raise PlayerPodFailure(slot, ": ".join(parts))
+        waiting = state.waiting
+        waiting_reason = waiting.reason if waiting is not None else None
+        if waiting_reason in _PLAYER_WAITING_POLICY_FAILURE_REASONS:
+            parts = [f"Player pod {player_pod_name} for slot {slot} waiting: {waiting_reason}"]
+            if waiting.message:
+                parts.append(waiting.message)
+            raise PlayerPodFailure(slot, ": ".join(parts))
 
 
 def _wait_for_players_to_complete(

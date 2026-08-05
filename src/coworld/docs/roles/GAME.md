@@ -102,6 +102,9 @@ Coworld-authored configs are token-free:
 
 The runner starts one player runnable per scheduled roster slot with a fully formed `COWORLD_PLAYER_WS_URL`.
 
+Games start when all scheduled players connect or `player_connect_timeout_seconds` elapses (default 180 seconds). The
+Kubernetes runner uses the same deadline to reject infrastructure failures before they become competitive results.
+
 If the game shows policy or player display names in its UI, replay, results, or logs, it should declare a `players`
 array in `game.config_schema`. Each `players[]` item has a required string `name`. Hosted dispatch overwrites
 `game_config.players[].name` with resolved names for declared schemas. Local raw configs may set `players[].name`
