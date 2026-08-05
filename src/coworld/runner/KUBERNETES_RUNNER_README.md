@@ -144,12 +144,12 @@ The coordinator creates one pod per player:
 
 The player query string includes only the generated slot token and slot index.
 
-After creating player pods, the coordinator waits for every `player` container to start. The deadline is the minimum
-of `game_config.player_connect_timeout_seconds` (default 180s) and `COWORLD_TIMEOUT_SECONDS`. A vanished pod is
-recreated immediately; a no-blame wait such as `ContainerCreating` is recreated once halfway through the budget.
-Deletion gets at most half the remaining time, leaving the rest for the replacement. Policy failures remain
-`player_error`; exhausting the start deadline is retryable `player_never_started`. A missing pod after startup is
-inconclusive because Kubernetes may have reaped it.
+After creating player pods, the coordinator opens the global viewer websocket and holds it open while waiting for every
+`player` container to start. The deadline is the minimum of `game_config.player_connect_timeout_seconds` (default 180s)
+and `COWORLD_TIMEOUT_SECONDS`. A vanished pod is recreated immediately; a no-blame wait such as `ContainerCreating` is
+recreated once halfway through the budget. Deletion gets at most half the remaining time, leaving the rest for the
+replacement. Policy failures remain `player_error`; exhausting the start deadline is retryable `player_never_started`.
+A missing pod after startup is inconclusive because Kubernetes may have reaped it.
 
 The `address` query parameter is only for browser client pages served through an HTTP proxy, such as hosted play. The
 Kubernetes runner does not use `address` for policy containers: `COWORLD_PLAYER_WS_URL` is the direct game websocket URL

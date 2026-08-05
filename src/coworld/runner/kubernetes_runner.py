@@ -339,20 +339,21 @@ def _run_kubernetes_episode(
             )
         players_launched = time.monotonic()
 
-        # Prove every player process started while the evidence and connection window are live.
-        _ensure_player_pods_started(
-            core_v1,
-            namespace,
-            child_names,
-            recreate_player_pod=_recreate_player_pod,
-            timeout_seconds=max(0.0, player_start_deadline - time.monotonic()),
-        )
-
         asyncio.run(
             _require_global_message(
                 f"ws://127.0.0.1:{GAME_PORT}/global",
                 timeout_seconds=timeout_seconds,
                 startup_timeout_seconds=startup_timeout_seconds,
+                # Hold the viewer connection open while proving every player process started.
+                # Some games begin as soon as the last player connects and may not accept a
+                # new viewer handshake once gameplay is consuming the server event loop.
+                on_connected=lambda: _ensure_player_pods_started(
+                    core_v1,
+                    namespace,
+                    child_names,
+                    recreate_player_pod=_recreate_player_pod,
+                    timeout_seconds=max(0.0, player_start_deadline - time.monotonic()),
+                ),
                 on_connect_failure=lambda: _raise_if_player_pod_failed(core_v1, namespace, child_names),
             )
         )

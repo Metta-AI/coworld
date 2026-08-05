@@ -349,14 +349,18 @@ def test_require_global_message_blames_game_contract_when_players_healthy(monkey
 def test_require_global_message_uses_the_selected_startup_timeout(
     monkeypatch, episode_timeout_seconds, startup_timeout_seconds, expected_timeout_seconds
 ):
+    events: list[tuple[str, int]] = []
+
     class GlobalWebSocket:
         async def __aenter__(self):
+            events.append(("viewer connected", threading.get_ident()))
             return self
 
         async def __aexit__(self, *_args):
             return None
 
         async def recv(self):
+            events.append(("global message", threading.get_ident()))
             return b"frame"
 
     observed_timeouts: list[float] = []
@@ -373,10 +377,13 @@ def test_require_global_message_uses_the_selected_startup_timeout(
             "ws://example.test/global",
             timeout_seconds=episode_timeout_seconds,
             startup_timeout_seconds=startup_timeout_seconds,
+            on_connected=lambda: events.append(("players started", threading.get_ident())),
         )
     )
 
     assert observed_timeouts == [expected_timeout_seconds]
+    assert [event for event, _thread_id in events] == ["viewer connected", "players started", "global message"]
+    assert events[1][1] != events[0][1]
 
 
 def test_run_episode_containers_uses_docker_dns_and_omits_policy_names_env(tmp_path, monkeypatch):
@@ -1471,8 +1478,9 @@ def test_run_kubernetes_episode_defaults_resources_and_bounds_start_gate_by_game
     async def noop_async(*_args, **_kwargs):
         return None
 
-    async def record_global_startup_timeout(*_args, startup_timeout_seconds, **_kwargs):
+    async def record_global_startup_timeout(*_args, startup_timeout_seconds, on_connected, **_kwargs):
         startup_timeouts.append(startup_timeout_seconds)
+        on_connected()
 
     monkeypatch.setattr(kubernetes_runner, "STATE_PATH", state_path)
     monkeypatch.setattr(kubernetes_runner.time, "monotonic", lambda: 0.0)

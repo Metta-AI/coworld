@@ -682,6 +682,7 @@ async def _require_global_message(
     *,
     timeout_seconds: float,
     startup_timeout_seconds: float = DEFAULT_RUNTIME_STARTUP_TIMEOUT_SECONDS,
+    on_connected: Callable[[], None] | None = None,
     on_connect_failure: Callable[[], None] | None = None,
 ) -> None:
     try:
@@ -689,6 +690,8 @@ async def _require_global_message(
         # websockets default (high-resolution sprite protocols ship multi-MB
         # init frames), and this probe only checks that a message arrives.
         async with websockets.connect(url, open_timeout=5, max_size=None) as websocket:
+            if on_connected is not None:
+                await asyncio.to_thread(on_connected)
             message = await asyncio.wait_for(
                 websocket.recv(),
                 timeout=min(timeout_seconds, startup_timeout_seconds),
