@@ -165,12 +165,53 @@ class AutoChampion(str, Enum):
 class CoworldLeagueSeedResponse(BaseModel):
     id: str
     coworld_name: str
+    league_key: str
+    league_name: str
+    default_variant_id: str | None
     template: str
     overrides: dict[str, Any] | None = None
     enabled: bool
     created_by: str
     created_at: str
     league_id: str | None = None
+
+
+class CoworldLeagueSeedRebindChange(BaseModel):
+    seed_id: str
+    coworld_name: str
+    league_key: str
+
+
+class CoworldLeagueSeedBinding(BaseModel):
+    coworld_name: str
+    league_key: str
+    default_variant_id: str | None
+    effective_variant_id: str | None
+
+
+class CoworldLeagueSeedPreservedCounts(BaseModel):
+    divisions: int
+    memberships: int
+    submissions: int
+    active_rounds: int
+
+
+class CoworldLeagueSeedRebindResult(BaseModel):
+    seed_id: str
+    league_id: str | None
+    league_name: str
+    current: CoworldLeagueSeedBinding
+    proposed: CoworldLeagueSeedBinding
+    commissioner_key: str | None
+    canonical_coworld_id: str | None
+    counts: CoworldLeagueSeedPreservedCounts
+    blocking_reasons: list[str]
+
+
+class CoworldLeagueSeedRebindResponse(BaseModel):
+    dry_run: bool
+    applied: bool
+    results: list[CoworldLeagueSeedRebindResult]
 
 
 class CoworldSecretResponse(BaseModel):
@@ -579,6 +620,9 @@ class CoworldUploadClient:
         self,
         *,
         coworld_name: str,
+        league_key: str,
+        league_name: str,
+        default_variant_id: str | None = None,
         template: str = "commissioner_driven",
         overrides: dict[str, Any] | None = None,
         enabled: bool = True,
@@ -588,6 +632,9 @@ class CoworldUploadClient:
             headers=self._headers(),
             json={
                 "coworld_name": coworld_name,
+                "league_key": league_key,
+                "league_name": league_name,
+                "default_variant_id": default_variant_id,
                 "template": template,
                 "overrides": overrides,
                 "enabled": enabled,
@@ -606,9 +653,27 @@ class CoworldUploadClient:
         _raise_for_status(response)
         return [CoworldLeagueSeedResponse.model_validate(item) for item in response.json()]
 
-    def set_league_game_of_week(self, *, coworld_name: str) -> CoworldLeagueSeedResponse:
+    def rebind_league_seeds(
+        self,
+        *,
+        changes: list[CoworldLeagueSeedRebindChange],
+        dry_run: bool = True,
+    ) -> CoworldLeagueSeedRebindResponse:
+        response = self._http_client.post(
+            "/v2/coworld-league-seeds/rebind",
+            headers=self._headers(),
+            json={
+                "dry_run": dry_run,
+                "changes": [change.model_dump(mode="json") for change in changes],
+            },
+            timeout=120.0,
+        )
+        _raise_for_status(response)
+        return CoworldLeagueSeedRebindResponse.model_validate(response.json())
+
+    def set_league_game_of_week(self, *, seed_id: str) -> CoworldLeagueSeedResponse:
         response = self._http_client.put(
-            f"/v2/coworld-league-seeds/{quote(coworld_name, safe='')}/game-of-week",
+            f"/v2/coworld-league-seeds/{quote(seed_id, safe='')}/game-of-week",
             headers=self._headers(),
             timeout=120.0,
         )
@@ -618,13 +683,20 @@ class CoworldUploadClient:
     def update_league_seed(
         self,
         *,
-        coworld_name: str,
-        overrides: dict[str, Any],
+        seed_id: str,
+        overrides: dict[str, Any] | None = None,
+        default_variant_id: str | None = None,
+        clear_default_variant: bool = False,
     ) -> CoworldLeagueSeedResponse:
+        payload: dict[str, Any] = {}
+        if overrides is not None:
+            payload["overrides"] = overrides
+        if default_variant_id is not None or clear_default_variant:
+            payload["default_variant_id"] = default_variant_id
         response = self._http_client.patch(
-            f"/v2/coworld-league-seeds/{quote(coworld_name, safe='')}",
+            f"/v2/coworld-league-seeds/{quote(seed_id, safe='')}",
             headers=self._headers(),
-            json={"overrides": overrides},
+            json=payload,
             timeout=120.0,
         )
         _raise_for_status(response)

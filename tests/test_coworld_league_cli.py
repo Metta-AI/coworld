@@ -1,3 +1,6 @@
+import json
+from pathlib import Path
+
 import pytest
 from pytest_httpserver import HTTPServer
 from typer.testing import CliRunner
@@ -7,6 +10,9 @@ from coworld.cli import app
 SEED_RESPONSE = {
     "id": "lseed_00000000-0000-0000-0000-000000000071",
     "coworld_name": "newworld",
+    "league_key": "arena",
+    "league_name": "New World Arena",
+    "default_variant_id": "arena-2v2",
     "template": "commissioner_driven",
     "overrides": {"is_game_of_week": True, "commissioner_runnable_id": "cue-n-woo-commissioner"},
     "enabled": True,
@@ -29,6 +35,9 @@ def test_create_coworld_league_seed_posts_request(httpserver: HTTPServer) -> Non
         headers={"Authorization": "Bearer token"},
         json={
             "coworld_name": "newworld",
+            "league_key": "arena",
+            "league_name": "New World Arena",
+            "default_variant_id": "arena-2v2",
             "template": "commissioner_driven",
             "overrides": {"is_game_of_week": True, "commissioner_runnable_id": "cue-n-woo-commissioner"},
             "enabled": True,
@@ -41,6 +50,10 @@ def test_create_coworld_league_seed_posts_request(httpserver: HTTPServer) -> Non
             "league",
             "create",
             "newworld",
+            "arena",
+            "New World Arena",
+            "--default-variant",
+            "arena-2v2",
             "--set",
             "is_game_of_week=true",
             "--set",
@@ -63,6 +76,9 @@ def test_create_coworld_league_seed_without_overrides_posts_no_commissioner_over
         headers={"Authorization": "Bearer token"},
         json={
             "coworld_name": "newworld",
+            "league_key": "arena",
+            "league_name": "New World Arena",
+            "default_variant_id": "arena-2v2",
             "template": "commissioner_driven",
             "overrides": None,
             "enabled": True,
@@ -75,6 +91,10 @@ def test_create_coworld_league_seed_without_overrides_posts_no_commissioner_over
             "league",
             "create",
             "newworld",
+            "arena",
+            "New World Arena",
+            "--default-variant",
+            "arena-2v2",
             "--server",
             httpserver.url_for(""),
         ],
@@ -91,6 +111,10 @@ def test_create_coworld_league_seed_rejects_bad_override() -> None:
             "league",
             "create",
             "newworld",
+            "arena",
+            "New World Arena",
+            "--default-variant",
+            "arena-2v2",
             "--template",
             "default",
             "--set",
@@ -117,21 +141,80 @@ def test_list_coworld_league_seeds(httpserver: HTTPServer) -> None:
     )
 
     assert result.exit_code == 0, result.output
+    assert SEED_RESPONSE["id"] in result.output
     assert "newworld" in result.output
-    assert "commissioner_driven" in result.output
+    assert "arena" in result.output
+
+
+def test_rebind_coworld_league_seeds_is_dry_run_by_default(httpserver: HTTPServer, tmp_path: Path) -> None:
+    seed_id = SEED_RESPONSE["id"]
+    plan = tmp_path / "rebind.json"
+    binding = {
+        "coworld_name": "newworld",
+        "league_key": "arena",
+        "default_variant_id": "arena-2v2",
+        "effective_variant_id": "arena-2v2",
+    }
+    change = {
+        "coworld_name": binding["coworld_name"],
+        "league_key": binding["league_key"],
+    }
+    plan.write_text(
+        json.dumps({"changes": [{"seed_id": seed_id, **change}]}),
+        encoding="utf-8",
+    )
+    httpserver.expect_request(
+        "/observatory/v2/coworld-league-seeds/rebind",
+        method="POST",
+        headers={"Authorization": "Bearer token"},
+        json={"dry_run": True, "changes": [{"seed_id": seed_id, **change}]},
+    ).respond_with_json(
+        {
+            "dry_run": True,
+            "applied": False,
+            "results": [
+                {
+                    "seed_id": seed_id,
+                    "league_id": None,
+                    "league_name": "New World Arena",
+                    "current": binding,
+                    "proposed": binding,
+                    "commissioner_key": "platform",
+                    "canonical_coworld_id": "cow_00000000-0000-0000-0000-000000000001",
+                    "counts": {"divisions": 0, "memberships": 0, "submissions": 0, "active_rounds": 0},
+                    "blocking_reasons": [],
+                }
+            ],
+        }
+    )
+
+    result = CliRunner().invoke(app, ["league", "rebind", str(plan), "--server", httpserver.url_for("")])
+
+    assert result.exit_code == 0, result.output
+    assert "Dry run complete" in result.output
+    assert "ready" in result.output
 
 
 def test_set_coworld_game_of_week_uses_dedicated_route(httpserver: HTTPServer) -> None:
     httpserver.expect_request(
-        "/observatory/v2/coworld-league-seeds/newworld/game-of-week",
+        "/observatory/v2/coworld-league-seeds/lseed_00000000-0000-0000-0000-000000000071/game-of-week",
         method="PUT",
         headers={"Authorization": "Bearer token"},
     ).respond_with_json(SEED_RESPONSE)
 
-    result = CliRunner().invoke(app, ["league", "game-of-week", "newworld", "--server", httpserver.url_for("")])
+    result = CliRunner().invoke(
+        app,
+        [
+            "league",
+            "game-of-week",
+            "lseed_00000000-0000-0000-0000-000000000071",
+            "--server",
+            httpserver.url_for(""),
+        ],
+    )
 
     assert result.exit_code == 0, result.output
-    assert "Game of the week is now newworld" in result.output
+    assert "Game of the week is now New World Arena" in result.output
 
 
 def test_update_coworld_league_seed_replaces_overrides(httpserver: HTTPServer) -> None:
@@ -145,7 +228,7 @@ def test_update_coworld_league_seed_replaces_overrides(httpserver: HTTPServer) -
         },
     }
     httpserver.expect_request(
-        "/observatory/v2/coworld-league-seeds/newworld",
+        "/observatory/v2/coworld-league-seeds/lseed_00000000-0000-0000-0000-000000000071",
         method="PATCH",
         headers={"Authorization": "Bearer token"},
         json={"overrides": response["overrides"]},
@@ -156,7 +239,7 @@ def test_update_coworld_league_seed_replaces_overrides(httpserver: HTTPServer) -
         [
             "league",
             "update",
-            "newworld",
+            "lseed_00000000-0000-0000-0000-000000000071",
             "--set",
             'commissioner_config_extensions={"persistent_game_config_overlay_secret":"persistent_realm"}',
             "--set",
@@ -172,7 +255,10 @@ def test_update_coworld_league_seed_replaces_overrides(httpserver: HTTPServer) -
 
 
 def test_update_coworld_league_seed_requires_overrides() -> None:
-    result = CliRunner().invoke(app, ["league", "update", "newworld"])
+    result = CliRunner().invoke(
+        app,
+        ["league", "update", "lseed_00000000-0000-0000-0000-000000000071"],
+    )
 
     assert result.exit_code == 2
-    assert "At least one --set" in result.output
+    assert "Provide --set, --default-variant, or --use-manifest-default" in result.output

@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import json
 import shlex
+import time
+import uuid
 import webbrowser
 from contextlib import contextmanager
 from pathlib import Path
@@ -53,6 +55,7 @@ from coworld.upload import (
     AutoChampion,
     ContainerImageResponse,
     CoworldCertificationStatus,
+    CoworldLeagueSeedRebindChange,
     CoworldListEntry,
     CoworldStatusResult,
     CoworldUploadClient,
@@ -176,9 +179,6 @@ def counterfactual_create(
     json_output: Annotated[bool, typer.Option("--json", help="Print raw JSON.")] = False,
 ) -> None:
     """Start a measurement counterfactual eval of candidate vs baseline on a league."""
-    import time
-    import uuid
-
     with CoworldApiClient.from_login(server_url=server) as client:
         candidate_id = _resolve_policy_version_id(client, candidate)
         baseline_id = _resolve_policy_version_id(client, baseline)
@@ -231,6 +231,15 @@ def counterfactual_get(
 @league_app.command("create")
 def league_create(
     coworld_name: Annotated[str, typer.Argument(help="Canonical coworld name to promote into a league.")],
+    league_key: Annotated[str, typer.Argument(help="Stable key for this league within the Coworld.")],
+    league_name: Annotated[str, typer.Argument(help="Human-readable league name.")],
+    default_variant_id: Annotated[
+        str | None,
+        typer.Option(
+            "--default-variant",
+            help="Commissioner default variant. Omit to use the manifest's first variant.",
+        ),
+    ] = None,
     template: Annotated[
         str,
         typer.Option(
@@ -251,12 +260,20 @@ def league_create(
 ) -> None:
     override_map = dict(_parse_override(item) for item in overrides) if overrides else None
     with CoworldUploadClient.from_login(server_url=server) as client:
-        seed = client.create_league_seed(coworld_name=coworld_name, template=template, overrides=override_map)
+        seed = client.create_league_seed(
+            coworld_name=coworld_name,
+            league_key=league_key,
+            league_name=league_name,
+            default_variant_id=default_variant_id,
+            template=template,
+            overrides=override_map,
+        )
     if json_output:
         emit_json(seed.model_dump(mode="json"))
         return
     console.print(
-        f"[green]Created league seed[/green] for [bold]{seed.coworld_name}[/bold] (template: {seed.template})"
+        f"[green]Created league seed[/green] [bold]{seed.league_name}[/bold] "
+        f"({seed.coworld_name}/{seed.league_key}, default variant: {seed.default_variant_id or 'manifest first'})"
     )
     if seed.league_id is not None:
         league_url = observatory_web_url(server, f"/observatory/v2?tab=leagues&detail=league:{seed.league_id}")
@@ -286,37 +303,93 @@ def league_list(
         return
     table = Table(box=box.SIMPLE)
     table.add_column("Coworld")
+    table.add_column("Key")
+    table.add_column("Name")
+    table.add_column("Variant")
     table.add_column("Template")
     table.add_column("Enabled")
     table.add_column("League")
     for seed in seeds:
         table.add_row(
             seed.coworld_name,
+            seed.league_key,
+            seed.league_name,
+            seed.default_variant_id or "manifest first",
             seed.template,
             "yes" if seed.enabled else "no",
             seed.league_id or "-",
         )
     console.print(table)
+    if seeds:
+        console.print("[bold]Seed IDs[/bold]")
+        for seed in seeds:
+            console.print(f"{seed.id}  {seed.coworld_name}/{seed.league_key}")
+
+
+@league_app.command("rebind")
+def league_rebind(
+    plan_path: Annotated[
+        Path,
+        typer.Argument(help="JSON file containing a changes list or an object with a changes field."),
+    ],
+    commit: Annotated[
+        bool,
+        typer.Option("--commit", help="Apply the validated batch. Omit for a read-only dry run."),
+    ] = False,
+    server: Annotated[str, typer.Option("--server", help="Observatory API server URL.")] = DEFAULT_SUBMIT_SERVER,
+    json_output: Annotated[bool, typer.Option("--json", help="Print raw JSON.")] = False,
+) -> None:
+    payload = json.loads(plan_path.read_text(encoding="utf-8"))
+    raw_changes = payload.get("changes") if isinstance(payload, dict) else payload
+    if not isinstance(raw_changes, list):
+        raise typer.BadParameter("Plan must be a JSON list or an object with a changes list")
+    changes = [CoworldLeagueSeedRebindChange.model_validate(change) for change in raw_changes]
+    with CoworldUploadClient.from_login(server_url=server) as client:
+        result = client.rebind_league_seeds(changes=changes, dry_run=not commit)
+    if json_output:
+        emit_json(result.model_dump(mode="json"))
+    else:
+        table = Table(box=box.SIMPLE)
+        table.add_column("League")
+        table.add_column("Current")
+        table.add_column("Proposed")
+        table.add_column("Status")
+        for item in result.results:
+            table.add_row(
+                item.league_name,
+                f"{item.current.coworld_name}/{item.current.league_key}:"
+                f"{item.current.default_variant_id or 'manifest first'}"
+                f" -> {item.current.effective_variant_id or 'unresolved'}",
+                f"{item.proposed.coworld_name}/{item.proposed.league_key}:"
+                f"{item.proposed.default_variant_id or 'manifest first'}"
+                f" -> {item.proposed.effective_variant_id or 'unresolved'}",
+                "; ".join(item.blocking_reasons) if item.blocking_reasons else "ready",
+            )
+        console.print(table)
+        outcome = "[green]Applied[/green]" if result.applied else "Dry run complete" if not commit else "Not applied"
+        console.print(outcome)
+    if commit and not result.applied:
+        raise typer.Exit(1)
 
 
 @league_app.command("game-of-week")
 def league_game_of_week(
-    coworld_name: Annotated[str, typer.Argument(help="Coworld whose league becomes the game of the week.")],
+    seed_id: Annotated[str, typer.Argument(help="League seed ID (lseed_…).")],
     server: Annotated[str, typer.Option("--server", help="Observatory API server URL.")] = DEFAULT_SUBMIT_SERVER,
     json_output: Annotated[bool, typer.Option("--json", help="Print raw JSON.")] = False,
 ) -> None:
     """Make this coworld's league the single Observatory game of the week."""
     with CoworldUploadClient.from_login(server_url=server) as client:
-        seed = client.set_league_game_of_week(coworld_name=coworld_name)
+        seed = client.set_league_game_of_week(seed_id=seed_id)
     if json_output:
         emit_json(seed.model_dump(mode="json"))
         return
-    console.print(f"[green]Game of the week[/green] is now [bold]{seed.coworld_name}[/bold]")
+    console.print(f"[green]Game of the week[/green] is now [bold]{seed.league_name}[/bold]")
 
 
 @league_app.command("update")
 def league_update(
-    coworld_name: Annotated[str, typer.Argument(help="Canonical coworld name whose league seed should change.")],
+    seed_id: Annotated[str, typer.Argument(help="League seed ID (lseed_…).")],
     overrides: Annotated[
         list[str] | None,
         typer.Option(
@@ -324,18 +397,33 @@ def league_update(
             help="Replacement override KEY=VALUE (VALUE parsed as JSON when possible). Repeatable.",
         ),
     ] = None,
+    default_variant_id: Annotated[
+        str | None,
+        typer.Option("--default-variant", help="Set the commissioner's default manifest variant."),
+    ] = None,
+    use_manifest_default: Annotated[
+        bool,
+        typer.Option("--use-manifest-default", help="Clear the configured default and use manifest order."),
+    ] = False,
     server: Annotated[str, typer.Option("--server", help="Observatory API server URL.")] = DEFAULT_SUBMIT_SERVER,
     json_output: Annotated[bool, typer.Option("--json", help="Print raw JSON.")] = False,
 ) -> None:
-    if not overrides:
-        raise typer.BadParameter("At least one --set KEY=VALUE override is required")
-    override_map = dict(_parse_override(item) for item in overrides)
+    if default_variant_id is not None and use_manifest_default:
+        raise typer.BadParameter("--default-variant and --use-manifest-default are mutually exclusive")
+    if not overrides and default_variant_id is None and not use_manifest_default:
+        raise typer.BadParameter("Provide --set, --default-variant, or --use-manifest-default")
+    override_map = dict(_parse_override(item) for item in overrides) if overrides else None
     with CoworldUploadClient.from_login(server_url=server) as client:
-        seed = client.update_league_seed(coworld_name=coworld_name, overrides=override_map)
+        seed = client.update_league_seed(
+            seed_id=seed_id,
+            overrides=override_map,
+            default_variant_id=default_variant_id,
+            clear_default_variant=use_manifest_default,
+        )
     if json_output:
         emit_json(seed.model_dump(mode="json"))
         return
-    console.print(f"[green]Updated league seed[/green] for [bold]{seed.coworld_name}[/bold]")
+    console.print(f"[green]Updated league seed[/green] for [bold]{seed.league_name}[/bold]")
     if seed.league_id is not None:
         console.print(f"[dim]League:[/dim] {seed.league_id}")
 
