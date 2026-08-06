@@ -1625,6 +1625,9 @@ def test_create_player_pod_injects_policy_secret_env(monkeypatch):
     assert pod.metadata.annotations == {"karpenter.sh/do-not-disrupt": "true"}
     assert pod.metadata.labels["job-id"] == "job-id"
     assert pod.metadata.labels["coworld-component"] == "player"
+    # The AWS-facing spellings. Nothing in-cluster selects on these, so a silent drop would
+    # only show up as a hole in the CUR cost allocation column -- pin them here instead.
+    assert pod.metadata.labels["softmax.com/job-id"] == "job-id"
     assert pod.metadata.labels["coworld-player-slot"] == "0"
     assert pod.spec.node_selector == {"workload-type": "jobs", "karpenter.sh/capacity-type": "on-demand"}
     assert pod.spec.service_account_name == "episode-runner"

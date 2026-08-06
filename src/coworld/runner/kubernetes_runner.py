@@ -422,7 +422,6 @@ def _create_game_service(
         metadata=client.V1ObjectMeta(
             name=service_name,
             namespace=namespace,
-            labels={"coworld-job-id": job_id},
             owner_references=owner_references,
         ),
         spec=client.V1ServiceSpec(
@@ -583,9 +582,16 @@ def _create_player_pod(
             name=name,
             namespace=namespace,
             annotations=pod_annotations,
+            # softmax.com/job-id is the key activated as an AWS cost allocation tag: AWS imports
+            # pod labels verbatim into a keyspace that is payer-global and shared with ordinary
+            # resource tags, where a bare "job-id" would be collision-prone. Both spellings are
+            # written for now -- bare "job-id" is still what the game Service selects on and what
+            # event_processor maps pods to jobs with. Spelled out rather than imported from
+            # app_backend's config: the coworld-independence import contract forbids that
+            # direction, so it must stay in sync with job_runner/config.py.
             labels={
                 "job-id": job_id,
-                "coworld-job-id": job_id,
+                "softmax.com/job-id": job_id,
                 "coworld-component": "player",
                 "coworld-player-slot": str(slot),
             },
