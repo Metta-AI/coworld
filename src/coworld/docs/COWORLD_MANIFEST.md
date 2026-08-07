@@ -142,8 +142,8 @@ uv run coworld secret put cue_n_woo worker_signing_key ./tournament_signing_key.
 During hosted episode and replay-session dispatch, the backend resolves `secret://coworld/<coworld_name>/<secret_name>`
 only for the matching Coworld and injects a short-lived presigned HTTPS URL into the game container env. Hosted replay
 creation accepts only recorded replay URIs for that Coworld, and the stored Coworld owner, never the viewer, selects the
-secret namespace. Hosted play and Antfarm dispatch do not resolve Coworld secrets; use the k8s hosted episode backend
-for Coworlds whose game env contains `secret://` values.
+secret namespace. Hosted play does not resolve Coworld secrets; use hosted episode or replay-session dispatch for
+Coworlds whose game env contains `secret://` values.
 
 Secrets are stored in the Coworld uploader's Coworld-name namespace. Passing a name to `coworld secret put` targets your
 canonical Coworld for that name when you own it; pass the `cow_...` id to target a non-canonical candidate version

@@ -609,8 +609,7 @@ Before persisting the episode, the platform reads this document from the request
 KMS-encrypted namespace, shallow-merges `game_config_overrides` onto the selected variant, and validates the result
 against `game.config_schema` for the requested player count. At actual Kubernetes dispatch, nested
 `secret://coworld/<game>/<name>` config values become short-lived read URLs. The commissioner sees only the non-secret
-object name; it never receives storage credentials, signed URLs, or the private object bytes. Antfarm does not support
-private config values, so these episodes must use the Kubernetes backend.
+object name; it never receives storage credentials, signed URLs, or the private object bytes.
 
 The commissioner may send `schedule_episodes` more than once during a round. After each `episode_result` or
 `episode_failed`, the platform invokes the commissioner's `on_episode_completed` hook. Any episodes returned by that

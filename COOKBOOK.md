@@ -698,8 +698,7 @@ Hosted tournament, episode, and replay-session dispatch replaces the `secret://`
 HTTPS URL for the matching Coworld. Hosted replay creation accepts only recorded replay URIs for that Coworld; the
 stored Coworld owner—not the viewer—selects the secret namespace, and the browser receives only the derived replay
 viewer capability. Hosted play and local runs do not resolve hosted secrets; override the env var locally, for example
-with `WORKER_SIGNING_KEY_URI=file:///path/to/dev_key`. Antfarm dispatch does not resolve Coworld secrets, so
-secret-bearing Coworlds should run on the k8s hosted episode backend.
+with `WORKER_SIGNING_KEY_URI=file:///path/to/dev_key`.
 
 Secrets are stored in the original uploader's Coworld-name namespace. Passing a Coworld name targets your canonical
 owned Coworld when there is one; pass a `cow_...` id when uploading a secret for a non-canonical candidate version.
