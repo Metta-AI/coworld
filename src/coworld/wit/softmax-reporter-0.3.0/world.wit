@@ -1,0 +1,118 @@
+// softmax:reporter@0.3.0 — Reporter Bureau with native LLM APIs.
+//
+// This world is published beside the immutable 0.1.0, 0.2.0, and 0.2.1
+// contracts. It adds synchronous, non-streaming Anthropic Messages and OpenAI
+// Chat Completions functions while preserving the existing Bedrock-shaped
+// functions for components that still use them.
+package softmax:reporter@0.3.0;
+
+interface types {
+  record run-request {
+    run-id: string,
+    subject: subject,
+    params: option<string>,
+  }
+
+  variant subject {
+    episodes(list<string>),
+    round(string),
+    league(string),
+    player(string),
+    freeform,
+  }
+
+  record run-summary {
+    parts-emitted: u32,
+  }
+
+  variant tool-error {
+    not-found(string),
+    forbidden(string),
+    budget-exhausted(string),
+    invalid(string),
+    internal(string),
+  }
+}
+
+interface episodes {
+  use types.{tool-error};
+
+  results: func(ereq: string) -> result<list<u8>, tool-error>;
+  events: func(ereq: string) -> result<list<u8>, tool-error>;
+  replay: func(ereq: string) -> result<list<u8>, tool-error>;
+  game-logs: func(ereq: string) -> result<string, tool-error>;
+  player-logs: func(ereq: string, pos: u32) -> result<string, tool-error>;
+  error-info: func(ereq: string) -> result<option<string>, tool-error>;
+}
+
+interface platform {
+  use types.{tool-error};
+
+  get: func(path: string, query: string) -> result<string, tool-error>;
+}
+
+interface reports {
+  use types.{tool-error};
+
+  dependencies: func() -> result<string, tool-error>;
+  list-runs: func(query: string) -> result<string, tool-error>;
+  output: func(run-id: string) -> result<string, tool-error>;
+  fetch: func(run-id: string, part: string) -> result<list<u8>, tool-error>;
+}
+
+/// Host-mediated, metered LLM access. Every function is synchronous and
+/// non-streaming. Request and response strings use the named provider's native
+/// JSON envelope; the host overwrites routing and trace metadata with trusted
+/// reporter-run values before dispatch.
+interface llm {
+  use types.{tool-error};
+
+  /// Legacy Bedrock Converse JSON shapes.
+  converse: func(model: string, messages: string, opts: option<string>) -> result<string, tool-error>;
+  /// Legacy Bedrock InvokeModel with a model-native JSON body.
+  invoke: func(model: string, body: string) -> result<string, tool-error>;
+  /// Native Anthropic Messages request and response JSON.
+  anthropic-messages: func(body: string) -> result<string, tool-error>;
+  /// Native OpenAI Chat Completions request and response JSON.
+  openai-chat: func(body: string) -> result<string, tool-error>;
+}
+
+interface output {
+  use types.{tool-error};
+
+  record event {
+    ts: u64,
+    player: s64,
+    key: string,
+    value: string,
+  }
+
+  record file-payload {
+    media-type: string,
+    bytes: list<u8>,
+  }
+
+  variant part-value {
+    render-html(string),
+    render-markdown(string),
+    event-log(list<event>),
+    json(string),
+    file(file-payload),
+  }
+
+  emit: func(name: string, value: part-value) -> result<_, tool-error>;
+  progress: func(pct: u8, note: string);
+  log: func(level: string, msg: string);
+}
+
+world reporter {
+  use types.{run-request, run-summary};
+
+  import episodes;
+  import platform;
+  import reports;
+  import llm;
+  import output;
+
+  export run: func(request: run-request) -> result<run-summary, string>;
+}

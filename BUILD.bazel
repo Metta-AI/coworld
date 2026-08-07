@@ -112,6 +112,15 @@ filegroup(
 )
 
 filegroup(
+    name = "reporter_wit_worlds",
+    srcs = [
+        "src/coworld/wit/softmax-reporter/world.wit",
+        "src/coworld/wit/softmax-reporter-0.3.0/world.wit",
+    ],
+    visibility = ["//app_backend/tests:__pkg__"],
+)
+
+filegroup(
     name = "docs_files",
     srcs = [
         "COOKBOOK.md",
