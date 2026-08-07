@@ -9,6 +9,8 @@ BEDROCK_SIDECAR_TOKEN_VOLUME_NAME = "bedrock-sidecar-aws-token"
 BEDROCK_SIDECAR_TOKEN_MOUNT_PATH = "/var/run/secrets/bedrock-sidecar"
 BEDROCK_SIDECAR_TOKEN_PATH = "token"
 BEDROCK_SIDECAR_TOKEN_FILE = f"{BEDROCK_SIDECAR_TOKEN_MOUNT_PATH}/{BEDROCK_SIDECAR_TOKEN_PATH}"
+BEDROCK_PROMPT_PREFIX_CONTROL_CONFIG_MAP_NAME = "bedrock-prompt-prefix-measurement"
+BEDROCK_PROMPT_PREFIX_ENABLED_PATH = f"{BEDROCK_SIDECAR_TOKEN_MOUNT_PATH}/prompt-prefix-measurement-enabled"
 BEDROCK_RUNTIME_ENDPOINT_TEMPLATE = "https://bedrock-runtime.{region}.amazonaws.com"
 
 # Non-functional placeholder credentials for the app container's AWS SDK; see the app_backend
@@ -57,6 +59,7 @@ def build_bedrock_sidecar(
     spend_limit_usd: str | None = None,
     pricing_json: str | None = None,
     cache_points: bool = True,
+    prompt_prefix_sample_rate: float = 0.0,
 ) -> client.V1Container:
     upstream = upstream_endpoint or BEDROCK_RUNTIME_ENDPOINT_TEMPLATE.format(region=region)
     # Optional S3 sink for completion records (latency/errors); unset bucket keeps the sidecar
@@ -69,6 +72,20 @@ def build_bedrock_sidecar(
             client.V1EnvVar(name="BEDROCK_SIDECAR_FLUSH_SECONDS", value=str(flush_seconds)),
         ]
         if completions_bucket
+        else []
+    )
+    prompt_prefix_measurement_env = (
+        [
+            client.V1EnvVar(
+                name="BEDROCK_SIDECAR_PROMPT_PREFIX_SAMPLE_RATE",
+                value=str(prompt_prefix_sample_rate),
+            ),
+            client.V1EnvVar(
+                name="BEDROCK_SIDECAR_PROMPT_PREFIX_ENABLED_PATH",
+                value=BEDROCK_PROMPT_PREFIX_ENABLED_PATH,
+            ),
+        ]
+        if prompt_prefix_sample_rate > 0
         else []
     )
     return client.V1Container(
@@ -91,6 +108,7 @@ def build_bedrock_sidecar(
                 value=serialize_bedrock_request_metadata(metadata),
             ),
             *completion_env,
+            *prompt_prefix_measurement_env,
             client.V1EnvVar(
                 name="POD_NAME",
                 value_from=client.V1EnvVarSource(field_ref=client.V1ObjectFieldSelector(field_path="metadata.name")),
@@ -166,6 +184,7 @@ def bedrock_sidecar_token_volume(
     *,
     audience: str = "sts.amazonaws.com",
     expiration_seconds: int = 3600,
+    prompt_prefix_measurement: bool = False,
 ) -> client.V1Volume:
     return client.V1Volume(
         name=BEDROCK_SIDECAR_TOKEN_VOLUME_NAME,
@@ -177,7 +196,24 @@ def bedrock_sidecar_token_volume(
                         expiration_seconds=expiration_seconds,
                         path=BEDROCK_SIDECAR_TOKEN_PATH,
                     )
-                )
+                ),
+                *(
+                    [
+                        client.V1VolumeProjection(
+                            config_map=client.V1ConfigMapProjection(
+                                name=BEDROCK_PROMPT_PREFIX_CONTROL_CONFIG_MAP_NAME,
+                                items=[
+                                    client.V1KeyToPath(
+                                        key="enabled",
+                                        path="prompt-prefix-measurement-enabled",
+                                    )
+                                ],
+                            )
+                        )
+                    ]
+                    if prompt_prefix_measurement
+                    else []
+                ),
             ]
         ),
     )

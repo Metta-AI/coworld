@@ -553,7 +553,8 @@ def _create_player_pod(
         # Skip the player app AND the sidecar: the sidecar self-provides its full IRSA env, so
         # the webhook must not also inject a conflicting token path.
         pod_annotations["eks.amazonaws.com/skip-containers"] = f"player,{BEDROCK_SIDECAR_CONTAINER_NAME}"
-        pod_volumes = [bedrock_sidecar_token_volume()]
+        prompt_prefix_sample_rate = float(os.environ.get("BEDROCK_SIDECAR_PROMPT_PREFIX_SAMPLE_RATE", "0"))
+        pod_volumes = [bedrock_sidecar_token_volume(prompt_prefix_measurement=prompt_prefix_sample_rate > 0)]
         init_containers.append(
             build_bedrock_sidecar(
                 cache_points=os.environ.get("BEDROCK_SIDECAR_CACHE_POINTS", "true") == "true",
@@ -576,6 +577,7 @@ def _create_player_pod(
                 # Server-snapshotted per-model USD rates, forwarded by the dispatcher so
                 # the sidecar meters spend with the same rates the server reports.
                 pricing_json=os.environ.get("BEDROCK_SIDECAR_PRICING_JSON") or None,
+                prompt_prefix_sample_rate=prompt_prefix_sample_rate,
             )
         )
     pod = client.V1Pod(
