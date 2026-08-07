@@ -1,0 +1,43 @@
+// softmax:game — experimental Arena game contract (single-pod experiment).
+// Host-driven lifecycle: the host owns time, transport, and artifacts.
+package softmax:game@0.1.0;
+
+interface types {
+  /// One seat's pending message, as the same frame that crossed the
+  /// WebSocket in the container runtime (protocol is game-defined, untouched).
+  record seat-message {
+    seat: u32,
+    payload: list<u8>,
+  }
+
+  record step-output {
+    /// Messages to deliver, host-fanned-out per seat.
+    messages: list<seat-message>,
+    /// True once; the host then calls finish().
+    done: bool,
+  }
+}
+
+interface output {
+  /// Final results.json bytes. Emit exactly once, from finish().
+  results: func(body: list<u8>);
+  /// Append replay bytes; the host persists them to S3 after finish().
+  replay-append: func(chunk: list<u8>);
+}
+
+interface log {
+  line: func(level: string, msg: string);
+}
+
+world game {
+  use types.{seat-message, step-output};
+
+  import output;
+  import log;
+
+  export init: func(config: string, seats: u32, seed: u64) -> result<_, string>;
+  /// One step: consume seat responses accumulated since the last step,
+  /// return messages to deliver. The host decides pacing.
+  export step: func(actions: list<seat-message>) -> result<step-output, string>;
+  export finish: func() -> result<_, string>;
+}

@@ -66,6 +66,7 @@ coworld = [
   "manifest/**/*.yaml",
   "transcripts/*.md",
   "runner/*.md",
+  "wit/**/*.wit",
   "examples/**/*",
   "templates/**/*",
 ]

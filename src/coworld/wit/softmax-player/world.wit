@@ -1,0 +1,15 @@
+// softmax:player — experimental Arena player contract (single-pod experiment).
+package softmax:player@0.1.0;
+
+interface log {
+  line: func(level: string, msg: string);
+}
+
+world player {
+  import log;
+
+  export start: func(slot: u32, config: option<string>) -> result<_, string>;
+  /// The inverted WebSocket loop: host delivers one game->seat frame,
+  /// guest returns zero or more seat->game frames.
+  export on-message: func(message: list<u8>) -> result<list<list<u8>>, string>;
+}
