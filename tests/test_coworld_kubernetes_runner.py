@@ -1286,7 +1286,7 @@ def test_wait_for_episode_artifacts_ignores_player_pods(tmp_path, monkeypatch):
     assert artifacts.replay_path.exists()
 
 
-def test_collect_logs_skips_player_pods_that_have_not_started(tmp_path):
+def test_collect_logs_records_marker_for_player_pods_that_never_started(tmp_path):
     artifacts = EpisodeArtifacts.create(tmp_path)
     core_v1 = _FakeLogCoreV1(
         {
@@ -1304,14 +1304,19 @@ def test_collect_logs_skips_player_pods_that_have_not_started(tmp_path):
     )
 
     assert artifacts.game_stdout_path.read_text(encoding="utf-8") == "game-pod game combined stdout stderr logs"
-    assert not artifacts.policy_log_path(0).exists()
+    assert artifacts.policy_log_path(0).read_text(encoding="utf-8") == (
+        "No logs collected for pod job-player-0 container player: the player container never started.\n"
+    )
     assert artifacts.policy_log_path(1).read_text(encoding="utf-8") == (
         "job-player-1 player combined stdout stderr logs"
     )
     assert core_v1.log_calls == [("game-pod", "game"), ("job-player-1", "player")]
 
 
-def test_collect_logs_skips_missing_player_pods(tmp_path):
+def test_collect_logs_records_marker_for_missing_player_pods(tmp_path):
+    # Regression for the hosted-episode observability gap: a player pod reaped before log
+    # collection must leave an explanatory log artifact, not silently vanish from the
+    # uploaded set (Asana 1217127622073619 / Metta-AI/coworld#31).
     artifacts = EpisodeArtifacts.create(tmp_path)
     core_v1 = _FakeLogCoreV1(
         {
@@ -1330,11 +1335,62 @@ def test_collect_logs_skips_missing_player_pods(tmp_path):
     )
 
     assert artifacts.game_stdout_path.read_text(encoding="utf-8") == "game-pod game combined stdout stderr logs"
-    assert not artifacts.policy_log_path(0).exists()
+    assert artifacts.policy_log_path(0).read_text(encoding="utf-8") == (
+        "No logs collected for pod job-player-0 container player: the pod was deleted before log collection.\n"
+    )
     assert artifacts.policy_log_path(1).read_text(encoding="utf-8") == (
         "job-player-1 player combined stdout stderr logs"
     )
     assert core_v1.log_calls == [("game-pod", "game"), ("job-player-1", "player")]
+
+
+def test_collect_logs_records_marker_when_player_log_read_404s(tmp_path):
+    artifacts = EpisodeArtifacts.create(tmp_path)
+    core_v1 = _FakeLogCoreV1(
+        {
+            "game-pod": [],
+            "job-player-0": [_container_status("player", running=True)],
+        },
+        log_errors={("job-player-0", "player"): ApiException(status=404)},
+    )
+
+    _collect_logs(
+        core_v1,
+        "default",
+        "game-pod",
+        ["job-player-0"],
+        artifacts,
+    )
+
+    assert artifacts.policy_log_path(0).read_text(encoding="utf-8") == (
+        "No logs collected for pod job-player-0 container player: the pod was deleted before log collection.\n"
+    )
+
+
+def test_collect_logs_records_marker_when_game_log_read_404s(tmp_path):
+    artifacts = EpisodeArtifacts.create(tmp_path)
+    core_v1 = _FakeLogCoreV1(
+        {
+            "game-pod": [],
+            "job-player-0": [_container_status("player", running=True)],
+        },
+        log_errors={("game-pod", "game"): ApiException(status=404)},
+    )
+
+    _collect_logs(
+        core_v1,
+        "default",
+        "game-pod",
+        ["job-player-0"],
+        artifacts,
+    )
+
+    assert artifacts.game_stdout_path.read_text(encoding="utf-8") == (
+        "No logs collected for pod game-pod container game: the pod was gone before log collection.\n"
+    )
+    assert artifacts.policy_log_path(0).read_text(encoding="utf-8") == (
+        "job-player-0 player combined stdout stderr logs"
+    )
 
 
 def test_collect_logs_records_player_log_errors_without_failing(tmp_path):

@@ -900,26 +900,35 @@ def _collect_logs(
     player_pod_names: list[str],
     artifacts: EpisodeArtifacts,
 ) -> None:
+    # Every policy slot gets a log file, and so does the game: when logs cannot be collected
+    # (pod already reaped, container never started, log endpoint 404), the file says so.
+    # Absence would be indistinguishable from "never existed" downstream — hosted consumers
+    # list uploaded artifacts and would silently analyze an incomplete observability set.
     game_log = _read_pod_log(core_v1, namespace, pod_name, "game")
-    if game_log is not None:
-        artifacts.game_stdout_path.write_text(game_log, encoding="utf-8")
+    if game_log is None:
+        game_log = _log_unavailable(pod_name, "game", "the pod was gone before log collection")
+    artifacts.game_stdout_path.write_text(game_log, encoding="utf-8")
     for player_pod_name in player_pod_names:
         slot = _player_pod_slot(player_pod_name)
         try:
             player_pod = core_v1.read_namespaced_pod(name=player_pod_name, namespace=namespace)
         except (ApiException, HTTPError) as exc:
             if isinstance(exc, ApiException) and exc.status == 404:
-                continue
+                message = _log_unavailable(player_pod_name, "player", "the pod was deleted before log collection")
+            else:
+                message = _log_read_failure(player_pod_name, "player", exc)
+            artifacts.policy_log_path(slot).write_text(message, encoding="utf-8")
+            continue
+        if not _container_has_started(player_pod, "player"):
             artifacts.policy_log_path(slot).write_text(
-                _log_read_failure(player_pod_name, "player", exc),
+                _log_unavailable(player_pod_name, "player", "the player container never started"),
                 encoding="utf-8",
             )
             continue
-        if not _container_has_started(player_pod, "player"):
-            continue
         player_log = _read_pod_log(core_v1, namespace, player_pod_name, "player")
-        if player_log is not None:
-            artifacts.policy_log_path(slot).write_text(player_log, encoding="utf-8")
+        if player_log is None:
+            player_log = _log_unavailable(player_pod_name, "player", "the pod was deleted before log collection")
+        artifacts.policy_log_path(slot).write_text(player_log, encoding="utf-8")
 
 
 def _read_pod_log(core_v1, namespace: str, pod_name: str, container: str) -> str | None:
@@ -938,6 +947,10 @@ def _read_pod_log(core_v1, namespace: str, pod_name: str, container: str) -> str
 
 def _log_read_failure(pod_name: str, container: str, exc: Exception) -> str:
     return f"Failed to collect Kubernetes logs for pod {pod_name} container {container}: {exc}\n"
+
+
+def _log_unavailable(pod_name: str, container: str, reason: str) -> str:
+    return f"No logs collected for pod {pod_name} container {container}: {reason}.\n"
 
 
 def _container_has_started(pod, container_name: str) -> bool:
