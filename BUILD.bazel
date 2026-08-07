@@ -116,6 +116,7 @@ filegroup(
     srcs = [
         "src/coworld/wit/softmax-reporter/world.wit",
         "src/coworld/wit/softmax-reporter-0.3.0/world.wit",
+        "src/coworld/wit/softmax-reporter-0.4.0/world.wit",
     ],
     visibility = ["//app_backend/tests:__pkg__"],
 )

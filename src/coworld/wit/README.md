@@ -7,10 +7,12 @@ Reporter worlds are immutable once published and accepted side by side:
   calls.
 - [`softmax-reporter-0.3.0/world.wit`](softmax-reporter-0.3.0/world.wit) adds
   synchronous native Anthropic Messages and OpenAI Chat Completions calls.
+- [`softmax-reporter-0.4.0/world.wit`](softmax-reporter-0.4.0/world.wit) changes
+  the exported `run` error from `string` to the shared `tool-error` variant.
 
-New reporter components that need native LLM calls should target 0.3.0. The
-host links those imports only for a component that declares that world. Native
-streaming and OpenAI Responses are not part of this world.
+New reporter components should target 0.4.0. The host links native LLM imports
+only for components that declare 0.3.0 or 0.4.0. Native streaming and OpenAI
+Responses are not part of these worlds.
 
 Reporter Bureau enables the native functions only when its deployment supplies
 both `REPORTER_OPENROUTER_API_KEY` and a materialized

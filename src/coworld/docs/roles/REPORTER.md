@@ -45,7 +45,7 @@ identity:
   `softmax:reporter` WIT world — the authoritative interface definition (exported `run`, the
   `types`/`episodes`/`platform`/`reports`/`llm`/`output` tool interfaces, and the `tool-error`
   variant) lives at
-  [`packages/coworld/src/coworld/wit/softmax-reporter/world.wit`](../../wit/softmax-reporter/world.wit).
+  [`packages/coworld/src/coworld/wit/softmax-reporter-0.4.0/world.wit`](../../wit/softmax-reporter-0.4.0/world.wit).
   Toolchains: Python via `componentize-py`, JavaScript/TypeScript via `jco`, Rust via
   `cargo-component`, Go via TinyGo. SDKs wrap the raw WIT imports in idiomatic APIs — Python
   first, JavaScript second; Rust/Go target the WIT directly.
@@ -87,7 +87,7 @@ the sandbox limits they need:
 ```json
 {
   "purpose": "narrative",
-  "world": "softmax:reporter@0.2.0",
+  "world": "softmax:reporter@0.4.0",
   "outputs": [
     { "name": "recap",  "type": "render-html",
       "description": "A broadcast-style narrative recap of the round: standings movement, notable plays, one headline per division." },
@@ -150,12 +150,23 @@ submissions. The platform (the Bureau, its capability-scoped runtime) instantiat
 per run — in milliseconds; there is no cold start to design around — and calls:
 
 ```
-run(request: run-request) -> result<run-summary, string>
+run(request: run-request) -> result<run-summary, tool-error>
 ```
 
 `run-request` carries the run id, the **subject** (a list of episode-request ids, a round, a
 league, a player, or `freeform`), and optional opaque JSON `params`. Your program then works the
 tool belt until it has emitted its declared outputs:
+
+Every tool returns the same typed `tool-error` variant that `run` exports. A reporter may handle a
+recoverable case such as `not-found`; otherwise it can let the generated binding's error propagate
+and the platform preserves its kind and message. Reporters that reject a run directly return an
+appropriate typed case such as `invalid(message)` or `internal(message)`, not an untyped string.
+
+Worlds `0.1.0` through `0.3.0` remain supported for already-built components. To adopt `0.4.0`,
+copy the current WIT and regenerate your language bindings before rebuilding. It uses the same
+synchronous host and tool surface as `0.3.0`; the source-level migration is for reporters that
+directly returned `err(string)`, which must return a `tool-error` case instead. Reporters that only
+return `run-summary` on success and let imported tool errors propagate need no logic change.
 
 The data tools are thin clients of the **public platform API** — every `episodes`, `platform`,
 and `reports` call is an authenticated HTTP request to the same `/v2` routes any user could hit,
@@ -163,10 +174,10 @@ presenting a short-lived run-scoped token. Only `llm` talks to a non-API backend
 
 | Tool family | What it gives you |
 | --- | --- |
-| `episodes` | Episode artifacts by episode-request id: results, replay, game logs, per-player logs, error info — typed sugar over the public episode routes |
+| `episodes` | Episode artifacts by episode-request id: results, first-party event stream, replay, game logs, per-player logs, error info — typed sugar over the public episode routes |
 | `platform` | `get(path, query)` over an allowlisted subset of public platform read APIs: leagues, rounds, standings, players, coworlds, experience requests |
 | `reports` | Declared direct dependencies via `dependencies()`, plus described output listings and fetches by run id. Dependency entries are concrete completed runs selected by the platform graph, not guest-side search results. |
-| `llm` | Bedrock models (`converse`/`invoke`) — host-signed, metered against your run's budget, billed to the run's requester |
+| `llm` | Native Anthropic/OpenAI requests (`anthropic-messages`/`openai-chat`) plus legacy Bedrock-shaped calls (`converse`/`invoke`) — host-signed, metered against your run's budget, billed to the run's requester |
 | `output` | `emit(name, part-value)` for each declared output — submitted through the same outputs API external reporters use, authenticated by the run context; `progress(pct, note)`; `log(level, msg)` |
 
 Key semantics:
@@ -174,7 +185,7 @@ Key semantics:
 - **Dependency graphs are binding-owned.** Manual run requests, subscriptions, and experience requests may provide the
   same `dependencies` list. A simple dependency needs only a pinned version ref or `latest`; nested `dependencies` are
   needed only for transitive prerequisites. The platform resolves mutable refs once, reuses exact eligible work, and
-  runs prerequisites before the requested reporter. Reporters targeting `softmax:reporter@0.2.0` read their direct
+  runs prerequisites before the requested reporter. Reporters targeting world `0.2.0` or later read their direct
   dependency runs with `reports.dependencies()`.
 
 - **You see with the requester's eyes.** At dispatch the platform mints a run-scoped token
@@ -236,8 +247,8 @@ and diagnosers. Chained reports — a reporter consuming another reporter's type
 
 Deliberately deferred until a real need lands:
 
-- **WASI 0.3 world** — native async and `stream<u8>` results (replay streaming, LLM streaming).
-  Worlds are versioned and accepted side by side, so this is an additive release.
+- **Future native-async world** — WASI 0.3 and `stream<u8>` results (replay streaming, LLM
+  streaming). Worlds are versioned and accepted side by side, so this is an additive release.
 - **Output catalog extensions** — `render-bundle` (multi-file HTML), `timeseries`, WIT-valued
   machine parts. Additions are catalog version bumps.
 - **Certification-in-depth** — smoke runs, output conformance, behavioral checks.
