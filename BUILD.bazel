@@ -135,6 +135,12 @@ filegroup(
     visibility = ["//packages/coworld/tests:__pkg__"],
 )
 
+filegroup(
+    name = "arena_wit_files",
+    srcs = glob(["src/coworld/wit/**"]),
+    visibility = ["//app_backend/tests:__pkg__"],
+)
+
 py_library(
     name = "coworld_core",
     srcs = _CORE_SRCS,
