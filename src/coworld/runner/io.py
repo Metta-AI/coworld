@@ -23,6 +23,8 @@ RunnerErrorType = Literal[
     "replay_unloadable",
     "episode_timeout",
     "crash",
+    "worker_error",
+    "config_error",
 ]
 
 
