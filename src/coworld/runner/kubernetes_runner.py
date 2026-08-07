@@ -556,6 +556,7 @@ def _create_player_pod(
         pod_volumes = [bedrock_sidecar_token_volume()]
         init_containers.append(
             build_bedrock_sidecar(
+                cache_points=os.environ.get("BEDROCK_SIDECAR_CACHE_POINTS", "true") == "true",
                 metadata=player_bedrock_metadata.model_copy(update={"metadata_origin": "bedrock_sidecar"}),
                 region=os.environ["COWORLD_BEDROCK_REGION"],
                 listen_port=bedrock_sidecar_port,

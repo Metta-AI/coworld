@@ -56,6 +56,7 @@ def build_bedrock_sidecar(
     flush_seconds: float,
     spend_limit_usd: str | None = None,
     pricing_json: str | None = None,
+    cache_points: bool = True,
 ) -> client.V1Container:
     upstream = upstream_endpoint or BEDROCK_RUNTIME_ENDPOINT_TEMPLATE.format(region=region)
     # Optional S3 sink for completion records (latency/errors); unset bucket keeps the sidecar
@@ -84,6 +85,7 @@ def build_bedrock_sidecar(
             client.V1EnvVar(name="BEDROCK_SIDECAR_LISTEN_PORT", value=str(listen_port)),
             client.V1EnvVar(name="BEDROCK_SIDECAR_REGION", value=region),
             client.V1EnvVar(name="BEDROCK_SIDECAR_UPSTREAM_ENDPOINT", value=upstream),
+            client.V1EnvVar(name="BEDROCK_SIDECAR_CACHE_POINTS", value="true" if cache_points else "false"),
             client.V1EnvVar(
                 name="BEDROCK_SIDECAR_REQUEST_METADATA",
                 value=serialize_bedrock_request_metadata(metadata),

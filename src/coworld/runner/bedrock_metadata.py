@@ -9,12 +9,8 @@ from pydantic import BaseModel, ConfigDict, Field, TypeAdapter
 
 BEDROCK_REQUEST_METADATA_MAX_ENTRIES = 16
 BEDROCK_REQUEST_METADATA_MAX_LENGTH = 256
-_BEDROCK_REQUEST_METADATA_KEY = re.compile(
-    rf"[A-Za-z0-9\s._:/=+$@#,-]{{1,{BEDROCK_REQUEST_METADATA_MAX_LENGTH}}}"
-)
-_BEDROCK_REQUEST_METADATA_VALUE = re.compile(
-    rf"[A-Za-z0-9\s._:/=+$@#,-]{{0,{BEDROCK_REQUEST_METADATA_MAX_LENGTH}}}"
-)
+_BEDROCK_REQUEST_METADATA_KEY = re.compile(rf"[A-Za-z0-9\s._:/=+$@#,-]{{1,{BEDROCK_REQUEST_METADATA_MAX_LENGTH}}}")
+_BEDROCK_REQUEST_METADATA_VALUE = re.compile(rf"[A-Za-z0-9\s._:/=+$@#,-]{{0,{BEDROCK_REQUEST_METADATA_MAX_LENGTH}}}")
 
 BedrockEpisodeMetadataOrigin: TypeAlias = Literal["dispatcher", "coworld_runner", "bedrock_sidecar"]
 
