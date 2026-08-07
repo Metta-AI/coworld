@@ -7,6 +7,7 @@ from coworld.deploy_audit import (
     RepoDeployAudit,
     WorkflowMode,
     _repo_alerts,
+    _repo_coworld_name,
     classify_workflow,
     format_deploy_audit_markdown,
     summarize_coworld_registry,
@@ -107,15 +108,19 @@ def test_registry_summary_marks_latest_noncanonical() -> None:
     ]
 
 
+def test_ctf_repo_deploys_the_shared_paintbot_coworld() -> None:
+    assert _repo_coworld_name("coworld-ctf", []) == "paintbot"
+
+
 def test_markdown_output_includes_alert_summary() -> None:
     row = RepoDeployAudit(
         repo="coworld-ctf",
         default_branch="main",
         archived=False,
-        coworld_name="ctf",
-        active_leagues=["CTF Daily"],
+        coworld_name="paintbot",
+        active_leagues=["CTF Daily", "Paintbot"],
         workflow_mode=WorkflowMode.automatic,
-        workflow_files=[".github/workflows/upload-coworld.yml"],
+        workflow_files=[".github/workflows/upload-coworld-paintbot.yml"],
         canonical_version="0.7.38",
         canonical_id="cow_2",
         latest_version="0.7.38",
@@ -133,7 +138,7 @@ def test_markdown_output_includes_alert_summary() -> None:
 
     markdown = format_deploy_audit_markdown(result)
 
-    assert "| coworld-ctf | ctf | CTF Daily | main | automatic |" in markdown
+    assert "| coworld-ctf | paintbot | CTF Daily, Paintbot | main | automatic |" in markdown
     assert "No alerts." in markdown
 
 

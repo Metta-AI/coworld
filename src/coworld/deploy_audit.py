@@ -22,7 +22,7 @@ DEFAULT_GITHUB_OWNER = "Metta-AI"
 
 
 _KNOWN_COWORLD_NAMES = {
-    "coworld-ctf": "ctf",
+    "coworld-ctf": "paintbot",
     "coworld-crewrift": "crewrift_prime",
     "coworld-liars-cog": "liars-cog",
     "coworld-tribal-village": "tribal_village",
