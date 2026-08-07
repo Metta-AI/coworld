@@ -86,6 +86,13 @@ argument and the manifest template directory as its working directory:
 tools/build_replay_viewer.sh /absolute/path/to/coworld/build/static-replay-viewer
 ```
 
+On Windows, `coworld build` runs the hook through the first `bash` on `PATH` (e.g. Git Bash) because Windows cannot
+execute a shell script directly; the build fails with an explicit error when no usable `bash` is found. WSL's launcher
+`bash.exe` does not count — it runs the script inside the distro, where the native `C:\...` arguments do not resolve —
+so with only WSL installed, run the whole build from inside WSL instead. The bundle directory
+argument is always the OS-native absolute path — a `C:\...` form on Windows — so hooks must accept that shape rather
+than requiring a POSIX-style path.
+
 The hook is part of the build contract. It must:
 
 - exit nonzero when dependencies, compilation, or asset generation fails;
@@ -102,7 +109,9 @@ set -euo pipefail
 
 repo_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 output_dir="$1"
-if [[ "${output_dir}" != /* || "${output_dir}" == "/" || "${output_dir}" == "${repo_dir}" ]]; then
+# Accept the OS-native absolute path: POSIX (/...) or Windows drive-letter (C:\... or C:/...).
+if [[ "${output_dir}" != /* && ! "${output_dir}" =~ ^[A-Za-z]:[\\/] ]] \
+  || [[ "${output_dir}" == "/" || "${output_dir}" == "${repo_dir}" ]]; then
   echo "unsafe bundle output: ${output_dir}" >&2
   exit 1
 fi

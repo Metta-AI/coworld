@@ -3,9 +3,10 @@ from __future__ import annotations
 import json
 import os
 import re
+import shutil
 import subprocess
 from collections.abc import Mapping
-from pathlib import Path
+from pathlib import Path, PureWindowsPath
 from typing import Any
 from urllib.parse import urlparse, urlunparse
 
@@ -19,6 +20,7 @@ from coworld.types import CoworldManifest, CoworldRunnableSpec
 ROLE_SECTIONS = ("player", "commissioner", "grader", "diagnoser", "optimizer")
 FULL_SHA_PATTERN = re.compile(r"^[0-9a-f]{40}$")
 REPLAY_VIEWER_BUILD_HOOK = Path("tools/build_replay_viewer.sh")
+_WINDOWS = os.name == "nt"
 
 
 def build_coworld_manifest(
@@ -89,7 +91,24 @@ def _build_replay_viewer_bundle(manifest: CoworldManifest, source_root: Path, ou
         raise RuntimeError(
             f"Coworld builds with a source replay viewer bundle require an executable build hook: {build_hook}"
         )
-    subprocess.run([str(build_hook), str(bundle_dir)], cwd=source_root, check=True)
+    command = [str(build_hook), str(bundle_dir)]
+    if _WINDOWS:
+        # Windows CreateProcess cannot execute a shell script (WinError 193), and the
+        # executable-bit guard above always passes there, so run the hook through bash.
+        # The bundle directory argument stays a native Windows path; hooks must accept it.
+        bash = shutil.which("bash")
+        if bash is not None and PureWindowsPath(bash).parent.name.lower() in {"system32", "sysnative"}:
+            # WSL's launcher bash.exe: it runs the script inside the distro, where the native
+            # C:\ script and bundle-dir arguments do not resolve (drives mount under /mnt).
+            bash = None
+        if bash is None:
+            raise RuntimeError(
+                "Coworld replay viewer build hooks are shell scripts, which Windows cannot execute "
+                "directly; install bash (e.g. Git Bash — WSL's bash.exe cannot run hooks with native "
+                f"Windows paths) or run the build from WSL: {build_hook}"
+            )
+        command = [bash, *command]
+    subprocess.run(command, cwd=source_root, check=True)
     if not bundle_dir.is_dir():
         raise RuntimeError(f"Replay viewer build hook did not produce its bundle directory: {bundle_dir}")
     if not (bundle_dir / "index.html").is_file():
