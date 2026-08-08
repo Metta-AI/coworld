@@ -208,7 +208,7 @@ def play_coworld(
                     "-e",
                     f"{PLAYER_FAILURE_ENV_VAR}=file://{CONTAINER_WORKDIR}/player_failure.json",
                     "-v",
-                    f"{artifacts.workspace.resolve()}:{CONTAINER_WORKDIR}:rw",
+                    f"{artifacts.workspace}:{CONTAINER_WORKDIR}:rw",
                     *_image_command(package.game),
                 ],
                 stdout=game_stdout,

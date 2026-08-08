@@ -99,7 +99,7 @@ class EpisodeArtifacts:
 
     @classmethod
     def create(cls, workspace: Path | None = None, *, prefix: str = "coworld-cert-") -> EpisodeArtifacts:
-        workspace = workspace or _new_workspace(prefix)
+        workspace = (workspace or _new_workspace(prefix)).resolve()
         workspace.mkdir(parents=True, exist_ok=True)
         logs_dir = workspace / "logs"
         logs_dir.mkdir(parents=True, exist_ok=True)
@@ -423,7 +423,7 @@ def run_episode_containers(spec: EpisodeRunSpec, *, verify_replay: bool = True) 
                     "-e",
                     f"{PLAYER_FAILURE_ENV_VAR}=file://{CONTAINER_WORKDIR}/player_failure.json",
                     "-v",
-                    f"{spec.artifacts.workspace.resolve()}:{CONTAINER_WORKDIR}:rw",
+                    f"{spec.artifacts.workspace}:{CONTAINER_WORKDIR}:rw",
                     *_image_command(spec.game),
                 ],
                 stdout=game_stdout,
