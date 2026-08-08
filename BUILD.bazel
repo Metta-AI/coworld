@@ -163,10 +163,24 @@ py_library(
 )
 
 py_library(
+    name = "bedrock_sidecar_wiring",
+    srcs = ["src/coworld/runner/bedrock_sidecar_wiring.py"],
+    imports = ["src"],
+    visibility = ["//visibility:public"],
+    deps = [
+        ":coworld_core",
+        "@pypi//kubernetes",
+    ],
+)
+
+py_library(
     name = "coworld",
     srcs = glob(
         ["src/coworld/**/*.py"],
-        exclude = _CORE_SRCS + ["src/coworld/templates/**/*.py"],
+        exclude = _CORE_SRCS + [
+            "src/coworld/runner/bedrock_sidecar_wiring.py",
+            "src/coworld/templates/**/*.py",
+        ],
     ),
     # Runtime data for the CLI and the example servers. Library
     # consumers don't need any of this; they get `py.typed` via
@@ -186,6 +200,7 @@ py_library(
     imports = ["src"],
     visibility = ["//visibility:public"],
     deps = [
+        ":bedrock_sidecar_wiring",
         ":coworld_core",
         "//packages/softmax-cli:softmax",
         "@pypi//cogsguard",

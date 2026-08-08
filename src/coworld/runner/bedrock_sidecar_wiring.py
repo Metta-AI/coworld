@@ -13,9 +13,9 @@ BEDROCK_PROMPT_PREFIX_CONTROL_CONFIG_MAP_NAME = "bedrock-prompt-prefix-measureme
 BEDROCK_PROMPT_PREFIX_ENABLED_PATH = f"{BEDROCK_SIDECAR_TOKEN_MOUNT_PATH}/prompt-prefix-measurement-enabled"
 BEDROCK_RUNTIME_ENDPOINT_TEMPLATE = "https://bedrock-runtime.{region}.amazonaws.com"
 
-# Non-functional placeholder credentials for the app container's AWS SDK; see the app_backend
-# mirror (bedrock_sidecar_wiring.py) for the rationale. The SDK needs creds to sign before it
-# sends to the localhost sidecar, which then re-signs with the real IRSA identity it alone holds.
+# Non-functional placeholder credentials for the app container's AWS SDK. The SDK needs creds to
+# sign before it sends to the localhost sidecar, which then re-signs with the real IRSA identity
+# it alone holds.
 _DUMMY_APP_CREDENTIAL = "bedrock-sidecar"
 
 # Keys the platform controls on a sidecar-backed app container; a user/policy env must never
