@@ -420,9 +420,19 @@ Sent if an episode fails:
 {
   "type": "episode_failed",
   "request_id": "req_001",
-  "error": "timeout after 300s"
+  "error": "player container exited",
+  "error_type": "player_error",
+  "failed_policy_index": 2,
+  "failed_policy_version_id": "00000000-0000-0000-0000-000000000003"
 }
 ```
+
+`error_type` preserves the runner's stable failure category. When the runner
+can identify a failed player seat, `failed_policy_index` and
+`failed_policy_version_id` identify that scheduled participant exactly.
+Infrastructure-only failures abort the round instead of producing
+`episode_failed`, so commissioners must not change membership state for a
+platform fault.
 
 ##### `round_abort`
 

@@ -647,6 +647,26 @@ def test_platform_episode_result_serializes_with_game_results() -> None:
     assert data["game_results"] == {"scores": [101.0]}
 
 
+def test_episode_failed_serializes_policy_attribution() -> None:
+    policy_version_id = uuid4()
+    failure = EpisodeFailed(
+        request_id="episode-1",
+        error="player container exited",
+        error_type="player_error",
+        failed_policy_index=2,
+        failed_policy_version_id=policy_version_id,
+    )
+
+    assert failure.to_json() == {
+        "type": "episode_failed",
+        "request_id": "episode-1",
+        "error": "player container exited",
+        "error_type": "player_error",
+        "failed_policy_index": 2,
+        "failed_policy_version_id": str(policy_version_id),
+    }
+
+
 def test_unknown_commissioner_message_type_fails() -> None:
     with pytest.raises(ValueError, match="Unknown commissioner message type"):
         CommissionerMessage.from_json({"type": "bogus"})

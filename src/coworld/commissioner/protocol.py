@@ -589,6 +589,9 @@ class EpisodeResult(BaseModel):
 class EpisodeFailed(BaseModel):
     request_id: str
     error: str
+    error_type: str | None = None
+    failed_policy_index: int | None = Field(default=None, ge=0)
+    failed_policy_version_id: UUID | None = None
 
     def to_json(self) -> dict[str, Any]:
         data = self.model_dump(mode="json")
