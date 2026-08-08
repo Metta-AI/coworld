@@ -350,9 +350,6 @@ def _run_kubernetes_episode(
         )
         gameplay_done = time.monotonic()
         _validate_results_file(artifacts.results_path, job.results_schema)
-        # Preserve live policy-failure evidence without re-deriving startup from pods
-        # that terminated-pod GC may already have reaped. Missing pods are inconclusive.
-        _raise_if_player_pod_failed(core_v1, namespace, child_names)
         if job.episode_tags.get("source") == CERTIFICATION_EPISODE_SOURCE:
             _wait_for_players_to_complete(
                 core_v1,

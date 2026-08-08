@@ -1509,14 +1509,24 @@ def test_policy_secrets_from_env_loads_and_removes_uri(monkeypatch, tmp_path):
 
 
 @pytest.mark.parametrize(
-    ("game_config", "expected_player_start_timeout"),
+    ("game_config", "expected_player_start_timeout", "episode_tags", "expected_completion_waits"),
     [
-        ({}, kubernetes_runner.DEFAULT_PLAYER_CONNECT_TIMEOUT_SECONDS),
-        ({"player_connect_timeout_seconds": 45}, 45.0),
+        ({}, kubernetes_runner.DEFAULT_PLAYER_CONNECT_TIMEOUT_SECONDS, {}, []),
+        (
+            {"player_connect_timeout_seconds": 45},
+            45.0,
+            {"source": runner_module.CERTIFICATION_EPISODE_SOURCE},
+            [("jobs", ["game-service-player-1"], runner_module.DEFAULT_PLAYER_EXIT_TIMEOUT_SECONDS)],
+        ),
     ],
 )
-def test_run_kubernetes_episode_defaults_resources_and_gives_players_full_post_launch_start_budget(
-    monkeypatch, tmp_path, game_config, expected_player_start_timeout
+def test_run_kubernetes_episode_keeps_artifacts_authoritative_except_for_certification(
+    monkeypatch,
+    tmp_path,
+    game_config,
+    expected_player_start_timeout,
+    episode_tags,
+    expected_completion_waits,
 ):
     artifacts = EpisodeArtifacts.create(tmp_path)
     artifacts.results_path.write_text("{}", encoding="utf-8")
@@ -1525,7 +1535,7 @@ def test_run_kubernetes_episode_defaults_resources_and_gives_players_full_post_l
     created: list[tuple[int, str, str, str]] = []
     startup_timeouts: list[float] = []
     player_start_timeouts: list[float] = []
-    post_artifact_player_checks: list[tuple[str, list[str]]] = []
+    completion_waits: list[tuple[str, list[str], float]] = []
 
     async def noop_async(*_args, **_kwargs):
         return None
@@ -1551,7 +1561,14 @@ def test_run_kubernetes_episode_defaults_resources_and_gives_players_full_post_l
     monkeypatch.setattr(
         kubernetes_runner,
         "_raise_if_player_pod_failed",
-        lambda _core_v1, namespace, pod_names: post_artifact_player_checks.append((namespace, pod_names)),
+        lambda *_args: pytest.fail("ordinary episode completion re-read player pod state after artifacts"),
+    )
+    monkeypatch.setattr(
+        kubernetes_runner,
+        "_wait_for_players_to_complete",
+        lambda _core_v1, namespace, pod_names, *, timeout_seconds: completion_waits.append(
+            (namespace, pod_names, timeout_seconds)
+        ),
     )
     monkeypatch.setattr(
         kubernetes_runner,
@@ -1596,7 +1613,7 @@ def test_run_kubernetes_episode_defaults_resources_and_gives_players_full_post_l
             ],
             game_config=game_config,
             results_schema={},
-            episode_tags={},
+            episode_tags=episode_tags,
         ),
     )
 
@@ -1605,7 +1622,7 @@ def test_run_kubernetes_episode_defaults_resources_and_gives_players_full_post_l
     assert created == [(1, "2", "2Gi", "")]
     assert startup_timeouts == [runner_module.LOBBY_RUNTIME_STARTUP_TIMEOUT_SECONDS]
     assert player_start_timeouts == [expected_player_start_timeout]
-    assert post_artifact_player_checks == [("jobs", ["game-service-player-1"])]
+    assert completion_waits == expected_completion_waits
 
 
 def test_create_game_service_exposes_human_proxy_without_rerouting_policy_players(monkeypatch):
