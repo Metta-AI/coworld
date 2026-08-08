@@ -35,11 +35,11 @@ def test_submit_policy_to_league_posts_v2_submission(
             "preferences": {"team_name": "Dungeon Delvers", "role": "tank", "priority": 1},
         },
     ).respond_with_json(
-        {
-            "id": "sub_00000000-0000-0000-0000-000000000051",
-            "status": "placed",
-            "league_policy_membership_id": "lpm_00000000-0000-0000-0000-000000000061",
-        }
+        _submission(
+            id="sub_00000000-0000-0000-0000-000000000051",
+            status="placed",
+            membership_id="lpm_00000000-0000-0000-0000-000000000061",
+        )
     )
 
     result = CliRunner().invoke(
@@ -105,7 +105,7 @@ def test_submit_policy_can_disable_auto_champion(
         method="POST",
         headers={"Authorization": "Bearer token"},
         json={"league_id": LEAGUE_ID, "policy_version_id": POLICY_VERSION_ID, "auto_champion": "never"},
-    ).respond_with_json({"id": "sub_1", "status": "placed"})
+    ).respond_with_json(_submission(status="placed"))
 
     result = CliRunner().invoke(
         app,
@@ -138,7 +138,7 @@ def test_submit_policy_can_request_lineage_auto_champion(
         method="POST",
         headers={"Authorization": "Bearer token"},
         json={"league_id": LEAGUE_ID, "policy_version_id": POLICY_VERSION_ID, "auto_champion": "lineage"},
-    ).respond_with_json({"id": "sub_1", "status": "placed"})
+    ).respond_with_json(_submission(status="placed"))
 
     result = CliRunner().invoke(
         app,
@@ -170,7 +170,7 @@ def test_submit_policy_no_open_browser_skips_launch(
     httpserver.expect_request(
         "/observatory/v2/league-submissions",
         method="POST",
-    ).respond_with_json({"id": "sub_1", "status": "placed"})
+    ).respond_with_json(_submission(status="placed"))
 
     result = CliRunner().invoke(
         app,
@@ -200,7 +200,7 @@ def test_submit_policy_pending_submission_opens_status_page(
     httpserver.expect_request(
         "/observatory/v2/league-submissions",
         method="POST",
-    ).respond_with_json({"id": "sub_1", "status": "pending"})
+    ).respond_with_json(_submission(status="pending"))
 
     result = CliRunner().invoke(
         app,
@@ -284,4 +284,33 @@ def _policy_version(*, version: int) -> dict[str, object]:
         "user_id": "debug_user_id",
         "tags": {},
         "attributes": {"kind": "docker-img"},
+    }
+
+
+def _submission(
+    *,
+    status: str,
+    id: str = "sub_1",
+    membership_id: str | None = None,
+) -> dict[str, object]:
+    return {
+        "id": id,
+        "status": status,
+        "league": {
+            "id": LEAGUE_ID,
+            "name": "Paint Arena",
+            "game": {
+                "id": "game_1",
+                "name": "Paint Arena",
+                "created_at": "2026-05-11T10:00:00Z",
+            },
+            "created_at": "2026-05-11T10:00:00Z",
+        },
+        "policy_version": {
+            "id": POLICY_VERSION_ID,
+            "policy": {"id": POLICY_ID, "name": "paintbot"},
+            "version": 3,
+        },
+        "league_policy_membership_id": membership_id,
+        "created_at": "2026-05-11T12:00:00Z",
     }

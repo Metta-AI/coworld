@@ -728,11 +728,12 @@ The non-CLI flow is an API sequence with a Docker registry step:
    secret environment variables (uploaded via `POST /stats/policy-secret-envs` and referenced by ID).
 6. `POST /v2/league-submissions` with the returned policy version ID and target league.
 
-Use the Python upload client if you want the API calls without hand-writing request models:
+Use the Python upload client for the registry steps and the Coworld API client for league submission:
 
 ```python
 from uuid import UUID
 
+from coworld.api_client import CoworldApiClient
 from coworld.upload import CoworldUploadClient
 from softmax.auth import get_api_server
 
@@ -745,6 +746,8 @@ with CoworldUploadClient.from_login(server_url=server) as client:
         run=["python", "-m", "coworld.examples.paintarena.player.player"],
         secret_env={"USE_BEDROCK": "true"},
     )
+
+with CoworldApiClient.from_login(server_url=server) as client:
     submission = client.submit_to_league("league_...", UUID(policy_version.id))
 ```
 

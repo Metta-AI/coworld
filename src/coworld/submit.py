@@ -5,9 +5,9 @@ from typing import Any
 
 import typer
 
+from coworld.api_client import AutoChampion, CoworldApiClient, PolicyVersionRow
 from coworld.cli_support import console, observatory_web_url
 from coworld.config import DEFAULT_SUBMIT_SERVER
-from coworld.upload import AutoChampion, CoworldUploadClient, PolicyVersionRow
 
 
 def parse_policy_identifier(identifier: str) -> tuple[str, int | None]:
@@ -23,7 +23,7 @@ def parse_policy_identifier(identifier: str) -> tuple[str, int | None]:
     return name, version
 
 
-def _resolve_policy_version(client: CoworldUploadClient, policy_identifier: str) -> PolicyVersionRow:
+def _resolve_policy_version(client: CoworldApiClient, policy_identifier: str) -> PolicyVersionRow:
     name, version = parse_policy_identifier(policy_identifier)
     policy_version = client.lookup_policy_version(name=name, version=version)
     if policy_version is None:
@@ -43,7 +43,7 @@ def submit_policy_to_league_cmd(
     auto_champion: AutoChampion = AutoChampion.always,
     preferences: dict[str, Any] | None = None,
 ) -> None:
-    with CoworldUploadClient.from_login(server_url=server) as client:
+    with CoworldApiClient.from_login(server_url=server) as client:
         policy_version = _resolve_policy_version(client, policy_identifier)
 
         version_label = f":v{policy_version.version}"

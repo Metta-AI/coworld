@@ -782,7 +782,7 @@ def _resolve_policy_filter(client: CoworldApiClient, policy: str) -> UUID:
         version_hint = f":v{version}" if version is not None else ""
         console.print(f"[red]Policy '{name}{version_hint}' not found.[/red]")
         raise typer.Exit(1)
-    return row.resolved_id
+    return row.id
 
 
 def _reporter_outputs_summary(outputs: list[Any]) -> str:

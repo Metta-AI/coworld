@@ -17,11 +17,9 @@ import zipfile
 from collections.abc import Iterator
 from dataclasses import dataclass
 from datetime import datetime
-from enum import Enum
 from pathlib import Path
 from typing import Any, Literal, Self
 from urllib.parse import quote
-from uuid import UUID
 
 import httpx
 import typer
@@ -149,19 +147,6 @@ class CoworldListEntry(BaseModel):
     canonical: bool
 
 
-class LeagueSubmissionResponse(BaseModel):
-    id: str
-    status: str
-    league_policy_membership_id: str | None = None
-    notes: str | None = None
-
-
-class AutoChampion(str, Enum):
-    always = "always"
-    never = "never"
-    lineage = "lineage"
-
-
 class CoworldLeagueSeedResponse(BaseModel):
     id: str
     coworld_name: str
@@ -251,17 +236,6 @@ class HostedGameJoinResponse(BaseModel):
     slot: int | None = None
     player: HostedGameJoinPlayer | None = None
     spectator: HostedGameJoinSpectator | None = None
-
-
-class PolicyVersionRow(BaseModel):
-    id: UUID
-    name: str
-    version: int
-
-
-class PolicyVersionsResponse(BaseModel):
-    entries: list[PolicyVersionRow]
-    total_count: int
 
 
 class ImageUploadResponse(BaseModel):
@@ -577,44 +551,6 @@ class CoworldUploadClient:
             if len(coworlds) < limit:
                 return
             offset += limit
-
-    def lookup_policy_version(self, *, name: str, version: int | None = None) -> PolicyVersionRow | None:
-        params: dict[str, Any] = {"mine": "true", "name_exact": name, "limit": 100}
-        if version is not None:
-            params["version"] = str(version)
-        response = self._http_client.get(
-            "/stats/policy-versions",
-            headers=self._headers(),
-            params=params,
-            timeout=60.0,
-        )
-        _raise_for_status(response)
-        versions = PolicyVersionsResponse.model_validate(response.json()).entries
-        return versions[0] if versions else None
-
-    def submit_to_league(
-        self,
-        league_id: str,
-        policy_version_id: UUID,
-        *,
-        auto_champion: AutoChampion = AutoChampion.always,
-        preferences: dict[str, Any] | None = None,
-    ) -> LeagueSubmissionResponse:
-        payload: dict[str, Any] = {
-            "league_id": league_id,
-            "policy_version_id": str(policy_version_id),
-            "auto_champion": auto_champion.value,
-        }
-        if preferences is not None:
-            payload["preferences"] = preferences
-        response = self._http_client.post(
-            "/v2/league-submissions",
-            headers=self._headers(),
-            json=payload,
-            timeout=120.0,
-        )
-        _raise_for_status(response)
-        return LeagueSubmissionResponse.model_validate(response.json())
 
     def create_league_seed(
         self,

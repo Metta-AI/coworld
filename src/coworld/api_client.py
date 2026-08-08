@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from collections.abc import Iterable
 from datetime import datetime
+from enum import Enum
 from typing import Annotated, Any, Literal, Self
 from uuid import UUID
 
@@ -133,6 +134,12 @@ class LeagueSubmissionPublic(CoworldAPIModel):
     league_policy_membership_id: str | None = None
     notes: str | None = None
     created_at: datetime
+
+
+class AutoChampion(str, Enum):
+    always = "always"
+    never = "never"
+    lineage = "lineage"
 
 
 # The Campaign*Public models are hand-maintained mirrors of the campaign route
@@ -511,23 +518,9 @@ class CoworldReplaySessionResponse(CoworldAPIModel):
 
 
 class PolicyVersionRow(CoworldAPIModel):
-    id: UUID | None = None
-    policy_version_id: UUID | None = None
-    name: str | None = None
-    policy_name: str | None = None
+    id: UUID
+    name: str
     version: int
-
-    @property
-    def resolved_id(self) -> UUID:
-        resolved = self.id or self.policy_version_id
-        assert resolved is not None, "policy version row is missing an id"
-        return resolved
-
-    @property
-    def resolved_name(self) -> str:
-        resolved = self.name or self.policy_name
-        assert resolved is not None, "policy version row is missing a name"
-        return resolved
 
 
 class PolicyVersionsResponse(CoworldAPIModel):
@@ -849,6 +842,28 @@ class CoworldApiClient:
         if limit is not None:
             params["limit"] = limit
         return self._get("/v2/league-submissions", list[LeagueSubmissionPublic], params=params)
+
+    def submit_to_league(
+        self,
+        league_id: str,
+        policy_version_id: UUID,
+        *,
+        auto_champion: AutoChampion = AutoChampion.always,
+        preferences: dict[str, Any] | None = None,
+    ) -> LeagueSubmissionPublic:
+        payload: dict[str, Any] = {
+            "league_id": league_id,
+            "policy_version_id": str(policy_version_id),
+            "auto_champion": auto_champion.value,
+        }
+        if preferences is not None:
+            payload["preferences"] = preferences
+        return self._post(
+            "/v2/league-submissions",
+            LeagueSubmissionPublic,
+            json=payload,
+            timeout=120.0,
+        )
 
     def list_episode_requests(
         self,

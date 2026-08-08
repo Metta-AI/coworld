@@ -16,7 +16,7 @@ from rich import box
 from rich.table import Table
 from typer.core import TyperCommand
 
-from coworld.api_client import CoworldApiClient
+from coworld.api_client import AutoChampion, CoworldApiClient
 from coworld.bundle import build_coworld_manifest
 from coworld.campaign_cli import register_campaign_commands
 from coworld.certification_report import write_certification_report
@@ -52,7 +52,6 @@ from coworld.submit import submit_policy_to_league_cmd
 from coworld.tournament_cli import register_tournament_commands
 from coworld.types import StepResult, TranscriptStep
 from coworld.upload import (
-    AutoChampion,
     ContainerImageResponse,
     CoworldCertificationStatus,
     CoworldLeagueSeedRebindChange,
@@ -150,7 +149,7 @@ def _resolve_policy_version_id(client: CoworldApiClient, ref: str) -> str:
     row = client.lookup_policy_version(name=name, version=version)
     if row is None:
         raise typer.BadParameter(f"policy version not found (mine): {name}:v{version}")
-    return str(row.resolved_id)
+    return str(row.id)
 
 
 @counterfactual_app.command("create")
