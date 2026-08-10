@@ -32,7 +32,6 @@ from coworld.upload import (
     _certification_code_digest,
     _certified_manifest_cache_path,
     _humanize_reporter_id,
-    _load_current_token,
     _load_string_cache,
     _local_image_client_hash,
     _local_image_tag,
@@ -89,7 +88,8 @@ def test_upload_client_token_lookup_uses_server_url(monkeypatch: pytest.MonkeyPa
 
     monkeypatch.setattr("softmax.auth.load_current_token", fake_load_current_token)
 
-    assert _load_current_token(server_url="http://localhost:3102/api") == "token"
+    with CoworldUploadClient.from_login(server_url="http://localhost:3102/api"):
+        pass
     assert requested_servers == ["http://localhost:3102/api"]
 
 
@@ -1270,7 +1270,6 @@ def test_upload_coworld_surfaces_server_error_detail(
     image_id = "img_00000000-0000-0000-0000-000000000040"
     softmax_image_uri = "123456789012.dkr.ecr.us-east-1.amazonaws.com/coworld/user/unit-test-runtime@sha256:digest"
 
-    monkeypatch.setattr("coworld.upload._load_current_token", lambda *, server_url: "token")
     monkeypatch.setattr("coworld.upload.certify_coworld", lambda manifest_path, *, timeout_seconds: None)
     monkeypatch.setattr("coworld.upload.assert_docker_image_reachable", lambda *_args, **_kwargs: None)
     monkeypatch.setattr("coworld.upload._local_image_client_hash", lambda image: "sha256:client-hash")

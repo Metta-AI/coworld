@@ -24,6 +24,7 @@ from urllib.parse import quote
 import httpx
 import typer
 from pydantic import BaseModel, Field
+from softmax import auth as softmax_auth
 
 from coworld.bundle import resolve_registry_image_ref
 from coworld.certifier import EXECUTABLE_TRANSCRIPT_PATH, certify_coworld, load_coworld_package
@@ -346,7 +347,7 @@ class CoworldUploadClient:
 
     @classmethod
     def from_login(cls, *, server_url: str) -> Self:
-        token = _load_current_token(server_url=server_url)
+        token = softmax_auth.load_current_token(server=server_url)
         if token is None:
             raise RuntimeError(f"Not authenticated. Run: uv run softmax login --server {server_url}")
         return cls(server_url=server_url, token=token)
@@ -1301,12 +1302,6 @@ def _raise_for_status(response: httpx.Response) -> None:
             f"Request to {response.request.method} {response.request.url.path} failed with HTTP {response.status_code}"
         )
         raise RuntimeError(f"{message}: {body}" if body else message)
-
-
-def _load_current_token(*, server_url: str) -> str | None:
-    from softmax.auth import load_current_token  # noqa: PLC0415
-
-    return load_current_token(server=server_url)
 
 
 def upload_coworld_cmd(

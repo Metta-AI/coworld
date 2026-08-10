@@ -8,6 +8,7 @@ from uuid import UUID
 
 import httpx
 from pydantic import BaseModel, ConfigDict, Field, TypeAdapter, computed_field
+from softmax import auth as softmax_auth
 
 
 class CoworldAPIModel(BaseModel):
@@ -624,7 +625,7 @@ class CoworldApiClient:
 
     @classmethod
     def from_login(cls, *, server_url: str) -> Self:
-        token = _load_current_token(server_url=server_url)
+        token = softmax_auth.load_current_token(server=server_url)
         if token is None:
             raise RuntimeError(f"Not authenticated. Run: uv run softmax login --server {server_url}")
         return cls(server_url=server_url, token=token)
@@ -1125,9 +1126,3 @@ def _raise_for_status(response: httpx.Response) -> None:
     if response.is_error and detail:
         raise RuntimeError(f"Request failed ({response.status_code}) for {response.request.url.path}: {detail}")
     response.raise_for_status()
-
-
-def _load_current_token(*, server_url: str) -> str | None:
-    from softmax.auth import load_current_token  # noqa: PLC0415
-
-    return load_current_token(server=server_url)
