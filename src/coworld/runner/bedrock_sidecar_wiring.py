@@ -9,6 +9,8 @@ BEDROCK_SIDECAR_TOKEN_VOLUME_NAME = "bedrock-sidecar-aws-token"
 BEDROCK_SIDECAR_TOKEN_MOUNT_PATH = "/var/run/secrets/bedrock-sidecar"
 BEDROCK_SIDECAR_TOKEN_PATH = "token"
 BEDROCK_SIDECAR_TOKEN_FILE = f"{BEDROCK_SIDECAR_TOKEN_MOUNT_PATH}/{BEDROCK_SIDECAR_TOKEN_PATH}"
+BEDROCK_SIDECAR_CONTRACT_VERSION = "core-v1"
+BEDROCK_SIDECAR_HEALTH_PATH = f"/healthz/{BEDROCK_SIDECAR_CONTRACT_VERSION}"
 BEDROCK_PROMPT_PREFIX_CONTROL_CONFIG_MAP_NAME = "bedrock-prompt-prefix-measurement"
 BEDROCK_PROMPT_PREFIX_ENABLED_PATH = f"{BEDROCK_SIDECAR_TOKEN_MOUNT_PATH}/prompt-prefix-measurement-enabled"
 BEDROCK_RUNTIME_ENDPOINT_TEMPLATE = "https://bedrock-runtime.{region}.amazonaws.com"
@@ -60,7 +62,6 @@ def build_bedrock_sidecar(
     openrouter_capture_payloads: bool = True,
     spend_limit_usd: str | None = None,
     pricing_json: str | None = None,
-    cache_points: bool = True,
     prompt_prefix_sample_rate: float = 0.0,
 ) -> client.V1Container:
     upstream = upstream_endpoint or BEDROCK_RUNTIME_ENDPOINT_TEMPLATE.format(region=region)
@@ -112,10 +113,10 @@ def build_bedrock_sidecar(
         # auto-terminated when the player container exits and never holds the pod open.
         restart_policy="Always",
         env=[
+            client.V1EnvVar(name="BEDROCK_SIDECAR_CONTRACT_VERSION", value=BEDROCK_SIDECAR_CONTRACT_VERSION),
             client.V1EnvVar(name="BEDROCK_SIDECAR_LISTEN_PORT", value=str(listen_port)),
             client.V1EnvVar(name="BEDROCK_SIDECAR_REGION", value=region),
             client.V1EnvVar(name="BEDROCK_SIDECAR_UPSTREAM_ENDPOINT", value=upstream),
-            client.V1EnvVar(name="BEDROCK_SIDECAR_CACHE_POINTS", value="true" if cache_points else "false"),
             client.V1EnvVar(
                 name="BEDROCK_SIDECAR_REQUEST_METADATA",
                 value=serialize_bedrock_request_metadata(metadata),
@@ -172,7 +173,7 @@ def _healthz_probe_command(listen_port: int) -> list[str]:
     return [
         "python",
         "-c",
-        f"import urllib.request; urllib.request.urlopen('http://127.0.0.1:{listen_port}/healthz', timeout=2)",
+        f"import urllib.request; urllib.request.urlopen('http://127.0.0.1:{listen_port}{BEDROCK_SIDECAR_HEALTH_PATH}', timeout=2)",
     ]
 
 

@@ -452,8 +452,9 @@ def _create_player_pod(
     # thread-pool env to the limit so the player behaves like an N-core box on any node size; the
     # author's own env still wins if they set these explicitly.
     player_env = _player_thread_pool_env(player_cpu_limit) | dict(player.env) | dict(policy_secret_env)
-    bedrock_sidecar_enabled = os.environ.get("BEDROCK_SIDECAR_ENABLED") == "true" and bedrock_enablement.enabled
-    if bedrock_sidecar_enabled:
+    uses_bedrock = bedrock_enablement.enabled
+    uses_sidecar = uses_bedrock and os.environ.get("COWORLD_LOCAL_DEV") != "true"
+    if uses_sidecar:
         bedrock_sidecar_port = int(os.environ["BEDROCK_SIDECAR_PORT"])
         # Strip both the direct-access env and the reserved sidecar keys from the user's
         # policy/secret env, then apply platform-owned Bedrock app env LAST so it wins.
@@ -469,7 +470,7 @@ def _create_player_pod(
             for ev in bedrock_app_endpoint_env(bedrock_sidecar_port, os.environ["COWORLD_BEDROCK_REGION"])
         }
         player_env = player_env | {"USE_BEDROCK": "true"} | endpoint_env
-    elif bedrock_enablement.enabled:
+    elif uses_bedrock:
         bedrock_region = os.environ["COWORLD_BEDROCK_REGION"]
         player_env = {"AWS_REGION": bedrock_region, "AWS_DEFAULT_REGION": bedrock_region} | player_env
     player_ws_url = _player_service_ws_url(service_name, slot, token)
@@ -546,7 +547,7 @@ def _create_player_pod(
     # Native sidecar: an initContainer with restartPolicy=Always, NOT a regular container —
     # a regular container running the long-lived proxy would keep this restartPolicy=Never pod
     # Running after the player exits instead of letting it reach a terminal phase.
-    if bedrock_sidecar_enabled:
+    if uses_sidecar:
         # Skip the player app AND the sidecar: the sidecar self-provides its full IRSA env, so
         # the webhook must not also inject a conflicting token path.
         pod_annotations["eks.amazonaws.com/skip-containers"] = f"player,{BEDROCK_SIDECAR_CONTAINER_NAME}"
@@ -554,7 +555,6 @@ def _create_player_pod(
         pod_volumes = [bedrock_sidecar_token_volume(prompt_prefix_measurement=prompt_prefix_sample_rate > 0)]
         init_containers.append(
             build_bedrock_sidecar(
-                cache_points=os.environ.get("BEDROCK_SIDECAR_CACHE_POINTS", "true") == "true",
                 metadata=player_bedrock_metadata.model_copy(update={"metadata_origin": "bedrock_sidecar"}),
                 region=os.environ["COWORLD_BEDROCK_REGION"],
                 listen_port=bedrock_sidecar_port,
@@ -604,7 +604,7 @@ def _create_player_pod(
         spec=client.V1PodSpec(
             restart_policy="Never",
             service_account_name=_player_service_account_name(bedrock_enablement),
-            automount_service_account_token=False if bedrock_sidecar_enabled else None,
+            automount_service_account_token=False if uses_sidecar else None,
             node_selector=_workload_node_selector(),
             tolerations=_workload_tolerations(),
             volumes=pod_volumes,
@@ -1030,7 +1030,7 @@ def _workload_tolerations() -> list[client.V1Toleration] | None:
 
 def main() -> None:
     parser = argparse.ArgumentParser()
-    parser.add_argument("command", choices=("init-config", "run"))
+    parser.add_argument("command", choices=("init-config", "run-core-sidecars-v1"))
     args = parser.parse_args()
     if args.command == "init-config":
         init_config_from_env()

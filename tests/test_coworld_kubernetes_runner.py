@@ -38,6 +38,13 @@ from coworld.runner.runner import EpisodeArtifacts, EpisodeRunSpec, PlayerLaunch
 from coworld.types import CoworldEpisodeJobSpec, CoworldHumanPlayerSpec
 
 
+def test_legacy_run_command_fails_closed(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(sys, "argv", ["kubernetes_runner", "run"])
+
+    with pytest.raises(SystemExit, match="2"):
+        kubernetes_runner.main()
+
+
 @pytest.fixture(autouse=True)
 def _player_service_wait_env(monkeypatch):
     monkeypatch.setenv("COWORLD_COORDINATOR_IMAGE", "coworld-coordinator:latest")
@@ -1647,7 +1654,6 @@ def test_create_player_pod_injects_policy_secret_env(monkeypatch):
     core_v1 = SimpleNamespace(
         create_namespaced_pod=lambda *, namespace, body: created.update({"namespace": namespace, "body": body})
     )
-    monkeypatch.delenv("BEDROCK_SIDECAR_ENABLED", raising=False)
     monkeypatch.setenv("COWORLD_WORKLOAD_TYPE", "jobs")
     monkeypatch.setenv("COWORLD_CAPACITY_TYPE", "on-demand")
     monkeypatch.setenv("COWORLD_BEDROCK_REGION", "us-east-1")
@@ -1670,7 +1676,6 @@ def test_create_player_pod_injects_policy_secret_env(monkeypatch):
         player,
         {
             "ANTHROPIC_API_KEY": "sk-ant-test",
-            "USE_BEDROCK": "true",
             "BEDROCK_MODEL": "us.amazon.nova-micro-v1:0",
         },
         "job-id",
@@ -1687,10 +1692,7 @@ def test_create_player_pod_injects_policy_secret_env(monkeypatch):
     env = {env_var.name: env_var.value for env_var in container.env}
     assert env["PUBLIC_SETTING"] == "visible"
     assert env["ANTHROPIC_API_KEY"] == "sk-ant-test"
-    assert env["USE_BEDROCK"] == "true"
     assert env["BEDROCK_MODEL"] == "us.amazon.nova-micro-v1:0"
-    assert env["AWS_REGION"] == "us-east-1"
-    assert env["AWS_DEFAULT_REGION"] == "us-east-1"
     assert "AWS_ENDPOINT_URL_BEDROCK_RUNTIME" not in env
     assert env["COWORLD_PLAYER_WS_URL"] == "ws://game-service:8080/player?slot=0&token=slot-token"
     assert env["COGAMES_ENGINE_WS_URL"] == "ws://game-service:8080/player?slot=0&token=slot-token"
@@ -1705,7 +1707,7 @@ def test_create_player_pod_injects_policy_secret_env(monkeypatch):
     assert pod.metadata.labels["softmax.com/job-id"] == "job-id"
     assert pod.metadata.labels["coworld-player-slot"] == "0"
     assert pod.spec.node_selector == {"workload-type": "jobs", "karpenter.sh/capacity-type": "on-demand"}
-    assert pod.spec.service_account_name == "episode-runner"
+    assert pod.spec.service_account_name is None
     assert pod.spec.volumes is None
     assert pod.spec.automount_service_account_token is None
     wait_for_game = pod.spec.init_containers[0]
@@ -1792,7 +1794,6 @@ socket.socket = FlakySocket
 def test_create_player_pod_applies_cpu_limit_and_pins_thread_pools(monkeypatch):
     created: dict[str, Any] = {}
     core_v1 = SimpleNamespace(create_namespaced_pod=lambda *, namespace, body: created.update({"body": body}))
-    monkeypatch.delenv("BEDROCK_SIDECAR_ENABLED", raising=False)
     # An author who pins their own thread count keeps it; the limit only fills the unset knobs.
     player = PlayerLaunchSpec(image="paintbot:latest", run=(), env={"OMP_NUM_THREADS": "3"})
 
@@ -1815,7 +1816,6 @@ def test_create_player_pod_applies_cpu_limit_and_pins_thread_pools(monkeypatch):
 def test_create_player_pod_without_cpu_limit_omits_limit_and_thread_env(monkeypatch):
     created: dict[str, Any] = {}
     core_v1 = SimpleNamespace(create_namespaced_pod=lambda *, namespace, body: created.update({"body": body}))
-    monkeypatch.delenv("BEDROCK_SIDECAR_ENABLED", raising=False)
     player = PlayerLaunchSpec(image="paintbot:latest", run=(), env={})
 
     kubernetes_runner._create_player_pod(
@@ -1830,11 +1830,44 @@ def test_create_player_pod_without_cpu_limit_omits_limit_and_thread_env(monkeypa
     assert "MKL_NUM_THREADS" not in env
 
 
+def test_local_bedrock_player_uses_direct_access_without_sidecar_infrastructure(monkeypatch):
+    created: dict[str, Any] = {}
+    core_v1 = SimpleNamespace(create_namespaced_pod=lambda *, namespace, body: created.update({"body": body}))
+    monkeypatch.setenv("COWORLD_LOCAL_DEV", "true")
+    monkeypatch.setenv("COWORLD_BEDROCK_REGION", "us-west-2")
+    monkeypatch.delenv("BEDROCK_SIDECAR_IMAGE", raising=False)
+    monkeypatch.delenv("BEDROCK_SIDECAR_ROLE_ARN", raising=False)
+
+    kubernetes_runner._create_player_pod(
+        core_v1,
+        "jobs",
+        "job-player-0",
+        0,
+        "slot-token",
+        PlayerLaunchSpec(image="paintbot:latest", run=(), env={}),
+        {"USE_BEDROCK": "true"},
+        "job-id",
+        "game-service",
+        "2",
+        "2Gi",
+        "",
+        [],
+    )
+
+    pod: Any = created["body"]
+    env = {env_var.name: env_var.value for env_var in pod.spec.containers[0].env}
+    assert env["AWS_REGION"] == "us-west-2"
+    assert env["AWS_DEFAULT_REGION"] == "us-west-2"
+    assert "AWS_ENDPOINT_URL_BEDROCK_RUNTIME" not in env
+    assert [container.name for container in pod.spec.init_containers] == ["wait-for-game-service"]
+    assert pod.spec.service_account_name == "episode-runner"
+    assert pod.spec.automount_service_account_token is None
+
+
 def test_create_player_pod_with_bedrock_sidecar_inverts_bedrock_access(monkeypatch):
     created: dict[str, Any] = {}
     core_v1 = SimpleNamespace(create_namespaced_pod=lambda *, namespace, body: created.update({"body": body}))
     monkeypatch.setenv("COWORLD_BEDROCK_REGION", "us-west-2")
-    monkeypatch.setenv("BEDROCK_SIDECAR_ENABLED", "true")
     monkeypatch.setenv("BEDROCK_SIDECAR_IMAGE", "ghcr.io/metta-ai/bedrock-sidecar:latest")
     monkeypatch.setenv("BEDROCK_SIDECAR_ROLE_ARN", "arn:aws:iam::583928386201:role/episode-runner-bedrock")
     monkeypatch.setenv("BEDROCK_SIDECAR_PORT", "19191")
@@ -1956,7 +1989,6 @@ def test_create_player_pod_sidecar_forwards_completion_s3_env(monkeypatch):
     created: dict[str, Any] = {}
     core_v1 = SimpleNamespace(create_namespaced_pod=lambda *, namespace, body: created.update({"body": body}))
     monkeypatch.setenv("COWORLD_BEDROCK_REGION", "us-west-2")
-    monkeypatch.setenv("BEDROCK_SIDECAR_ENABLED", "true")
     monkeypatch.setenv("BEDROCK_SIDECAR_IMAGE", "ghcr.io/metta-ai/bedrock-sidecar:latest")
     monkeypatch.setenv("BEDROCK_SIDECAR_ROLE_ARN", "arn:aws:iam::583928386201:role/episode-runner-bedrock")
     monkeypatch.setenv("BEDROCK_SIDECAR_PORT", "19191")
@@ -2003,44 +2035,6 @@ def test_create_player_pod_sidecar_forwards_completion_s3_env(monkeypatch):
     assert pod_name_env.value_from.field_ref.field_path == "metadata.name"
     control_projection = created["body"].spec.volumes[0].projected.sources[1].config_map
     assert control_projection.name == BEDROCK_PROMPT_PREFIX_CONTROL_CONFIG_MAP_NAME
-
-
-def test_create_player_pod_sidecar_forwards_cache_points_flag(monkeypatch):
-    """The worker forwards the dispatcher's cache-canary decision into the player sidecar:
-    BEDROCK_SIDECAR_CACHE_POINTS=false yields an attribution-only player sidecar."""
-    created: dict[str, Any] = {}
-    core_v1 = SimpleNamespace(create_namespaced_pod=lambda *, namespace, body: created.update({"body": body}))
-    monkeypatch.setenv("COWORLD_BEDROCK_REGION", "us-west-2")
-    monkeypatch.setenv("BEDROCK_SIDECAR_ENABLED", "true")
-    monkeypatch.setenv("BEDROCK_SIDECAR_IMAGE", "ghcr.io/metta-ai/bedrock-sidecar:latest")
-    monkeypatch.setenv("BEDROCK_SIDECAR_ROLE_ARN", "arn:aws:iam::583928386201:role/episode-runner-bedrock")
-    monkeypatch.setenv("BEDROCK_SIDECAR_PORT", "19191")
-    monkeypatch.delenv("BEDROCK_SIDECAR_UPSTREAM_ENDPOINT", raising=False)
-    monkeypatch.setenv("BEDROCK_SIDECAR_CACHE_POINTS", "false")
-
-    kubernetes_runner._create_player_pod(
-        core_v1,
-        "jobs",
-        "job-player-0",
-        0,
-        "slot-token",
-        PlayerLaunchSpec(image="ghcr.io/metta-ai/players/paintbot@sha256:player123", run=(), env={}),
-        {"USE_BEDROCK": "true"},
-        "job-id",
-        "game-service",
-        "2",
-        "2Gi",
-        "",
-        [],
-    )
-
-    sidecar: Any = next(
-        container
-        for container in created["body"].spec.init_containers
-        if container.name == BEDROCK_SIDECAR_CONTAINER_NAME
-    )
-    sidecar_values = {env_var.name: env_var.value for env_var in sidecar.env}
-    assert sidecar_values["BEDROCK_SIDECAR_CACHE_POINTS"] == "false"
 
 
 def test_create_player_pod_forwards_artifact_upload_url_for_its_slot(monkeypatch):

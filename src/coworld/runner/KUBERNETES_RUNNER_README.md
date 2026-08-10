@@ -70,11 +70,12 @@ namespace.
 
 ```bash
 python -m coworld.runner.kubernetes_runner init-config
-python -m coworld.runner.kubernetes_runner run
+python -m coworld.runner.kubernetes_runner run-core-sidecars-v1
 ```
 
-`init-config` and `run` are separate commands because Kubernetes init containers must finish before the game and worker
-containers start.
+`init-config` and `run-core-sidecars-v1` are separate commands because Kubernetes init containers must finish before
+the game and worker containers start. The versioned run command makes mixed coordinator/backend deployments fail
+closed instead of silently bypassing the core sidecars.
 
 ## Required Inputs
 
@@ -85,7 +86,7 @@ JOB_SPEC_URI
 COWORLD_WORKDIR=/coworld
 ```
 
-`run` also requires:
+`run-core-sidecars-v1` also requires:
 
 ```bash
 JOB_ID

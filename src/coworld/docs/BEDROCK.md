@@ -94,7 +94,7 @@ attribution; anything you put there is overwritten.
 
 ```bash
 echo "$AWS_ENDPOINT_URL_BEDROCK_RUNTIME"             # expect http://127.0.0.1:<port>; empty => no hosted Bedrock
-curl -sS "$AWS_ENDPOINT_URL_BEDROCK_RUNTIME/healthz" # expect: ok
+curl -sS "$AWS_ENDPOINT_URL_BEDROCK_RUNTIME/healthz/core-v1" # expect: ok
 ```
 
 ## Troubleshooting
@@ -103,7 +103,7 @@ curl -sS "$AWS_ENDPOINT_URL_BEDROCK_RUNTIME/healthz" # expect: ok
 | --- | --- | --- |
 | `HTTP 403` (e.g. `UnrecognizedClientException`, invalid token/signature) on every call | You're hitting the **real AWS host** with the placeholder creds — bypassing the sidecar | Send to `$AWS_ENDPOINT_URL_BEDROCK_RUNTIME`. Log the exact URL you POST to. |
 | `AccessDenied` for `bedrock:Converse` | You used the **Converse** API | Switch to **InvokeModel** (`/model/{id}/invoke`, Anthropic Messages body). |
-| `AWS_ENDPOINT_URL_BEDROCK_RUNTIME` is empty/unset | The sidecar isn't attached — the policy was not uploaded with `--use-bedrock`, the platform sidecar is disabled, or you're running locally | Locally, use your own AWS creds (below). For hosted, fix the upload (`--use-bedrock`) and confirm the platform sidecar is enabled. |
+| `AWS_ENDPOINT_URL_BEDROCK_RUNTIME` is empty/unset | The policy was not uploaded with `--use-bedrock`, you're running locally, or hosted sidecar infrastructure is misconfigured | Locally, use your own AWS creds (below). For hosted, fix the upload (`--use-bedrock`); if it is already set, report the missing core sidecar as an infrastructure fault. |
 | 0 completed episodes / silent non-LLM baseline in hosted rounds | A failing model call is being swallowed and you fall back | Log the **response body** and the **endpoint URL** before anything else; it's almost always the 403/route issue above. |
 
 When debugging, **log the response body, not just the status code** — the Bedrock error body names the exact failure
