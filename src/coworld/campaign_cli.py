@@ -1,7 +1,8 @@
 """`coworld campaign` — the player-facing campaign API.
 
-Read the board and your battle history, and manage your player's standing-orders
-strategy prompt (the text the league strategist follows each round).
+Read the board and your battle history, manage your player's standing-orders
+strategy prompt (the text the league strategist follows each round), and equip
+your player's perk loadout.
 """
 
 from __future__ import annotations
@@ -42,7 +43,7 @@ def _resolve_player_id(board: CampaignBoardPublic, player: str | None) -> str:
 def register_campaign_commands(app: typer.Typer) -> None:
     campaign_app = typer.Typer(
         no_args_is_help=True,
-        help="Campaign leagues: read the board and your history, set your strategy prompt.",
+        help="Campaign leagues: read the board and your history, set your strategy prompt and perks.",
     )
     app.add_typer(campaign_app, name="campaign")
 
@@ -176,6 +177,69 @@ def register_campaign_commands(app: typer.Typer) -> None:
             player_id = _resolve_player_id(board, player)
             client.set_campaign_prompt(league_id, player_id=player_id, prompt=prompt)
         console.print(f"[green]Prompt saved[/green] for player {player_id} ({len(prompt)} chars)")
+
+    @campaign_app.command("perks")
+    def campaign_perks(
+        league: Annotated[str, typer.Argument(help="League id or name.")],
+        server: Annotated[str, _SERVER_OPTION] = DEFAULT_SUBMIT_SERVER,
+        json_output: Annotated[bool, typer.Option("--json", help="Print raw JSON.")] = False,
+    ) -> None:
+        """The coworld's perk vocabulary and every player's equipped loadout."""
+        with CoworldApiClient.from_login(server_url=server) as client:
+            league_id = resolve_league_id(client, league)
+            board = client.get_campaign_board(league_id)
+            maps = client.get_campaign_maps(league_id)
+        if json_output:
+            emit_json(
+                {
+                    "perks": [p.model_dump(mode="json") for p in maps.perks],
+                    "max_perks": maps.max_perks,
+                    "default_perks": maps.default_perks,
+                    "equipped": board.perks,
+                }
+            )
+            return
+        if not maps.perks:
+            console.print("[dim]This coworld offers no perks.[/dim]")
+            return
+        table = Table(box=box.SIMPLE, title=f"Perks on offer (equip up to {maps.max_perks})")
+        table.add_column("Perk")
+        table.add_column("Effect")
+        for option in maps.perks:
+            default = " [dim](default)[/dim]" if option.id in maps.default_perks else ""
+            table.add_row(f"{option.id}{default}", option.effect)
+        console.print(table)
+        names = {p.id: p.name for p in board.players}
+        for pid, loadout in sorted(board.perks.items(), key=lambda kv: names.get(kv[0], kv[0])):
+            marker = " [dim](you)[/dim]" if pid in board.viewer_player_ids else ""
+            console.print(f"{names.get(pid, pid)}{marker}: {', '.join(loadout)}")
+        unpicked = [p for p in board.players if p.id not in board.perks]
+        if unpicked:
+            console.print(f"[dim]On the default loadout: {', '.join(names[p.id] for p in unpicked)}[/dim]")
+
+    @campaign_app.command("set-perks")
+    def campaign_set_perks(
+        league: Annotated[str, typer.Argument(help="League id or name.")],
+        perks: Annotated[list[str] | None, typer.Argument(help="Perk names to equip (see `campaign perks`).")] = None,
+        clear: Annotated[
+            bool, typer.Option("--clear", help="Unequip everything; the coworld default loadout applies.")
+        ] = False,
+        player: Annotated[str | None, _PLAYER_OPTION] = None,
+        server: Annotated[str, _SERVER_OPTION] = DEFAULT_SUBMIT_SERVER,
+    ) -> None:
+        """Equip your player's perk loadout for every future battle."""
+        if clear == bool(perks):
+            raise typer.BadParameter("Pass perk names to equip, or --clear to unequip all — not both, not neither")
+        loadout = perks or []
+        with CoworldApiClient.from_login(server_url=server) as client:
+            league_id = resolve_league_id(client, league)
+            board = client.get_campaign_board(league_id)
+            player_id = _resolve_player_id(board, player)
+            client.set_campaign_perks(league_id, player_id=player_id, perks=loadout)
+        if loadout:
+            console.print(f"[green]Perks equipped[/green] for player {player_id}: {', '.join(loadout)}")
+        else:
+            console.print(f"[green]Perks cleared[/green] for player {player_id} — the default loadout applies")
 
     @campaign_app.command("conversation")
     def campaign_conversation(

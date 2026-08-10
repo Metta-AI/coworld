@@ -22,6 +22,7 @@ def _board(players: list[tuple[str, str]], viewer: list[str]) -> CampaignBoardPu
         frames=[],
         events=[],
         pending_round=None,
+        perks={},
     )
 
 

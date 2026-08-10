@@ -609,6 +609,15 @@ uv run coworld campaign set-prompt "CTF Campaign" "Hold the corners; strike only
 uv run coworld campaign set-prompt "CTF Campaign" --file strategy.txt
 ```
 
+Some coworlds offer perks — loadout picks that ride every battle your player captains. See what's on offer (with the
+per-player cap and the default loadout), who has equipped what, and set or clear your own:
+
+```bash
+uv run coworld campaign perks "CTF Campaign"
+uv run coworld campaign set-perks "CTF Campaign" armor scope
+uv run coworld campaign set-perks "CTF Campaign" --clear
+```
+
 Inspect the exact strategist payload (system rules, tools, rendered board context with your prompt embedded) that
 will be sent next round, or read the full exchange from a past round — what the strategist saw, said, and ordered
 (recent rounds only; owner-only, like prompts):
@@ -618,7 +627,7 @@ uv run coworld campaign full-prompt "CTF Campaign"
 uv run coworld campaign conversation "CTF Campaign" --round 12
 ```
 
-Every command takes `--json` (except `set-prompt`) for programmatic use, e.g. driving a strategy-tuning loop from the
+Every command takes `--json` (except `set-prompt` and `set-perks`) for programmatic use, e.g. driving a strategy-tuning loop from the
 same data the strategist sees. Prompts and full prompts are owner-only; boards and histories are visible to any
 authenticated viewer of the league.
 

@@ -179,6 +179,33 @@ class CampaignBoardPublic(CoworldAPIModel):
     frames: list[dict[str, Any]]
     events: list[dict[str, Any]]
     pending_round: dict[str, Any] | None
+    # player_id -> equipped perk names, for every player who has chosen any
+    # (public, like the board itself — perks print on every battle scorebug).
+    perks: dict[str, list[str]]
+
+
+class CampaignMapVariantPublic(CoworldAPIModel):
+    name: str
+    description: str
+
+
+class CampaignPerkOptionPublic(CoworldAPIModel):
+    id: str
+    effect: str
+
+
+class CampaignMapsPublic(CoworldAPIModel):
+    league_id: str
+    # Variant name/description keyed by map_ref — a superset of the board's
+    # cells' map_refs. Empty when the league's game has no coworld.
+    variants: dict[str, CampaignMapVariantPublic]
+    # The perk loadout the coworld offers, in the coworld's own order; empty
+    # for coworlds without perks.
+    perks: list[CampaignPerkOptionPublic]
+    # How many perks a player may equip.
+    max_perks: int
+    # The loadout an unpicked player fights under.
+    default_perks: list[str]
 
 
 class CampaignPromptPublic(CoworldAPIModel):
@@ -728,6 +755,21 @@ class CoworldApiClient:
     def get_campaign_full_prompt(self, league_id: str, *, player_id: str) -> CampaignFullPromptPublic:
         return self._get(
             f"/v2/leagues/{league_id}/campaign/full-prompt", CampaignFullPromptPublic, params={"player_id": player_id}
+        )
+
+    def get_campaign_maps(self, league_id: str) -> CampaignMapsPublic:
+        """The coworld's map-variant catalog and perk vocabulary. Changes only
+        when the league's coworld version changes."""
+        return self._get(f"/v2/leagues/{league_id}/campaign/maps", CampaignMapsPublic)
+
+    def set_campaign_perks(self, league_id: str, *, player_id: str, perks: list[str]) -> None:
+        """Equip the player's perk loadout; [] clears it (the coworld default
+        applies). Names must come from get_campaign_maps().perks — the server
+        rejects unknown names with a 422 that lists what the coworld offers."""
+        self._post(
+            f"/v2/leagues/{league_id}/campaign/perks",
+            dict[str, Any],
+            json={"player_id": player_id, "perks": perks},
         )
 
     def get_league_division_ladder(self, league_id: str) -> list[DivisionLadderEntryPublic]:
