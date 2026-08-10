@@ -796,10 +796,6 @@ class CoworldApiClient:
             DivisionLeaderboardsPublic | None,
         )
 
-    def get_division_leaderboard_tables(self, division_id: str) -> DivisionLeaderboardsPublic | None:
-        # TODO: delete compatibility shim after callers stop using table terminology.
-        return self.get_division_leaderboards(division_id)
-
     def list_rounds(
         self,
         *,
