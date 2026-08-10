@@ -56,6 +56,8 @@ def build_bedrock_sidecar(
     completions_prefix: str,
     flush_records: int,
     flush_seconds: float,
+    openrouter_archive_bucket: str | None = None,
+    openrouter_capture_payloads: bool = True,
     spend_limit_usd: str | None = None,
     pricing_json: str | None = None,
     cache_points: bool = True,
@@ -74,6 +76,17 @@ def build_bedrock_sidecar(
         if completions_bucket
         else []
     )
+    openrouter_archive_env = [
+        client.V1EnvVar(
+            name="BEDROCK_SIDECAR_OPENROUTER_CAPTURE_PAYLOADS",
+            value=str(openrouter_capture_payloads).lower(),
+        ),
+        *(
+            [client.V1EnvVar(name="BEDROCK_SIDECAR_OPENROUTER_ARCHIVE_BUCKET", value=openrouter_archive_bucket)]
+            if openrouter_archive_bucket
+            else []
+        ),
+    ]
     prompt_prefix_measurement_env = (
         [
             client.V1EnvVar(
@@ -108,6 +121,7 @@ def build_bedrock_sidecar(
                 value=serialize_bedrock_request_metadata(metadata),
             ),
             *completion_env,
+            *openrouter_archive_env,
             *prompt_prefix_measurement_env,
             client.V1EnvVar(
                 name="POD_NAME",

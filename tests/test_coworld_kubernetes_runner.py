@@ -1962,6 +1962,8 @@ def test_create_player_pod_sidecar_forwards_completion_s3_env(monkeypatch):
     monkeypatch.setenv("BEDROCK_SIDECAR_PORT", "19191")
     monkeypatch.delenv("BEDROCK_SIDECAR_UPSTREAM_ENDPOINT", raising=False)
     monkeypatch.setenv("BEDROCK_SIDECAR_COMPLETIONS_BUCKET", "softmax-bedrock-logs-583928386201")
+    monkeypatch.setenv("BEDROCK_SIDECAR_OPENROUTER_ARCHIVE_BUCKET", "softmax-openrouter-debug-archive")
+    monkeypatch.setenv("BEDROCK_SIDECAR_OPENROUTER_CAPTURE_PAYLOADS", "false")
     monkeypatch.setenv("BEDROCK_SIDECAR_COMPLETIONS_PREFIX", "sidecar-completions")
     monkeypatch.setenv("BEDROCK_SIDECAR_FLUSH_RECORDS", "200")
     monkeypatch.setenv("BEDROCK_SIDECAR_FLUSH_SECONDS", "30.0")
@@ -1993,6 +1995,8 @@ def test_create_player_pod_sidecar_forwards_completion_s3_env(monkeypatch):
     assert sidecar_values["BEDROCK_SIDECAR_COMPLETIONS_PREFIX"] == "sidecar-completions"
     assert sidecar_values["BEDROCK_SIDECAR_FLUSH_RECORDS"] == "200"
     assert sidecar_values["BEDROCK_SIDECAR_FLUSH_SECONDS"] == "30.0"
+    assert sidecar_values["BEDROCK_SIDECAR_OPENROUTER_ARCHIVE_BUCKET"] == "softmax-openrouter-debug-archive"
+    assert sidecar_values["BEDROCK_SIDECAR_OPENROUTER_CAPTURE_PAYLOADS"] == "false"
     assert sidecar_values["BEDROCK_SIDECAR_PROMPT_PREFIX_SAMPLE_RATE"] == "0.5"
     assert sidecar_values["BEDROCK_SIDECAR_PROMPT_PREFIX_ENABLED_PATH"] == BEDROCK_PROMPT_PREFIX_ENABLED_PATH
     pod_name_env = next(env_var for env_var in sidecar.env if env_var.name == "POD_NAME")
