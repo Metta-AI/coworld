@@ -1657,6 +1657,8 @@ def test_create_player_pod_injects_policy_secret_env(monkeypatch):
     monkeypatch.setenv("COWORLD_WORKLOAD_TYPE", "jobs")
     monkeypatch.setenv("COWORLD_CAPACITY_TYPE", "on-demand")
     monkeypatch.setenv("COWORLD_BEDROCK_REGION", "us-east-1")
+    monkeypatch.setenv("COWORLD_ID", "cow_11111111-1111-1111-1111-111111111111")
+    monkeypatch.setenv("COWORLD_LEAGUE_ID", "league_44444444-4444-4444-4444-444444444444")
     player = PlayerLaunchSpec(
         image="paintbot:latest",
         run=(),
@@ -1706,6 +1708,9 @@ def test_create_player_pod_injects_policy_secret_env(monkeypatch):
     # only show up as a hole in the CUR cost allocation column -- pin them here instead.
     assert pod.metadata.labels["softmax.com/job-id"] == "job-id"
     assert pod.metadata.labels["coworld-player-slot"] == "0"
+    # Cost-attribution identity forwarded by the dispatcher via the worker env.
+    assert pod.metadata.labels["coworld-id"] == "cow_11111111-1111-1111-1111-111111111111"
+    assert pod.metadata.labels["league-id"] == "league_44444444-4444-4444-4444-444444444444"
     assert pod.spec.node_selector == {"workload-type": "jobs", "karpenter.sh/capacity-type": "on-demand"}
     assert pod.spec.service_account_name is None
     assert pod.spec.volumes is None
@@ -1719,6 +1724,39 @@ def test_create_player_pod_injects_policy_secret_env(monkeypatch):
         "COWORLD_GAME_PORT": "8080",
         "COWORLD_GAME_WAIT_TIMEOUT_SECONDS": "60",
     }
+
+
+def test_create_player_pod_omits_attribution_labels_without_forwarded_env(monkeypatch):
+    # League-less episodes get no COWORLD_LEAGUE_ID; a worker running without the
+    # attribution env (e.g. dispatched before the dispatcher forwarded it) must not
+    # stamp empty label values.
+    created: dict[str, Any] = {}
+    core_v1 = SimpleNamespace(
+        create_namespaced_pod=lambda *, namespace, body: created.update({"namespace": namespace, "body": body})
+    )
+    monkeypatch.delenv("BEDROCK_SIDECAR_ENABLED", raising=False)
+    monkeypatch.delenv("COWORLD_ID", raising=False)
+    monkeypatch.delenv("COWORLD_LEAGUE_ID", raising=False)
+
+    kubernetes_runner._create_player_pod(
+        core_v1,
+        "jobs",
+        "job-player-0",
+        0,
+        "slot-token",
+        PlayerLaunchSpec(image="paintbot:latest", run=(), env={}),
+        {},
+        "job-id",
+        "game-service",
+        "2",
+        "2Gi",
+        "",
+        [],
+    )
+
+    labels = created["body"].metadata.labels
+    assert "coworld-id" not in labels
+    assert "league-id" not in labels
 
 
 def test_player_service_gate_waits_for_delayed_endpoint():

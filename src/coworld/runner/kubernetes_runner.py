@@ -598,6 +598,14 @@ def _create_player_pod(
                 "softmax.com/job-id": job_id,
                 "coworld-component": "player",
                 "coworld-player-slot": str(slot),
+                # coworld-id / league-id are AWS cost-attribution labels, forwarded by the
+                # dispatcher through the worker env so player pods carry the same identity
+                # as the game pod. League-less episodes get no COWORLD_LEAGUE_ID.
+                **{
+                    label: value
+                    for label, env_name in (("coworld-id", "COWORLD_ID"), ("league-id", "COWORLD_LEAGUE_ID"))
+                    if (value := os.environ.get(env_name))
+                },
             },
             owner_references=owner_references,
         ),
