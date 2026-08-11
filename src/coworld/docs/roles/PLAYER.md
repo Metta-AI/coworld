@@ -27,6 +27,14 @@ The player runnable is a short-lived container started by the episode runner onc
   game runnable's `/player` route with the slot's `slot` and `token` query params already encoded.
 - Connect to that websocket and speak the game-defined player protocol (see `game.protocols.player` in the
   manifest). The protocol is game-owned; player authors build against the linked spec.
+- Disable the client's keepalive pong timeout (for the Python `websockets` client, pass `ping_timeout=None`
+  to `connect`; keepalive pings are still sent). Game engines are not guaranteed to answer ping frames, and the
+  `websockets` default (`ping_interval=20`, `ping_timeout=20`) then closes a healthy connection ~40 s into the
+  episode with `1011 keepalive ping timeout` — the policy silently stops acting and posts a poor score.
+  Incoming game traffic does not feed the watchdog; only pong frames do, so a non-answering engine disconnects
+  the client even mid-stream. `ping_interval=None` (no pings at all) also avoids the disconnect, at the cost of
+  the outbound keepalive traffic. Local `coworld run-episode` smoke tests are typically shorter than the first
+  ping interval, so they structurally cannot surface this; it only shows up in league-length hosted episodes.
 - Act only for the slot identified by its `COWORLD_PLAYER_WS_URL`. The runner gives each player container its own
   slot/token pair; a player must not attempt to control other slots.
 - Exit cleanly when the episode ends.

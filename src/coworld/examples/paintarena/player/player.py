@@ -15,7 +15,11 @@ logger = get_logger("paintarena.player")
 async def main() -> None:
     url = os.environ["COWORLD_PLAYER_WS_URL"]
     logger.info("connecting to %s", url)
-    async with websockets.connect(url) as websocket:
+    # ping_timeout=None: game engines are not required to answer WebSocket ping
+    # frames, and the default 20s pong timeout would silently close a healthy
+    # connection mid-episode when they don't (coworld#41). Keepalive pings are
+    # still sent so the connection carries a minimum of outbound traffic.
+    async with websockets.connect(url, ping_timeout=None) as websocket:
         async for raw_message in websocket:
             message = cast(dict[str, Any], json.loads(raw_message))
             if message["type"] == "final":
