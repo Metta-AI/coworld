@@ -126,7 +126,7 @@ def play_coworld(
     player_exit_timeout_seconds: float = DEFAULT_PLAYER_EXIT_TIMEOUT_SECONDS,
     on_ready: Callable[[PlaySession], None],
 ) -> PlayResult:
-    package = load_coworld_package(manifest_path)
+    package = load_coworld_package(manifest_path, tolerate_newer_fields=True)
     artifacts = EpisodeArtifacts.create(workspace, prefix="coworld-play-")
     if episode_request_path is not None and (variant_id is not None or player_images or player_run):
         raise ValueError("episode_request_path cannot be combined with variant_id, player_images, or player_run")
@@ -315,7 +315,7 @@ def replay_coworld(
     verify_replay: bool = False,
     on_ready: Callable[[ReplaySession], None],
 ) -> ReplaySession:
-    package = load_coworld_package(manifest_path)
+    package = load_coworld_package(manifest_path, tolerate_newer_fields=True)
     assert_docker_image_reachable(package.game.image, label="game.runnable.image")
     replay_path = replay_path.resolve()
     if not replay_path.is_file():

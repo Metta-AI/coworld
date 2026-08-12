@@ -80,6 +80,31 @@ def test_load_coworld_package_allows_tagless_historical_manifest(tmp_path: Path)
     assert "tags" not in package.manifest.model_dump(exclude_none=True)
 
 
+def _write_manifest_with_newer_fields(tmp_path: Path) -> Path:
+    coworld_manifest_path = _write_package_files(tmp_path)
+    manifest = json.loads(coworld_manifest_path.read_text(encoding="utf-8"))
+    manifest["future_top_level_field"] = ["metadata", "from", "a", "newer", "server"]
+    manifest["game"]["future_game_field"] = {"bundle": "sha256:abc"}
+    coworld_manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
+    return coworld_manifest_path
+
+
+def test_load_coworld_package_tolerates_newer_fields_for_consumers(tmp_path: Path) -> None:
+    coworld_manifest_path = _write_manifest_with_newer_fields(tmp_path)
+
+    package = load_coworld_package(coworld_manifest_path, tolerate_newer_fields=True)
+
+    assert package.manifest.game.name == "unit-test-game"
+    assert package.manifest.tags == ["test", "multiplayer", "real-time"]
+
+
+def test_load_coworld_package_rejects_newer_fields_for_authoring(tmp_path: Path) -> None:
+    coworld_manifest_path = _write_manifest_with_newer_fields(tmp_path)
+
+    with pytest.raises(PydanticValidationError, match="Extra inputs are not permitted"):
+        load_coworld_package(coworld_manifest_path)
+
+
 def test_load_coworld_package_requires_tags_for_certification(tmp_path: Path) -> None:
     coworld_manifest_path = _write_package_files(tmp_path)
     manifest = json.loads(coworld_manifest_path.read_text())

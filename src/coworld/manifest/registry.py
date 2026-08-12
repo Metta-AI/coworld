@@ -72,3 +72,12 @@ def to_runtime_manifest(api_version: str, document: dict[str, Any]) -> RuntimeMa
     reader = _READERS[version]
     author_manifest = reader.stored_model.model_validate(document, extra="ignore")
     return reader.converter(author_manifest)
+
+
+def read_downloaded_manifest(document: dict[str, Any]) -> RuntimeManifest:
+    """Read a platform-served manifest document (e.g. `coworld download` output).
+
+    Within one apiVersion new manifest fields are additive by contract, so a consumer
+    tolerates fields newer than its models instead of rejecting the server's output.
+    """
+    return to_runtime_manifest(_manifest_version(document), document)

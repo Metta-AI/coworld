@@ -6,6 +6,7 @@ from coworld.manifest.registry import (
     ManifestVersion,
     ValidatedManifest,
     manifest_schema_hash,
+    read_downloaded_manifest,
     to_runtime_manifest,
     validate_upload_manifest,
 )
@@ -18,6 +19,7 @@ __all__ = [
     "RuntimeManifest",
     "ValidatedManifest",
     "manifest_schema_hash",
+    "read_downloaded_manifest",
     "to_runtime_manifest",
     "validate_upload_manifest",
 ]

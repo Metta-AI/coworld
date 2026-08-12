@@ -28,7 +28,7 @@ from coworld.commissioner.protocol import (
     ScheduleRoundsRequest,
     ScheduleRoundsResponse,
 )
-from coworld.manifest import validate_upload_manifest
+from coworld.manifest import read_downloaded_manifest, validate_upload_manifest
 from coworld.manifest_validation import (
     game_config_with_tokens,
     infer_token_count_for_game_config,
@@ -148,10 +148,21 @@ class CertificationResult:
     graduated_at: datetime
 
 
-def load_coworld_package(manifest_path: Path, *, require_certification_tags: bool = False) -> CoworldPackage:
+def load_coworld_package(
+    manifest_path: Path,
+    *,
+    require_certification_tags: bool = False,
+    tolerate_newer_fields: bool = False,
+) -> CoworldPackage:
+    # Consumer flows (run-episode/play on a platform-served manifest) tolerate fields newer
+    # than this CLI's models; authoring flows (certify/upload) stay strict so unknown fields
+    # are caught before upload rather than silently dropped by model_dump.
     manifest_path = manifest_path.resolve()
     manifest = load_json_object(manifest_path)
-    typed_manifest = validate_upload_manifest(manifest).runtime_manifest
+    if tolerate_newer_fields:
+        typed_manifest = read_downloaded_manifest(manifest)
+    else:
+        typed_manifest = validate_upload_manifest(manifest).runtime_manifest
     if require_certification_tags and typed_manifest.tags is None:
         raise ValueError("Coworld certification requires at least three manifest tags")
     validate_coworld_manifest_game_configs(typed_manifest)
@@ -414,7 +425,9 @@ def load_coworld_episode_job_spec(episode_request_path: Path) -> CoworldEpisodeJ
 
 def load_manifest_episode_job_spec(package: CoworldPackage, episode_request_path: Path) -> CoworldEpisodeJobSpec:
     spec = load_coworld_episode_job_spec(episode_request_path)
-    if spec.manifest != package.manifest:
+    # Compare dumps, not models: a tolerantly-read package manifest is a stored-read
+    # subclass of CoworldManifest, and pydantic equality requires the same class.
+    if spec.manifest.model_dump() != package.manifest.model_dump():
         raise ValueError(f"episode request manifest does not match {package.manifest_path}")
     return spec
 

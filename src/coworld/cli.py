@@ -1206,7 +1206,7 @@ def run_episode(
     if episode_request_path is not None and (variant_id is not None or run):
         raise typer.BadParameter("episode request files cannot be combined with --variant or --run")
     with _materialized_manifest_path(manifest_uri, server=server) as manifest_path:
-        package = load_coworld_package(manifest_path)
+        package = load_coworld_package(manifest_path, tolerate_newer_fields=True)
         if episode_request_path is None:
             spec = build_manifest_episode_job_spec(
                 package,
