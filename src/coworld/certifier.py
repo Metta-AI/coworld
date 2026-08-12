@@ -655,6 +655,7 @@ def _run_local_certifier_episode(
         tokens=tokens,
         artifacts=artifacts,
         timeout_seconds=timeout_seconds,
+        require_websocket_pong=True,
     )
     run_episode_containers(run_spec, verify_replay=False)
 

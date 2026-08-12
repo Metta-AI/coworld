@@ -1543,12 +1543,14 @@ def test_run_kubernetes_episode_keeps_artifacts_authoritative_except_for_certifi
     startup_timeouts: list[float] = []
     player_start_timeouts: list[float] = []
     completion_waits: list[tuple[str, list[str], float]] = []
+    pong_requirements: list[bool] = []
 
     async def noop_async(*_args, **_kwargs):
         return None
 
-    async def record_global_startup_timeout(*_args, startup_timeout_seconds, on_connected, **_kwargs):
+    async def record_global_startup_timeout(*_args, startup_timeout_seconds, on_connected, require_pong, **_kwargs):
         startup_timeouts.append(startup_timeout_seconds)
+        pong_requirements.append(require_pong)
         on_connected()
 
     monkeypatch.setattr(kubernetes_runner, "STATE_PATH", state_path)
@@ -1628,6 +1630,7 @@ def test_run_kubernetes_episode_keeps_artifacts_authoritative_except_for_certifi
 
     assert created == [(1, "2", "2Gi", "")]
     assert startup_timeouts == [runner_module.LOBBY_RUNTIME_STARTUP_TIMEOUT_SECONDS]
+    assert pong_requirements == [episode_tags.get("source") == runner_module.CERTIFICATION_EPISODE_SOURCE]
     assert player_start_timeouts == [expected_player_start_timeout]
     assert completion_waits == expected_completion_waits
 

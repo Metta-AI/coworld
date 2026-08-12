@@ -335,6 +335,7 @@ def _run_kubernetes_episode(
                     timeout_seconds=max(0.0, player_start_deadline - time.monotonic()),
                 ),
                 on_connect_failure=lambda: _raise_if_player_pod_failed(core_v1, namespace, child_names),
+                require_pong=job.episode_tags.get("source") == CERTIFICATION_EPISODE_SOURCE,
             )
         )
         first_step = time.monotonic()

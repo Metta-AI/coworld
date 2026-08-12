@@ -1,11 +1,10 @@
 """Player runnables must disable the client WebSocket keepalive pong timeout.
 
-Game engines are not required to answer WebSocket ping frames, and the Python
-`websockets` client's default keepalive (ping_interval=20, ping_timeout=20)
-then silently closes the connection ~40 s into a hosted episode — long after
-the short local smoke episode has passed (coworld#41). Every bundled player
-must therefore connect with ping_timeout=None (pings are still sent; the
-client just never kills the connection over a missing pong).
+Certified game engines answer WebSocket Ping frames, but previously deployed
+engines may not. The Python `websockets` client's default keepalive
+(ping_interval=20, ping_timeout=20) then silently closes the connection ~40 s
+into a hosted episode — long after the short local smoke episode has passed
+(coworld#41). Every bundled player therefore retains ping_timeout=None.
 """
 
 from __future__ import annotations

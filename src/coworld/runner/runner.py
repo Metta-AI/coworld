@@ -22,6 +22,7 @@ import httpx
 import websockets
 from jsonschema.exceptions import ValidationError as JsonSchemaValidationError
 from pydantic import BaseModel, ConfigDict, Field, TypeAdapter
+from websockets.asyncio.client import ClientConnection
 from websockets.exceptions import ConnectionClosed, InvalidHandshake, InvalidStatus
 
 from coworld.runner.io import GamePlayerFailure, RunnerEpisodeError, RunnerErrorType
@@ -148,6 +149,7 @@ class EpisodeRunSpec:
     timeout_seconds: float
     container_prefix: str = LOCAL_EPISODE_CONTAINER_PREFIX
     secret_env: Mapping[str, str] = field(default_factory=dict)
+    require_websocket_pong: bool = False
 
 
 @dataclass(frozen=True)
@@ -490,6 +492,7 @@ def run_episode_containers(spec: EpisodeRunSpec, *, verify_replay: bool = True) 
                     f"ws://127.0.0.1:{port}/global",
                     timeout_seconds=spec.timeout_seconds,
                     on_connect_failure=lambda: _raise_if_local_player_exited(player_processes),
+                    require_pong=spec.require_websocket_pong,
                 )
             )
             _wait_for_game_exit(game_process, spec.artifacts.game_stderr_path, timeout_seconds=spec.timeout_seconds)
@@ -684,6 +687,7 @@ async def _require_global_message(
     startup_timeout_seconds: float = DEFAULT_RUNTIME_STARTUP_TIMEOUT_SECONDS,
     on_connected: Callable[[], None] | None = None,
     on_connect_failure: Callable[[], None] | None = None,
+    require_pong: bool = False,
 ) -> None:
     try:
         # max_size=None: a game's first global snapshot can exceed the 1 MiB
@@ -692,6 +696,8 @@ async def _require_global_message(
         async with websockets.connect(url, open_timeout=5, max_size=None) as websocket:
             if on_connected is not None:
                 await asyncio.to_thread(on_connected)
+            if require_pong:
+                await _require_websocket_pong(websocket, url)
             message = await asyncio.wait_for(
                 websocket.recv(),
                 timeout=min(timeout_seconds, startup_timeout_seconds),
@@ -712,6 +718,22 @@ async def _require_global_message(
             f"Global viewer received an empty message from {url}",
             error_type="game_contract_violation",
         )
+
+
+async def _require_websocket_pong(
+    websocket: ClientConnection,
+    url: str,
+    *,
+    timeout_seconds: float = 2.0,
+) -> None:
+    try:
+        pong_waiter = await websocket.ping(b"coworld-certification-ping")
+        await asyncio.wait_for(pong_waiter, timeout=timeout_seconds)
+    except (OSError, asyncio.TimeoutError, ConnectionClosed) as exc:
+        raise RunnerEpisodeError(
+            f"Game websocket did not answer a WebSocket Ping with Pong: {url}: {exc}",
+            error_type="game_contract_violation",
+        ) from exc
 
 
 async def _require_replay_message(url: str, *, timeout_seconds: float) -> None:

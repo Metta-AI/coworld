@@ -34,6 +34,8 @@ It must:
 - Serve player HTML clients at `GET /client/player?slot=...&token=...`.
 - Serve player WebSocket connections at `/player?slot=...&token=...`.
 - Serve a live global viewer at `GET /client/global` and `/global`.
+- Answer every WebSocket Ping with a Pong carrying the same payload, as required by RFC 6455. Certification sends a
+  sentinel Ping over `/global` and rejects a missing or mismatched Pong as `game_contract_violation`.
 - When `game.replay_viewer.bundle` is absent, support replay mode with `COGAME_LOAD_REPLAY_URI`, `GET /client/replay`,
   and `/replay`. Certification probes this version-matched container fallback.
 - For replay-server mode, make `GET /client/replay` start playback automatically and loop from the recorded end back

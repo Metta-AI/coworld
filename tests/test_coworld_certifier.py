@@ -49,6 +49,7 @@ from coworld.runner.runner import (
     EpisodeArtifacts,
     _image_command,
     _require_bad_player_rejected,
+    _require_websocket_pong,
     assert_docker_image_reachable,
     assert_episode_images_reachable,
     replay_client_url,
@@ -1670,6 +1671,34 @@ def test_bad_player_probe_rejects_live_websocket(monkeypatch: pytest.MonkeyPatch
 
     with pytest.raises(RunnerEpisodeError, match="Bad player token was accepted") as exc_info:
         asyncio.run(_require_bad_player_rejected("ws://example.test/player?slot=0&token=bad"))
+
+    assert exc_info.value.error_type == "game_contract_violation"
+
+
+def test_websocket_ping_probe_accepts_matching_pong() -> None:
+    class PongWebSocket:
+        async def ping(self, payload: bytes) -> asyncio.Future[float]:
+            assert payload == b"coworld-certification-ping"
+            pong = asyncio.get_running_loop().create_future()
+            pong.set_result(0.001)
+            return pong
+
+    asyncio.run(_require_websocket_pong(PongWebSocket(), "ws://example.test/global"))
+
+
+def test_websocket_ping_probe_rejects_missing_pong() -> None:
+    class SilentWebSocket:
+        async def ping(self, _payload: bytes) -> asyncio.Future[float]:
+            return asyncio.get_running_loop().create_future()
+
+    with pytest.raises(RunnerEpisodeError, match="did not answer a WebSocket Ping") as exc_info:
+        asyncio.run(
+            _require_websocket_pong(
+                SilentWebSocket(),
+                "ws://example.test/global",
+                timeout_seconds=0.01,
+            )
+        )
 
     assert exc_info.value.error_type == "game_contract_violation"
 

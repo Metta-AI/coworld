@@ -15,10 +15,9 @@ def choose_action(observation: dict[str, Any]) -> dict[str, str]:
 
 
 async def run(ws_url: str) -> None:
-    # ping_timeout=None: game engines are not required to answer WebSocket ping
-    # frames, and the default 20s pong timeout would silently close a healthy
-    # connection mid-episode when they don't (coworld#41). Keepalive pings are
-    # still sent so the connection carries a minimum of outbound traffic.
+    # ping_timeout=None protects previously deployed games that don't answer
+    # WebSocket Ping frames; certification now requires new games to answer.
+    # Keepalive pings are still sent without closing on a missing Pong.
     async with websockets.connect(ws_url, ping_timeout=None) as websocket:
         async for message in websocket:
             observation = json.loads(message)
