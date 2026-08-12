@@ -58,7 +58,9 @@ def build_bedrock_sidecar(
     completions_prefix: str,
     flush_records: int,
     flush_seconds: float,
-    openrouter_archive_bucket: str | None = None,
+    llm_relay_s3_bucket: str | None = None,
+    llm_relay_s3_prefix: str = "llm-relay",
+    llm_debug_body_s3_bucket: str | None = None,
     openrouter_capture_payloads: bool = True,
     spend_limit_usd: str | None = None,
     pricing_json: str | None = None,
@@ -71,20 +73,34 @@ def build_bedrock_sidecar(
         [
             client.V1EnvVar(name="BEDROCK_SIDECAR_COMPLETIONS_BUCKET", value=completions_bucket),
             client.V1EnvVar(name="BEDROCK_SIDECAR_COMPLETIONS_PREFIX", value=completions_prefix),
-            client.V1EnvVar(name="BEDROCK_SIDECAR_FLUSH_RECORDS", value=str(flush_records)),
-            client.V1EnvVar(name="BEDROCK_SIDECAR_FLUSH_SECONDS", value=str(flush_seconds)),
         ]
         if completions_bucket
         else []
     )
-    openrouter_archive_env = [
+    sink_tuning_env = (
+        [
+            client.V1EnvVar(name="BEDROCK_SIDECAR_FLUSH_RECORDS", value=str(flush_records)),
+            client.V1EnvVar(name="BEDROCK_SIDECAR_FLUSH_SECONDS", value=str(flush_seconds)),
+        ]
+        if completions_bucket or llm_relay_s3_bucket
+        else []
+    )
+    openrouter_storage_env = [
         client.V1EnvVar(
             name="BEDROCK_SIDECAR_OPENROUTER_CAPTURE_PAYLOADS",
             value=str(openrouter_capture_payloads).lower(),
         ),
         *(
-            [client.V1EnvVar(name="BEDROCK_SIDECAR_OPENROUTER_ARCHIVE_BUCKET", value=openrouter_archive_bucket)]
-            if openrouter_archive_bucket
+            [
+                client.V1EnvVar(name="BEDROCK_SIDECAR_LLM_RELAY_S3_BUCKET", value=llm_relay_s3_bucket),
+                client.V1EnvVar(name="BEDROCK_SIDECAR_LLM_RELAY_S3_PREFIX", value=llm_relay_s3_prefix),
+            ]
+            if llm_relay_s3_bucket
+            else []
+        ),
+        *(
+            [client.V1EnvVar(name="BEDROCK_SIDECAR_LLM_DEBUG_BODY_S3_BUCKET", value=llm_debug_body_s3_bucket)]
+            if llm_debug_body_s3_bucket
             else []
         ),
     ]
@@ -122,7 +138,8 @@ def build_bedrock_sidecar(
                 value=serialize_bedrock_request_metadata(metadata),
             ),
             *completion_env,
-            *openrouter_archive_env,
+            *sink_tuning_env,
+            *openrouter_storage_env,
             *prompt_prefix_measurement_env,
             client.V1EnvVar(
                 name="POD_NAME",
@@ -173,7 +190,8 @@ def _healthz_probe_command(listen_port: int) -> list[str]:
     return [
         "python",
         "-c",
-        f"import urllib.request; urllib.request.urlopen('http://127.0.0.1:{listen_port}{BEDROCK_SIDECAR_HEALTH_PATH}', timeout=2)",
+        "import urllib.request; "
+        f"urllib.request.urlopen('http://127.0.0.1:{listen_port}{BEDROCK_SIDECAR_HEALTH_PATH}', timeout=2)",
     ]
 
 

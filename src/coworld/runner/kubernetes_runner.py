@@ -568,7 +568,9 @@ def _create_player_pod(
                 completions_prefix=os.environ.get("BEDROCK_SIDECAR_COMPLETIONS_PREFIX", "sidecar-completions"),
                 flush_records=int(os.environ.get("BEDROCK_SIDECAR_FLUSH_RECORDS", "200")),
                 flush_seconds=float(os.environ.get("BEDROCK_SIDECAR_FLUSH_SECONDS", "30.0")),
-                openrouter_archive_bucket=os.environ.get("BEDROCK_SIDECAR_OPENROUTER_ARCHIVE_BUCKET") or None,
+                llm_relay_s3_bucket=os.environ.get("BEDROCK_SIDECAR_LLM_RELAY_S3_BUCKET") or None,
+                llm_relay_s3_prefix=os.environ.get("BEDROCK_SIDECAR_LLM_RELAY_S3_PREFIX", "llm-relay"),
+                llm_debug_body_s3_bucket=os.environ.get("BEDROCK_SIDECAR_LLM_DEBUG_BODY_S3_BUCKET") or None,
                 openrouter_capture_payloads=(
                     os.environ.get("BEDROCK_SIDECAR_OPENROUTER_CAPTURE_PAYLOADS", "true") == "true"
                 ),
