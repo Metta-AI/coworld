@@ -1,12 +1,6 @@
 # Commissioner Template
 
-The commissioner is a WebSocket service that schedules league rounds and episodes. Use the default commissioner when
-round-robin behavior is enough; use this scaffold when a Coworld needs game-specific league logic.
-
-Contract reference: `coworld/docs/roles/COMMISSIONER.md`.
-
-Files:
-
-- `commissioner.py` - FastAPI `/round` scaffold using `coworld.commissioner.protocol` models.
-- `commissioner_manifest_entry.json` - manifest fragment for a custom commissioner runnable.
-- `Dockerfile` - minimal image shape for packaging the commissioner runnable.
+**Deprecated.** Do not use this scaffold for new leagues. Softmax leagues use the platform
+ladder — see `docs/ai/onboarding/services/coworlds/platform-ladder-league.md`. Cut remaining
+container leagues over via
+`docs/ai/onboarding/services/coworlds/migrate-to-platform-commissioner.md`.

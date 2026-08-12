@@ -83,11 +83,11 @@ the owning `coworld-<slug>` repo, then build and publish that game-local source.
 - Local and Kubernetes runner code for executing Coworld episodes.
 - Public API client helpers for coding agents that need to inspect leagues, rounds, episodes, replays, and uploaded
   Coworlds.
-- Installable starter templates under `coworld/templates` for game, player, commissioner, grader, diagnoser,
-  and optimizer roles. (Reporters are submittable wasm components, not containers; their authoring template ships
-  with the reporter SDK — see the [Reporter role](src/coworld/docs/roles/REPORTER.md).)
-- The [Paint Arena example](src/coworld/examples/paintarena/README.md), which is the canonical example used by this
-  package documentation and includes concrete runnables for every container Coworld role.
+- Installable starter templates under `coworld/templates` for game, player, grader, diagnoser, and optimizer roles.
+  Omit the commissioner template — Softmax leagues use the platform ladder
+  ([Commissioner role](src/coworld/docs/roles/COMMISSIONER.md)). (Reporters are submittable wasm components, not
+  containers; see the [Reporter role](src/coworld/docs/roles/REPORTER.md).)
+- The [Paint Arena example](src/coworld/examples/paintarena/README.md), the canonical example for this package's docs.
 
 Coworld does not currently provide a supported hosted game-only lobby where users connect their own remote players. Use
 `coworld play` for local browser play, or submit policies to leagues for fully hosted tournament episodes where the

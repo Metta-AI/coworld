@@ -6,9 +6,12 @@ Each Coworld project owns its release inputs:
 - `coworld_manifest_template.json` describes the game and its roles without `game.version`;
 - `dist/coworld_manifest.json` is generated and must not be committed.
 
-Keep game-specific game, player, commissioner, grader, diagnoser, and optimizer implementations in the game project.
+Keep game-specific game, player, grader, diagnoser, and optimizer implementations in the game project.
 Use a shared role image only when it is intentionally shared and should change for every Coworld that consumes it.
 Reporter entries are platform or wasm references, not container services.
+
+Omit `manifest.commissioner[]` and any commissioner compose service. Softmax leagues use the platform ladder —
+see [Commissioner role](roles/COMMISSIONER.md).
 
 ## Build Workflow
 

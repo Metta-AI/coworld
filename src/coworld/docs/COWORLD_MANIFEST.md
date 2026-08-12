@@ -50,9 +50,8 @@ The schema also links each role section back to its role contract using `x-cowor
 `markdownDescription`. That round trip is intentional: someone reading `coworld_manifest_schema.json` cold should be
 able to jump from `manifest.player[]` or `manifest.reporter[]` to the corresponding role doc.
 
-For commissioner runnables, `id` is also the value used by `commissioner_config.commissioner_runnable_id` when a Coworld
-league is seeded. That config key must match one `manifest.commissioner[].id`; the platform resolves the selected
-runnable from the canonical Coworld manifest before starting the commissioner container.
+**Omit `manifest.commissioner[]`.** Softmax leagues use the platform ladder and do not start a commissioner container —
+see [Commissioner role](roles/COMMISSIONER.md).
 
 For role semantics, use the role docs rather than the schema:
 
@@ -79,8 +78,8 @@ For a new Coworld, start from the Paint Arena manifest template and keep the gen
    not bundled container images. The section is optional and there are no default reporters. See the
    [Reporter role](roles/REPORTER.md).
 4. Add grader runnables when the Coworld has custom graders or a default grader is useful.
-5. Add commissioner, diagnoser, and optimizer runnables when the Coworld has custom implementations, or when a default
-   image is appropriate for the role.
+5. Add diagnoser and optimizer runnables when the Coworld has custom implementations, or when a default image is
+   appropriate for the role. Omit commissioner runnables ([Commissioner role](roles/COMMISSIONER.md)).
 6. Define at least one variant.
 7. Define the certification fixture that `coworld certify` and default local episode runs execute.
 8. Validate locally before upload.

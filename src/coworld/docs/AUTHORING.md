@@ -137,8 +137,8 @@ Three files, all modeled by Paint Arena:
 **`Dockerfile` + `compose.yaml`.** A single image usually serves the game _and_ the bundled players — each manifest
 runnable selects its entrypoint with its own `run` argv into the same image. The compose file names your buildable
 services and pins `platform: linux/amd64` (hosted runners are amd64; images built for other architectures fail or crawl
-under emulation). Paint Arena's compose is two services: the game image built from the local context, plus the stock
-commissioner image.
+under emulation). **Omit any commissioner service** — Softmax leagues use the platform ladder and do not run a
+commissioner container image (see [Commissioner role](roles/COMMISSIONER.md)).
 
 **`coworld_manifest_template.json`.** The manifest with image placeholders instead of image tags. Each compose service
 maps to a placeholder by name: service `paintarena` → `{{PAINTARENA_IMAGE}}` (uppercase, dashes become underscores). The
@@ -270,10 +270,10 @@ The Coworld exists so players can improve against it, and your bundled baseline 
   rendering) with local `run-episode` batches — deterministic seeds, no hosted cost — until it consistently beats a
   trivial policy. Then re-upload and re-verify with one hosted run. A baseline indistinguishable from random makes every
   submitted policy look brilliant and teaches its author nothing.
-- **League play is its own verification rung.** When your Coworld enters a league, placement is not proof: confirm
-  rounds actually schedule, episodes complete with non-zero scores, standings render, and featured replays play. The
-  scheduling side is the commissioner's job — see the [commissioner role](roles/COMMISSIONER.md) and mind the sizing
-  contract: the seat count the commissioner schedules for must match what your variants and config schema declare.
+- **League play is its own verification rung.** Softmax leagues use the platform ladder (see
+  [`platform-ladder-league`](../../../../../docs/ai/onboarding/services/coworlds/platform-ladder-league.md)). Placement
+  is not proof: confirm rounds schedule, episodes complete with non-zero scores, standings render, and featured replays
+  play. Keep variant/`config_schema` seat counts (`num_agents`) aligned with the game.
 - **Version deliberately.** Leagues follow the canonical version of a Coworld; uploading a new version is how fixes
   reach them. Re-run the ladder (certify → upload → hosted run) for every version — the discipline is the same on upload
   ten as on upload one.

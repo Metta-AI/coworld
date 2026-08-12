@@ -39,7 +39,7 @@ organize episode artifacts after the episode ends.
 | ---------------- | ------------------------------- | --------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------ |
 | **game**         | per episode, WebSocket server   | live                              | Runs the episode, serves browser clients, and writes result/replay artifacts.                                                                     | [Game role](roles/GAME.md)                 |
 | **player**       | per episode, WebSocket client   | live                              | Connects to the game and acts in one player slot.                                                                                                 | [Player role](roles/PLAYER.md)             |
-| **commissioner** | per round, WebSocket server     | live for container leagues        | Schedules league-round episodes and ranks policy memberships.                                                                                     | [Commissioner role](roles/COMMISSIONER.md) |
+| **commissioner** | per round, WebSocket server     | **deprecated** (container leagues only) | Legacy container league control loop. New leagues use the platform ladder and omit this role.                                                  | [Commissioner role](roles/COMMISSIONER.md) |
 | **reporter**     | per run, submitted Wasm program | live (reporter v2, spec 0061)     | Turns platform evidence into declared, typed output parts — narrative renders, event logs, machine documents — via a capability-scoped tool belt. | [Reporter role](roles/REPORTER.md)         |
 | **grader**       | post episode, on demand         | contract defined, runtime pending | Scores how useful or interesting an episode is.                                                                                                   | [Grader role](roles/GRADER.md)             |
 | **diagnoser**    | post episode, on demand         | reserved                          | Evaluates a target policy and emits policy-facing advice.                                                                                         | [Diagnoser role](roles/DIAGNOSER.md)       |
@@ -51,8 +51,8 @@ New documents and code in this package should use these status labels consistent
 
 - **live**: the role has a full runtime contract that the platform exercises end to end. The contract is stable enough
   to build against.
-- **live for container leagues**: legacy status for the commissioner cutover; new docs should use **live** because
-  hosted commissioner scheduling is container-only.
+- **deprecated (container leagues only)**: commissioner Docker images are closed to new use. Softmax leagues use the
+  platform ladder — see [Commissioner role](roles/COMMISSIONER.md).
 - **MVP hosted runner**: the role has a platform-run container path for the current request protocol, but the
   API/retention/output-validation surface is still intentionally minimal.
 - **contract defined, runtime pending**: the role has a written contract and may have partial or in-process
@@ -131,9 +131,9 @@ The full lifecycle page is under construction: [Coworld lifecycle](LIFECYCLE.md)
 
 ### During The Episode
 
-A league round begins when the platform decides one is due. The platform starts the **commissioner** container for that
-round and connects to its `/round` WebSocket. The commissioner reads the round context (divisions, memberships, recent
-results, variants, and prior state) and sends `schedule_episodes` listing the episodes it wants run.
+**Default (platform ladder):** a Temporal parent workflow plans the round from typed `settings.ladder` and freezes an
+episode plan. No commissioner container runs. (Holdout container leagues still drive `/round` over WebSocket — do not
+author new commissioner images; see [Commissioner role](roles/COMMISSIONER.md).)
 
 For each scheduled bounded episode, the runner starts:
 
@@ -147,9 +147,8 @@ Players connect to the game's `/player` WebSocket and speak the game-defined pla
 game, actions flow from the player, and the exchange continues until the episode ends. The game writes results and
 replay artifacts to the URIs provided by the runner; the runner captures logs and hosted failure information. A player
 may also upload an optional [artifact](artifacts/PLAYER_ARTIFACT.md) to `COWORLD_PLAYER_ARTIFACT_UPLOAD_URL` before its
-container is torn down. Each completed episode's `scores` are routed back to the commissioner as an `episode_result`
-message; the commissioner can schedule more episodes or emit `round_complete` with per-division rankings and policy
-membership events.
+container is torn down. On the platform ladder, Temporal settles the frozen episode plan and updates rankings /
+memberships.
 
 Persistent leagues separate execution from accounting. Their scheduling response publishes a complete desired set of
 long-lived player runtimes. The platform reconciles at most one runtime per stable league player and replaces it when
