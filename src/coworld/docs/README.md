@@ -213,6 +213,8 @@ These boundaries are useful when deciding where a new feature, artifact, or debu
 - Static replay-viewer authoring guide: [STATIC_REPLAY_VIEWERS.md](STATIC_REPLAY_VIEWERS.md).
 - Workflow recipes: [Coworld cookbook](../../../COOKBOOK.md).
 - Rebuild/source ownership guide: [REBUILDING_COWORLDS.md](REBUILDING_COWORLDS.md).
+- Platform ladder leagues: [PLATFORM_LADDER_LEAGUE.md](PLATFORM_LADDER_LEAGUE.md).
+- Migrate off a container commissioner: [MIGRATE_TO_PLATFORM_COMMISSIONER.md](MIGRATE_TO_PLATFORM_COMMISSIONER.md).
 - Manifest reference: [COWORLD_MANIFEST.md](COWORLD_MANIFEST.md).
 - Calling an LLM / Bedrock from a player (route through the `AWS_ENDPOINT_URL_BEDROCK_RUNTIME` sidecar, InvokeModel not
   Converse): [BEDROCK.md](BEDROCK.md).

@@ -5,10 +5,14 @@
 
 | Need | Doc |
 | --- | --- |
-| Create / maintain a league | [`platform-ladder-league.md`](../../../../../../docs/ai/onboarding/services/coworlds/platform-ladder-league.md) |
-| Cut a container league over | [`migrate-to-platform-commissioner.md`](../../../../../../docs/ai/onboarding/services/coworlds/migrate-to-platform-commissioner.md) |
-| Delete the container path | [`retire-container-commissioners.md`](../../../../../../docs/ai/onboarding/services/coworlds/retire-container-commissioners.md) |
+| Create / maintain a league | [PLATFORM_LADDER_LEAGUE.md](../PLATFORM_LADDER_LEAGUE.md) |
+| Cut a container league over | [MIGRATE_TO_PLATFORM_COMMISSIONER.md](../MIGRATE_TO_PLATFORM_COMMISSIONER.md) |
 | Remaining WebSocket message models | [`commissioner/protocol.py`](../../commissioner/protocol.py) |
+
+Public git links (after child-repo sync):
+
+- https://github.com/Metta-AI/coworld/blob/main/src/coworld/docs/PLATFORM_LADDER_LEAGUE.md
+- https://github.com/Metta-AI/coworld/blob/main/src/coworld/docs/MIGRATE_TO_PLATFORM_COMMISSIONER.md
 
 New Coworlds omit `manifest.commissioner[]`. Do not scaffold a commissioner image, bake a
 `ruleset_strategy` YAML into Docker, or use `ux.commissioner` for greenfield leagues.

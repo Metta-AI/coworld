@@ -141,6 +141,10 @@ source of truth. They are generated docs and `$schema` targets; `test_types.py` 
 - [src/coworld/docs/LIFECYCLE.md](src/coworld/docs/LIFECYCLE.md) - local and hosted episode lifecycle.
 - [src/coworld/docs/TOURNAMENTS.md](src/coworld/docs/TOURNAMENTS.md) - league bracket tournaments (`tour_...` objects,
   waves, bracket matches) and how to read their episodes via the v2 API.
+- [src/coworld/docs/PLATFORM_LADDER_LEAGUE.md](src/coworld/docs/PLATFORM_LADDER_LEAGUE.md) - create/maintain platform
+  ladder leagues (public; syncs to `Metta-AI/coworld`).
+- [src/coworld/docs/MIGRATE_TO_PLATFORM_COMMISSIONER.md](src/coworld/docs/MIGRATE_TO_PLATFORM_COMMISSIONER.md) - cut over
+  from a container commissioner (public; syncs to `Metta-AI/coworld`).
 - `src/coworld/docs/roles/*.md` - per-role contracts.
 - `src/coworld/docs/artifacts/*.md` - artifact contracts.
 - `src/coworld/runner/RUNNER_README.md` and `src/coworld/runner/KUBERNETES_RUNNER_README.md` - runner-specific behavior.
