@@ -30,7 +30,15 @@ from coworld.runner.bedrock_sidecar_wiring import (
     build_bedrock_sidecar,
     resolve_image_attribution_key,
 )
-from coworld.runner.io import RunnerEpisodeError, RunnerError, RunnerErrorType, read_data, upload_data
+from coworld.runner.io import (
+    PlayerRuntimeStatus,
+    PlayerRuntimeStatuses,
+    RunnerEpisodeError,
+    RunnerError,
+    RunnerErrorType,
+    read_data,
+    upload_data,
+)
 from coworld.runner.phase_timings import EpisodePhaseTimings
 from coworld.runner.runner import (
     CERTIFICATION_EPISODE_SOURCE,
@@ -194,6 +202,8 @@ def _write_error_info(exc: Exception) -> None:
 
 
 def _upload_debug_logs(artifacts: EpisodeArtifacts) -> None:
+    _upload_player_status(artifacts)
+
     debug_uri = os.environ.get("DEBUG_URI")
     if debug_uri is not None and artifacts.logs_dir.exists() and any(artifacts.logs_dir.iterdir()):
         upload_data(debug_uri, _zip_logs(artifacts.logs_dir), content_type="application/zip")
@@ -212,7 +222,15 @@ def _upload_timings(timings: EpisodePhaseTimings) -> None:
         upload_data(timings_uri, timings.model_dump_json(), content_type="application/json")
 
 
+def _upload_player_status(artifacts: EpisodeArtifacts) -> None:
+    player_status_uri = os.environ.get("PLAYER_STATUS_URI")
+    if player_status_uri is not None and artifacts.player_status_path.exists():
+        upload_data(player_status_uri, artifacts.player_status_path.read_bytes(), content_type="application/json")
+
+
 def _upload_outputs(artifacts: EpisodeArtifacts) -> None:
+    _upload_player_status(artifacts)
+
     results_uri = os.environ.get("RESULTS_URI")
     if results_uri is not None:
         upload_data(results_uri, artifacts.results_path.read_bytes(), content_type="application/json")
@@ -924,17 +942,57 @@ def _collect_logs(
     if game_log is None:
         game_log = _log_unavailable(pod_name, "game", "the pod was gone before log collection")
     artifacts.game_stdout_path.write_text(game_log, encoding="utf-8")
+    player_statuses: list[PlayerRuntimeStatus] = []
     for player_pod_name in player_pod_names:
         slot = _player_pod_slot(player_pod_name)
         try:
             player_pod = core_v1.read_namespaced_pod(name=player_pod_name, namespace=namespace)
         except (ApiException, HTTPError) as exc:
+            player_statuses.append(
+                PlayerRuntimeStatus(
+                    slot=slot,
+                    state="unavailable",
+                    reason="pod_not_found"
+                    if isinstance(exc, ApiException) and exc.status == 404
+                    else "status_read_failed",
+                )
+            )
             if isinstance(exc, ApiException) and exc.status == 404:
                 message = _log_unavailable(player_pod_name, "player", "the pod was deleted before log collection")
             else:
                 message = _log_read_failure(player_pod_name, "player", exc)
             artifacts.policy_log_path(slot).write_text(message, encoding="utf-8")
             continue
+        player_container_status = next(
+            (status for status in player_pod.status.container_statuses or [] if status.name == "player"),
+            None,
+        )
+        if player_container_status is None:
+            player_statuses.append(
+                PlayerRuntimeStatus(slot=slot, state="not_started", reason="container_status_unavailable")
+            )
+        elif player_container_status.state.terminated is not None:
+            terminated = player_container_status.state.terminated
+            player_statuses.append(
+                PlayerRuntimeStatus(
+                    slot=slot,
+                    state="exited",
+                    exit_code=terminated.exit_code,
+                    reason=terminated.reason,
+                    finished_at=terminated.finished_at,
+                )
+            )
+        elif player_container_status.state.running is not None:
+            player_statuses.append(PlayerRuntimeStatus(slot=slot, state="running"))
+        else:
+            waiting = player_container_status.state.waiting
+            player_statuses.append(
+                PlayerRuntimeStatus(
+                    slot=slot,
+                    state="not_started",
+                    reason=waiting.reason if waiting is not None else "pending",
+                )
+            )
         if not _container_has_started(player_pod, "player"):
             artifacts.policy_log_path(slot).write_text(
                 _log_unavailable(player_pod_name, "player", "the player container never started"),
@@ -945,6 +1003,10 @@ def _collect_logs(
         if player_log is None:
             player_log = _log_unavailable(player_pod_name, "player", "the pod was deleted before log collection")
         artifacts.policy_log_path(slot).write_text(player_log, encoding="utf-8")
+    artifacts.player_status_path.write_text(
+        PlayerRuntimeStatuses(players=player_statuses).model_dump_json(),
+        encoding="utf-8",
+    )
 
 
 def _read_pod_log(core_v1, namespace: str, pod_name: str, container: str) -> str | None:

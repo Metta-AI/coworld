@@ -134,12 +134,18 @@ def _container_status(
     last_exit_code: int | None = None,
     reason: str | None = None,
     message: str | None = None,
+    finished_at: str | None = None,
 ):
     return SimpleNamespace(
         name=name,
         state=SimpleNamespace(
             running=object() if running else None,
-            terminated=SimpleNamespace(exit_code=exit_code, reason=reason, message=message)
+            terminated=SimpleNamespace(
+                exit_code=exit_code,
+                reason=reason,
+                message=message,
+                finished_at=finished_at,
+            )
             if exit_code is not None
             else None,
             waiting=SimpleNamespace(reason=reason, message=message) if waiting else None,
@@ -1320,6 +1326,63 @@ def test_collect_logs_records_marker_for_player_pods_that_never_started(tmp_path
     assert core_v1.log_calls == [("game-pod", "game"), ("job-player-1", "player")]
 
 
+def test_collect_logs_records_typed_player_runtime_statuses(tmp_path):
+    artifacts = EpisodeArtifacts.create(tmp_path)
+    core_v1 = _FakeLogCoreV1(
+        {
+            "game-pod": [],
+            "job-player-0": [_container_status("player", waiting=True, reason="ImagePullBackOff")],
+            "job-player-1": [_container_status("player", running=True)],
+            "job-player-2": [
+                _container_status(
+                    "player",
+                    exit_code=0,
+                    reason="Completed",
+                    finished_at="2026-08-12T18:42:00Z",
+                )
+            ],
+        },
+        missing_pods={"job-player-3"},
+    )
+
+    _collect_logs(
+        core_v1,
+        "default",
+        "game-pod",
+        ["job-player-0", "job-player-1", "job-player-2", "job-player-3"],
+        artifacts,
+    )
+
+    payload = json.loads(artifacts.player_status_path.read_text(encoding="utf-8"))
+    assert payload == {
+        "schema_version": "1",
+        "players": [
+            {
+                "slot": 0,
+                "state": "not_started",
+                "exit_code": None,
+                "reason": "ImagePullBackOff",
+                "finished_at": None,
+            },
+            {"slot": 1, "state": "running", "exit_code": None, "reason": None, "finished_at": None},
+            {
+                "slot": 2,
+                "state": "exited",
+                "exit_code": 0,
+                "reason": "Completed",
+                "finished_at": "2026-08-12T18:42:00Z",
+            },
+            {
+                "slot": 3,
+                "state": "unavailable",
+                "exit_code": None,
+                "reason": "pod_not_found",
+                "finished_at": None,
+            },
+        ],
+    }
+
+
 def test_collect_logs_records_marker_for_missing_player_pods(tmp_path):
     # Regression for the hosted-episode observability gap: a player pod reaped before log
     # collection must leave an explanatory log artifact, not silently vanish from the
@@ -2278,16 +2341,19 @@ def test_run_from_env_uploads_debug_logs_on_failure(monkeypatch, tmp_path):
     artifacts.game_stdout_path.write_text("game crashed with segfault", encoding="utf-8")
     artifacts.policy_log_path(0).write_text("player 0 timeout waiting for server", encoding="utf-8")
     artifacts.policy_log_path(1).write_text("player 1 connection refused", encoding="utf-8")
+    artifacts.player_status_path.write_text('{"schema_version":"1","players":[]}', encoding="utf-8")
 
     # Set up file:// destinations for uploads
     debug_dest = tmp_path / "uploaded" / "debug.zip"
     policy0_dest = tmp_path / "uploaded" / "policy_0.txt"
     policy1_dest = tmp_path / "uploaded" / "policy_1.txt"
     error_dest = tmp_path / "uploaded" / "error_info.json"
+    player_status_dest = tmp_path / "uploaded" / "player_status.json"
 
     monkeypatch.setenv("COWORLD_WORKDIR", str(workspace))
     monkeypatch.setenv("DEBUG_URI", debug_dest.as_uri())
     monkeypatch.setenv("ERROR_INFO_URI", error_dest.as_uri())
+    monkeypatch.setenv("PLAYER_STATUS_URI", player_status_dest.as_uri())
     monkeypatch.setenv(
         "POLICY_LOG_URLS",
         json.dumps({"0": policy0_dest.as_uri(), "1": policy1_dest.as_uri()}),
@@ -2317,6 +2383,7 @@ def test_run_from_env_uploads_debug_logs_on_failure(monkeypatch, tmp_path):
     # Verify per-policy logs were uploaded individually
     assert policy0_dest.read_text(encoding="utf-8") == "player 0 timeout waiting for server"
     assert policy1_dest.read_text(encoding="utf-8") == "player 1 connection refused"
+    assert json.loads(player_status_dest.read_text(encoding="utf-8")) == {"schema_version": "1", "players": []}
 
 
 def test_worker_health_server_accepts_connections_until_socket_closes():
@@ -2350,7 +2417,7 @@ def _upload_env(monkeypatch, **overrides: str | None) -> list[tuple[str, bytes, 
         "upload_data",
         lambda uri, data, *, content_type: uploads.append((uri, data, content_type)),
     )
-    for name in ("RESULTS_URI", "REPLAY_URI", "EVENTS_URI", "DEBUG_URI", "POLICY_LOG_URLS"):
+    for name in ("RESULTS_URI", "REPLAY_URI", "EVENTS_URI", "PLAYER_STATUS_URI", "DEBUG_URI", "POLICY_LOG_URLS"):
         monkeypatch.delenv(name, raising=False)
     for name, value in overrides.items():
         if value is not None:
@@ -2384,3 +2451,14 @@ def test_upload_outputs_skips_the_event_stream_when_the_game_wrote_none(tmp_path
     _upload_outputs(artifacts)
 
     assert uploads == []
+
+
+def test_upload_outputs_uploads_player_status(tmp_path, monkeypatch):
+    artifacts = EpisodeArtifacts.create(tmp_path)
+    payload = b'{"schema_version":"1","players":[]}'
+    artifacts.player_status_path.write_bytes(payload)
+    uploads = _upload_env(monkeypatch, PLAYER_STATUS_URI="file:///tmp/player-status-out.json")
+
+    _upload_outputs(artifacts)
+
+    assert uploads == [("file:///tmp/player-status-out.json", payload, "application/json")]

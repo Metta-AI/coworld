@@ -93,6 +93,7 @@ class EpisodeArtifacts:
     results_path: Path
     replay_path: Path
     events_path: Path
+    player_status_path: Path
     player_failure_path: Path
     logs_dir: Path
     game_stdout_path: Path
@@ -110,6 +111,7 @@ class EpisodeArtifacts:
             results_path=workspace / "results.json",
             replay_path=workspace / "replay",
             events_path=workspace / "events.json",
+            player_status_path=workspace / "player_status.json",
             player_failure_path=workspace / "player_failure.json",
             logs_dir=logs_dir,
             game_stdout_path=logs_dir / "game.stdout.log",

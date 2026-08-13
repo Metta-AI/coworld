@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import time
+from datetime import datetime
 from pathlib import Path
 from typing import Literal
 from urllib.error import HTTPError
@@ -41,6 +42,27 @@ class GamePlayerFailure(BaseModel):
 
     message: str = Field(min_length=1, max_length=2000)
     failed_policy_index: int = Field(ge=0)
+
+
+class PlayerRuntimeStatus(BaseModel):
+    """Runner-observed process state for one hosted player slot."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    slot: int = Field(ge=0)
+    state: Literal["running", "exited", "not_started", "unavailable"]
+    exit_code: int | None = None
+    reason: str | None = None
+    finished_at: datetime | None = None
+
+
+class PlayerRuntimeStatuses(BaseModel):
+    """Runner-owned player process snapshot captured before pod teardown."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    schema_version: Literal["1"] = "1"
+    players: list[PlayerRuntimeStatus]
 
 
 class RunnerEpisodeError(RuntimeError):

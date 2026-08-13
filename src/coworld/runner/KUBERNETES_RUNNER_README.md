@@ -214,6 +214,7 @@ RESULTS_URI
 REPLAY_URI
 DEBUG_URI
 ERROR_INFO_URI
+PLAYER_STATUS_URI
 POLICY_LOG_URLS
 PLAYER_ARTIFACT_UPLOAD_URLS
 ```
@@ -229,6 +230,10 @@ Outputs:
   to those streams.
 - `ERROR_INFO_URI`: typed failure JSON written by the coordinator. A game-declared `player_failure.json` is an input to
   the coordinator, not this final hosted artifact.
+- `PLAYER_STATUS_URI`: runner-owned `player_status.json` snapshot captured immediately before child-pod teardown. Each
+  slot is `running`, `exited`, `not_started`, or `unavailable`; exited slots retain their exit code, Kubernetes reason,
+  and finish time. This is process-lifecycle evidence, not a claim that an exit was successful or proof of the
+  game-level WebSocket disconnect reason.
 - `POLICY_LOG_URLS`: JSON object mapping each player slot to a destination URI. Each player log is uploaded from
   `policy_agent_{slot}.log` and contains that player container's combined stdout and stderr. Player logs are also
   included in `DEBUG_URI`'s zip; `POLICY_LOG_URLS` exposes them individually for per-player consumption.
@@ -241,6 +246,9 @@ Per-player logs are diagnostic only. After the game has produced valid results, 
 combined stdout/stderr lines from player pods whose `player` container has started and skips pods whose container is
 still waiting, such as `ContainerCreating`. Missing player logs do not fail an otherwise successful episode; result and
 replay upload remain the source of truth for episode success.
+The adjacent `player_status.json` artifact preserves the structured pod state that existed at that same observation
+point, separately from game-authored scores. Authorized episode consumers can fetch it from
+`/v2/episode-requests/{episode_request_id}/artifacts/player-status`.
 Kubernetes API transport failures during log collection are written into the
 corresponding diagnostic log artifact and likewise do not change the episode
 outcome.

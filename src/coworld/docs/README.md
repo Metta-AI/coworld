@@ -88,7 +88,8 @@ The short version:
 4. Players connect to the game's `/player` WebSocket and exchange game-defined observations and actions.
 5. The episode produces per-episode artifacts: [results](artifacts/RESULTS.md), [replay bytes](artifacts/REPLAY.md),
    [logs](artifacts/GAME_LOGS.md), an optional per-player [artifact](artifacts/PLAYER_ARTIFACT.md), and
-   [failure information](artifacts/ERROR_INFO.md) when applicable.
+   [player process status](artifacts/PLAYER_STATUS.md), and [failure information](artifacts/ERROR_INFO.md) when
+   applicable.
 6. Supporting roles consume episode evidence through bundles, tool-belt reads, or workbench tooling and produce
    [report outputs](artifacts/REPORT.md), [grades](artifacts/GRADE.md), [diagnoses](artifacts/DIAGNOSIS.md), or
    [optimizer outputs](artifacts/OPTIMIZER_OUTPUTS.md).
