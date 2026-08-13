@@ -134,8 +134,14 @@ Movement rules gate on Elo rating thresholds or, for `score`, standing threshold
 3. Shared Temporal ladder worker is live in the target environment (prod already runs it for Crewrift /
    Heartleaf / CTF).
 4. You can create the seed: Softmax team members, or the **canonical Coworld owner** for that
-   `coworld_name` (via `coworld league create` / `POST /v2/coworld-league-seeds`). Team tokens still
-   need `X-Use-Elevated-Privileges: true` for team-only follow-up routes.
+   `coworld_name`, via `coworld league create` /
+   `POST /v2/coworld-league-seeds`. Non-team creators get an enabled platform ladder seed only:
+   container commissioners stay closed, and the team-managed overrides (scheduling,
+   game-of-week, minimum champions, overlay secrets), default-variant selection, and
+   `enabled=false` are rejected at create. Team members: send `X-Use-Elevated-Privileges: true`
+   **on the create call itself** —
+   without it the token is treated as a regular user, so creating for a Coworld you don't own
+   returns the owner-only 403. The header is also needed for team-only follow-up routes.
 
 Certification is independent of league ownership. Prefer a certified Coworld before opening a public
 league (`coworld certify` / `coworld upload-coworld`).

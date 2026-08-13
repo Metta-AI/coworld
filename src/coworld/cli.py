@@ -115,7 +115,10 @@ def _parse_override(value: str) -> tuple[str, object]:
     return key, parsed
 
 
-league_app = typer.Typer(no_args_is_help=True, help="Create and inspect Coworld league seeds (team only).")
+league_app = typer.Typer(
+    no_args_is_help=True,
+    help="Create and inspect Coworld league seeds (Softmax team, or the Coworld owner for their own Coworld).",
+)
 app.add_typer(league_app, name="league")
 
 counterfactual_app = typer.Typer(
