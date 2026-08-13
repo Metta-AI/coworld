@@ -1662,6 +1662,7 @@ def test_create_player_pod_injects_policy_secret_env(monkeypatch):
     monkeypatch.setenv("COWORLD_BEDROCK_REGION", "us-east-1")
     monkeypatch.setenv("COWORLD_ID", "cow_11111111-1111-1111-1111-111111111111")
     monkeypatch.setenv("COWORLD_LEAGUE_ID", "league_44444444-4444-4444-4444-444444444444")
+    monkeypatch.setenv("COWORLD_SOURCE", "xp_request")
     player = PlayerLaunchSpec(
         image="paintbot:latest",
         run=(),
@@ -1714,6 +1715,7 @@ def test_create_player_pod_injects_policy_secret_env(monkeypatch):
     # Cost-attribution identity forwarded by the dispatcher via the worker env.
     assert pod.metadata.labels["coworld-id"] == "cow_11111111-1111-1111-1111-111111111111"
     assert pod.metadata.labels["league-id"] == "league_44444444-4444-4444-4444-444444444444"
+    assert pod.metadata.labels["coworld-source"] == "xp_request"
     assert pod.spec.node_selector == {"workload-type": "jobs", "karpenter.sh/capacity-type": "on-demand"}
     assert pod.spec.service_account_name is None
     assert pod.spec.volumes is None
@@ -1740,6 +1742,7 @@ def test_create_player_pod_omits_attribution_labels_without_forwarded_env(monkey
     monkeypatch.delenv("BEDROCK_SIDECAR_ENABLED", raising=False)
     monkeypatch.delenv("COWORLD_ID", raising=False)
     monkeypatch.delenv("COWORLD_LEAGUE_ID", raising=False)
+    monkeypatch.delenv("COWORLD_SOURCE", raising=False)
 
     kubernetes_runner._create_player_pod(
         core_v1,
@@ -1760,6 +1763,7 @@ def test_create_player_pod_omits_attribution_labels_without_forwarded_env(monkey
     labels = created["body"].metadata.labels
     assert "coworld-id" not in labels
     assert "league-id" not in labels
+    assert "coworld-source" not in labels
 
 
 def test_player_service_gate_waits_for_delayed_endpoint():
