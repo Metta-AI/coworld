@@ -9,6 +9,8 @@ import sys
 import threading
 import time
 import zipfile
+from collections.abc import Callable
+from concurrent.futures import Future, ThreadPoolExecutor
 from io import BytesIO
 from pathlib import Path
 from typing import Mapping, cast
@@ -167,19 +169,30 @@ def run_from_env() -> None:
     _start_worker_health_server(HEALTH_PORT)
     job = _read_job_spec()
     artifacts = EpisodeArtifacts.create(WORKDIR, prefix="coworld-job-")
-    try:
-        core_timings = _run_kubernetes_episode(
-            job,
-            artifacts,
-            timeout_seconds=float(os.environ.get("COWORLD_TIMEOUT_SECONDS", "3600")),
-        )
-    except Exception as exc:
-        _write_error_info(exc)
-        _upload_debug_logs(artifacts)
-        raise
-    upload_start = time.monotonic()
-    _upload_outputs(artifacts)
-    _upload_timings(EpisodePhaseTimings(**core_timings, artifact_upload_s=time.monotonic() - upload_start))
+    timings = EpisodePhaseTimings()
+    timing_uploads: list[Future[None]] = []
+    with ThreadPoolExecutor(max_workers=1) as timing_executor:
+
+        def queue_timings_upload(current_timings: EpisodePhaseTimings) -> None:
+            timing_uploads.append(timing_executor.submit(_upload_timings, current_timings.model_copy(deep=True)))
+
+        try:
+            _run_kubernetes_episode(
+                job,
+                artifacts,
+                timeout_seconds=float(os.environ.get("COWORLD_TIMEOUT_SECONDS", "3600")),
+                timings=timings,
+                upload_timings=queue_timings_upload,
+            )
+        except Exception as exc:
+            _write_error_info(exc)
+            _upload_debug_logs(artifacts)
+            raise
+        upload_start = time.monotonic()
+        _upload_outputs(artifacts)
+        timings.artifact_upload_s = time.monotonic() - upload_start
+        queue_timings_upload(timings)
+        timing_uploads[-1].result()
 
 
 def _read_job_spec() -> CoworldEpisodeJobSpec:
@@ -219,7 +232,7 @@ def _upload_debug_logs(artifacts: EpisodeArtifacts) -> None:
 def _upload_timings(timings: EpisodePhaseTimings) -> None:
     timings_uri = os.environ.get("WORKER_TIMINGS_URI")
     if timings_uri is not None:
-        upload_data(timings_uri, timings.model_dump_json(), content_type="application/json")
+        upload_data(timings_uri, timings.model_dump_json(exclude_none=True), content_type="application/json")
 
 
 def _upload_player_status(artifacts: EpisodeArtifacts) -> None:
@@ -276,7 +289,9 @@ def _run_kubernetes_episode(
     artifacts: EpisodeArtifacts,
     *,
     timeout_seconds: float,
-) -> dict[str, float]:
+    timings: EpisodePhaseTimings,
+    upload_timings: Callable[[EpisodePhaseTimings], None],
+) -> None:
     worker_start = time.monotonic()
     _load_incluster_config()
     core_v1 = client.CoreV1Api()
@@ -312,6 +327,9 @@ def _run_kubernetes_episode(
         _create_game_service(core_v1, namespace, service_name, job_id, owner_references)
         _wait_for_health(core_v1, namespace, pod_name, timeout_seconds=timeout_seconds)
         game_ready = time.monotonic()
+        timings.game_boot_s = game_ready - worker_start
+        upload_timings(timings)
+        player_launch_start = time.monotonic()
         if job.players:
             _require_http_ok(_player_client_url(0, tokens[0]))
             asyncio.run(_require_bad_player_rejected(f"ws://127.0.0.1:{GAME_PORT}/player?slot=0&token=bad"))
@@ -336,7 +354,10 @@ def _run_kubernetes_episode(
                 owner_references,
             )
         players_launched = time.monotonic()
-        player_start_deadline = players_launched + min(timeout_seconds, player_connect_timeout_seconds)
+        timings.player_launch_s = players_launched - player_launch_start
+        upload_timings(timings)
+        player_start_deadline = time.monotonic() + min(timeout_seconds, player_connect_timeout_seconds)
+        first_step_start = time.monotonic()
 
         asyncio.run(
             _require_global_message(
@@ -357,6 +378,9 @@ def _run_kubernetes_episode(
             )
         )
         first_step = time.monotonic()
+        timings.first_step_s = first_step - first_step_start
+        upload_timings(timings)
+        gameplay_start = time.monotonic()
         _wait_for_episode_artifacts(
             artifacts,
             core_v1,
@@ -368,6 +392,8 @@ def _run_kubernetes_episode(
             require_replay=os.environ.get("REPLAY_URI") is not None,
         )
         gameplay_done = time.monotonic()
+        timings.gameplay_s = gameplay_done - gameplay_start
+        upload_timings(timings)
         _validate_results_file(artifacts.results_path, job.results_schema)
         if job.episode_tags.get("source") == CERTIFICATION_EPISODE_SOURCE:
             _wait_for_players_to_complete(
@@ -376,16 +402,9 @@ def _run_kubernetes_episode(
                 child_names,
                 timeout_seconds=DEFAULT_PLAYER_EXIT_TIMEOUT_SECONDS,
             )
-        core_timings = {
-            "game_boot_s": game_ready - worker_start,
-            "player_launch_s": players_launched - game_ready,
-            "first_step_s": first_step - players_launched,
-            "gameplay_s": gameplay_done - first_step,
-        }
     finally:
         _collect_logs(core_v1, namespace, pod_name, child_names, artifacts)
         _delete_child_resources(core_v1, namespace, service_name, child_names)
-    return core_timings
 
 
 def _load_incluster_config() -> None:

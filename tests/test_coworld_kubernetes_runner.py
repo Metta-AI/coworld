@@ -245,6 +245,21 @@ def test_upload_timings_writes_model_json_to_env_uri(monkeypatch):
     assert EpisodePhaseTimings.model_validate_json(data).first_step_s == 3.0
 
 
+def test_upload_timings_omits_incomplete_phases(monkeypatch):
+    uploads: list[str] = []
+    monkeypatch.setattr(
+        kubernetes_runner,
+        "upload_data",
+        lambda _uri, data, *, content_type: uploads.append(data),
+    )
+    monkeypatch.setenv("WORKER_TIMINGS_URI", "file:///tmp/timings.json")
+
+    kubernetes_runner._upload_timings(EpisodePhaseTimings(game_boot_s=1.0))
+
+    assert json.loads(uploads[0]) == {"game_boot_s": 1.0}
+    assert EpisodePhaseTimings.model_validate_json(uploads[0]).phase_seconds() == {"game_boot": 1.0}
+
+
 def test_upload_timings_noop_without_env(monkeypatch):
     uploads: list[object] = []
     monkeypatch.setattr(kubernetes_runner, "upload_data", lambda *a, **k: uploads.append(a))
@@ -1607,6 +1622,8 @@ def test_run_kubernetes_episode_keeps_artifacts_authoritative_except_for_certifi
     player_start_timeouts: list[float] = []
     completion_waits: list[tuple[str, list[str], float]] = []
     pong_requirements: list[bool] = []
+    timing_snapshots: list[dict[str, float]] = []
+    startup_events: list[str] = []
 
     async def noop_async(*_args, **_kwargs):
         return None
@@ -1614,7 +1631,19 @@ def test_run_kubernetes_episode_keeps_artifacts_authoritative_except_for_certifi
     async def record_global_startup_timeout(*_args, startup_timeout_seconds, on_connected, require_pong, **_kwargs):
         startup_timeouts.append(startup_timeout_seconds)
         pong_requirements.append(require_pong)
+        startup_events.append("viewer connected")
         on_connected()
+        clock["now"] = 130.0
+
+    def record_player_start(*_args, timeout_seconds, **_kwargs):
+        player_start_timeouts.append(timeout_seconds)
+        startup_events.append("players started")
+
+    def record_timing_upload(timings):
+        snapshot = timings.phase_seconds()
+        timing_snapshots.append(snapshot)
+        startup_events.append(f"queued {next(reversed(snapshot))}")
+        clock["now"] += 1.0
 
     monkeypatch.setattr(kubernetes_runner, "STATE_PATH", state_path)
     clock = {"now": 100.0}
@@ -1628,7 +1657,11 @@ def test_run_kubernetes_episode_keeps_artifacts_authoritative_except_for_certifi
     monkeypatch.setattr(kubernetes_runner, "_require_http_ok", lambda *_args, **_kwargs: None)
     monkeypatch.setattr(kubernetes_runner, "_require_bad_player_rejected", noop_async)
     monkeypatch.setattr(kubernetes_runner, "_require_global_message", record_global_startup_timeout)
-    monkeypatch.setattr(kubernetes_runner, "_wait_for_episode_artifacts", lambda *_args, **_kwargs: None)
+    monkeypatch.setattr(
+        kubernetes_runner,
+        "_wait_for_episode_artifacts",
+        lambda *_args, **_kwargs: clock.__setitem__("now", 200.0),
+    )
     monkeypatch.setattr(kubernetes_runner, "_validate_results_file", lambda *_args: None)
     monkeypatch.setattr(
         kubernetes_runner,
@@ -1645,11 +1678,16 @@ def test_run_kubernetes_episode_keeps_artifacts_authoritative_except_for_certifi
     monkeypatch.setattr(
         kubernetes_runner,
         "_ensure_player_pods_started",
-        lambda *_args, timeout_seconds, **_kwargs: player_start_timeouts.append(timeout_seconds),
+        record_player_start,
     )
     monkeypatch.setattr(kubernetes_runner, "_collect_logs", lambda *_args: None)
     monkeypatch.setattr(kubernetes_runner, "_delete_child_resources", lambda *_args: None)
     monkeypatch.setattr(kubernetes_runner, "_policy_secrets_from_env", lambda: {})
+    monkeypatch.setattr(
+        kubernetes_runner,
+        "_upload_timings",
+        record_timing_upload,
+    )
     monkeypatch.delenv("COWORLD_PLAYER_CPU_REQUEST", raising=False)
     monkeypatch.delenv("COWORLD_PLAYER_MEMORY_REQUEST", raising=False)
     monkeypatch.setenv("JOB_NAMESPACE", "jobs")
@@ -1674,6 +1712,7 @@ def test_run_kubernetes_episode_keeps_artifacts_authoritative_except_for_certifi
         _owner_references,
     ):
         created.append((slot, player_cpu_request, player_memory_request, player_cpu_limit))
+        clock["now"] = 125.0
 
     monkeypatch.setattr(kubernetes_runner, "_create_player_pod", create_player_pod)
     job = cast(
@@ -1689,13 +1728,33 @@ def test_run_kubernetes_episode_keeps_artifacts_authoritative_except_for_certifi
         ),
     )
 
-    kubernetes_runner._run_kubernetes_episode(job, artifacts, timeout_seconds=600.0)
+    kubernetes_runner._run_kubernetes_episode(
+        job,
+        artifacts,
+        timeout_seconds=600.0,
+        timings=EpisodePhaseTimings(),
+        upload_timings=record_timing_upload,
+    )
 
     assert created == [(1, "2", "2Gi", "")]
     assert startup_timeouts == [runner_module.LOBBY_RUNTIME_STARTUP_TIMEOUT_SECONDS]
     assert pong_requirements == [episode_tags.get("source") == runner_module.CERTIFICATION_EPISODE_SOURCE]
     assert player_start_timeouts == [expected_player_start_timeout]
     assert completion_waits == expected_completion_waits
+    assert startup_events == [
+        "queued game_boot",
+        "queued player_launch",
+        "viewer connected",
+        "players started",
+        "queued first_step",
+        "queued gameplay",
+    ]
+    assert timing_snapshots == [
+        {"game_boot": 20.0},
+        {"game_boot": 20.0, "player_launch": 4.0},
+        {"game_boot": 20.0, "player_launch": 4.0, "first_step": 4.0},
+        {"game_boot": 20.0, "player_launch": 4.0, "first_step": 4.0, "gameplay": 69.0},
+    ]
 
 
 def test_create_game_service_exposes_human_proxy_without_rerouting_policy_players(monkeypatch):
@@ -2260,6 +2319,62 @@ def test_run_from_env_writes_error_info_on_failure(monkeypatch, tmp_path):
         kubernetes_runner.run_from_env()
 
     assert events == ["episode failed"]
+
+
+def test_run_from_env_uploads_final_artifact_timing(monkeypatch):
+    clock = {"now": 100.0}
+    timing_snapshots: list[dict[str, float]] = []
+
+    monkeypatch.setattr(kubernetes_runner, "_start_worker_health_server", lambda port: None)
+    monkeypatch.setattr(kubernetes_runner, "_read_job_spec", lambda: object())
+    monkeypatch.setattr(kubernetes_runner.EpisodeArtifacts, "create", lambda workdir, prefix: object())
+    monkeypatch.setattr(kubernetes_runner.time, "monotonic", lambda: clock["now"])
+
+    def run_episode(*_args, timings, **_kwargs):
+        timings.gameplay_s = 12.0
+
+    def upload_outputs(_artifacts):
+        clock["now"] = 102.5
+
+    monkeypatch.setattr(kubernetes_runner, "_run_kubernetes_episode", run_episode)
+    monkeypatch.setattr(kubernetes_runner, "_upload_outputs", upload_outputs)
+    monkeypatch.setattr(
+        kubernetes_runner,
+        "_upload_timings",
+        lambda timings: timing_snapshots.append(timings.phase_seconds()),
+    )
+
+    kubernetes_runner.run_from_env()
+
+    assert timing_snapshots == [{"gameplay": 12.0, "artifact_upload": 2.5}]
+
+
+def test_run_from_env_recovers_from_an_intermediate_timing_upload_failure(monkeypatch):
+    upload_attempts = 0
+    outputs_uploaded: list[bool] = []
+
+    monkeypatch.setattr(kubernetes_runner, "_start_worker_health_server", lambda port: None)
+    monkeypatch.setattr(kubernetes_runner, "_read_job_spec", lambda: object())
+    monkeypatch.setattr(kubernetes_runner.EpisodeArtifacts, "create", lambda workdir, prefix: object())
+
+    def run_episode(*_args, timings, upload_timings, **_kwargs):
+        timings.game_boot_s = 1.0
+        upload_timings(timings)
+
+    def upload_timing(_timings):
+        nonlocal upload_attempts
+        upload_attempts += 1
+        if upload_attempts == 1:
+            raise OSError("transient timing upload failure")
+
+    monkeypatch.setattr(kubernetes_runner, "_run_kubernetes_episode", run_episode)
+    monkeypatch.setattr(kubernetes_runner, "_upload_outputs", lambda _artifacts: outputs_uploaded.append(True))
+    monkeypatch.setattr(kubernetes_runner, "_upload_timings", upload_timing)
+
+    kubernetes_runner.run_from_env()
+
+    assert upload_attempts == 2
+    assert outputs_uploaded == [True]
 
 
 def test_write_error_info_marks_failure_as_crash(monkeypatch, tmp_path):

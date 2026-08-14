@@ -18,19 +18,21 @@ class EpisodePhaseTimings(BaseModel):
         (covers player pod scheduling, image pull, and the connect handshake).
     gameplay: first /global message until episode results are written.
     artifact_upload: results written until episode outputs are uploaded to S3.
+    Incomplete phases remain unset and are omitted from incremental uploads.
     """
 
-    game_boot_s: float
-    player_launch_s: float
-    first_step_s: float
-    gameplay_s: float
-    artifact_upload_s: float
+    game_boot_s: float | None = None
+    player_launch_s: float | None = None
+    first_step_s: float | None = None
+    gameplay_s: float | None = None
+    artifact_upload_s: float | None = None
 
     def phase_seconds(self) -> dict[str, float]:
-        return {
+        phases = {
             PHASE_GAME_BOOT: self.game_boot_s,
             PHASE_PLAYER_LAUNCH: self.player_launch_s,
             PHASE_FIRST_STEP: self.first_step_s,
             PHASE_GAMEPLAY: self.gameplay_s,
             PHASE_ARTIFACT_UPLOAD: self.artifact_upload_s,
         }
+        return {phase: seconds for phase, seconds in phases.items() if seconds is not None}
