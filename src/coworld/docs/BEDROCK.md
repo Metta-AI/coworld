@@ -139,7 +139,9 @@ for the rest of the episode with a standard Bedrock `ThrottlingException` (`HTTP
 ["Be robust to throttling"](#be-robust-to-throttling) section below already requires you to handle. A player that
 handles throttling correctly needs **zero new code** for spend limits; there is no Softmax-specific exception type.
 Setting the limit to `$0` disables player-pod LLM access by rejecting the first call. A blank limit leaves access
-unlimited.
+unlimited. The league's limit applies to every episode in the league — tournament rounds, league-bound experience
+requests, and lobbies alike; episodes outside any league are never capped (for experience requests, the requester's
+credit allowance is the control).
 
 You don't have to wait for the 429 — the sidecar tells you where you stand:
 
