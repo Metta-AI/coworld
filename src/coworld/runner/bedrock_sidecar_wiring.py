@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import json
+
 from kubernetes import client
 
 from coworld.runner.bedrock_metadata import CoworldEpisodeBedrockMetadata, serialize_bedrock_request_metadata
@@ -65,6 +67,10 @@ def build_bedrock_sidecar(
     spend_limit_usd: str | None = None,
     pricing_json: str | None = None,
     prompt_prefix_sample_rate: float = 0.0,
+    openrouter_key_secret_name: str | None = None,
+    openrouter_model_allowlist: list[str] | None = None,
+    openrouter_model_aliases: dict[str, str] | None = None,
+    openrouter_allowlist_version: str | None = None,
 ) -> client.V1Container:
     upstream = upstream_endpoint or BEDROCK_RUNTIME_ENDPOINT_TEMPLATE.format(region=region)
     # Optional S3 sink for completion records (latency/errors); unset bucket keeps the sidecar
@@ -118,6 +124,34 @@ def build_bedrock_sidecar(
         if prompt_prefix_sample_rate > 0
         else []
     )
+    openrouter_routing_env = (
+        [
+            client.V1EnvVar(name="BEDROCK_SIDECAR_LLM_PROVIDER", value="openrouter"),
+            client.V1EnvVar(
+                name="BEDROCK_SIDECAR_OPENROUTER_API_KEY",
+                value_from=client.V1EnvVarSource(
+                    secret_key_ref=client.V1SecretKeySelector(
+                        name=openrouter_key_secret_name,
+                        key="OPENROUTER_API_KEY",
+                    )
+                ),
+            ),
+            client.V1EnvVar(
+                name="BEDROCK_SIDECAR_OPENROUTER_MODEL_ALLOWLIST",
+                value=json.dumps(openrouter_model_allowlist, separators=(",", ":")),
+            ),
+            client.V1EnvVar(
+                name="BEDROCK_SIDECAR_OPENROUTER_MODEL_ALIASES",
+                value=json.dumps(openrouter_model_aliases, separators=(",", ":")),
+            ),
+            client.V1EnvVar(
+                name="BEDROCK_SIDECAR_OPENROUTER_ALLOWLIST_VERSION",
+                value=openrouter_allowlist_version,
+            ),
+        ]
+        if openrouter_key_secret_name is not None
+        else []
+    )
     return client.V1Container(
         name=BEDROCK_SIDECAR_CONTAINER_NAME,
         image=image,
@@ -141,6 +175,7 @@ def build_bedrock_sidecar(
             *sink_tuning_env,
             *openrouter_storage_env,
             *prompt_prefix_measurement_env,
+            *openrouter_routing_env,
             client.V1EnvVar(
                 name="POD_NAME",
                 value_from=client.V1EnvVarSource(field_ref=client.V1ObjectFieldSelector(field_path="metadata.name")),

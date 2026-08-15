@@ -619,6 +619,18 @@ def _create_player_pod(
                 # the sidecar meters spend with the same rates the server reports.
                 pricing_json=os.environ.get("BEDROCK_SIDECAR_PRICING_JSON") or None,
                 prompt_prefix_sample_rate=prompt_prefix_sample_rate,
+                openrouter_key_secret_name=os.environ.get("COWORLD_OPENROUTER_KEY_SECRET_NAME"),
+                openrouter_model_allowlist=(
+                    json.loads(os.environ["COWORLD_OPENROUTER_MODEL_ALLOWLIST"])
+                    if "COWORLD_OPENROUTER_MODEL_ALLOWLIST" in os.environ
+                    else None
+                ),
+                openrouter_model_aliases=(
+                    json.loads(os.environ["COWORLD_OPENROUTER_MODEL_ALIASES"])
+                    if "COWORLD_OPENROUTER_MODEL_ALIASES" in os.environ
+                    else None
+                ),
+                openrouter_allowlist_version=os.environ.get("COWORLD_OPENROUTER_ALLOWLIST_VERSION"),
             )
         )
     pod = client.V1Pod(

@@ -2141,6 +2141,8 @@ def test_create_player_pod_with_bedrock_sidecar_inverts_bedrock_access(monkeypat
     # The dispatcher-forwarded league spend limit and server pricing snapshot reach the sidecar.
     assert sidecar_env["BEDROCK_SIDECAR_SPEND_LIMIT_USD"] == "1.5"
     assert sidecar_env["BEDROCK_SIDECAR_PRICING_JSON"] == '{"claude-sonnet-4-6":[3.0,15.0,0.3,3.75]}'
+    assert "BEDROCK_SIDECAR_LLM_PROVIDER" not in sidecar_env
+    assert "BEDROCK_SIDECAR_OPENROUTER_API_KEY" not in sidecar_env
     # Self-provisioned IRSA on the sidecar (not webhook-dependent).
     assert sidecar_env["AWS_ROLE_ARN"] == "arn:aws:iam::583928386201:role/episode-runner-bedrock"
     assert sidecar_env["AWS_WEB_IDENTITY_TOKEN_FILE"] == BEDROCK_SIDECAR_TOKEN_FILE
@@ -2205,6 +2207,66 @@ def test_create_player_pod_sidecar_forwards_s3_sink_env(monkeypatch):
     assert pod_name_env.value_from.field_ref.field_path == "metadata.name"
     control_projection = created["body"].spec.volumes[0].projected.sources[1].config_map
     assert control_projection.name == BEDROCK_PROMPT_PREFIX_CONTROL_CONFIG_MAP_NAME
+
+
+def test_create_player_pod_routes_every_sidecar_without_exposing_openrouter_key(monkeypatch) -> None:
+    created: list[Any] = []
+    core_v1 = SimpleNamespace(create_namespaced_pod=lambda *, namespace, body: created.append(body))
+    monkeypatch.setenv("COWORLD_BEDROCK_REGION", "us-west-2")
+    monkeypatch.setenv("BEDROCK_SIDECAR_IMAGE", "ghcr.io/metta-ai/bedrock-sidecar:latest")
+    monkeypatch.setenv("BEDROCK_SIDECAR_ROLE_ARN", "arn:aws:iam::583928386201:role/episode-runner-bedrock")
+    monkeypatch.setenv("BEDROCK_SIDECAR_PORT", "19191")
+    monkeypatch.setenv("COWORLD_OPENROUTER_KEY_SECRET_NAME", "coworld-openrouter-episode-key")
+    monkeypatch.setenv("COWORLD_OPENROUTER_API_KEY", "literal-key-must-not-appear")
+    monkeypatch.setenv("COWORLD_OPENROUTER_MODEL_ALLOWLIST", '["anthropic/claude-sonnet-4.6"]')
+    monkeypatch.setenv(
+        "COWORLD_OPENROUTER_MODEL_ALIASES",
+        '{"us.anthropic.claude-sonnet-4-6":"anthropic/claude-sonnet-4.6"}',
+    )
+    monkeypatch.setenv("COWORLD_OPENROUTER_ALLOWLIST_VERSION", "episode-v1")
+    player = PlayerLaunchSpec(image="ghcr.io/metta-ai/players/paintbot@sha256:player123", run=(), env={})
+
+    for slot in (0, 1):
+        kubernetes_runner._create_player_pod(
+            core_v1,
+            "jobs",
+            f"job-player-{slot}",
+            slot,
+            "slot-token",
+            player,
+            {"USE_BEDROCK": "true"},
+            "job-id",
+            "game-service",
+            "2",
+            "2Gi",
+            "",
+            [],
+        )
+
+    assert len(created) == 2
+    for pod in created:
+        player_env = {entry.name: entry.value for entry in pod.spec.containers[0].env}
+        sidecar = next(
+            container for container in pod.spec.init_containers if container.name == BEDROCK_SIDECAR_CONTAINER_NAME
+        )
+        sidecar_env = {entry.name: entry.value for entry in sidecar.env}
+        assert "COWORLD_OPENROUTER_KEY_SECRET_NAME" not in player_env
+        assert "BEDROCK_SIDECAR_OPENROUTER_API_KEY" not in player_env
+        assert sidecar_env["BEDROCK_SIDECAR_LLM_PROVIDER"] == "openrouter"
+        api_key_env = next(entry for entry in sidecar.env if entry.name == "BEDROCK_SIDECAR_OPENROUTER_API_KEY")
+        assert api_key_env.value is None
+        assert api_key_env.value_from.secret_key_ref.name == "coworld-openrouter-episode-key"
+        assert api_key_env.value_from.secret_key_ref.key == "OPENROUTER_API_KEY"
+        assert sidecar_env["BEDROCK_SIDECAR_OPENROUTER_MODEL_ALLOWLIST"] == '["anthropic/claude-sonnet-4.6"]'
+        assert sidecar_env["BEDROCK_SIDECAR_OPENROUTER_MODEL_ALIASES"] == (
+            '{"us.anthropic.claude-sonnet-4-6":"anthropic/claude-sonnet-4.6"}'
+        )
+        assert sidecar_env["BEDROCK_SIDECAR_OPENROUTER_ALLOWLIST_VERSION"] == "episode-v1"
+        for container in [*pod.spec.containers, *pod.spec.init_containers]:
+            for env in container.env or []:
+                assert env.value != "literal-key-must-not-appear"
+                if env.name == "BEDROCK_SIDECAR_OPENROUTER_API_KEY":
+                    assert env.value is None
 
 
 def test_create_player_pod_forwards_artifact_upload_url_for_its_slot(monkeypatch):
