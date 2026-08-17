@@ -9,6 +9,7 @@ import zipfile
 from pathlib import Path
 from typing import cast
 
+import httpx
 import pytest
 from click import unstyle
 from pytest_httpserver import HTTPServer
@@ -487,6 +488,25 @@ def test_upload_coworld_caches_successful_certification(
     assert json.loads(_certified_manifest_cache_path().read_text(encoding="utf-8")) == {
         _certification_cache_key(manifest_path.resolve()): "certified"
     }
+
+
+@pytest.mark.parametrize("error_type", [httpx.ConnectError, httpx.ConnectTimeout])
+def test_local_upload_connection_failure_points_to_full_coworld_stack(error_type: type[httpx.RequestError]) -> None:
+    client = CoworldUploadClient("http://localhost:3002/api", "test-token")
+    error = error_type("unavailable", request=httpx.Request("POST", "http://localhost:3002/api/observatory"))
+
+    with pytest.raises(RuntimeError, match="uv run metta dev up --full-coworld"):
+        with client:
+            raise error
+
+
+def test_remote_upload_connection_failure_is_unchanged() -> None:
+    client = CoworldUploadClient("https://softmax.com/api", "test-token")
+    error = httpx.ConnectError("unavailable", request=httpx.Request("POST", "https://softmax.com/api/observatory"))
+
+    with pytest.raises(httpx.ConnectError, match="unavailable"):
+        with client:
+            raise error
 
 
 def test_certification_cache_key_changes_with_certifier_code(

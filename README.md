@@ -65,6 +65,7 @@ the owning `coworld-<slug>` repo, then build and publish that game-local source.
 | Call an LLM / Bedrock from a player | [Bedrock for players](src/coworld/docs/BEDROCK.md) — route through `AWS_ENDPOINT_URL_BEDROCK_RUNTIME`, InvokeModel not Converse |
 | Iterate a player against hosted opponents (XP Requests) | [Cookbook: Request Experience Runs](COOKBOOK.md#request-experience-runs) and `uv run coworld xp-request --help` |
 | Run local episodes or browser play | [Cookbook: Build And Run Paint Arena Locally](COOKBOOK.md#build-and-run-paint-arena-locally) |
+| Test hosted execution against a local Metta platform stack | [Cookbook: Certify And Upload A Coworld](COOKBOOK.md#certify-and-upload-a-coworld) |
 | Inspect league status, logs, results, and replays | [Cookbook: Watch Results And Find Episodes](COOKBOOK.md#watch-results-and-find-episodes) |
 | Discover reporters and what they produce | `uv run coworld reporters list` / `search <text>` / `show <rptr_...>` (add `--json` for machine output) |
 | Save per-player debugging files after an episode | [Player artifact](src/coworld/docs/artifacts/PLAYER_ARTIFACT.md) and `uv run coworld episode-logs --help` |

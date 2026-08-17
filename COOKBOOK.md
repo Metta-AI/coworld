@@ -1102,6 +1102,15 @@ uv run coworld certify packages/coworld/src/coworld/examples/paintarena/dist/cow
 uv run coworld upload-coworld packages/coworld/src/coworld/examples/paintarena/dist/coworld_manifest.json
 ```
 
+Metta monorepo contributors can test hosted execution against the local platform with:
+
+```bash
+uv run metta dev up --full-coworld
+```
+
+This command is opt-in. Local `certify`, `run-episode`, normal uploads to Softmax, installation, and default tests do not
+start this stack.
+
 `certify` runs the Executable transcript locally. It records whether every runnable's optional `source_url` resolves to
 publicly accessible source (GitHub refs are checked for a Dockerfile at the source path or an ancestor), validates the
 manifest's certification fixture before launching containers, runs one smoke episode, validates results, verifies the

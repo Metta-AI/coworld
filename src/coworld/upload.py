@@ -18,13 +18,13 @@ from collections.abc import Iterator
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
+from types import TracebackType
 from typing import Any, Literal, Self
-from urllib.parse import quote
+from urllib.parse import quote, urlparse
 
 import httpx
 import typer
 from pydantic import BaseModel, Field
-from softmax import auth as softmax_auth
 
 from coworld.bundle import resolve_registry_image_ref
 from coworld.certifier import EXECUTABLE_TRANSCRIPT_PATH, certify_coworld, load_coworld_package
@@ -35,6 +35,7 @@ from coworld.manifest import validate_upload_manifest
 from coworld.manifest_validation import validate_coworld_manifest_game_configs
 from coworld.runner.runner import assert_docker_image_reachable
 from coworld.types import MANIFEST_ROLE_SECTIONS
+from softmax import auth as softmax_auth
 
 _LOCAL_TAG_SEPARATOR_RE = re.compile(r"[^a-z0-9._-]+")
 _IMAGE_ID_RE = re.compile(r"^img_[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$")
@@ -338,7 +339,8 @@ class CoworldUploadClient:
     _elevated = False
 
     def __init__(self, server_url: str, token: str):
-        self._http_client = httpx.Client(base_url=f"{server_url.rstrip('/')}/observatory", timeout=30.0)
+        self._server_url = server_url.rstrip("/")
+        self._http_client = httpx.Client(base_url=f"{self._server_url}/observatory", timeout=30.0)
         self._token = token
 
     @classmethod
@@ -358,8 +360,23 @@ class CoworldUploadClient:
     def __enter__(self) -> Self:
         return self
 
-    def __exit__(self, exc_type: object, exc_val: object, exc_tb: object) -> None:
+    def __exit__(
+        self,
+        exc_type: type[BaseException] | None,
+        exc_val: BaseException | None,
+        exc_tb: TracebackType | None,
+    ) -> None:
         self.close()
+        if isinstance(exc_val, (httpx.ConnectError, httpx.ConnectTimeout)) and urlparse(self._server_url).hostname in {
+            "localhost",
+            "127.0.0.1",
+            "::1",
+        }:
+            raise RuntimeError(
+                f"Could not connect to local Observatory at {self._server_url}. "
+                "Metta contributors can start the hosted Coworld stack with: "
+                "uv run metta dev up --full-coworld"
+            ) from exc_val
 
     def _headers(self) -> dict[str, str]:
         headers = {"Authorization": f"Bearer {self._token}"}
