@@ -2216,7 +2216,7 @@ def test_create_player_pod_routes_every_sidecar_without_exposing_openrouter_key(
     monkeypatch.setenv("BEDROCK_SIDECAR_IMAGE", "ghcr.io/metta-ai/bedrock-sidecar:latest")
     monkeypatch.setenv("BEDROCK_SIDECAR_ROLE_ARN", "arn:aws:iam::583928386201:role/episode-runner-bedrock")
     monkeypatch.setenv("BEDROCK_SIDECAR_PORT", "19191")
-    monkeypatch.setenv("COWORLD_OPENROUTER_KEY_SECRET_NAME", "coworld-openrouter-episode-key")
+    monkeypatch.setenv("COWORLD_OPENROUTER_KEY_SECRET_NAME", "episode-llm-key-episode-123")
     monkeypatch.setenv("COWORLD_OPENROUTER_API_KEY", "literal-key-must-not-appear")
     monkeypatch.setenv("COWORLD_OPENROUTER_MODEL_ALLOWLIST", '["anthropic/claude-sonnet-4.6"]')
     monkeypatch.setenv(
@@ -2255,7 +2255,7 @@ def test_create_player_pod_routes_every_sidecar_without_exposing_openrouter_key(
         assert sidecar_env["BEDROCK_SIDECAR_LLM_PROVIDER"] == "openrouter"
         api_key_env = next(entry for entry in sidecar.env if entry.name == "BEDROCK_SIDECAR_OPENROUTER_API_KEY")
         assert api_key_env.value is None
-        assert api_key_env.value_from.secret_key_ref.name == "coworld-openrouter-episode-key"
+        assert api_key_env.value_from.secret_key_ref.name == "episode-llm-key-episode-123"
         assert api_key_env.value_from.secret_key_ref.key == "OPENROUTER_API_KEY"
         assert sidecar_env["BEDROCK_SIDECAR_OPENROUTER_MODEL_ALLOWLIST"] == '["anthropic/claude-sonnet-4.6"]'
         assert sidecar_env["BEDROCK_SIDECAR_OPENROUTER_MODEL_ALIASES"] == (
