@@ -603,7 +603,9 @@ def test_episode_logs_artifact_403_surfaces_error(
     )
 
     assert result.exit_code != 0
-    assert "Access denied (403)" in str(result.exception) or "403" in result.output
+    error = f"{result.exception}\n{result.output}"
+    assert "Access denied (403)" in error
+    assert "coworld --elevated <command>" in error
 
 
 def test_episode_logs_artifact_output_writes_named_file(

@@ -1117,11 +1117,16 @@ def _raise_for_status(response: httpx.Response) -> None:
     if response.status_code == 403:
         # A domain 403 (e.g. "You can only view your own player's prompt") is
         # not a stale token — surface it verbatim instead of login advice.
+        elevated_hint = (
+            "Softmax team members can request team access by rerunning as "
+            "`coworld --elevated <command> ...`."
+        )
         if detail:
-            raise RuntimeError(f"Access denied (403): {detail}")
+            raise RuntimeError(f"Access denied (403): {detail}\n{elevated_hint}")
         raise RuntimeError(
             f"Access denied (403) for {response.request.url.path}. "
-            "You may lack permissions, or your token may be expired. Run: uv run softmax login"
+            "You may lack permissions, or your token may be expired. Run: uv run softmax login. "
+            f"{elevated_hint}"
         )
     if response.is_error and detail:
         raise RuntimeError(f"Request failed ({response.status_code}) for {response.request.url.path}: {detail}")

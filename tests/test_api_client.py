@@ -14,12 +14,14 @@ showing up in CI.
 from collections.abc import Iterator
 from typing import Any
 
+import httpx
 import pytest
 from pydantic import ValidationError
 from pytest_httpserver import HTTPServer
 
-from coworld.api_client import CoworldApiClient, LeaderboardEntryPublic
+from coworld.api_client import CoworldApiClient, LeaderboardEntryPublic, _raise_for_status
 from coworld.upload import CoworldUploadClient
+from coworld.upload import _raise_for_status as _raise_for_upload_status
 
 
 @pytest.fixture
@@ -165,3 +167,25 @@ def test_upload_client_elevated_refuses_player_token(httpserver: HTTPServer) -> 
                 client._headers()
     finally:
         CoworldUploadClient.set_elevated(False)
+
+
+@pytest.mark.parametrize(
+    "raise_for_status, response_body",
+    [
+        pytest.param(_raise_for_status, None, id="api-client-without-detail"),
+        pytest.param(_raise_for_status, {"detail": "You do not own this resource"}, id="api-client-with-detail"),
+        pytest.param(_raise_for_upload_status, None, id="upload-client"),
+    ],
+)
+def test_403_errors_suggest_elevated_team_access(raise_for_status: Any, response_body: Any) -> None:
+    kwargs = {"json": response_body} if response_body is not None else {}
+    response = httpx.Response(
+        403,
+        request=httpx.Request("GET", "https://softmax.com/observatory/v2/team-resource"),
+        **kwargs,
+    )
+
+    with pytest.raises(RuntimeError) as error:
+        raise_for_status(response)
+
+    assert "coworld --elevated <command>" in str(error.value)

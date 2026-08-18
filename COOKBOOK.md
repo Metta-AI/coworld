@@ -963,10 +963,10 @@ team accounts; non-team users get 403. Non-team users should use the episode row
 instead:
 
 ```bash
-uv run coworld episode-results ereq_... --output results.json   # team-only
-uv run coworld episode-stats ereq_... --json                    # team-only
-uv run coworld episode-logs ereq_... --list --mine              # team-only (per-agent log listing)
-uv run coworld episode-logs ereq_... --agent 0 --mine           # team-only (per-agent log fetch)
+uv run coworld --elevated episode-results ereq_... --output results.json # team-only
+uv run coworld --elevated episode-stats ereq_... --json                  # team-only
+uv run coworld --elevated episode-logs ereq_... --list --mine            # team-only (per-agent log listing)
+uv run coworld --elevated episode-logs ereq_... --agent 0 --mine         # team-only (per-agent log fetch)
 ```
 
 Find and download hosted replays:

@@ -91,7 +91,7 @@ Until the CLI surface lands, use the episode-request routes and per-artifact com
 uv run coworld episodes ereq_... --json                          # status, scores, replay_url
 uv run coworld episode-logs ereq_... --game --download-dir logs/ # game log
 uv run coworld replays --round round_... --mine --download-dir replays/
-uv run coworld episode-results ereq_... --output results.json    # Softmax team accounts only
+uv run coworld --elevated episode-results ereq_... --output results.json # Softmax team accounts only
 ```
 
 ## Access Control

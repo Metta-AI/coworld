@@ -1308,7 +1308,9 @@ def _raise_for_status(response: httpx.Response) -> None:
     if response.status_code == 403:
         raise RuntimeError(
             f"Access denied (403) for {response.request.url.path}. "
-            "You may lack permissions, or your token may be expired. Run: uv run softmax login"
+            "You may lack permissions, or your token may be expired. Run: uv run softmax login. "
+            "Softmax team members can request team access by rerunning as "
+            "`coworld --elevated <command> ...`."
         )
     if response.is_error:
         # httpx's raise_for_status() drops the response body, but the server puts the
