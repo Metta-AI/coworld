@@ -10,7 +10,9 @@ For usage-oriented guidance, use the package [README](../../../README.md) and th
 [Paint Arena](../examples/paintarena/README.md) as its canonical example. Installable starter templates for every role
 ship under `coworld/templates`. When rebuilding an existing Coworld after the June 2026 repo consolidation, use
 [Rebuilding Coworlds After The Role Repo Move](REBUILDING_COWORLDS.md). For league bracket tournaments (`tour_…`
-objects, waves, and how to read their episodes), use [Bracket Tournaments](TOURNAMENTS.md).
+objects, waves, and how to read their episodes), use [Bracket Tournaments](TOURNAMENTS.md). For how the platform ladder
+deals entrants onto game seats — the per-strategy slot→entrant formulas a team-structured game must check before
+requesting a seed — use [Platform Ladder Seating](LADDER_SEATING.md).
 
 ## What Is A Complete Coworld?
 

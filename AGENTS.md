@@ -143,6 +143,9 @@ source of truth. They are generated docs and `$schema` targets; `test_types.py` 
   waves, bracket matches) and how to read their episodes via the v2 API.
 - [src/coworld/docs/PLATFORM_LADDER_LEAGUE.md](src/coworld/docs/PLATFORM_LADDER_LEAGUE.md) - create/maintain platform
   ladder leagues (public; syncs to `Metta-AI/coworld`).
+- [src/coworld/docs/LADDER_SEATING.md](src/coworld/docs/LADDER_SEATING.md) - how the platform ladder deals entrants
+  onto game seats: per-strategy slot→entrant formulas, `team_layout` geometry, and filler marking. Check it against a
+  game's slot→team map before requesting a seed.
 - [src/coworld/docs/MIGRATE_TO_PLATFORM_COMMISSIONER.md](src/coworld/docs/MIGRATE_TO_PLATFORM_COMMISSIONER.md) - cut over
   from a container commissioner (public; syncs to `Metta-AI/coworld`).
 - `src/coworld/docs/roles/*.md` - per-role contracts.

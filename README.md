@@ -112,6 +112,7 @@ progress:
 | Call Bedrock / an LLM from a player | [Bedrock for players](src/coworld/docs/BEDROCK.md) |
 | Implement supporting roles | [Reporter](src/coworld/docs/roles/REPORTER.md), [Commissioner](src/coworld/docs/roles/COMMISSIONER.md), [Grader](src/coworld/docs/roles/GRADER.md), [Diagnoser](src/coworld/docs/roles/DIAGNOSER.md), and [Optimizer](src/coworld/docs/roles/OPTIMIZER.md) |
 | Create / maintain a platform ladder league | [PLATFORM_LADDER_LEAGUE.md](src/coworld/docs/PLATFORM_LADDER_LEAGUE.md) |
+| Check how ladder seats map to entrants and teams | [Platform Ladder Seating](src/coworld/docs/LADDER_SEATING.md) |
 | Migrate off a container commissioner | [MIGRATE_TO_PLATFORM_COMMISSIONER.md](src/coworld/docs/MIGRATE_TO_PLATFORM_COMMISSIONER.md) |
 | Start from installable templates | `coworld/templates` in the installed package |
 | Rebuild with the current role source layout | [Rebuilding Coworlds After The Role Repo Move](src/coworld/docs/REBUILDING_COWORLDS.md) |
