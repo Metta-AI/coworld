@@ -45,6 +45,9 @@ _HOSTED_SMOKE_SUCCESS_STATUSES = {"completed"}
 # polling to upload-smoke episodes so user/XP/tournament requests for the same
 # coworld can't masquerade as smoke results.
 _HOSTED_SMOKE_EPISODE_SOURCE = "coworld_upload"
+_REPLAY_VIEWER_BUNDLE_POLL_SECONDS = 2.0
+_REPLAY_VIEWER_BUNDLE_POLL_MAX_SECONDS = 15.0
+_REPLAY_VIEWER_BUNDLE_WAIT_SECONDS = 600.0
 _CERTIFICATION_CACHE_VERSION = "coworld-certification-v1"
 _PACKAGE_ROOT = Path(__file__).parent
 _DOCKER_AUTH_CONFIG_KEYS = {"auths", "credsStore", "credHelpers"}
@@ -277,6 +280,8 @@ class ReplayViewerBundleUploadResponse(BaseModel):
 
 class ReplayViewerBundleCompleteResponse(BaseModel):
     bundle: str
+    status: Literal["ready", "expanding", "failed", "pending"]
+    detail: str | None = None
 
 
 class WhoAmIResponse(BaseModel):
@@ -451,14 +456,64 @@ class CoworldUploadClient:
     def complete_replay_viewer_bundle_upload(
         self, *, content_hash: str, size_bytes: int
     ) -> ReplayViewerBundleCompleteResponse:
-        response = self._http_client.post(
-            "/v2/coworlds/replay-viewer-bundles/upload/complete",
+        payload = self._post_replay_viewer_bundle_complete(content_hash=content_hash, size_bytes=size_bytes)
+        if payload is not None and payload.status == "ready":
+            return payload
+        return self._wait_for_replay_viewer_bundle(content_hash=content_hash, size_bytes=size_bytes)
+
+    def get_replay_viewer_bundle(self, content_hash: str) -> ReplayViewerBundleCompleteResponse | None:
+        response = self._http_client.get(
+            f"/v2/coworlds/replay-viewer-bundles/{content_hash}",
             headers=self._headers(),
-            json={"content_hash": content_hash, "size_bytes": size_bytes},
-            timeout=600.0,
+            timeout=60.0,
         )
+        if response.status_code == 404:
+            return None
         _raise_for_status(response)
         return ReplayViewerBundleCompleteResponse.model_validate(response.json())
+
+    def _post_replay_viewer_bundle_complete(
+        self, *, content_hash: str, size_bytes: int
+    ) -> ReplayViewerBundleCompleteResponse | None:
+        """POST the complete request; None means indeterminate (gateway 504 or client-side
+        timeout) -- the server may still be expanding, so the caller should poll."""
+        try:
+            response = self._http_client.post(
+                "/v2/coworlds/replay-viewer-bundles/upload/complete",
+                headers=self._headers(),
+                json={"content_hash": content_hash, "size_bytes": size_bytes},
+                timeout=120.0,
+            )
+        except httpx.TimeoutException:
+            return None
+        if response.status_code == 504:
+            return None
+        _raise_for_status(response)
+        return ReplayViewerBundleCompleteResponse.model_validate(response.json())
+
+    def _wait_for_replay_viewer_bundle(
+        self, *, content_hash: str, size_bytes: int
+    ) -> ReplayViewerBundleCompleteResponse:
+        deadline = time.monotonic() + _REPLAY_VIEWER_BUNDLE_WAIT_SECONDS
+        poll_seconds = _REPLAY_VIEWER_BUNDLE_POLL_SECONDS
+        while time.monotonic() < deadline:
+            status = self.get_replay_viewer_bundle(content_hash)
+            if status is not None and status.status == "ready":
+                return status
+            if status is not None and status.status == "failed":
+                raise RuntimeError(f"Replay viewer bundle {content_hash} expansion failed: {status.detail}")
+            if status is None or status.status == "pending":
+                # No expansion is running (it died, or the complete request never reached the
+                # server); the complete endpoint is idempotent, so re-POST to restart it.
+                payload = self._post_replay_viewer_bundle_complete(content_hash=content_hash, size_bytes=size_bytes)
+                if payload is not None and payload.status == "ready":
+                    return payload
+            time.sleep(poll_seconds)
+            poll_seconds = min(poll_seconds * 1.5, _REPLAY_VIEWER_BUNDLE_POLL_MAX_SECONDS)
+        raise RuntimeError(
+            f"Replay viewer bundle {content_hash} did not finish expanding within "
+            f"{_REPLAY_VIEWER_BUNDLE_WAIT_SECONDS:.0f}s"
+        )
 
     def whoami(self) -> WhoAmIResponse:
         response = self._http_client.get("/whoami", headers=self._headers(), timeout=30.0)

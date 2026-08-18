@@ -14,6 +14,7 @@ import pytest
 from click import unstyle
 from pytest_httpserver import HTTPServer
 from typer.testing import CliRunner
+from werkzeug import Response
 
 from coworld.cli import app
 from coworld.upload import (
@@ -2614,7 +2615,146 @@ class _RecordingReplayViewerBundleClient:
 
     def complete_replay_viewer_bundle_upload(self, **kwargs: object) -> ReplayViewerBundleCompleteResponse:
         self.calls.append(("complete", kwargs))
-        return ReplayViewerBundleCompleteResponse(bundle=f"sha256:{kwargs['content_hash']}")
+        return ReplayViewerBundleCompleteResponse(bundle=f"sha256:{kwargs['content_hash']}", status="ready")
+
+
+def test_complete_replay_viewer_bundle_polls_until_ready(
+    httpserver: HTTPServer,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    content_hash = "a" * 64
+    bundle = f"sha256:{content_hash}"
+    polls = {"n": 0}
+
+    def status_handler(_request: object) -> Response:
+        polls["n"] += 1
+        status = "ready" if polls["n"] >= 2 else "expanding"
+        return Response(
+            json.dumps({"bundle": bundle, "status": status}),
+            status=200,
+            content_type="application/json",
+        )
+
+    httpserver.expect_request(
+        "/observatory/v2/coworlds/replay-viewer-bundles/upload/complete",
+        method="POST",
+        json={"content_hash": content_hash, "size_bytes": 12},
+    ).respond_with_json({"bundle": bundle, "status": "expanding"}, status=202)
+    httpserver.expect_request(
+        f"/observatory/v2/coworlds/replay-viewer-bundles/{content_hash}",
+        method="GET",
+    ).respond_with_handler(status_handler)
+    monkeypatch.setattr("coworld.upload.time.sleep", lambda _seconds: None)
+
+    with CoworldUploadClient(server_url=httpserver.url_for(""), token="token") as client:
+        result = client.complete_replay_viewer_bundle_upload(content_hash=content_hash, size_bytes=12)
+
+    assert result == ReplayViewerBundleCompleteResponse(bundle=bundle, status="ready")
+    assert polls["n"] == 2
+
+
+def test_complete_replay_viewer_bundle_treats_504_as_indeterminate(
+    httpserver: HTTPServer,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    content_hash = "b" * 64
+    bundle = f"sha256:{content_hash}"
+    httpserver.expect_request(
+        "/observatory/v2/coworlds/replay-viewer-bundles/upload/complete",
+        method="POST",
+        json={"content_hash": content_hash, "size_bytes": 12},
+    ).respond_with_data("softmax.com | 504: Gateway time-out", status=504)
+    httpserver.expect_request(
+        f"/observatory/v2/coworlds/replay-viewer-bundles/{content_hash}",
+        method="GET",
+    ).respond_with_json({"bundle": bundle, "status": "ready"})
+    monkeypatch.setattr("coworld.upload.time.sleep", lambda _seconds: None)
+
+    with CoworldUploadClient(server_url=httpserver.url_for(""), token="token") as client:
+        result = client.complete_replay_viewer_bundle_upload(content_hash=content_hash, size_bytes=12)
+
+    assert result == ReplayViewerBundleCompleteResponse(bundle=bundle, status="ready")
+
+
+def test_complete_replay_viewer_bundle_reposts_complete_while_pending(
+    httpserver: HTTPServer,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    content_hash = "c" * 64
+    bundle = f"sha256:{content_hash}"
+    completes = {"n": 0}
+
+    def complete_handler(_request: object) -> Response:
+        completes["n"] += 1
+        if completes["n"] == 1:
+            return Response("softmax.com | 504: Gateway time-out", status=504)
+        return Response(
+            json.dumps({"bundle": bundle, "status": "ready"}),
+            status=200,
+            content_type="application/json",
+        )
+
+    httpserver.expect_request(
+        "/observatory/v2/coworlds/replay-viewer-bundles/upload/complete",
+        method="POST",
+        json={"content_hash": content_hash, "size_bytes": 12},
+    ).respond_with_handler(complete_handler)
+    httpserver.expect_request(
+        f"/observatory/v2/coworlds/replay-viewer-bundles/{content_hash}",
+        method="GET",
+    ).respond_with_json({"bundle": bundle, "status": "pending"})
+    monkeypatch.setattr("coworld.upload.time.sleep", lambda _seconds: None)
+
+    with CoworldUploadClient(server_url=httpserver.url_for(""), token="token") as client:
+        result = client.complete_replay_viewer_bundle_upload(content_hash=content_hash, size_bytes=12)
+
+    assert result == ReplayViewerBundleCompleteResponse(bundle=bundle, status="ready")
+    assert completes["n"] == 2
+
+
+def test_complete_replay_viewer_bundle_raises_on_failed_expansion(
+    httpserver: HTTPServer,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    content_hash = "d" * 64
+    bundle = f"sha256:{content_hash}"
+    httpserver.expect_request(
+        "/observatory/v2/coworlds/replay-viewer-bundles/upload/complete",
+        method="POST",
+        json={"content_hash": content_hash, "size_bytes": 12},
+    ).respond_with_json({"bundle": bundle, "status": "expanding"}, status=202)
+    httpserver.expect_request(
+        f"/observatory/v2/coworlds/replay-viewer-bundles/{content_hash}",
+        method="GET",
+    ).respond_with_json({"bundle": bundle, "status": "failed", "detail": "bundle must contain index.html"})
+    monkeypatch.setattr("coworld.upload.time.sleep", lambda _seconds: None)
+
+    with CoworldUploadClient(server_url=httpserver.url_for(""), token="token") as client:
+        with pytest.raises(RuntimeError, match="bundle must contain index.html"):
+            client.complete_replay_viewer_bundle_upload(content_hash=content_hash, size_bytes=12)
+
+
+def test_complete_replay_viewer_bundle_treats_client_timeout_as_indeterminate(
+    httpserver: HTTPServer,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    content_hash = "e" * 64
+    bundle = f"sha256:{content_hash}"
+    httpserver.expect_request(
+        f"/observatory/v2/coworlds/replay-viewer-bundles/{content_hash}",
+        method="GET",
+    ).respond_with_json({"bundle": bundle, "status": "ready"})
+    monkeypatch.setattr("coworld.upload.time.sleep", lambda _seconds: None)
+
+    with CoworldUploadClient(server_url=httpserver.url_for(""), token="token") as client:
+
+        def timing_out_post(*_args: object, **_kwargs: object) -> httpx.Response:
+            raise httpx.ReadTimeout("read timed out")
+
+        monkeypatch.setattr(client._http_client, "post", timing_out_post)
+        result = client.complete_replay_viewer_bundle_upload(content_hash=content_hash, size_bytes=12)
+
+    assert result == ReplayViewerBundleCompleteResponse(bundle=bundle, status="ready")
 
 
 def test_replay_viewer_bundle_files_requires_built_bundle(tmp_path: Path) -> None:
