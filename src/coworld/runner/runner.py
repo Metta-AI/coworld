@@ -695,7 +695,16 @@ async def _require_global_message(
         # max_size=None: a game's first global snapshot can exceed the 1 MiB
         # websockets default (high-resolution sprite protocols ship multi-MB
         # init frames), and this probe only checks that a message arrives.
-        async with websockets.connect(url, open_timeout=5, max_size=None) as websocket:
+        # max_queue=None when pinging: this probe does not recv() while
+        # on_connected blocks (hosted runs hold the viewer open until every
+        # player pod has started). A game that streams lobby frames to /global
+        # meanwhile fills websockets' default receive queue, at which point the
+        # client pauses reading the socket entirely — so the Pong answering the
+        # certification Ping below is never read and the probe times out. Only
+        # certification pings, so only certification pays for unbounded
+        # buffering; ordinary episodes keep the default backpressure.
+        backpressure = {"max_queue": None} if require_pong else {}
+        async with websockets.connect(url, open_timeout=5, max_size=None, **backpressure) as websocket:
             if on_connected is not None:
                 await asyncio.to_thread(on_connected)
             if require_pong:

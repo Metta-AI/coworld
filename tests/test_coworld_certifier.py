@@ -13,6 +13,7 @@ from uuid import UUID
 
 import httpx
 import pytest
+import websockets
 from fastapi.testclient import TestClient
 from jsonschema.exceptions import ValidationError as JsonSchemaValidationError
 from pydantic import ValidationError as PydanticValidationError
@@ -49,6 +50,7 @@ from coworld.runner.runner import (
     EpisodeArtifacts,
     _image_command,
     _require_bad_player_rejected,
+    _require_global_message,
     _require_websocket_pong,
     assert_docker_image_reachable,
     assert_episode_images_reachable,
@@ -1701,6 +1703,38 @@ def test_websocket_ping_probe_rejects_missing_pong() -> None:
         )
 
     assert exc_info.value.error_type == "game_contract_violation"
+
+
+def test_websocket_ping_probe_survives_unread_global_backlog() -> None:
+    # Regression for max_queue=None in _require_global_message: hosted
+    # certification blocks in on_connected before it pings, and a game that
+    # streams to /global meanwhile fills the client's receive queue. With default
+    # backpressure the client stops reading the socket, so the Pong is never seen
+    # and the probe times out even though the game answered instantly.
+    async def run() -> None:
+        async def game(ws) -> None:
+            try:
+                while True:
+                    await ws.send(b"lobby-frame")
+                    await asyncio.sleep(0.005)
+            except websockets.ConnectionClosed:
+                return
+
+        server = await websockets.serve(game, "127.0.0.1", 0)
+        port = next(iter(server.sockets)).getsockname()[1]
+        try:
+            await _require_global_message(
+                f"ws://127.0.0.1:{port}/global",
+                timeout_seconds=5.0,
+                # Block long enough for far more than the default receive queue to pile up.
+                on_connected=lambda: time.sleep(0.5),
+                require_pong=True,
+            )
+        finally:
+            server.close()
+            await server.wait_closed()
+
+    asyncio.run(run())
 
 
 def test_play_coworld_starts_certification_player_containers(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
