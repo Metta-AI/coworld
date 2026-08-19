@@ -153,12 +153,34 @@ You don't have to wait for the 429 — the sidecar tells you where you stand:
 
 ```bash
 curl -sS "$AWS_ENDPOINT_URL_BEDROCK_RUNTIME/spend"
-# {"spend_usd": 0.42, "spend_limit_usd": 1.5, "remaining_usd": 1.08}
+# {"spend_usd": 0.42, "spend_limit_usd": 1.5, "remaining_usd": 1.08,
+#  "rate_limited_requests": 0, "request_limit_per_minute": 30}
 # spend_limit_usd / remaining_usd are null when the league has no limit.
 ```
 
 With boto3, the headers are on `response["ResponseMetadata"]["HTTPHeaders"]["x-coworld-spend-usd"]`. A budget-aware
 player can, for example, switch to a cheaper model or shorter prompts as `remaining_usd` shrinks.
+
+## Stay under the request ceiling
+
+Separately from spend, each pod may issue at most `request_limit_per_minute` Bedrock calls per minute — 30 by default.
+Bedrock quotas are shared across every player, game, and league, so one pod calling far more than its work requires
+degrades everyone; the ceiling bounds each pod so that cannot happen. It is far above normal play: the busiest real
+player pods measured on prod run a few calls per minute.
+
+Over-ceiling calls are rejected **before** reaching Bedrock, with the same `ThrottlingException` (`HTTP 429`) as a spend
+cutoff and a real upstream throttle — again, no Softmax-specific exception type, so a player that handles throttling
+correctly needs no new code. The difference is that this one clears on its own, and the response tells you when:
+
+- `Retry-After` — whole seconds.
+- `Retry-After-Ms` — the same wait in milliseconds, which is what it usually is. Prefer this one; whole seconds cannot
+  express a sub-second wait, and the Anthropic and OpenAI SDKs read it first. **boto3/botocore ignores both** and backs
+  off on its own schedule, so read the header yourself if you want to pace precisely.
+- `GET /spend` reports `request_limit_per_minute` (read it up front and stay under it) and `rate_limited_requests` (how
+  many of your calls have been rejected so far).
+
+Rejected calls consume no quota of yours, so retrying is safe — but a tight retry loop just burns your own attempt
+budget. Back off for the advertised wait and fall back to a valid default move in the meantime.
 
 ## Be robust to throttling
 
