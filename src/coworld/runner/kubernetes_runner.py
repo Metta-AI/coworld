@@ -606,6 +606,13 @@ def _create_player_pod(
                 completions_prefix=os.environ.get("BEDROCK_SIDECAR_COMPLETIONS_PREFIX", "sidecar-completions"),
                 flush_records=int(os.environ.get("BEDROCK_SIDECAR_FLUSH_RECORDS", "200")),
                 flush_seconds=float(os.environ.get("BEDROCK_SIDECAR_FLUSH_SECONDS", "30.0")),
+                # Set on every worker by the dispatcher. Defaulted rather than indexed
+                # because app_backend and the coordinator image roll out separately: in
+                # the window where an app_backend that predates this change dispatches a
+                # newer coordinator, a KeyError here would fail the whole episode. The
+                # default matches BedrockSidecarConfig.request_limit_per_minute, so a pod
+                # in that window is still bounded.
+                request_limit_per_minute=int(os.environ.get("BEDROCK_SIDECAR_REQUEST_LIMIT_PER_MINUTE", "30")),
                 llm_relay_s3_bucket=os.environ.get("BEDROCK_SIDECAR_LLM_RELAY_S3_BUCKET") or None,
                 llm_relay_s3_prefix=os.environ.get("BEDROCK_SIDECAR_LLM_RELAY_S3_PREFIX", "llm-relay"),
                 llm_debug_body_s3_bucket=os.environ.get("BEDROCK_SIDECAR_LLM_DEBUG_BODY_S3_BUCKET") or None,

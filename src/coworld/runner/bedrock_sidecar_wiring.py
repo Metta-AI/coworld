@@ -60,6 +60,7 @@ def build_bedrock_sidecar(
     completions_prefix: str,
     flush_records: int,
     flush_seconds: float,
+    request_limit_per_minute: int,
     llm_relay_s3_bucket: str | None = None,
     llm_relay_s3_prefix: str = "llm-relay",
     llm_debug_body_s3_bucket: str | None = None,
@@ -167,6 +168,14 @@ def build_bedrock_sidecar(
             client.V1EnvVar(name="BEDROCK_SIDECAR_LISTEN_PORT", value=str(listen_port)),
             client.V1EnvVar(name="BEDROCK_SIDECAR_REGION", value=region),
             client.V1EnvVar(name="BEDROCK_SIDECAR_UPSTREAM_ENDPOINT", value=upstream),
+            # Per-pod requests/minute ceiling. Required, not optional-with-a-default: one
+            # shared IAM principal means one upstream quota bucket for the whole fleet, so
+            # a pod that starts unbounded can throttle every other Coworld. Making it a
+            # required argument is what keeps a new call site from silently dropping it.
+            client.V1EnvVar(
+                name="BEDROCK_SIDECAR_REQUEST_LIMIT_PER_MINUTE",
+                value=str(request_limit_per_minute),
+            ),
             client.V1EnvVar(
                 name="BEDROCK_SIDECAR_REQUEST_METADATA",
                 value=serialize_bedrock_request_metadata(metadata),

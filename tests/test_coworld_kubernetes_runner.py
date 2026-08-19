@@ -2038,6 +2038,7 @@ def test_create_player_pod_with_bedrock_sidecar_inverts_bedrock_access(monkeypat
     monkeypatch.setenv("BEDROCK_SIDECAR_IMAGE", "ghcr.io/metta-ai/bedrock-sidecar:latest")
     monkeypatch.setenv("BEDROCK_SIDECAR_ROLE_ARN", "arn:aws:iam::583928386201:role/episode-runner-bedrock")
     monkeypatch.setenv("BEDROCK_SIDECAR_PORT", "19191")
+    monkeypatch.setenv("BEDROCK_SIDECAR_REQUEST_LIMIT_PER_MINUTE", "120")
     monkeypatch.setenv("BEDROCK_SIDECAR_UPSTREAM_ENDPOINT", "http://bedrock.local")
     monkeypatch.setenv("BEDROCK_SIDECAR_SPEND_LIMIT_USD", "1.5")
     monkeypatch.setenv("BEDROCK_SIDECAR_PRICING_JSON", '{"claude-sonnet-4-6":[3.0,15.0,0.3,3.75]}')
@@ -2128,6 +2129,9 @@ def test_create_player_pod_with_bedrock_sidecar_inverts_bedrock_access(monkeypat
     assert sidecar_env["BEDROCK_SIDECAR_LISTEN_PORT"] == "19191"
     assert sidecar_env["BEDROCK_SIDECAR_REGION"] == "us-west-2"
     assert sidecar_env["BEDROCK_SIDECAR_UPSTREAM_ENDPOINT"] == "http://bedrock.local"
+    # The per-pod request ceiling has to survive the worker -> sidecar hop, or the deploy
+    # knob is dead config and the only way to change it is a new sidecar image.
+    assert sidecar_env["BEDROCK_SIDECAR_REQUEST_LIMIT_PER_MINUTE"] == "120"
     assert json.loads(sidecar_env["BEDROCK_SIDECAR_REQUEST_METADATA"]) == {
         "metadata_origin": "bedrock_sidecar",
         "episode_request_id": "11111111-1111-1111-1111-111111111111",
@@ -2160,6 +2164,7 @@ def test_create_player_pod_sidecar_forwards_s3_sink_env(monkeypatch):
     monkeypatch.setenv("BEDROCK_SIDECAR_IMAGE", "ghcr.io/metta-ai/bedrock-sidecar:latest")
     monkeypatch.setenv("BEDROCK_SIDECAR_ROLE_ARN", "arn:aws:iam::583928386201:role/episode-runner-bedrock")
     monkeypatch.setenv("BEDROCK_SIDECAR_PORT", "19191")
+    monkeypatch.setenv("BEDROCK_SIDECAR_REQUEST_LIMIT_PER_MINUTE", "120")
     monkeypatch.delenv("BEDROCK_SIDECAR_UPSTREAM_ENDPOINT", raising=False)
     monkeypatch.setenv("BEDROCK_SIDECAR_COMPLETIONS_BUCKET", "softmax-bedrock-logs-583928386201")
     monkeypatch.setenv("BEDROCK_SIDECAR_LLM_RELAY_S3_BUCKET", "softmax-llm-records")
@@ -2216,6 +2221,7 @@ def test_create_player_pod_routes_every_sidecar_without_exposing_openrouter_key(
     monkeypatch.setenv("BEDROCK_SIDECAR_IMAGE", "ghcr.io/metta-ai/bedrock-sidecar:latest")
     monkeypatch.setenv("BEDROCK_SIDECAR_ROLE_ARN", "arn:aws:iam::583928386201:role/episode-runner-bedrock")
     monkeypatch.setenv("BEDROCK_SIDECAR_PORT", "19191")
+    monkeypatch.setenv("BEDROCK_SIDECAR_REQUEST_LIMIT_PER_MINUTE", "120")
     monkeypatch.setenv("COWORLD_OPENROUTER_KEY_SECRET_NAME", "episode-llm-key-episode-123")
     monkeypatch.setenv("COWORLD_OPENROUTER_API_KEY", "literal-key-must-not-appear")
     monkeypatch.setenv("COWORLD_OPENROUTER_MODEL_ALLOWLIST", '["anthropic/claude-sonnet-4.6"]')
