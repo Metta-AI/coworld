@@ -1097,6 +1097,16 @@ def submit(
         bool,
         typer.Option("--open-browser/--no-open-browser", help="Open the policy page in a browser after submitting."),
     ] = True,
+    player: Annotated[
+        str | None,
+        typer.Option(
+            "--player",
+            help=(
+                "Submit as this player id (ply_...). Defaults to the account's default player; "
+                "list yours with GET /players. The player must belong to you."
+            ),
+        ),
+    ] = None,
     auto_champion: Annotated[
         AutoChampion,
         typer.Option(
@@ -1120,6 +1130,7 @@ def submit(
         open_browser=open_browser,
         auto_champion=auto_champion,
         preferences=preferences,
+        player_id=player,
     )
 
 

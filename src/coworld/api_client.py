@@ -889,6 +889,7 @@ class CoworldApiClient:
         *,
         auto_champion: AutoChampion = AutoChampion.always,
         preferences: dict[str, Any] | None = None,
+        player_id: str | None = None,
     ) -> LeagueSubmissionPublic:
         payload: dict[str, Any] = {
             "league_id": league_id,
@@ -897,6 +898,10 @@ class CoworldApiClient:
         }
         if preferences is not None:
             payload["preferences"] = preferences
+        # The server resolves an omitted player_id to the account's default player;
+        # naming one submits as that player instead (it must belong to the caller).
+        if player_id is not None:
+            payload["player_id"] = player_id
         return self._post(
             "/v2/league-submissions",
             LeagueSubmissionPublic,

@@ -42,6 +42,7 @@ def submit_policy_to_league_cmd(
     open_browser: bool = True,
     auto_champion: AutoChampion = AutoChampion.always,
     preferences: dict[str, Any] | None = None,
+    player_id: str | None = None,
 ) -> None:
     with CoworldApiClient.from_login(server_url=server) as client:
         policy_version = _resolve_policy_version(client, policy_identifier)
@@ -53,6 +54,7 @@ def submit_policy_to_league_cmd(
             policy_version.id,
             auto_champion=auto_champion,
             preferences=preferences,
+            player_id=player_id,
         )
 
     placement_runs_async = submission.status in {"pending", "processing"}
