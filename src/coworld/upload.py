@@ -975,8 +975,11 @@ def _submit_replay_viewer_bundle(
         ).bundle
     else:
         bundle = upload.bundle
-    game = manifest["game"]
-    return {**manifest, "game": {**game, "replay_viewer": {"bundle": bundle}}}
+    # Rewrite only the bundle path to its digest; sibling replay_viewer fields
+    # (e.g. replay_compression) must survive into the stored manifest.
+    updated = copy.deepcopy(manifest)
+    updated["game"]["replay_viewer"]["bundle"] = bundle
+    return updated
 
 
 def upload_coworld(

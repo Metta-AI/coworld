@@ -2786,13 +2786,18 @@ def test_submit_replay_viewer_bundle_uploads_deterministic_archive(
 
     monkeypatch.setattr("coworld.upload.httpx.put", put)
     client = _RecordingReplayViewerBundleClient()
-    manifest = {"game": {"replay_viewer": {"bundle": "./replay-viewer"}}}
+    manifest = {"game": {"replay_viewer": {"bundle": "./replay-viewer", "replay_compression": "gzip"}}}
 
     result = _submit_replay_viewer_bundle(cast(object, client), manifest, tmp_path)  # type: ignore[arg-type]
 
     assert [name for name, _ in client.calls] == ["upload", "complete"]
     content_hash = hashlib.sha256(uploaded[0]).hexdigest()
-    assert result["game"]["replay_viewer"] == {"bundle": f"sha256:{content_hash}"}
+    # The rewrite must only swap the bundle path for its digest; sibling
+    # replay_viewer fields survive into the uploaded manifest.
+    assert result["game"]["replay_viewer"] == {
+        "bundle": f"sha256:{content_hash}",
+        "replay_compression": "gzip",
+    }
     with zipfile.ZipFile(io.BytesIO(uploaded[0])) as archive:
         assert archive.namelist() == ["index.html", "viewer.js"]
         assert archive.read("viewer.js") == b"console.log('viewer')"
