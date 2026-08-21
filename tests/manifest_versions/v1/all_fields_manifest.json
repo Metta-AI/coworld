@@ -12,7 +12,9 @@
       "properties": {
         "tokens": {
           "type": "array",
-          "items": { "type": "string" }
+          "items": {
+            "type": "string"
+          }
         }
       },
       "required": ["tokens"]
@@ -22,7 +24,9 @@
       "properties": {
         "scores": {
           "type": "array",
-          "items": { "type": "number" }
+          "items": {
+            "type": "number"
+          }
         }
       },
       "required": ["scores"]
@@ -31,7 +35,9 @@
       "type": "game",
       "image": "example.com/golden-game@sha256:1111111111111111111111111111111111111111111111111111111111111111",
       "run": ["python", "-m", "golden.game"],
-      "env": { "LOG_LEVEL": "info" },
+      "env": {
+        "LOG_LEVEL": "info"
+      },
       "source_url": "https://example.com/golden/game",
       "resources": {
         "requests": {
@@ -39,33 +45,61 @@
           "memory": "4Gi",
           "ephemeral-storage": "10Gi"
         },
-        "limits": { "cpu": "4" }
+        "limits": {
+          "cpu": "4"
+        }
       }
     },
     "protocols": {
-      "player": { "type": "text", "value": "# Player protocol" },
-      "global": { "type": "uri", "value": "https://example.com/protocols/global" },
+      "player": {
+        "type": "text",
+        "value": "# Player protocol"
+      },
+      "global": {
+        "type": "uri",
+        "value": "https://example.com/protocols/global"
+      },
       "engine_runtime": "cogweb"
     },
     "docs": {
-      "readme": { "type": "text", "value": "# Golden Coworld" },
+      "readme": {
+        "type": "text",
+        "value": "# Golden Coworld"
+      },
       "pages": [
         {
           "id": "rules",
           "title": "Rules",
-          "content": { "type": "uri", "value": "https://example.com/rules" }
+          "content": {
+            "type": "uri",
+            "value": "https://example.com/rules"
+          }
         }
       ]
     },
-    "promo": { "video_url": "https://example.com/promo.mp4" },
-    "replay_viewer": { "bundle": "viewer" }
+    "promo": {
+      "video_url": "https://example.com/promo.mp4"
+    },
+    "replay_viewer": {
+      "bundle": "viewer"
+    },
+    "achievements": [
+      {
+        "id": "pacifist",
+        "name": "Pacifist",
+        "description": "Win a game without attacking at all.",
+        "points": 25
+      }
+    ]
   },
   "player": [
     {
       "type": "player",
       "image": "example.com/golden-player@sha256:2222222222222222222222222222222222222222222222222222222222222222",
       "run": ["python", "-m", "golden.player"],
-      "env": { "PLAYER_MODE": "golden" },
+      "env": {
+        "PLAYER_MODE": "golden"
+      },
       "source_url": "https://example.com/golden/player/source",
       "resources": {
         "requests": {
@@ -73,7 +107,9 @@
           "memory": "1Gi",
           "ephemeral-storage": "2Gi"
         },
-        "limits": { "cpu": "2" }
+        "limits": {
+          "cpu": "2"
+        }
       },
       "id": "golden-player",
       "name": "Golden Player",
@@ -82,7 +118,9 @@
     }
   ],
   "reporter": [
-    { "reporter": "user123/summary@1" },
+    {
+      "reporter": "user123/summary@1"
+    },
     {
       "wasm": "reporters/summary.wasm",
       "id": "summary",
@@ -90,7 +128,13 @@
       "description": "Produces a summary report.",
       "attributes": {
         "purpose": "Summarize the golden episode",
-        "outputs": [{ "name": "summary", "type": "markdown", "description": "Episode summary" }]
+        "outputs": [
+          {
+            "name": "summary",
+            "type": "markdown",
+            "description": "Episode summary"
+          }
+        ]
       }
     }
   ],
@@ -134,13 +178,21 @@
     {
       "id": "default",
       "name": "Default",
-      "game_config": { "mode": "golden" },
+      "game_config": {
+        "mode": "golden"
+      },
       "description": "Golden default variant."
     }
   ],
   "certification": {
-    "game_config": { "mode": "golden" },
-    "players": [{ "player_id": "golden-player" }]
+    "game_config": {
+      "mode": "golden"
+    },
+    "players": [
+      {
+        "player_id": "golden-player"
+      }
+    ]
   },
   "players_per_user": 2,
   "episode_timeout_minutes": 30

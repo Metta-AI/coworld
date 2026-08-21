@@ -9,6 +9,7 @@ from pydantic import BaseModel, TypeAdapter
 
 from coworld.schema_validation import load_json_object
 from coworld.types import (
+    CoworldAchievement,
     CoworldCertificationFixture,
     CoworldCertificationPlayer,
     CoworldDocPage,
@@ -64,6 +65,7 @@ def test_all_fields_fixture_covers_every_manifest_model_field() -> None:
     assert_covers_all_fields(manifest["game"]["docs"]["pages"][0]["content"], CoworldUriDoc)
     assert_covers_all_fields(manifest["game"]["promo"], CoworldPromo)
     assert_covers_all_fields(manifest["game"]["replay_viewer"], CoworldReplayViewer)
+    assert_covers_all_fields(manifest["game"]["achievements"][0], CoworldAchievement)
     assert_covers_all_fields(manifest["player"][0], CoworldManifestRoleSpec)
     assert_covers_all_fields(manifest["reporter"][0], CoworldReporterPlatformReference)
     assert_covers_all_fields(manifest["reporter"][1], CoworldReporterWasmReference)

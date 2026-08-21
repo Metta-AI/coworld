@@ -2,3 +2,7 @@
   kind: initial
   summary: Add the required apiVersion discriminator.
   fixture: packages/coworld/tests/manifest_versions/v1/minimal_manifest.json
+- schema_hash: dbf52602919264a512a4459d144d234a56eeded6b7218110b3ffa6a9216b4baf
+  kind: compatible
+  summary: Add the optional game.achievements catalog (id, name, description, default AP points).
+  fixture: packages/coworld/tests/manifest_versions/v1/achievements_manifest.json

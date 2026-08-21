@@ -672,3 +672,36 @@ def test_aliased_models_serialize_by_alias() -> None:
         "Models with aliased fields must set serialize_by_alias=True in model_config "
         "so plain model_dump() emits the wire format: " + "; ".join(offenders)
     )
+
+
+def _achievement(achievement_id: str = "pacifist", points: int = 25) -> dict[str, Any]:
+    return {"id": achievement_id, "name": "Pacifist", "description": "Win without attacking.", "points": points}
+
+
+def test_manifest_accepts_achievement_catalog() -> None:
+    data = _manifest_data()
+    data["game"]["achievements"] = [_achievement(), _achievement("almost", points=50)]
+    manifest = CoworldManifest.model_validate(data)
+    assert manifest.game.achievements is not None
+    assert [entry.id for entry in manifest.game.achievements] == ["pacifist", "almost"]
+
+
+@pytest.mark.parametrize(
+    "achievements",
+    [
+        # Duplicate ids: the backend keys catalogs by id, so a dup silently drops an entry.
+        [_achievement(), _achievement()],
+        # Id pattern: must match what games export in results.json.
+        [_achievement("Not Valid!")],
+        # Id length: matches the achievement_earns column bound (String(100)).
+        [_achievement("a" * 101)],
+        # Points must be positive; "worth nothing" is a league override, never a default.
+        [_achievement(points=0)],
+        [_achievement(points=-5)],
+    ],
+)
+def test_manifest_rejects_invalid_achievement_catalogs(achievements: list[dict[str, Any]]) -> None:
+    data = _manifest_data()
+    data["game"]["achievements"] = achievements
+    with pytest.raises(ValidationError):
+        CoworldManifest.model_validate(data)

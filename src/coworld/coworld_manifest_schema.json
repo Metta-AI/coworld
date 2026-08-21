@@ -1,5 +1,39 @@
 {
   "$defs": {
+    "CoworldAchievement": {
+      "additionalProperties": false,
+      "description": "One entry of a game's achievement catalog.\n\nThe game is the awarding authority: it evaluates its own conditions and\nexports earned achievement ids per player slot in the results artifact\n(an `achievements` field declared by `game.results_schema`). The catalog\nlets the platform display and score achievements without understanding\ngame internals. Point values here are defaults; a league may override\nthem per achievement id in its settings.",
+      "properties": {
+        "id": {
+          "description": "Stable achievement id, matching the ids the game exports in its results artifact.",
+          "maxLength": 100,
+          "pattern": "^[a-z0-9_-]+$",
+          "title": "Id",
+          "type": "string"
+        },
+        "name": {
+          "description": "Human-readable achievement name.",
+          "minLength": 1,
+          "title": "Name",
+          "type": "string"
+        },
+        "description": {
+          "description": "How the achievement is earned, in player-facing words.",
+          "minLength": 1,
+          "title": "Description",
+          "type": "string"
+        },
+        "points": {
+          "description": "Default Achievement Points (AP) value. Counted once per player under the platform's badge model; league settings may override it per achievement id.",
+          "exclusiveMinimum": 0,
+          "title": "Points",
+          "type": "integer"
+        }
+      },
+      "required": ["id", "name", "description", "points"],
+      "title": "CoworldAchievement",
+      "type": "object"
+    },
     "CoworldCertificationFixture": {
       "additionalProperties": false,
       "properties": {
@@ -190,6 +224,22 @@
           ],
           "default": null,
           "description": "Optional opaque static replay-viewer bundle. Observatory infers its index.html entrypoint."
+        },
+        "achievements": {
+          "anyOf": [
+            {
+              "items": {
+                "$ref": "#/$defs/CoworldAchievement"
+              },
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Optional achievement catalog. The game awards achievements itself via the results artifact; this catalog is what lets the platform display them and score Achievement Points.",
+          "title": "Achievements"
         }
       },
       "required": [

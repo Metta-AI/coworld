@@ -2,3 +2,7 @@
   kind: initial
   summary: Existing unversioned Coworld manifest contract, now named v0.
   fixture: packages/coworld/tests/manifest_versions/v0/minimal_manifest.json
+- schema_hash: cc22535cd71cfac8063c86b386f9096001db67fa8d7ecd4b05d7419de4e459b7
+  kind: compatible
+  summary: Add the optional game.achievements catalog (id, name, description, default AP points).
+  fixture: packages/coworld/tests/manifest_versions/v0/achievements_manifest.json

@@ -308,6 +308,35 @@ class CoworldReplayViewer(BaseModel):
         return bundle
 
 
+class CoworldAchievement(BaseModel):
+    """One entry of a game's achievement catalog.
+
+    The game is the awarding authority: it evaluates its own conditions and
+    exports earned achievement ids per player slot in the results artifact
+    (an `achievements` field declared by `game.results_schema`). The catalog
+    lets the platform display and score achievements without understanding
+    game internals. Point values here are defaults; a league may override
+    them per achievement id in its settings.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    id: str = Field(
+        pattern=r"^[a-z0-9_-]+$",
+        max_length=100,
+        description="Stable achievement id, matching the ids the game exports in its results artifact.",
+    )
+    name: str = Field(min_length=1, description="Human-readable achievement name.")
+    description: str = Field(min_length=1, description="How the achievement is earned, in player-facing words.")
+    points: int = Field(
+        gt=0,
+        description=(
+            "Default Achievement Points (AP) value. Counted once per player under the platform's badge model; "
+            "league settings may override it per achievement id."
+        ),
+    )
+
+
 class CoworldGameManifest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -348,12 +377,23 @@ class CoworldGameManifest(BaseModel):
         default=None,
         description="Optional opaque static replay-viewer bundle. Observatory infers its index.html entrypoint.",
     )
+    achievements: list[CoworldAchievement] | None = Field(
+        default=None,
+        description=(
+            "Optional achievement catalog. The game awards achievements itself via the results artifact; this "
+            "catalog is what lets the platform display them and score Achievement Points."
+        ),
+    )
 
     @model_validator(mode="after")
     def validate_version(self) -> "CoworldGameManifest":
         Version(self.version)
         if self.runnable.type != "game":
             raise ValueError("game.runnable.type must be 'game'")
+        if self.achievements is not None:
+            ids = [achievement.id for achievement in self.achievements]
+            if len(ids) != len(set(ids)):
+                raise ValueError("game.achievements ids must be unique")
         return self
 
 
