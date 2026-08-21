@@ -430,6 +430,13 @@
           "minLength": 1,
           "title": "Bundle",
           "type": "string"
+        },
+        "replay_compression": {
+          "default": "identity",
+          "description": "Compression the platform applies to the public browser copy of episode replays. Set to `gzip` only when this viewer detects compression by content (the gzip magic number), not by URL suffix or headers: the public copy is stored as gzip bytes with no Content-Encoding header, so Content-Length stays the on-the-wire byte count. Server-side replay readers are unaffected; the original replay artifact is stored unmodified.",
+          "enum": ["identity", "gzip"],
+          "title": "Replay Compression",
+          "type": "string"
         }
       },
       "required": ["bundle"],

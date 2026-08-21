@@ -71,6 +71,28 @@ stored manifest with `sha256:<digest>`. Extracted assets and public responses ar
 
 Omit `game.replay_viewer` to retain the version-matched game-container replay path.
 
+### Opt-in gzip for the public replay copy
+
+Replay artifacts are copied byte-for-byte to a public bucket for browser viewing. A large uncompressed replay makes
+that download the dominant cost of opening a replay (tens of seconds on ordinary connections). Declare
+
+```json
+{
+  "game": {
+    "replay_viewer": {
+      "bundle": "build/static-replay-viewer",
+      "replay_compression": "gzip"
+    }
+  }
+}
+```
+
+and the platform stores the public copy as gzip bytes instead. The bytes are served with **no** `Content-Encoding`
+header and an unchanged URL, so `Content-Length` remains the on-the-wire byte count for byte-driven progress UIs.
+Opt in only when the viewer detects compression by content — check the first two bytes for the gzip magic number
+`0x1f 0x8b` (for example via `DecompressionStream("gzip")`) — never by URL suffix or response headers. The stored
+replay artifact the game and reporters read is never recompressed; only the public browser copy changes.
+
 ## Required Coworld Build Hook
 
 Every manifest with a source bundle directory must provide an executable:

@@ -80,7 +80,8 @@
       "video_url": "https://example.com/promo.mp4"
     },
     "replay_viewer": {
-      "bundle": "viewer"
+      "bundle": "viewer",
+      "replay_compression": "gzip"
     },
     "achievements": [
       {

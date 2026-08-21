@@ -1,0 +1,59 @@
+{
+  "game": {
+    "name": "replay-compression-coworld",
+    "version": "1.0.0",
+    "description": "Coworld manifest opting its public replay copies into gzip compression.",
+    "owner": "coworld@example.com",
+    "config_schema": {},
+    "results_schema": {},
+    "runnable": {
+      "type": "game",
+      "image": "example.com/minimal-game:1"
+    },
+    "protocols": {
+      "player": {
+        "type": "text",
+        "value": "Player protocol"
+      },
+      "global": {
+        "type": "text",
+        "value": "Global protocol"
+      }
+    },
+    "docs": {
+      "readme": {
+        "type": "text",
+        "value": "Replay-compression Coworld"
+      }
+    },
+    "replay_viewer": {
+      "bundle": "build/static-replay-viewer",
+      "replay_compression": "gzip"
+    }
+  },
+  "player": [
+    {
+      "type": "player",
+      "image": "example.com/minimal-player:1",
+      "id": "minimal-player",
+      "name": "Minimal Player",
+      "description": "Minimal bundled player."
+    }
+  ],
+  "variants": [
+    {
+      "id": "default",
+      "name": "Default",
+      "game_config": {},
+      "description": "Minimal variant."
+    }
+  ],
+  "certification": {
+    "game_config": {},
+    "players": [
+      {
+        "player_id": "minimal-player"
+      }
+    ]
+  }
+}

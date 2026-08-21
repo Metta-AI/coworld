@@ -12,7 +12,9 @@ The [game role](../roles/GAME.md) writes replay bytes during rollout mode:
 - game container input: `COGAME_SAVE_REPLAY_URI`.
 
 Both local and hosted runners store the exact bytes the game wrote. Hosted runner output uses `replay.replay` in the
-eval artifact store and public replay URLs ending in `.replay`.
+eval artifact store and public replay URLs ending in `.replay`. The public browser copy is byte-identical unless the
+manifest declares `game.replay_viewer.replay_compression: "gzip"`, which stores that copy (and only that copy) as gzip
+bytes — see [Static Replay Viewers](../STATIC_REPLAY_VIEWERS.md).
 
 ## Format
 

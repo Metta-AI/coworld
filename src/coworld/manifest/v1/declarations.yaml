@@ -6,3 +6,7 @@
   kind: compatible
   summary: Add the optional game.achievements catalog (id, name, description, default AP points).
   fixture: packages/coworld/tests/manifest_versions/v1/achievements_manifest.json
+- schema_hash: f02b2697b457815edba1d9d300bb835aae36f7a90d46cab561f71fd82aa64421
+  kind: compatible
+  summary: Optional replay_viewer.replay_compression opting public replay copies into gzip.
+  fixture: packages/coworld/tests/manifest_versions/v1/replay_compression_manifest.json

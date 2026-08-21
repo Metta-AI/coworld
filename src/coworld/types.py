@@ -5,7 +5,15 @@ from pathlib import PurePosixPath
 from typing import Annotated, Any, Literal, cast, get_args
 
 from packaging.version import Version
-from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
+from pydantic import (
+    BaseModel,
+    ConfigDict,
+    Field,
+    SerializerFunctionWrapHandler,
+    field_validator,
+    model_serializer,
+    model_validator,
+)
 from pydantic.json_schema import SkipJsonSchema
 
 SCHEMA_VERSION = "https://json-schema.org/draft/2020-12/schema"
@@ -294,6 +302,16 @@ class CoworldReplayViewer(BaseModel):
             "content digest on upload. The bundle entrypoint is index.html; all other bundle internals are game-owned."
         ),
     )
+    replay_compression: Literal["identity", "gzip"] = Field(
+        default="identity",
+        description=(
+            "Compression the platform applies to the public browser copy of episode replays. Set to `gzip` only when "
+            "this viewer detects compression by content (the gzip magic number), not by URL suffix or headers: the "
+            "public copy is stored as gzip bytes with no Content-Encoding header, so Content-Length stays the "
+            "on-the-wire byte count. Server-side replay readers are unaffected; the original replay artifact is "
+            "stored unmodified."
+        ),
+    )
 
     @field_validator("bundle")
     @classmethod
@@ -306,6 +324,17 @@ class CoworldReplayViewer(BaseModel):
         if path.is_absolute() or any(part in {"", ".", ".."} for part in path.parts):
             raise ValueError("replay_viewer.bundle must be a package-relative directory or sha256 digest")
         return bundle
+
+    @model_serializer(mode="wrap")
+    def _omit_default_replay_compression(self, handler: SerializerFunctionWrapHandler) -> Any:
+        # The coworld CLI publishes independently of backend deploys, and upload
+        # validation is extra="forbid": emitting the default would make every
+        # built manifest carry the field and be rejected by a backend that
+        # predates it. Only actual gzip adopters put it on the wire.
+        data = handler(self)
+        if isinstance(data, dict) and data.get("replay_compression") == "identity":
+            data.pop("replay_compression")
+        return data
 
 
 class CoworldAchievement(BaseModel):
