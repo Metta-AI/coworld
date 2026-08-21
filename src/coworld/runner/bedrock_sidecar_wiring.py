@@ -65,6 +65,7 @@ def build_bedrock_sidecar(
     llm_relay_s3_prefix: str = "llm-relay",
     llm_debug_body_s3_bucket: str | None = None,
     openrouter_capture_payloads: bool = True,
+    bedrock_model_aliases: dict[str, str] | None = None,
     spend_limit_usd: str | None = None,
     pricing_json: str | None = None,
     prompt_prefix_sample_rate: float = 0.0,
@@ -108,6 +109,18 @@ def build_bedrock_sidecar(
         *(
             [client.V1EnvVar(name="BEDROCK_SIDECAR_LLM_DEBUG_BODY_S3_BUCKET", value=llm_debug_body_s3_bucket)]
             if llm_debug_body_s3_bucket
+            else []
+        ),
+        # Lane-independent, unlike the openrouter_* group below: direct-lane endpoint
+        # resolution must apply even when OpenRouter routing is disabled.
+        *(
+            [
+                client.V1EnvVar(
+                    name="BEDROCK_SIDECAR_BEDROCK_MODEL_ALIASES",
+                    value=json.dumps(bedrock_model_aliases, separators=(",", ":")),
+                )
+            ]
+            if bedrock_model_aliases
             else []
         ),
     ]
