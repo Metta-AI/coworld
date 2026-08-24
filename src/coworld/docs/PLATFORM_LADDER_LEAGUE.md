@@ -95,6 +95,18 @@ Insufficient-player modes (ladder-wide):
 | `filler_policy`  | Fill from league filler versions (must already be configured on the league).                           |
 | `do_not_run`     | Skip the round until enough real champions exist (`team_pair` needs 2; `team_n` needs `team_count`).   |
 
+### Seed policies (always-on neutrals)
+
+Separate from fillers. Configure a league seed-policy pool and a **seed policy
+number** K (Observatory league settings → Seed policies, or
+`GET/POST /v2/leagues/{id}/seed-policies`). For FFA strategies
+(`swiss_neighbor`, `round_robin`, `balanced_rotation`, `random_fill`), every
+episode matchmakes **N−K** ranked champions and always appends **K** seats from
+the seed pool. Seed seats are non-scoring (same exclusion as fillers). Use this
+when a game needs good neutral baselines in every episode (e.g. Heartleaf), not
+only when the roster is short. Fillers still handle short-roster top-up on the
+ranked seats. Team / `clone_fill` strategies reject K > 0.
+
 Volume / strategy knobs (optional unless noted; omit to keep derived defaults; rejected on strategies that do not
 consume them):
 

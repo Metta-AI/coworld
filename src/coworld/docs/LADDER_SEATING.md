@@ -32,6 +32,15 @@ every seat except the first occurrence of each real entrant is recorded as fille
 episode regardless of how many seats it fields. `clone_fill` is the exception — nothing is filler-marked; **every**
 seat of its self-play episodes is credited and folded into one score per `clone_score_aggregation` (`mean`/`sum`).
 
+## Seed policies
+
+When a league sets `seed_policy_number` K > 0 and a seed-policy pool, FFA strategies
+(`round_robin`, `balanced_rotation`, `swiss_neighbor`, `random_fill`) plan against
+**N−K** ranked seats, then append K seats sampled from the pool (shuffle then cycle).
+Those K seats are both `filler_seats` and `seed_seats` — they never count toward
+rankings. Remaining shortfall among the ranked seats still uses `insufficient_players`.
+Team / `clone_fill` / variable / scaling strategies reject K > 0.
+
 ## Worked example: contiguous team pairs
 
 A 16-seat game defining 8 teams as contiguous slot pairs (`team = slot div 2`) under `team_n` with `team_count: 8`:
