@@ -952,6 +952,8 @@ def _division(division_id: str = DIVISION_ID) -> dict[str, object]:
         "id": division_id,
         "name": "Bronze",
         "level": 1,
+        "type": "competition",
+        "hidden": False,
         "league": _league(),
         "description": "Bronze division",
         "created_at": NOW,

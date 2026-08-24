@@ -28,6 +28,7 @@ from coworld.api_client import (
     LeaguePolicyMembershipPublic,
     LeaguePublic,
     LeagueSubmissionPublic,
+    PowerAnalysisResponse,
     ReporterDetailPublic,
     ReporterPublic,
     RoundDetailPublic,
@@ -54,6 +55,71 @@ _XP_REQUEST_HELP = (
 )
 
 
+def _print_power_analysis(report: PowerAnalysisResponse) -> None:
+    console.print("[bold]Measured parameters[/bold]")
+    console.print(
+        f"Window: {report.window.episodes_scanned} episodes across {report.window.rounds} rounds; "
+        f"mode mix: {report.mode_mix.source}"
+    )
+    labels_and_modes = (
+        (report.anchor.policy_ref if report.anchor else None, report.modes),
+        ("league_pooled", report.league_pooled),
+    )
+    for label, mode_values in labels_and_modes:
+        if label is None:
+            continue
+        measured = Table(title=label, box=box.SIMPLE)
+        for column in ("Mode", "Used", "W/MUT/DRAW/L", "Mean", "Variance", "Pairs", "DEFF"):
+            measured.add_column(column)
+        for mode, value in mode_values.items():
+            measured.add_row(
+                mode,
+                str(value.episodes_used),
+                f"{value.wins}/{value.ties_mutual_loss}/{value.ties_zero}/{value.losses}",
+                f"{value.operating_point:.3f}",
+                f"{value.score_variance:.3f}",
+                str(value.pairs_detected),
+                f"{value.design_effect:.3f}",
+            )
+        console.print(measured)
+    modes = sorted({mode for row in report.table for mode in row.per_mode_n_per_arm})
+    sizes = Table(title="Episodes per arm", box=box.SIMPLE)
+    sizes.add_column("Anchor")
+    sizes.add_column("Elo", justify="right")
+    for mode in modes:
+        sizes.add_column(mode, justify="right")
+    sizes.add_column("Blended", justify="right")
+    sizes.add_column("95% range", justify="right")
+    sizes.add_column("One arm", justify="right")
+    for row in report.table:
+        sizes.add_row(
+            row.anchor,
+            f"{row.elo:g}",
+            *(str(row.per_mode_n_per_arm.get(mode, "—")) for mode in modes),
+            "unavailable" if row.blended_n_per_arm is None else str(row.blended_n_per_arm),
+            ("unavailable" if row.blended_n_range is None else f"{row.blended_n_range[0]}–{row.blended_n_range[1]}"),
+            "unavailable" if row.one_arm_n is None else str(row.one_arm_n),
+        )
+    console.print(sizes)
+    if report.note:
+        console.print(report.note)
+    explanations = {
+        "low_history": "fewer than 30 usable episodes; the estimate is uncertain",
+        "degenerate_operating_point": "mean score is outside 0.05–0.95; N uses the nearest boundary",
+        "zero_variance": "historical scores have no variance; N cannot be estimated",
+        "no_usable_history": "every episode in this mode was excluded (ally seats or unclean); no N is computed",
+    }
+    flags = {
+        flag
+        for mode_values in (report.modes, report.league_pooled)
+        for value in mode_values.values()
+        for flag in value.flags
+    }
+    for flag in sorted(flags):
+        console.print(f"{flag}: {explanations[flag]}")
+    console.print("One-arm estimates assume the opponent field stays stationary.")
+
+
 def register_tournament_commands(app: typer.Typer) -> None:
     xp_request_app = typer.Typer(
         no_args_is_help=True,
@@ -62,6 +128,49 @@ def register_tournament_commands(app: typer.Typer) -> None:
         rich_markup_mode=None,
     )
     app.add_typer(xp_request_app, name="xp-request")
+
+    @app.command("power-analysis")
+    def power_analysis(
+        target: Annotated[str, typer.Argument(help="Division or league ID.")],
+        policy: Annotated[
+            str | None, typer.Option("--policy", help="Anchor policy as name:vN or a version UUID.")
+        ] = None,
+        elo: Annotated[str | None, typer.Option("--elo", help="Comma-separated Elo sensitivities.")] = None,
+        alpha: Annotated[float, typer.Option("--alpha", min=0.000001, max=0.999999)] = 0.05,
+        power: Annotated[float, typer.Option("--power", min=0.000001, max=0.999999)] = 0.8,
+        server: Annotated[str, typer.Option("--server", help="Observatory API server URL.")] = DEFAULT_SUBMIT_SERVER,
+        json_output: Annotated[bool, typer.Option("--json", help="Print raw JSON.")] = False,
+    ) -> None:
+        elo_grid: list[float] | None = None
+        if elo is not None:
+            values = [value.strip() for value in elo.split(",") if value.strip()]
+            if not values or any(not re.fullmatch(r"\d+(?:\.\d+)?", value) or float(value) <= 0 for value in values):
+                raise typer.BadParameter("--elo must be a non-empty comma-separated list of positive numbers")
+            elo_grid = [float(value) for value in values]
+        body: dict[str, Any] = {"alpha": alpha, "power": power}
+        if policy is not None:
+            body["policy_ref"] = policy
+        if elo_grid is not None:
+            body["elo_grid"] = elo_grid
+        with CoworldApiClient.from_login(server_url=server) as client:
+            if target.startswith("div_"):
+                division_id = target
+            elif target.startswith("league_"):
+                divisions = [
+                    division
+                    for division in client.list_divisions(league_id=target)
+                    if division.type == "competition" and not division.hidden and division.archived_at is None
+                ]
+                if not divisions:
+                    raise typer.BadParameter(f"League {target} has no active competition division")
+                division_id = min(divisions, key=lambda division: (division.level, division.id)).id
+            else:
+                raise typer.BadParameter("target must start with div_ or league_")
+            report = client.power_analysis(division_id, body)
+        if json_output:
+            emit_json(report.model_dump(mode="json"))
+            return
+        _print_power_analysis(report)
 
     @xp_request_app.command("create")
     def xp_request_create(

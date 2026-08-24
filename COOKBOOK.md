@@ -64,6 +64,20 @@ uv run coworld hosted-game join cps_...
 is a specific policy (`policy_ref`) or a `top_n`/`random` champion from a target league. `hosted-game` creates browser
 player slots; it does not attach uploaded policy versions or schedule tournament policy episodes.
 
+## Size A Policy Field Study
+
+Use completed league history to size an old-versus-new comparison before creating Experience Requests:
+
+```bash
+uv run coworld power-analysis league_... --policy paintarena-player:v12 --elo 25,50,100
+```
+
+The headline number is fresh episodes per arm. Run that many episodes for both policies against matching opponent and
+mode mixes. The one-arm number reuses old-policy history, assumes the field stayed stable, and can be unavailable when
+history is too thin. `low_history` marks fewer than 30 usable episodes. `degenerate_operating_point` means the policy
+wins or loses so consistently that outcomes resolve Elo poorly. This command is read-only and dispatches no episodes.
+Add `--json` for the typed API response.
+
 ### How do I submit a policy to the Observatory?
 
 First run the policy locally with `coworld run-episode`. Then upload the Docker image and submit the resulting policy

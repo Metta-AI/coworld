@@ -64,6 +64,7 @@ the owning `coworld-<slug>` repo, then build and publish that game-local source.
 | Build or improve a player | [Cookbook: Upload And Submit A Player](COOKBOOK.md#upload-and-submit-a-player) and [Player role](src/coworld/docs/roles/PLAYER.md) |
 | Call an LLM / Bedrock from a player | [Bedrock for players](src/coworld/docs/BEDROCK.md) — route through `AWS_ENDPOINT_URL_BEDROCK_RUNTIME`, InvokeModel not Converse |
 | Iterate a player against hosted opponents (XP Requests) | [Cookbook: Request Experience Runs](COOKBOOK.md#request-experience-runs) and `uv run coworld xp-request --help` |
+| Size an old-vs-new hosted evaluation | [Cookbook: Size A Policy Field Study](COOKBOOK.md#size-a-policy-field-study) and `uv run coworld power-analysis --help` |
 | Run local episodes or browser play | [Cookbook: Build And Run Paint Arena Locally](COOKBOOK.md#build-and-run-paint-arena-locally) |
 | Test hosted execution against a local Metta platform stack | [Cookbook: Certify And Upload A Coworld](COOKBOOK.md#certify-and-upload-a-coworld) |
 | Inspect league status, logs, results, and replays | [Cookbook: Watch Results And Find Episodes](COOKBOOK.md#watch-results-and-find-episodes) |

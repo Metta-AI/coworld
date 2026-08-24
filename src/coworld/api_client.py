@@ -8,6 +8,7 @@ from uuid import UUID
 
 import httpx
 from pydantic import BaseModel, ConfigDict, Field, TypeAdapter, computed_field
+
 from softmax import auth as softmax_auth
 
 
@@ -95,11 +96,72 @@ class DivisionPublic(CoworldAPIModel):
     id: str
     name: str
     level: int
+    type: str
+    hidden: bool
     league: LeaguePublic
     description: str | None = None
     archived_at: datetime | None = None
     commissioner_description: DivisionCommissionerDescriptionPublic | None = None
     created_at: datetime
+
+
+class PowerAnalysisAnchor(CoworldAPIModel):
+    policy_ref: str
+    policy_version_id: UUID
+
+
+class PowerAnalysisWindow(CoworldAPIModel):
+    rounds: int
+    episodes_scanned: int
+    oldest_round_at: datetime
+
+
+class PowerAnalysisModeMix(CoworldAPIModel):
+    fractions: dict[str, float]
+    source: Literal["campaign_board", "history"]
+
+
+class PowerAnalysisAleatoric(CoworldAPIModel):
+    noise_rmse: float
+    stability: float
+    profile_id: UUID
+
+
+class PowerAnalysisMode(CoworldAPIModel):
+    episodes_used: int
+    ally_episodes_excluded: int
+    episodes_dropped_unclean: int
+    wins: int
+    ties_mutual_loss: int
+    ties_zero: int
+    losses: int
+    operating_point: float
+    score_variance: float
+    pairs_detected: int
+    pair_correlation: float
+    design_effect: float
+    aleatoric: PowerAnalysisAleatoric | None
+    flags: list[str]
+
+
+class PowerAnalysisTableRow(CoworldAPIModel):
+    elo: float
+    per_mode_n_per_arm: dict[str, int | None]
+    blended_n_per_arm: int | None
+    blended_n_range: tuple[int, int] | None
+    one_arm_n: int | None
+    anchor: str
+
+
+class PowerAnalysisResponse(CoworldAPIModel):
+    division_id: str
+    anchor: PowerAnalysisAnchor | None
+    note: str | None
+    window: PowerAnalysisWindow
+    mode_mix: PowerAnalysisModeMix
+    modes: dict[str, PowerAnalysisMode]
+    league_pooled: dict[str, PowerAnalysisMode]
+    table: list[PowerAnalysisTableRow]
 
 
 class DivisionLadderEntryPublic(CoworldAPIModel):
@@ -782,6 +844,9 @@ class CoworldApiClient:
 
     def get_division(self, division_id: str) -> DivisionPublic:
         return self._get(f"/v2/divisions/{division_id}", DivisionPublic)
+
+    def power_analysis(self, division_id: str, body: dict[str, Any]) -> PowerAnalysisResponse:
+        return self._post(f"/v2/divisions/{division_id}/power-analysis", PowerAnalysisResponse, json=body)
 
     def get_division_leaderboard(self, division_id: str) -> list[LeaderboardEntryPublic]:
         # The endpoint returns JSON null for divisions with an empty leaderboard; coalesce to [].
