@@ -519,7 +519,7 @@ player's call.
   **commissioner** against the **provided suite of base player policies** and checks the field/placement is
   healthy — complementing the v1 certifier's focus on the optimizer loop. This is the home for **verifying custom
   commissioners' ranking logic** (candidate approaches: clone-resubmit landing-check, repeated out-of-competition
-  diagnostic episodes, bayesian-until-convergence ELO) and a **fully enforced league-wide volume guarantee**.
+  diagnostic episodes, bayesian-until-convergence Elo) and a **fully enforced league-wide volume guarantee**.
 - **Staging → promotion lifecycle.** Auto-promoting a game from staging once a diverse, competent field exists
   belongs to base-league-health work, not v1.
 

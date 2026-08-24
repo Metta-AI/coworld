@@ -313,7 +313,7 @@ After POST, compare `settings.ladder` to `effective_ladder_config` on the GET re
    - Temporal workflow id `ladder-{league_id}` on task queue `league-ladder`
    - A Competition `Round` with `commissioner_key=platform` and a frozen `episode_plan`
    - EpisodeRequests run through the job runner
-   - Round completes → leaderboard publishes (`score_label: "Elo"` or the score standing view)
+   - Round completes → leaderboard publishes (`score_label: "MMR"` or the score standing view)
    - Parent starts another cycle (or exits for pause / `do_not_run` / retries exhausted)
 
 ### 5. Admit players

@@ -56,7 +56,7 @@ migration lessons, prefer [PLATFORM_LADDER_LEAGUE.md](PLATFORM_LADDER_LEAGUE.md)
 4. **Settings POST replaces the whole document.** Read current settings first and preserve any
    non-ladder sibling fields you still need. Enabling `ladder.enabled` clears every division's
    published `leaderboard_config` so Standings cannot serve stale container 0–1 scores under an
-   Elo column before the first platform round publishes ratings.
+   MMR column before the first platform round publishes ratings.
 5. **Seed override PATCH replaces the whole `overrides` object** — with one exception. Re-include
    every override you want to keep (`is_game_of_week`, overlay secrets, etc.) when you add
    `commissioner_key`. `commissioner_key` itself is the exception: omit it and the PATCH carries the
