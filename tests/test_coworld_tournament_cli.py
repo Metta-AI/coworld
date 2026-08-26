@@ -55,7 +55,7 @@ def test_api_client_auth_error_mentions_server_url(monkeypatch: pytest.MonkeyPat
     assert "uv run softmax login --server http://localhost:3102/api" in str(exc_info.value)
 
 
-def test_replays_downloads_mine_division_replays(
+def test_replays_downloads_round_replays(
     httpserver: HTTPServer,
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
@@ -63,9 +63,10 @@ def test_replays_downloads_mine_division_replays(
     replay_payload = b"\x00crewrift-replay-bytes\xff"
     replay_url = httpserver.url_for("/replay")
     httpserver.expect_request(
-        "/observatory/v2/episode-requests",
+        f"/observatory/v2/rounds/{ROUND_ID}/episode-requests",
         method="GET",
         headers={"Authorization": "Bearer token"},
+        query_string="limit=100",
     ).respond_with_json(
         {
             "entries": [
@@ -75,22 +76,20 @@ def test_replays_downloads_mine_division_replays(
                     policy_version_id=OTHER_POLICY_VERSION_ID,
                     policy_id=OTHER_POLICY_ID,
                     policy_name="otherbot",
-                    replay_url=httpserver.url_for("/other-replay"),
+                    replay_url=None,
                 ),
             ],
             "next_cursor": None,
         }
     )
-    _expect_mine_memberships(httpserver)
     httpserver.expect_request("/replay", method="GET").respond_with_data(replay_payload)
 
     result = CliRunner().invoke(
         app,
         [
             "replays",
-            "--division",
-            DIVISION_ID,
-            "--mine",
+            "--round",
+            ROUND_ID,
             "--download-dir",
             str(tmp_path),
             "--server",
@@ -106,14 +105,7 @@ def test_replays_downloads_mine_division_replays(
     assert replay_path.read_bytes() == replay_payload
     index = json.loads((tmp_path / "index.json").read_text())
     assert index == metadata
-    episode_query = next(request for request, _ in httpserver.log if request.path == "/observatory/v2/episode-requests")
-    assert episode_query.args["division_id"] == DIVISION_ID
-    assert not any(request.path == "/observatory/v2/rounds" for request, _ in httpserver.log)
-    membership_query = next(
-        request for request, _ in httpserver.log if request.path == "/observatory/v2/league-policy-memberships"
-    )
-    assert membership_query.args["mine"] == "true"
-    assert membership_query.args["division_id"] == DIVISION_ID
+    assert not any(request.path == "/observatory/v2/episode-requests" for request, _ in httpserver.log)
 
 
 def test_episode_stats_prints_job_stats_json(httpserver: HTTPServer, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -188,9 +180,10 @@ def test_episodes_accepts_bulk_rows_without_assignments(
     episode_request = _episode_request(episode_request_id=EPISODE_REQUEST_ID, replay_url=None)
     del episode_request["assignments"]
     httpserver.expect_request(
-        "/observatory/v2/episode-requests",
+        f"/observatory/v2/rounds/{ROUND_ID}/episode-requests",
         method="GET",
         headers={"Authorization": "Bearer token"},
+        query_string="limit=50",
     ).respond_with_json({"entries": [episode_request], "next_cursor": None})
 
     result = CliRunner().invoke(
@@ -209,47 +202,22 @@ def test_episodes_accepts_bulk_rows_without_assignments(
     page = json.loads(result.output)
     assert page["entries"][0]["id"] == EPISODE_REQUEST_ID
     assert "assignments" not in page["entries"][0]
-    episode_query = next(request for request, _ in httpserver.log if request.path == "/observatory/v2/episode-requests")
-    assert episode_query.args["round_id"] == ROUND_ID
-    assert not any(request.path == "/observatory/v2/rounds" for request, _ in httpserver.log)
+    assert not any(request.path == "/observatory/v2/episode-requests" for request, _ in httpserver.log)
 
 
-def test_episodes_mine_division_uses_direct_episode_query(
-    httpserver: HTTPServer,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    httpserver.expect_request(
-        "/observatory/v2/episode-requests",
-        method="GET",
-        headers={"Authorization": "Bearer token"},
-    ).respond_with_json(
-        {
-            "entries": [_episode_request(episode_request_id=EPISODE_REQUEST_ID, replay_url="s3://replay")],
-            "next_cursor": None,
-        }
-    )
-    _expect_mine_memberships(httpserver)
-
+def test_episodes_requires_exactly_one_root(httpserver: HTTPServer) -> None:
     result = CliRunner().invoke(
         app,
         [
             "episodes",
-            "--division",
-            DIVISION_ID,
-            "--mine",
-            "--with-replay",
             "--server",
             httpserver.url_for(""),
-            "--json",
         ],
     )
 
-    assert result.exit_code == 0, result.output
-    page = json.loads(result.output)
-    assert [row["id"] for row in page["entries"]] == [EPISODE_REQUEST_ID]
-    episode_query = next(request for request, _ in httpserver.log if request.path == "/observatory/v2/episode-requests")
-    assert episode_query.args["division_id"] == DIVISION_ID
-    assert not any(request.path == "/observatory/v2/rounds" for request, _ in httpserver.log)
+    assert result.exit_code != 0
+    assert "Name exactly one episode root with --round or --policy" in result.output
+    assert httpserver.log == []
 
 
 def test_episodes_policy_uses_direct_episode_query(
@@ -257,9 +225,10 @@ def test_episodes_policy_uses_direct_episode_query(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     httpserver.expect_request(
-        "/observatory/v2/episode-requests",
+        f"/observatory/v2/policy-versions/{MY_POLICY_VERSION_ID}/episode-requests",
         method="GET",
         headers={"Authorization": "Bearer token"},
+        query_string="limit=50&cursor=current-page",
     ).respond_with_json(
         {
             "entries": [_episode_request(episode_request_id=EPISODE_REQUEST_ID, replay_url="s3://replay")],
@@ -285,9 +254,7 @@ def test_episodes_policy_uses_direct_episode_query(
     page = json.loads(result.output)
     assert [row["id"] for row in page["entries"]] == [EPISODE_REQUEST_ID]
     assert page["next_cursor"] == "next-page"
-    episode_query = next(request for request, _ in httpserver.log if request.path == "/observatory/v2/episode-requests")
-    assert episode_query.args["policy_version_id"] == MY_POLICY_VERSION_ID
-    assert episode_query.args["cursor"] == "current-page"
+    assert not any(request.path == "/observatory/v2/episode-requests" for request, _ in httpserver.log)
 
 
 def test_memberships_accepts_status_substatus_payload(

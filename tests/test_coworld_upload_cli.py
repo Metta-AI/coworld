@@ -666,9 +666,9 @@ def test_upload_coworld_command_waits_for_hosted_smoke_success(httpserver: HTTPS
         _coworld_entry(new_coworld_id, manifest, version="0.2.0", canonical=False)
     )
     httpserver.expect_request(
-        "/observatory/v2/episode-requests",
+        f"/observatory/v2/coworlds/{new_coworld_id}/episode-requests",
         method="GET",
-        query_string=f"limit=1000&coworld_id={new_coworld_id}&source=coworld_upload",
+        query_string="limit=100&source=coworld_upload",
     ).respond_with_json(
         {
             "entries": [
@@ -719,9 +719,9 @@ def test_upload_coworld_command_fails_on_hosted_smoke_failure(httpserver: HTTPSe
         _coworld_entry(new_coworld_id, manifest, version="0.2.0", canonical=False)
     )
     httpserver.expect_request(
-        "/observatory/v2/episode-requests",
+        f"/observatory/v2/coworlds/{new_coworld_id}/episode-requests",
         method="GET",
-        query_string=f"limit=1000&coworld_id={new_coworld_id}&source=coworld_upload",
+        query_string="limit=100&source=coworld_upload",
     ).respond_with_json(
         {
             "entries": [
@@ -733,6 +733,17 @@ def test_upload_coworld_command_fails_on_hosted_smoke_failure(httpserver: HTTPSe
                 )
             ]
         }
+    )
+    httpserver.expect_request(
+        "/observatory/v2/episode-requests/ereq_00000000-0000-0000-0000-000000000003",
+        method="GET",
+    ).respond_with_json(
+        _episode_request(
+            "ereq_00000000-0000-0000-0000-000000000003",
+            new_coworld_id,
+            "failed",
+            error="image pull failed",
+        )
     )
 
     result = CliRunner().invoke(
@@ -904,9 +915,9 @@ def test_coworld_status_command_waits_for_hosted_smoke_success(httpserver: HTTPS
     manifest = _manifest_with_image(image_id)
 
     httpserver.expect_request(
-        "/observatory/v2/episode-requests",
+        f"/observatory/v2/coworlds/{coworld_id}/episode-requests",
         method="GET",
-        query_string=f"limit=1000&coworld_id={coworld_id}&source=coworld_upload",
+        query_string="limit=100&source=coworld_upload",
     ).respond_with_json(
         {
             "entries": [
@@ -953,9 +964,9 @@ def test_coworld_status_command_prints_pending_hosted_smoke(httpserver: HTTPServ
     manifest = _manifest_with_image(image_id)
 
     httpserver.expect_request(
-        "/observatory/v2/episode-requests",
+        f"/observatory/v2/coworlds/{coworld_id}/episode-requests",
         method="GET",
-        query_string=f"limit=1000&coworld_id={coworld_id}&source=coworld_upload",
+        query_string="limit=100&source=coworld_upload",
     ).respond_with_json(
         {"entries": [_episode_request("ereq_00000000-0000-0000-0000-000000000001", coworld_id, "running")]}
     )

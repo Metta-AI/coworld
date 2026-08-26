@@ -7,6 +7,7 @@ import shutil
 import sys
 import tempfile
 import webbrowser
+from collections.abc import Sequence
 from contextlib import ExitStack
 from datetime import datetime
 from pathlib import Path
@@ -21,7 +22,7 @@ from coworld.api_client import (
     CoworldApiClient,
     DivisionLadderEntryPublic,
     DivisionPublic,
-    EpisodeRequestPage,
+    EpisodeRequestSummaryPage,
     EpisodeStatsResponse,
     ExperienceRequestDetail,
     ExperienceRequestRow,
@@ -35,6 +36,7 @@ from coworld.api_client import (
     RoundPublic,
     V2EpisodeRequestListRow,
     V2EpisodeRequestRow,
+    V2EpisodeRequestSummary,
 )
 from coworld.cli_support import console, emit_json
 from coworld.config import DEFAULT_SUBMIT_SERVER
@@ -522,19 +524,15 @@ def register_tournament_commands(app: typer.Typer) -> None:
             str | None,
             typer.Argument(help="Episode request ID to inspect. Lists episode requests when omitted."),
         ] = None,
-        division_id: Annotated[str | None, typer.Option("--division", "-d", help="Filter by division ID.")] = None,
         round_id: Annotated[str | None, typer.Option("--round", "-r", help="Filter by round ID.")] = None,
         policy: Annotated[
             str | None,
             typer.Option("--policy", "-p", help="Filter by policy name/version or policy version UUID."),
         ] = None,
-        mine: Annotated[
-            bool, typer.Option("--mine", help="Filter to episodes involving my league memberships.")
-        ] = False,
         with_replay: Annotated[
             bool, typer.Option("--with-replay", help="Only show episodes with replay URLs.")
         ] = False,
-        limit: Annotated[int, typer.Option("--limit", min=1, max=1000, help="Maximum rows to return.")] = 200,
+        limit: Annotated[int, typer.Option("--limit", min=1, max=100, help="Maximum rows to return.")] = 50,
         cursor: Annotated[str | None, typer.Option("--cursor", help="Cursor returned by the previous page.")] = None,
         server: Annotated[str, typer.Option("--server", help="Observatory API server URL.")] = DEFAULT_SUBMIT_SERVER,
         json_output: Annotated[bool, typer.Option("--json", help="Print raw JSON.")] = False,
@@ -550,20 +548,12 @@ def register_tournament_commands(app: typer.Typer) -> None:
             policy_version_id = _resolve_policy_filter(client, policy) if policy is not None else None
             page = _collect_episode_requests(
                 client,
-                division_id=division_id,
                 round_id=round_id,
                 policy_version_id=policy_version_id,
                 limit=limit,
                 cursor=cursor,
             )
-            rows = _filter_episode_requests(
-                client,
-                page.entries,
-                division_id=division_id,
-                policy_version_id=policy_version_id,
-                mine=mine,
-                with_replay=with_replay,
-            )
+            rows = [row for row in page.entries if not with_replay or row.replay_url is not None]
         if json_output:
             emit_json(page.model_copy(update={"entries": rows}).model_dump(mode="json"))
             return
@@ -729,19 +719,15 @@ def register_tournament_commands(app: typer.Typer) -> None:
 
     @app.command("replays")
     def replays(
-        division_id: Annotated[str | None, typer.Option("--division", "-d", help="Filter by division ID.")] = None,
         round_id: Annotated[str | None, typer.Option("--round", "-r", help="Filter by round ID.")] = None,
         policy: Annotated[
             str | None,
             typer.Option("--policy", "-p", help="Filter by policy name/version or policy version UUID."),
         ] = None,
-        mine: Annotated[
-            bool, typer.Option("--mine", help="Filter to episodes involving my league memberships.")
-        ] = False,
         download_dir: Annotated[
             Path | None, typer.Option("--download-dir", "-o", help="Download replay files.")
         ] = None,
-        limit: Annotated[int, typer.Option("--limit", min=1, max=1000, help="Maximum rows to return.")] = 1000,
+        limit: Annotated[int, typer.Option("--limit", min=1, max=100, help="Maximum rows to return.")] = 100,
         cursor: Annotated[str | None, typer.Option("--cursor", help="Cursor returned by the previous page.")] = None,
         server: Annotated[str, typer.Option("--server", help="Observatory API server URL.")] = DEFAULT_SUBMIT_SERVER,
         json_output: Annotated[bool, typer.Option("--json", help="Print raw JSON metadata.")] = False,
@@ -750,22 +736,14 @@ def register_tournament_commands(app: typer.Typer) -> None:
             policy_version_id = _resolve_policy_filter(client, policy) if policy is not None else None
             page = _collect_episode_requests(
                 client,
-                division_id=division_id,
                 round_id=round_id,
                 policy_version_id=policy_version_id,
                 limit=limit,
                 cursor=cursor,
             )
-            rows = _filter_episode_requests(
-                client,
-                page.entries,
-                division_id=division_id,
-                policy_version_id=policy_version_id,
-                mine=mine,
-                with_replay=True,
-            )
+            rows = [row for row in page.entries if row.replay_url is not None]
             if download_dir is not None:
-                metadata = _download_replays(client, rows, download_dir)
+                metadata = _download_replays(rows, download_dir)
                 if json_output:
                     emit_json(metadata)
                     return
@@ -1124,19 +1102,17 @@ def _print_events(rows: list[Any]) -> None:
 def _collect_episode_requests(
     client: CoworldApiClient,
     *,
-    division_id: str | None,
     round_id: str | None,
     policy_version_id: UUID | None,
     limit: int,
     cursor: str | None,
-) -> EpisodeRequestPage:
-    return client.list_episode_requests(
-        division_id=division_id,
-        round_id=round_id,
-        policy_version_id=policy_version_id,
-        limit=limit,
-        cursor=cursor,
-    )
+) -> EpisodeRequestSummaryPage:
+    if (round_id is None) == (policy_version_id is None):
+        raise typer.BadParameter("Name exactly one episode root with --round or --policy")
+    if round_id is not None:
+        return client.list_round_episode_requests(round_id, limit=limit, cursor=cursor)
+    assert policy_version_id is not None
+    return client.list_policy_version_episode_requests(policy_version_id, limit=limit, cursor=cursor)
 
 
 def _mine_policy_version_ids(client: CoworldApiClient, *, division_id: str | None) -> set[UUID]:
@@ -1148,63 +1124,18 @@ def _mine_policy_version_ids(client: CoworldApiClient, *, division_id: str | Non
     return {membership.policy_version.id for membership in memberships}
 
 
-def _filter_episode_requests(
-    client: CoworldApiClient,
-    rows: list[V2EpisodeRequestListRow],
-    *,
-    division_id: str | None,
-    policy_version_id: UUID | None,
-    mine: bool,
-    with_replay: bool,
-) -> list[V2EpisodeRequestListRow]:
-    allowed_policy_ids: set[UUID] | None = None
-    if mine:
-        allowed_policy_ids = _mine_policy_version_ids(client, division_id=division_id)
-    if policy_version_id is not None:
-        allowed_policy_ids = (
-            {policy_version_id} if allowed_policy_ids is None else allowed_policy_ids & {policy_version_id}
-        )
-
-    filtered = []
-    for row in rows:
-        if with_replay and row.replay_url is None:
-            continue
-        if allowed_policy_ids is not None and not _episode_has_policy(row, allowed_policy_ids):
-            continue
-        filtered.append(row)
-    return filtered
-
-
-def _episode_has_policy(row: V2EpisodeRequestListRow, policy_version_ids: set[UUID]) -> bool:
-    return any(
-        participant.kind == "policy" and participant.policy_version_id in policy_version_ids
-        for participant in row.participants
-    )
-
-
-def _print_episodes(rows: list[V2EpisodeRequestListRow]) -> None:
+def _print_episodes(rows: Sequence[V2EpisodeRequestSummary | V2EpisodeRequestListRow]) -> None:
     table = Table(title="Coworld Episode Requests", box=box.SIMPLE_HEAVY, show_lines=False, pad_edge=False)
     table.add_column("ID")
     table.add_column("Status")
-    table.add_column("Seed", justify="right")
-    table.add_column("Participants")
-    table.add_column("Scores")
+    table.add_column("Policies", justify="right")
     table.add_column("Replay")
     table.add_column("Created")
     for row in rows:
-        scores = {score.policy_version_id: score.score for score in row.scores}
-        participant_labels = ", ".join(participant.label for participant in row.participants)
-        score_labels = ", ".join(
-            f"{participant.label}="
-            f"{_format_score(scores.get(participant.policy_version_id)) if participant.kind == 'policy' else '-'}"
-            for participant in row.participants
-        )
         table.add_row(
             row.id,
             row.status,
-            "-" if row.seed is None else str(row.seed),
-            participant_labels or "-",
-            score_labels or "-",
+            str(len(row.policy_version_ids)),
             "yes" if row.replay_url else "-",
             _format_dt(row.created_at),
         )
@@ -1425,8 +1356,7 @@ def _print_policy_artifacts(agent_indices: list[int]) -> None:
 
 
 def _download_replays(
-    client: CoworldApiClient,
-    rows: list[V2EpisodeRequestListRow],
+    rows: list[V2EpisodeRequestSummary],
     output_dir: Path,
 ) -> list[dict[str, Any]]:
     output_dir.mkdir(parents=True, exist_ok=True)
@@ -1437,28 +1367,21 @@ def _download_replays(
         local_path = output_dir / local_name
         with materialized_replay_path(row.replay_url) as replay_path:
             shutil.copyfile(replay_path, local_path)
-        if not local_path.exists() and row.job_id is not None:
-            local_path = output_dir / f"{row.id}.replay"
-            local_path.write_bytes(client.get_job_artifact_bytes(row.job_id, "replay"))
         metadata.append(
             {
                 "episode_request_id": row.id,
-                "episode_id": None if row.episode_id is None else str(row.episode_id),
-                "job_id": None if row.job_id is None else str(row.job_id),
                 "coworld_id": row.coworld_id,
                 "replay_url": row.replay_url,
                 "local_path": str(local_path),
-                "seed": row.seed,
                 "status": row.status,
-                "participants": [participant.model_dump(mode="json") for participant in row.participants],
-                "scores": [score.model_dump(mode="json") for score in row.scores],
+                "policy_version_ids": [str(policy_version_id) for policy_version_id in row.policy_version_ids],
             }
         )
     (output_dir / "index.json").write_text(json.dumps(metadata, indent=2) + "\n", encoding="utf-8")
     return metadata
 
 
-def _print_replays(rows: list[V2EpisodeRequestListRow]) -> None:
+def _print_replays(rows: Sequence[V2EpisodeRequestSummary | V2EpisodeRequestListRow]) -> None:
     table = Table(title="Coworld Replays", box=box.SIMPLE_HEAVY, show_lines=False, pad_edge=False)
     table.add_column("Episode Request")
     table.add_column("Coworld")

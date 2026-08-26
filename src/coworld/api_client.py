@@ -518,8 +518,18 @@ class V2EpisodeRequestRow(V2EpisodeRequestListRow):
     game_config: dict[str, Any] | None = None
 
 
-class EpisodeRequestPage(CoworldAPIModel):
-    entries: list[V2EpisodeRequestListRow]
+class V2EpisodeRequestSummary(CoworldAPIModel):
+    id: str
+    status: str
+    coworld_id: str | None = None
+    round_id: str | None = None
+    replay_url: str | None = None
+    policy_version_ids: list[UUID]
+    created_at: datetime
+
+
+class EpisodeRequestSummaryPage(CoworldAPIModel):
+    entries: list[V2EpisodeRequestSummary]
     next_cursor: str | None
 
 
@@ -975,30 +985,72 @@ class CoworldApiClient:
             timeout=120.0,
         )
 
-    def list_episode_requests(
+    def list_round_episode_requests(
         self,
+        round_id: str,
         *,
-        division_id: str | None = None,
-        round_id: str | None = None,
-        player_id: str | None = None,
-        policy_version_id: UUID | None = None,
-        limit: int = 200,
+        limit: int = 50,
         cursor: str | None = None,
-    ) -> EpisodeRequestPage:
+    ) -> EpisodeRequestSummaryPage:
         params: dict[str, str | int] = {"limit": limit}
-        if division_id is not None:
-            params["division_id"] = division_id
-        if round_id is not None:
-            params["round_id"] = round_id
-        if player_id is not None:
-            params["player_id"] = player_id
-        if policy_version_id is not None:
-            params["policy_version_id"] = str(policy_version_id)
         if cursor is not None:
             params["cursor"] = cursor
-        response = self._http_client.get("/v2/episode-requests", headers=self._headers(), params=params)
-        _raise_for_status(response)
-        return EpisodeRequestPage.model_validate(response.json())
+        return self._get(
+            f"/v2/rounds/{round_id}/episode-requests",
+            EpisodeRequestSummaryPage,
+            params=params,
+        )
+
+    def list_policy_version_episode_requests(
+        self,
+        policy_version_id: UUID,
+        *,
+        limit: int = 50,
+        cursor: str | None = None,
+    ) -> EpisodeRequestSummaryPage:
+        params: dict[str, str | int] = {"limit": limit}
+        if cursor is not None:
+            params["cursor"] = cursor
+        return self._get(
+            f"/v2/policy-versions/{policy_version_id}/episode-requests",
+            EpisodeRequestSummaryPage,
+            params=params,
+        )
+
+    def list_coworld_episode_requests(
+        self,
+        coworld_id: str,
+        *,
+        source: str | None = None,
+        limit: int = 50,
+        cursor: str | None = None,
+    ) -> EpisodeRequestSummaryPage:
+        params: dict[str, str | int] = {"limit": limit}
+        if source is not None:
+            params["source"] = source
+        if cursor is not None:
+            params["cursor"] = cursor
+        return self._get(
+            f"/v2/coworlds/{coworld_id}/episode-requests",
+            EpisodeRequestSummaryPage,
+            params=params,
+        )
+
+    def list_experience_request_episode_summaries(
+        self,
+        experience_request_id: str,
+        *,
+        limit: int = 50,
+        cursor: str | None = None,
+    ) -> EpisodeRequestSummaryPage:
+        params: dict[str, str | int] = {"limit": limit}
+        if cursor is not None:
+            params["cursor"] = cursor
+        return self._get(
+            f"/v2/experience-requests/{experience_request_id}/episode-requests",
+            EpisodeRequestSummaryPage,
+            params=params,
+        )
 
     def get_episode_request(self, episode_request_id: str) -> V2EpisodeRequestRow:
         return self._get(f"/v2/episode-requests/{episode_request_id}", V2EpisodeRequestRow)
@@ -1189,8 +1241,7 @@ def _raise_for_status(response: httpx.Response) -> None:
         # A domain 403 (e.g. "You can only view your own player's prompt") is
         # not a stale token — surface it verbatim instead of login advice.
         elevated_hint = (
-            "Softmax team members can request team access by rerunning as "
-            "`coworld --elevated <command> ...`."
+            "Softmax team members can request team access by rerunning as `coworld --elevated <command> ...`."
         )
         if detail:
             raise RuntimeError(f"Access denied (403): {detail}\n{elevated_hint}")

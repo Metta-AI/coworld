@@ -545,26 +545,33 @@ class CoworldUploadClient:
         _raise_for_status(response)
         return CoworldUploadResponse.model_validate(response.json())
 
-    def list_episode_requests(
+    def list_coworld_episode_requests(
         self,
+        coworld_id: str,
         *,
-        coworld_id: str | None = None,
         source: str | None = None,
-        limit: int = 1000,
+        limit: int = 100,
     ) -> list[dict[str, Any]]:
         params: dict[str, str | int] = {"limit": limit}
-        if coworld_id is not None:
-            params["coworld_id"] = coworld_id
         if source is not None:
             params["source"] = source
         response = self._http_client.get(
-            "/v2/episode-requests",
+            f"/v2/coworlds/{coworld_id}/episode-requests",
             headers=self._headers(),
             params=params,
             timeout=60.0,
         )
         _raise_for_status(response)
         return response.json()["entries"]
+
+    def get_episode_request(self, episode_request_id: str) -> dict[str, Any]:
+        response = self._http_client.get(
+            f"/v2/episode-requests/{episode_request_id}",
+            headers=self._headers(),
+            timeout=60.0,
+        )
+        _raise_for_status(response)
+        return response.json()
 
     def list_coworlds(self, *, limit: int = 200, offset: int = 0) -> list[CoworldListEntry]:
         response = self._http_client.get(
@@ -1158,10 +1165,16 @@ def get_hosted_smoke_episode_statuses(
     *,
     coworld_id: str,
 ) -> tuple[HostedSmokeEpisodeStatus, ...]:
-    return _hosted_smoke_episode_statuses_from_rows(
-        client.list_episode_requests(coworld_id=coworld_id, source=_HOSTED_SMOKE_EPISODE_SOURCE, limit=1000),
-        coworld_id=coworld_id,
+    rows = client.list_coworld_episode_requests(
+        coworld_id,
+        source=_HOSTED_SMOKE_EPISODE_SOURCE,
+        limit=100,
     )
+    for row in rows:
+        if row.get("status") in _HOSTED_SMOKE_TERMINAL_STATUSES - _HOSTED_SMOKE_SUCCESS_STATUSES:
+            detail = client.get_episode_request(str(row["id"]))
+            row["error"] = detail.get("error") or detail.get("error_type")
+    return _hosted_smoke_episode_statuses_from_rows(rows, coworld_id=coworld_id)
 
 
 def wait_for_hosted_smoke_certification(
