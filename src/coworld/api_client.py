@@ -615,7 +615,8 @@ class PolicyVersionRow(CoworldAPIModel):
 
 class PolicyVersionsResponse(CoworldAPIModel):
     entries: list[PolicyVersionRow]
-    total_count: int
+    # Unread by the CLI; optional so the server can eventually stop sending it.
+    total_count: int | None = None
 
 
 class ReporterOutputPublic(CoworldAPIModel):
