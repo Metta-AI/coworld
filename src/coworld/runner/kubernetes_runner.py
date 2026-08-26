@@ -2,18 +2,23 @@ from __future__ import annotations
 
 import argparse
 import asyncio
+import hmac
+import http.server
 import json
 import os
+import socket
 import socketserver
 import sys
+import tempfile
 import threading
 import time
 import zipfile
+from collections import Counter
 from collections.abc import Callable
 from concurrent.futures import Future, ThreadPoolExecutor
 from io import BytesIO
 from pathlib import Path
-from typing import Mapping, cast
+from typing import Any, Mapping, cast
 
 import httpx
 from kubernetes import client, config
@@ -40,6 +45,7 @@ from coworld.runner.io import (
     RunnerErrorType,
     read_data,
     upload_data,
+    upload_file,
 )
 from coworld.runner.phase_timings import EpisodePhaseTimings
 from coworld.runner.runner import (
@@ -66,12 +72,19 @@ WORKDIR = Path(os.environ.get("COWORLD_WORKDIR", "/coworld"))
 STATE_PATH = WORKDIR / "state.json"
 GAME_PORT = int(os.environ.get("COGAME_PORT", "8080"))
 HEALTH_PORT = int(os.environ.get("COWORLD_WORKER_HEALTH_PORT", "9090"))
+PLAYER_ARTIFACT_PORT = 9091
 # Poll cadence for the two in-pod wait loops. Each tick issues a read_namespaced_pod against
 # the API server; with many concurrent episodes the aggregate read rate contributes to API
 # Priority & Fairness 429s (etcd throttle). Episodes run seconds-to-minutes, so a 1s cadence
 # is latency-insensitive and cuts that steady read pressure.
 _HEALTH_POLL_SECONDS = 1.0
 _ARTIFACT_POLL_SECONDS = 1.0
+_PLAYER_ARTIFACT_MAX_BYTES = 200 * 1024 * 1024
+_PLAYER_ARTIFACT_HEADER_DEADLINE_SECONDS = 5.0
+_PLAYER_ARTIFACT_BODY_DEADLINE_SECONDS = 60.0
+_PLAYER_ARTIFACT_MAX_CONNECTIONS = 4
+_PLAYER_ARTIFACT_MAX_CONNECTIONS_PER_SOURCE = 1
+_PLAYER_ARTIFACT_MAX_ATTEMPTS = 3
 _BEDROCK_SERVICE_ACCOUNT = "episode-runner"
 _DIRECT_BEDROCK_APP_ENV = {
     "USE_BEDROCK",
@@ -149,6 +162,154 @@ class _HealthRequestHandler(socketserver.BaseRequestHandler):
 def _start_worker_health_server(port: int) -> None:
     server = socketserver.TCPServer(("0.0.0.0", port), _HealthRequestHandler)
     threading.Thread(target=server.serve_forever, daemon=True).start()
+
+
+class _PlayerArtifactUploadServer(socketserver.ThreadingMixIn, http.server.HTTPServer):
+    daemon_threads = True
+
+    def __init__(self, targets: dict[int, str], tokens: list[str]) -> None:
+        super().__init__(("0.0.0.0", PLAYER_ARTIFACT_PORT), _PlayerArtifactUploadHandler)
+        self.targets = targets
+        self.tokens = tokens
+        self.attempts: Counter[int] = Counter()
+        self.completed_slots: set[int] = set()
+        self.inflight_slots: set[int] = set()
+        self.active_by_source: Counter[str] = Counter()
+        self.active_connections = 0
+        self.state_lock = threading.Lock()
+
+    def process_request(self, request: Any, client_address: tuple[str, int]) -> None:
+        source = client_address[0]
+        with self.state_lock:
+            if self.active_connections >= _PLAYER_ARTIFACT_MAX_CONNECTIONS:
+                request.close()
+                return
+            if self.active_by_source[source] >= _PLAYER_ARTIFACT_MAX_CONNECTIONS_PER_SOURCE:
+                request.close()
+                return
+            self.active_connections += 1
+            self.active_by_source[source] += 1
+        started = False
+        try:
+            super().process_request(request, client_address)
+            started = True
+        finally:
+            if not started:
+                self._release_connection(source)
+
+    def process_request_thread(self, request: Any, client_address: tuple[str, int]) -> None:
+        try:
+            super().process_request_thread(request, client_address)
+        finally:
+            self._release_connection(client_address[0])
+
+    def _release_connection(self, source: str) -> None:
+        with self.state_lock:
+            self.active_connections -= 1
+            self.active_by_source[source] -= 1
+            if self.active_by_source[source] == 0:
+                del self.active_by_source[source]
+
+
+class _PlayerArtifactUploadHandler(http.server.BaseHTTPRequestHandler):
+    server: _PlayerArtifactUploadServer
+
+    def _expire_deadline(self) -> None:
+        try:
+            self.connection.shutdown(socket.SHUT_RDWR)
+        except OSError:
+            pass
+        self.connection.close()
+
+    def setup(self) -> None:
+        super().setup()
+        self._deadline_timer = threading.Timer(_PLAYER_ARTIFACT_HEADER_DEADLINE_SECONDS, self._expire_deadline)
+        self._deadline_timer.start()
+
+    def parse_request(self) -> bool:
+        parsed = super().parse_request()
+        if parsed:
+            self._deadline_timer.cancel()
+            self._deadline_timer = threading.Timer(_PLAYER_ARTIFACT_BODY_DEADLINE_SECONDS, self._expire_deadline)
+            self._deadline_timer.start()
+        return parsed
+
+    def finish(self) -> None:
+        self._deadline_timer.cancel()
+        super().finish()
+
+    def do_PUT(self) -> None:
+        parts = self.path.split("?")[0].split("/")
+        if len(parts) != 4 or parts[1] != "player-artifact" or not parts[2].isdigit():
+            self.send_error(404)
+            return
+        slot = int(parts[2])
+        if slot not in self.server.targets or slot >= len(self.server.tokens):
+            self.send_error(404)
+            return
+        if not hmac.compare_digest(parts[3], self.server.tokens[slot]):
+            self.send_error(403)
+            return
+        content_length = self.headers.get("Content-Length", "")
+        if not content_length.isdigit():
+            self.send_error(411)
+            return
+        size = int(content_length)
+        if size > _PLAYER_ARTIFACT_MAX_BYTES:
+            self.send_error(413)
+            return
+        with self.server.state_lock:
+            if slot in self.server.completed_slots:
+                self.send_response(204)
+                self.end_headers()
+                return
+            if slot in self.server.inflight_slots:
+                self.send_error(409)
+                return
+            if self.server.attempts[slot] >= _PLAYER_ARTIFACT_MAX_ATTEMPTS:
+                self.send_error(429)
+                return
+            self.server.attempts[slot] += 1
+            self.server.inflight_slots.add(slot)
+        try:
+            with tempfile.SpooledTemporaryFile(max_size=8 * 1024 * 1024) as artifact:
+                remaining = size
+                while remaining:
+                    chunk = self.rfile.read(min(65536, remaining))
+                    if not chunk:
+                        self.send_error(400)
+                        return
+                    artifact.write(chunk)
+                    remaining -= len(chunk)
+                upload_file(
+                    self.server.targets[slot],
+                    artifact,
+                    size=size,
+                    content_type=self.headers.get("Content-Type", "application/zip"),
+                )
+            with self.server.state_lock:
+                self.server.completed_slots.add(slot)
+            self.send_response(201)
+            self.end_headers()
+        finally:
+            with self.server.state_lock:
+                self.server.inflight_slots.remove(slot)
+
+    def log_message(self, _format: str, *args: object) -> None:
+        # The path contains the player's upload capability. Never print it.
+        pass
+
+
+def _start_player_artifact_upload_server(tokens: list[str]) -> _PlayerArtifactUploadServer | None:
+    raw_targets = os.environ.get("PLAYER_ARTIFACT_UPLOAD_URLS")
+    if raw_targets is None or "COWORLD_EGRESS_RELAY_URL" not in os.environ:
+        return None
+    server = _PlayerArtifactUploadServer(
+        targets={int(slot): url for slot, url in json.loads(raw_targets).items()},
+        tokens=tokens,
+    )
+    threading.Thread(target=server.serve_forever, daemon=True).start()
+    return server
 
 
 def init_config_from_env() -> None:
@@ -322,6 +483,7 @@ def _run_kubernetes_episode(
         else DEFAULT_PLAYER_CONNECT_TIMEOUT_SECONDS
     )
     child_names: list[str] = []
+    artifact_server = _start_player_artifact_upload_server(tokens)
 
     try:
         _create_game_service(core_v1, namespace, service_name, job_id, owner_references)
@@ -405,6 +567,9 @@ def _run_kubernetes_episode(
     finally:
         _collect_logs(core_v1, namespace, pod_name, child_names, artifacts)
         _delete_child_resources(core_v1, namespace, service_name, child_names)
+        if artifact_server is not None:
+            artifact_server.shutdown()
+            artifact_server.server_close()
 
 
 def _load_incluster_config() -> None:
@@ -453,6 +618,10 @@ def _create_game_service(
     if human_player_proxy_port is not None:
         proxy_port = int(human_player_proxy_port)
         ports.append(client.V1ServicePort(name="human-player", port=proxy_port, target_port=proxy_port))
+    if os.environ.get("PLAYER_ARTIFACT_UPLOAD_URLS") is not None and os.environ.get("COWORLD_EGRESS_RELAY_URL"):
+        ports.append(
+            client.V1ServicePort(name="player-artifact", port=PLAYER_ARTIFACT_PORT, target_port=PLAYER_ARTIFACT_PORT)
+        )
     service = client.V1Service(
         metadata=client.V1ObjectMeta(
             name=service_name,
@@ -512,7 +681,7 @@ def _create_player_pod(
         bedrock_region = os.environ["COWORLD_BEDROCK_REGION"]
         player_env = {"AWS_REGION": bedrock_region, "AWS_DEFAULT_REGION": bedrock_region} | player_env
     player_ws_url = _player_service_ws_url(service_name, slot, token)
-    player_artifact_upload_url = _player_artifact_upload_url(slot)
+    player_artifact_upload_url = _player_artifact_upload_url(slot, service_name, token)
     artifact_env_vars = (
         [client.V1EnvVar(name="COWORLD_PLAYER_ARTIFACT_UPLOAD_URL", value=player_artifact_upload_url)]
         if player_artifact_upload_url is not None
@@ -555,6 +724,11 @@ def _create_player_pod(
                 # CPU limit only: a memory limit would risk OOM-killing existing players.
                 limits={"cpu": player_cpu_limit} if player_cpu_limit else None,
             ),
+            security_context=client.V1SecurityContext(
+                allow_privilege_escalation=False,
+                capabilities=client.V1Capabilities(drop=["ALL"]),
+                seccomp_profile=client.V1SeccompProfile(type="RuntimeDefault"),
+            ),
         )
     ]
     # The game is healthy on loopback before this pod is created, but Kubernetes service
@@ -590,6 +764,7 @@ def _create_player_pod(
         # the webhook must not also inject a conflicting token path.
         pod_annotations["eks.amazonaws.com/skip-containers"] = f"player,{BEDROCK_SIDECAR_CONTAINER_NAME}"
         prompt_prefix_sample_rate = float(os.environ.get("BEDROCK_SIDECAR_PROMPT_PREFIX_SAMPLE_RATE", "0"))
+        egress_relay_url = os.environ.get("BEDROCK_SIDECAR_EGRESS_RELAY_URL") or None
         pod_volumes = [bedrock_sidecar_token_volume(prompt_prefix_measurement=prompt_prefix_sample_rate > 0)]
         init_containers.append(
             build_bedrock_sidecar(
@@ -638,6 +813,7 @@ def _create_player_pod(
                     else None
                 ),
                 openrouter_allowlist_version=os.environ.get("COWORLD_OPENROUTER_ALLOWLIST_VERSION"),
+                egress_relay_url=egress_relay_url,
             )
         )
     pod = client.V1Pod(
@@ -675,7 +851,7 @@ def _create_player_pod(
         spec=client.V1PodSpec(
             restart_policy="Never",
             service_account_name=_player_service_account_name(bedrock_enablement),
-            automount_service_account_token=False if uses_sidecar else None,
+            automount_service_account_token=False,
             node_selector=_workload_node_selector(),
             tolerations=_workload_tolerations(),
             volumes=pod_volumes,
@@ -696,17 +872,16 @@ def _player_image_pull_policy(image: str) -> str:
     return "IfNotPresent" if "@sha256:" in image else "Always"
 
 
-def _player_artifact_upload_url(slot: int) -> str | None:
-    """The presigned PUT URL this player slot may upload a single artifact .zip to.
-
-    The dispatcher passes PLAYER_ARTIFACT_UPLOAD_URLS to the worker as a JSON map slot -> url; the
-    worker forwards the matching slot's URL into the player pod. The player may upload at any time
-    but must finish before the pod is torn down after the game ends.
-    """
+def _player_artifact_upload_url(slot: int, service_name: str, token: str) -> str | None:
     raw = os.environ.get("PLAYER_ARTIFACT_UPLOAD_URLS")
     if raw is None:
         return None
-    return json.loads(raw).get(str(slot))
+    target = json.loads(raw).get(str(slot))
+    if target is None:
+        return None
+    if os.environ.get("COWORLD_EGRESS_RELAY_URL"):
+        return f"http://{service_name}:{PLAYER_ARTIFACT_PORT}/player-artifact/{slot}/{token}"
+    return target
 
 
 def _player_service_account_name(bedrock_enablement: BedrockEnablement) -> str | None:

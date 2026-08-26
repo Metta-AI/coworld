@@ -70,3 +70,24 @@ def test_write_data_can_post_to_signed_uri(monkeypatch: pytest.MonkeyPatch) -> N
 
     assert len(calls) == 1
     assert calls[0][0].get_method() == "POST"
+
+
+def test_relay_routed_read_requires_https(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("COWORLD_EGRESS_RELAY_URL", "http://relay.test:3128")
+
+    with pytest.raises(ValueError, match="require an https URI"):
+        runner_io.read_data("http://example.test/job.json")
+
+
+def test_relay_http_client_follows_redirects(monkeypatch: pytest.MonkeyPatch) -> None:
+    kwargs = {}
+    sentinel = object()
+
+    def client(**values: object) -> object:
+        kwargs.update(values)
+        return sentinel
+
+    monkeypatch.setattr(runner_io.httpx, "Client", client)
+
+    assert runner_io._relay_http_client("http://relay.test:3128") is sentinel
+    assert kwargs == {"proxy": "http://relay.test:3128", "timeout": 60.0, "follow_redirects": True}

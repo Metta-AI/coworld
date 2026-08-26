@@ -2,6 +2,7 @@ import asyncio
 import json
 import os
 import socket
+import socketserver
 import subprocess
 import sys
 import threading
@@ -11,6 +12,8 @@ from io import BytesIO
 from pathlib import Path
 from types import SimpleNamespace
 from typing import Any, cast
+from urllib.error import HTTPError
+from urllib.request import Request, urlopen
 
 import pytest
 from kubernetes.client import Configuration
@@ -1774,6 +1777,118 @@ def test_create_game_service_exposes_human_proxy_without_rerouting_policy_player
     assert ports["human-player"].target_port == 8081
 
 
+def test_create_game_service_exposes_internal_artifact_upload_only_with_relay(monkeypatch):
+    created: dict[str, Any] = {}
+    core_v1 = SimpleNamespace(
+        create_namespaced_service=lambda *, namespace, body: created.update({"namespace": namespace, "body": body})
+    )
+    monkeypatch.setenv("PLAYER_ARTIFACT_UPLOAD_URLS", '{"0":"https://s3.example/artifact"}')
+    monkeypatch.setenv("COWORLD_EGRESS_RELAY_URL", "http://egress-relay.jobs.svc.cluster.local:3128")
+
+    kubernetes_runner._create_game_service(core_v1, "jobs", "game-service", "job-id", [])
+
+    ports = {port.name: port for port in created["body"].spec.ports}
+    assert ports["player-artifact"].port == 9091
+    assert ports["player-artifact"].target_port == 9091
+
+
+def test_player_artifact_upload_server_is_bounded_and_idempotent(monkeypatch):
+    uploads: list[tuple[str, bytes, int, str]] = []
+
+    def upload_file(uri, file, *, size, content_type):
+        file.seek(0)
+        uploads.append((uri, file.read(), size, content_type))
+
+    monkeypatch.setattr(kubernetes_runner, "PLAYER_ARTIFACT_PORT", 0)
+    monkeypatch.setattr(kubernetes_runner, "upload_file", upload_file)
+    server = kubernetes_runner._PlayerArtifactUploadServer({0: "https://s3.example/artifact"}, ["secret"])
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    port = server.server_address[1]
+    request = Request(
+        f"http://127.0.0.1:{port}/player-artifact/0/secret",
+        data=b"artifact",
+        method="PUT",
+        headers={"Content-Type": "application/zip"},
+    )
+    try:
+        with urlopen(request, timeout=2) as response:
+            assert response.status == 201
+        deadline = time.monotonic() + 1
+        while server.active_connections:
+            assert time.monotonic() < deadline
+            time.sleep(0.01)
+        with urlopen(
+            Request(
+                f"http://127.0.0.1:{port}/player-artifact/0/secret",
+                data=b"artifact",
+                method="PUT",
+                headers={"Content-Type": "application/zip"},
+            ),
+            timeout=2,
+        ) as response:
+            assert response.status == 204
+        deadline = time.monotonic() + 1
+        while server.active_connections:
+            assert time.monotonic() < deadline
+            time.sleep(0.01)
+        with pytest.raises(HTTPError) as error:
+            urlopen(
+                Request(
+                    f"http://127.0.0.1:{port}/player-artifact/0/wrong",
+                    data=b"artifact",
+                    method="PUT",
+                ),
+                timeout=2,
+            )
+        assert error.value.code == 403
+    finally:
+        server.shutdown()
+        server.server_close()
+        thread.join()
+
+    assert uploads == [("https://s3.example/artifact", b"artifact", 8, "application/zip")]
+
+
+def test_player_artifact_upload_server_enforces_total_header_deadline(monkeypatch):
+    monkeypatch.setattr(kubernetes_runner, "PLAYER_ARTIFACT_PORT", 0)
+    monkeypatch.setattr(kubernetes_runner, "_PLAYER_ARTIFACT_HEADER_DEADLINE_SECONDS", 0.05)
+    server = kubernetes_runner._PlayerArtifactUploadServer({0: "https://s3.example/artifact"}, ["secret"])
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    connection = socket.create_connection(("127.0.0.1", server.server_address[1]), timeout=1)
+    try:
+        connection.sendall(b"P")
+        assert connection.recv(1) == b""
+    finally:
+        connection.close()
+        server.shutdown()
+        server.server_close()
+        thread.join()
+
+    assert server.active_connections == 0
+
+
+def test_player_artifact_upload_server_releases_slot_when_thread_start_fails(monkeypatch):
+    monkeypatch.setattr(kubernetes_runner, "PLAYER_ARTIFACT_PORT", 0)
+    server = kubernetes_runner._PlayerArtifactUploadServer({0: "https://s3.example/artifact"}, ["secret"])
+    request, peer = socket.socketpair()
+
+    def fail_to_start_thread(*_args: object) -> None:
+        raise RuntimeError("thread start failed")
+
+    monkeypatch.setattr(socketserver.ThreadingMixIn, "process_request", fail_to_start_thread)
+    try:
+        with pytest.raises(RuntimeError, match="thread start failed"):
+            server.process_request(request, ("127.0.0.1", 12345))
+        assert server.active_connections == 0
+        assert server.active_by_source == {}
+    finally:
+        request.close()
+        peer.close()
+        server.server_close()
+
+
 def test_create_player_pod_injects_policy_secret_env(monkeypatch):
     created: dict[str, Any] = {}
     core_v1 = SimpleNamespace(
@@ -1841,7 +1956,7 @@ def test_create_player_pod_injects_policy_secret_env(monkeypatch):
     assert pod.spec.node_selector == {"workload-type": "jobs", "karpenter.sh/capacity-type": "on-demand"}
     assert pod.spec.service_account_name is None
     assert pod.spec.volumes is None
-    assert pod.spec.automount_service_account_token is None
+    assert pod.spec.automount_service_account_token is False
     wait_for_game = pod.spec.init_containers[0]
     assert wait_for_game.name == "wait-for-game-service"
     assert wait_for_game.image == "coworld-coordinator:latest"
@@ -2028,7 +2143,7 @@ def test_local_bedrock_player_uses_direct_access_without_sidecar_infrastructure(
     assert "AWS_ENDPOINT_URL_BEDROCK_RUNTIME" not in env
     assert [container.name for container in pod.spec.init_containers] == ["wait-for-game-service"]
     assert pod.spec.service_account_name == "episode-runner"
-    assert pod.spec.automount_service_account_token is None
+    assert pod.spec.automount_service_account_token is False
 
 
 def test_create_player_pod_with_bedrock_sidecar_inverts_bedrock_access(monkeypatch):
@@ -2042,6 +2157,7 @@ def test_create_player_pod_with_bedrock_sidecar_inverts_bedrock_access(monkeypat
     monkeypatch.setenv("BEDROCK_SIDECAR_UPSTREAM_ENDPOINT", "http://bedrock.local")
     monkeypatch.setenv("BEDROCK_SIDECAR_SPEND_LIMIT_USD", "1.5")
     monkeypatch.setenv("BEDROCK_SIDECAR_PRICING_JSON", '{"claude-sonnet-4-6":[3.0,15.0,0.3,3.75]}')
+    monkeypatch.setenv("BEDROCK_SIDECAR_EGRESS_RELAY_URL", "http://egress-relay.jobs.svc.cluster.local:3128")
     player = PlayerLaunchSpec(
         image="ghcr.io/metta-ai/players/paintbot@sha256:player123",
         run=(),
@@ -2147,6 +2263,7 @@ def test_create_player_pod_with_bedrock_sidecar_inverts_bedrock_access(monkeypat
     assert sidecar_env["BEDROCK_SIDECAR_PRICING_JSON"] == '{"claude-sonnet-4-6":[3.0,15.0,0.3,3.75]}'
     assert "BEDROCK_SIDECAR_LLM_PROVIDER" not in sidecar_env
     assert "BEDROCK_SIDECAR_OPENROUTER_API_KEY" not in sidecar_env
+    assert sidecar_env["BEDROCK_SIDECAR_EGRESS_RELAY_URL"] == "http://egress-relay.jobs.svc.cluster.local:3128"
     # Self-provisioned IRSA on the sidecar (not webhook-dependent).
     assert sidecar_env["AWS_ROLE_ARN"] == "arn:aws:iam::583928386201:role/episode-runner-bedrock"
     assert sidecar_env["AWS_WEB_IDENTITY_TOKEN_FILE"] == BEDROCK_SIDECAR_TOKEN_FILE
@@ -2282,6 +2399,7 @@ def test_create_player_pod_forwards_artifact_upload_url_for_its_slot(monkeypatch
         "PLAYER_ARTIFACT_UPLOAD_URLS",
         '{"0": "https://s3.example/put/policy_artifact_0.zip", "1": "https://s3.example/put/policy_artifact_1.zip"}',
     )
+    monkeypatch.setenv("COWORLD_EGRESS_RELAY_URL", "http://egress-relay.jobs.svc.cluster.local:3128")
     player = PlayerLaunchSpec(image="paintbot:latest", run=(), env={})
 
     kubernetes_runner._create_player_pod(
@@ -2301,7 +2419,11 @@ def test_create_player_pod_forwards_artifact_upload_url_for_its_slot(monkeypatch
     )
 
     env = {env_var.name: env_var.value for env_var in created["body"].spec.containers[0].env}
-    assert env["COWORLD_PLAYER_ARTIFACT_UPLOAD_URL"] == "https://s3.example/put/policy_artifact_1.zip"
+    assert env["COWORLD_PLAYER_ARTIFACT_UPLOAD_URL"] == ("http://game-service:9091/player-artifact/1/slot-token")
+    player_security = created["body"].spec.containers[0].security_context
+    assert player_security.allow_privilege_escalation is False
+    assert player_security.capabilities.drop == ["ALL"]
+    assert player_security.seccomp_profile.type == "RuntimeDefault"
 
 
 def test_create_player_pod_tags_bedrock_request_metadata_with_slot(monkeypatch):

@@ -1,13 +1,15 @@
 from __future__ import annotations
 
+import os
 import time
 from datetime import datetime
 from pathlib import Path
-from typing import Literal
+from typing import Iterator, Literal, Protocol
 from urllib.error import HTTPError
 from urllib.parse import unquote, urlparse
 from urllib.request import Request, urlopen
 
+import httpx
 from pydantic import BaseModel, ConfigDict, Field
 
 _WRITE_RETRY_DELAYS_SECONDS = (0.5, 1.0, 2.0)
@@ -65,6 +67,14 @@ class PlayerRuntimeStatuses(BaseModel):
     players: list[PlayerRuntimeStatus]
 
 
+class RewindableBinaryStream(Protocol):
+    def seek(self, offset: int, whence: int = 0, /) -> int: ...
+
+    def read(self, size: int = -1, /) -> bytes: ...
+
+    def __iter__(self) -> Iterator[bytes]: ...
+
+
 class RunnerEpisodeError(RuntimeError):
     def __init__(
         self,
@@ -81,6 +91,14 @@ class RunnerEpisodeError(RuntimeError):
 def read_data(uri: str) -> bytes:
     parsed = urlparse(uri)
     if parsed.scheme in ("http", "https"):
+        relay_url = os.environ.get("COWORLD_EGRESS_RELAY_URL")
+        if relay_url is not None:
+            if parsed.scheme != "https":
+                raise ValueError("relay-routed reads require an https URI")
+            with _relay_http_client(relay_url) as client:
+                response = client.get(uri)
+                response.raise_for_status()
+                return response.content
         with urlopen(uri, timeout=30) as response:
             return response.read()
     if parsed.scheme == "file":
@@ -108,12 +126,47 @@ def upload_data(uri: str, data: bytes | str, *, content_type: str) -> None:
     write_data(uri, data, content_type=content_type, http_method="PUT")
 
 
+def upload_file(uri: str, file: RewindableBinaryStream, *, size: int, content_type: str) -> None:
+    relay_url = os.environ["COWORLD_EGRESS_RELAY_URL"]
+    for retry_index in range(len(_WRITE_RETRY_DELAYS_SECONDS) + 1):
+        file.seek(0)
+        with _relay_http_client(relay_url) as client:
+            response = client.put(
+                uri,
+                content=file,
+                headers={"Content-Type": content_type, "Content-Length": str(size)},
+            )
+        if response.status_code < 400:
+            return
+        if response.status_code not in _RETRYABLE_WRITE_STATUS_CODES or retry_index == len(_WRITE_RETRY_DELAYS_SECONDS):
+            response.raise_for_status()
+        time.sleep(_WRITE_RETRY_DELAYS_SECONDS[retry_index])
+
+
 def _write_data(uri: str, data: bytes | str, *, content_type: str, http_method: Literal["POST", "PUT"]) -> None:
     if isinstance(data, str):
         data = data.encode()
 
     parsed = urlparse(uri)
     if parsed.scheme in ("http", "https"):
+        relay_url = os.environ.get("COWORLD_EGRESS_RELAY_URL")
+        if relay_url is not None:
+            for retry_index in range(len(_WRITE_RETRY_DELAYS_SECONDS) + 1):
+                with _relay_http_client(relay_url) as client:
+                    response = client.request(
+                        http_method,
+                        uri,
+                        content=data,
+                        headers={"Content-Type": content_type},
+                    )
+                if response.status_code < 400:
+                    return
+                if response.status_code not in _RETRYABLE_WRITE_STATUS_CODES or retry_index == len(
+                    _WRITE_RETRY_DELAYS_SECONDS
+                ):
+                    response.raise_for_status()
+                time.sleep(_WRITE_RETRY_DELAYS_SECONDS[retry_index])
+            raise AssertionError("unreachable")
         request = Request(uri, data=data, method=http_method)
         request.add_header("Content-Type", content_type)
         for retry_index in range(len(_WRITE_RETRY_DELAYS_SECONDS) + 1):
@@ -135,3 +188,7 @@ def _write_data(uri: str, data: bytes | str, *, content_type: str, http_method: 
         path.write_bytes(data)
         return
     raise ValueError(f"Unsupported URI for write_data: {uri}")
+
+
+def _relay_http_client(relay_url: str) -> httpx.Client:
+    return httpx.Client(proxy=relay_url, timeout=60.0, follow_redirects=True)

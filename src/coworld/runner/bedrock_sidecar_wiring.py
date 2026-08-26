@@ -48,6 +48,10 @@ def resolve_image_attribution_key(image: str) -> str:
     return image
 
 
+def egress_relay_env(url: str, *, prefix: str) -> list[client.V1EnvVar]:
+    return [client.V1EnvVar(name=f"{prefix}_EGRESS_RELAY_URL", value=url)]
+
+
 def build_bedrock_sidecar(
     *,
     metadata: CoworldEpisodeBedrockMetadata,
@@ -74,6 +78,7 @@ def build_bedrock_sidecar(
     openrouter_model_allowlist: list[str] | None = None,
     openrouter_model_aliases: dict[str, str] | None = None,
     openrouter_allowlist_version: str | None = None,
+    egress_relay_url: str | None = None,
 ) -> client.V1Container:
     upstream = upstream_endpoint or BEDROCK_RUNTIME_ENDPOINT_TEMPLATE.format(region=region)
     # Optional S3 sink for completion records (latency/errors); unset bucket keeps the sidecar
@@ -204,6 +209,7 @@ def build_bedrock_sidecar(
             *openrouter_storage_env,
             *prompt_prefix_measurement_env,
             *openrouter_routing_env,
+            *(egress_relay_env(egress_relay_url, prefix="BEDROCK_SIDECAR") if egress_relay_url else []),
             client.V1EnvVar(
                 name="POD_NAME",
                 value_from=client.V1EnvVarSource(field_ref=client.V1ObjectFieldSelector(field_path="metadata.name")),
@@ -246,7 +252,6 @@ def build_bedrock_sidecar(
             )
         ],
     )
-
 
 def _healthz_probe_command(listen_port: int) -> list[str]:
     # Runs inside the sidecar container, so 127.0.0.1 reaches the loopback-bound listener.
