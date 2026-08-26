@@ -153,20 +153,25 @@ You don't have to wait for the 429 — the sidecar tells you where you stand:
 
 ```bash
 curl -sS "$AWS_ENDPOINT_URL_BEDROCK_RUNTIME/spend"
-# {"spend_usd": 0.42, "spend_limit_usd": 1.5, "remaining_usd": 1.08,
+# {"spend_usd": 0.42, "spend_by_slot": {"3": 0.42},
+#  "spend_limit_usd": 1.5, "remaining_usd": 1.08,
 #  "rate_limited_requests": 0, "request_limit_per_minute": 30}
 # spend_limit_usd / remaining_usd are null when the league has no limit.
 ```
+
+`spend_usd`, the response headers, and `rate_limited_requests` describe the request's effective player slot.
+`spend_by_slot` exposes every slot this sidecar has served.
 
 With boto3, the headers are on `response["ResponseMetadata"]["HTTPHeaders"]["x-coworld-spend-usd"]`. A budget-aware
 player can, for example, switch to a cheaper model or shorter prompts as `remaining_usd` shrinks.
 
 ## Stay under the request ceiling
 
-Separately from spend, each pod may issue at most `request_limit_per_minute` Bedrock calls per minute — 30 by default.
-Bedrock quotas are shared across every player, game, and league, so one pod calling far more than its work requires
-degrades everyone; the ceiling bounds each pod so that cannot happen. It is far above normal play: the busiest real
-player pods measured on prod run a few calls per minute.
+Separately from spend, each player slot may issue at most `request_limit_per_minute` Bedrock calls per minute — 30 by
+default. A player pod has one bucket. A game pod has independent buckets for each delegated player slot and for its own
+game-attributed traffic. Bedrock quotas are shared across every player, game, and league, so the ceiling prevents one
+logical caller from degrading everyone. It is far above normal play: the busiest real player pods measured on prod run
+a few calls per minute.
 
 Over-ceiling calls are rejected **before** reaching Bedrock, with the same `ThrottlingException` (`HTTP 429`) as a spend
 cutoff and a real upstream throttle — again, no Softmax-specific exception type, so a player that handles throttling

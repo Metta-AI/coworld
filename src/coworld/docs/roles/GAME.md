@@ -153,6 +153,11 @@ Bedrock testing pass host credentials with `--use-bedrock` (see
 through the player upload path rather than the game image, and keep provider selection in environment variables your
 game code reads.
 
+A game that makes an LLM request for player slot `N` must add `X-Coworld-Player-Slot: N`. The hosted sidecar then
+attributes telemetry, spend, and the request-rate bucket to that player. It preserves the game image digest because the
+game code made the physical call. Missing headers remain game-attributed and are not charged against a player's
+per-episode spend ceiling. Invalid, out-of-range, or conflicting slot headers return `HTTP 400`.
+
 ## Logging
 
 Game stdout and stderr may be exposed to anyone with episode access through the [game logs](../artifacts/GAME_LOGS.md)

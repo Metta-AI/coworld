@@ -67,6 +67,7 @@ def build_bedrock_sidecar(
     openrouter_capture_payloads: bool = True,
     bedrock_model_aliases: dict[str, str] | None = None,
     spend_limit_usd: str | None = None,
+    player_slot_count: int | None = None,
     pricing_json: str | None = None,
     prompt_prefix_sample_rate: float = 0.0,
     openrouter_key_secret_name: str | None = None,
@@ -192,6 +193,11 @@ def build_bedrock_sidecar(
             client.V1EnvVar(
                 name="BEDROCK_SIDECAR_REQUEST_METADATA",
                 value=serialize_bedrock_request_metadata(metadata),
+            ),
+            *(
+                [client.V1EnvVar(name="BEDROCK_SIDECAR_PLAYER_SLOT_COUNT", value=str(player_slot_count))]
+                if player_slot_count is not None
+                else []
             ),
             *completion_env,
             *sink_tuning_env,
