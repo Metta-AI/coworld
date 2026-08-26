@@ -57,9 +57,9 @@ Attribute an episode to its bracket match by matching participant `player_id`s t
 `visualization.entrants`. The same two players can meet more than once across a bracket (a winners match, then a losers
 or grand-final rematch) — disambiguate by match `status`/`round_index`.
 
-Wave episodes carry `episode_tags: {source: "tournament", tournament_id, round_key, experience_request_id}`;
-`GET /v2/episode-requests?source=tournament` filters on the tag. All `best_of` games of a series are materialized when
-the wave dispatches, so a decided series may still play out its remaining games.
+Wave episodes carry `episode_tags: {source: "tournament", tournament_id, round_key, experience_request_id}`. Read one
+wave through `GET /v2/experience-requests/{xreq}/episode-requests`. All `best_of` games of a series are materialized
+when the wave dispatches, so a decided series may still play out its remaining games.
 
 ## Lifecycle (writes)
 

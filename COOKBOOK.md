@@ -851,7 +851,7 @@ from softmax.auth import get_api_server
 with CoworldApiClient.from_login(server_url=get_api_server()) as client:
     rounds = client.list_rounds(division_id="div_...", status="completed", limit=5)
     round_detail = client.get_round("round_...")
-    episodes = client.list_episode_requests(round_id="round_...", limit=200)
+    episodes = client.list_round_episode_requests("round_...", limit=100)
     events = client.list_events(round_id="round_...")
 ```
 
@@ -860,7 +860,7 @@ Raw API routes:
 ```text
 GET /v2/rounds?division_id=div_...&status=completed
 GET /v2/rounds/round_...
-GET /v2/episode-requests?round_id=round_...
+GET /v2/rounds/round_.../episode-requests
 GET /v2/competition-events?round_id=round_...
 ```
 
@@ -1028,7 +1028,7 @@ from softmax.auth import get_api_server
 
 
 with CoworldApiClient.from_login(server_url=get_api_server()) as client:
-    episodes = client.list_episode_requests(round_id="round_...", limit=200)
+    episodes = client.list_round_episode_requests("round_...", limit=100)
     episode = client.get_episode_request("ereq_...")
     game_log = client.get_episode_request_artifact_text(episode.id, "logs")
     scores = episode.scores
@@ -1047,7 +1047,10 @@ with CoworldApiClient.from_login(server_url=get_api_server()) as client:
 Ownership-scoped raw routes:
 
 ```text
-GET /v2/episode-requests
+GET /v2/rounds/round_.../episode-requests
+GET /v2/policy-versions/{policy_version_id}/episode-requests
+GET /v2/experience-requests/xreq_.../episode-requests
+GET /v2/coworlds/cow_.../episode-requests
 GET /v2/episode-requests/ereq_...
 GET /v2/episode-requests/ereq_.../episode-stats
 GET /v2/episode-requests/ereq_.../artifacts/{spec|game-config|results|logs|error-info}
