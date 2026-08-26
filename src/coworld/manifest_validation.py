@@ -34,9 +34,10 @@ def infer_token_count_for_game_config(
 ) -> int | None:
     """Infer a concrete seat count from the manifest or caller roster.
 
-    Returns the roster length from `game_config.players` when present, returns
-    the legacy fixed token count when the manifest pins `tokens` to a single
-    length, and returns `None` when the manifest is variable-length and the
+    Returns the roster length from `game_config.players` when present, then
+    `game_config.num_agents` when that field is a positive int, then the
+    legacy fixed token count when the manifest pins `tokens` to a single
+    length. Returns `None` when the manifest is variable-length and the
     caller must supply the seated roster size.
     """
     min_items, max_items = token_count_bounds(config_schema)
@@ -46,6 +47,12 @@ def infer_token_count_for_game_config(
         if player_count < min_items or player_count > max_items:
             raise ValueError("game_config.players length must fit game.config_schema.properties.tokens bounds")
         return player_count
+
+    num_agents = game_config.get("num_agents")
+    if isinstance(num_agents, int) and num_agents > 0:
+        if num_agents < min_items or num_agents > max_items:
+            raise ValueError("game_config.num_agents must fit game.config_schema.properties.tokens bounds")
+        return num_agents
 
     if min_items == max_items:
         return min_items
@@ -102,7 +109,14 @@ def authored_game_config_validation_error(
                 return "game_config.players length must fit game.config_schema.properties.tokens bounds"
             token_count = len(players)
         else:
-            token_count = _placeholder_token_count(config_schema, game_config)
+            num_agents = game_config.get("num_agents")
+            if isinstance(num_agents, int) and num_agents > 0:
+                min_items, max_items = token_count_bounds(config_schema)
+                if not min_items <= num_agents <= max_items:
+                    return "game_config.num_agents must fit game.config_schema.properties.tokens bounds"
+                token_count = num_agents
+            else:
+                token_count = _placeholder_token_count(config_schema, game_config)
     playable_config = copy.deepcopy(game_config)
     playable_config["tokens"] = [f"token-{slot}" for slot in range(token_count)]
     errors = json_schema_validation_errors(playable_config, config_schema)
@@ -242,10 +256,9 @@ def validate_coworld_manifest_game_configs(manifest: CoworldManifest) -> None:
 
 
 def _placeholder_token_count(config_schema: JsonSchema, game_config: dict[str, Any]) -> int:
-    players = game_config.get("players")
-    if isinstance(players, list):
-        return len(players)
-
+    inferred = infer_token_count_for_game_config(config_schema, game_config)
+    if inferred is not None:
+        return inferred
     min_items, _max_items = token_count_bounds(config_schema)
     return min_items
 

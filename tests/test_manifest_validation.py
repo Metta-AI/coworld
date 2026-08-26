@@ -72,6 +72,23 @@ def test_authored_game_config_validation_error_reports_client_input_without_rais
     assert authored_game_config_validation_error({"width": 12}, schema) is None
 
 
+def test_authored_game_config_validation_error_reports_num_agents_outside_bounds() -> None:
+    schema = {
+        "type": "object",
+        "additionalProperties": False,
+        "required": ["tokens"],
+        "properties": {
+            "tokens": {"type": "array", "minItems": 1, "maxItems": 6, "items": {"type": "string"}},
+            "num_agents": {"type": "integer", "minimum": 1},
+        },
+    }
+
+    assert authored_game_config_validation_error({"num_agents": 8}, schema) == (
+        "game_config.num_agents must fit game.config_schema.properties.tokens bounds"
+    )
+    assert authored_game_config_validation_error({"num_agents": 4}, schema) is None
+
+
 def test_game_config_with_named_players_uses_declared_players_name_field() -> None:
     config = game_config_with_named_players({"width": 12}, ["alpha:v1", "beta:v2"], NAMED_PLAYERS_SCHEMA)
 
@@ -240,6 +257,55 @@ def test_infer_token_count_returns_none_for_variable_tokens_without_players() ->
 
     assert infer_token_count_for_game_config(schema, game_config) is None
     assert token_count_bounds(schema) == (0, 9)
+
+
+def test_infer_token_count_uses_num_agents_when_tokens_are_variable() -> None:
+    schema = {
+        "type": "object",
+        "additionalProperties": False,
+        "required": ["tokens"],
+        "properties": {
+            "tokens": {"type": "array", "minItems": 1, "maxItems": 24, "items": {"type": "string"}},
+            "num_agents": {"type": "integer", "minimum": 1, "maximum": 24},
+        },
+    }
+    game_config = {"seed": 32619276, "maxGames": 1, "maxTicks": 9000, "num_agents": 6}
+
+    assert infer_token_count_for_game_config(schema, game_config) == 6
+
+
+def test_infer_token_count_rejects_num_agents_outside_token_bounds() -> None:
+    schema = {
+        "type": "object",
+        "additionalProperties": False,
+        "required": ["tokens"],
+        "properties": {
+            "tokens": {"type": "array", "minItems": 1, "maxItems": 6, "items": {"type": "string"}},
+        },
+    }
+
+    with pytest.raises(
+        ValueError,
+        match="game_config.num_agents must fit game.config_schema.properties.tokens bounds",
+    ):
+        infer_token_count_for_game_config(schema, {"num_agents": 8})
+
+
+def test_infer_token_count_prefers_players_over_num_agents() -> None:
+    schema = {
+        "type": "object",
+        "additionalProperties": False,
+        "required": ["tokens"],
+        "properties": {
+            "tokens": {"type": "array", "minItems": 1, "maxItems": 24, "items": {"type": "string"}},
+        },
+    }
+    game_config = {
+        "num_agents": 6,
+        "players": [{"name": "A"}, {"name": "B"}],
+    }
+
+    assert infer_token_count_for_game_config(schema, game_config) == 2
 
 
 def test_validate_manifest_requires_token_bounds() -> None:
