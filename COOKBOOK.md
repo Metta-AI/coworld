@@ -1144,7 +1144,9 @@ local image IDs are cached. `upload-coworld` reuses that proof when nothing chan
 creating or pushing any Docker archive. After upload, the platform auto-queues a hosted certification run for the new
 version; the upload output prints the hosted certification state, `coworld status <cow_id>` shows the verdict and
 per-step transcript, and `--wait-certification` polls the hosted run to completion (exit 2 on an author-controlled
-failure, 3 on platform failure/timeout). A failed hosted certification never blocks or hides the upload.
+failure, 3 on platform failure/timeout). The uploaded version remains visible immediately, but it becomes canonical
+only after hosted certification and upload smoke both pass. Retry an unchanged immutable candidate with
+`uv run coworld retry-certification cow_...` after correcting an external or platform failure.
 
 `certify` also writes `certification_report.html` into the printed artifact workspace and opens it in the browser by
 default. The report is a local transcript view with each step's pass/fail status, failure reason, artifact paths, and
@@ -1214,7 +1216,8 @@ jobs:
 
 Keep this workflow `workflow_dispatch`-only until the repo is ready for automatic default-branch uploads. The default
 must remain `confirm_upload: dry-run`; real upload requires typing `upload`. Automatic push-to-main uploads are for
-mature active Coworlds only, and must wait for hosted smoke plus verify that the uploaded version became canonical.
+mature active Coworlds only. They must wait for hosted certification and upload smoke, then verify the version became
+canonical.
 
 Audit existing repos from this checkout with:
 

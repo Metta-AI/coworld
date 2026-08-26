@@ -613,6 +613,15 @@ class CoworldUploadClient:
         _raise_for_status(response)
         return CoworldCertificationStatus.model_validate(response.json())
 
+    def retry_coworld_certification(self, coworld_id: str) -> CoworldCertificationStatus:
+        response = self._http_client.post(
+            f"/v2/coworlds/{coworld_id}/certification/retry",
+            headers=self._headers(),
+            timeout=60.0,
+        )
+        _raise_for_status(response)
+        return CoworldCertificationStatus.model_validate(response.json())
+
     def find_canonical_coworld(self, name: str) -> CoworldListEntry | None:
         for coworld in self.iter_coworlds_by_name(name):
             if coworld.canonical:
@@ -1445,8 +1454,8 @@ def upload_coworld_cmd(
     typer.echo(f"Size: {result.size_bytes} bytes")
     typer.echo(f"Canonical: {'yes' if result.canonical else 'no'}")
 
-    # Hosted certification is observational (spec 0062): the upload already succeeded,
-    # so by default just report that it was queued and where to watch it.
+    # The upload is durable and visible immediately, but the candidate remains
+    # non-canonical until hosted certification and upload smoke both pass.
     with CoworldUploadClient.from_login(server_url=server) as client:
         if not wait_certification:
             state = client.get_coworld_certification(result.id).state

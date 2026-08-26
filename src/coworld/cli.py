@@ -875,6 +875,22 @@ def status_coworld(
     _print_coworld_status(result)
 
 
+@app.command("retry-certification")
+def retry_coworld_certification(
+    coworld_id: Annotated[str, typer.Argument(help="Coworld ID to certify again.")],
+    server: Annotated[str, typer.Option("--server", help="Observatory API server URL.")] = DEFAULT_SUBMIT_SERVER,
+    json_output: Annotated[bool, typer.Option("--json", help="Print raw JSON.")] = False,
+) -> None:
+    with CoworldUploadClient.from_login(server_url=server) as client:
+        certification = client.retry_coworld_certification(coworld_id)
+    if json_output:
+        emit_json(certification.model_dump(mode="json"))
+        return
+    typer.echo(f"Queued hosted certification retry for {coworld_id}")
+    _print_certification_status(certification)
+    typer.echo(f"Status: uv run coworld status {coworld_id}")
+
+
 @app.command("images")
 def images(
     image_id: Annotated[str | None, typer.Argument(help="Image ID to inspect. Lists images when omitted.")] = None,
@@ -1651,6 +1667,7 @@ def _print_certification_status(certification: CoworldCertificationStatus | None
         if certification.failure is not None:
             console.print(f"  Reason: {certification.failure.detail}")
             console.print(f"  Fix: {certification.failure.remediation}")
+        console.print(f"  Retry: uv run coworld retry-certification {certification.coworld_id}")
     elif certification.state == "never_run":
         console.print("Hosted certification: never run")
     else:

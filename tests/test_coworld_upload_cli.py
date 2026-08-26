@@ -1001,9 +1001,40 @@ def test_coworld_status_command_prints_pending_hosted_smoke(httpserver: HTTPServ
     assert "Hosted certification: failed" in result.output
     assert "Failed step: results-conform" in result.output
     assert "results.json is missing required field scores" in result.output
+    assert "Retry: uv run coworld retry-certification" in result.output
     assert "Hosted smoke certification: pending" in result.output
     assert "running" in result.output
     assert "Canonical: no" in result.output
+
+
+def test_retry_coworld_certification_command(httpserver: HTTPServer) -> None:
+    coworld_id = "cow_00000000-0000-0000-0000-000000000014"
+    httpserver.expect_request(
+        f"/observatory/v2/coworlds/{coworld_id}/certification/retry",
+        method="POST",
+    ).respond_with_json(
+        {
+            "coworld_id": coworld_id,
+            "state": "queued",
+            "certified": False,
+            "contract_version": "coworld-v1",
+            "certification_job_id": "3d4b87ef-02a4-4fbb-a983-29926550fbbc",
+            "failed_step": None,
+            "failure": None,
+            "transcript_summary": [],
+            "completed_at": None,
+        }
+    )
+
+    result = CliRunner().invoke(
+        app,
+        ["retry-certification", coworld_id, "--server", httpserver.url_for("")],
+    )
+
+    assert result.exit_code == 0, result.output
+    assert f"Queued hosted certification retry for {coworld_id}" in result.output
+    assert "Hosted certification: queued" in result.output
+    assert f"uv run coworld status {coworld_id}" in result.output
 
 
 def test_upload_coworld_from_existing_manifest_applies_patch_without_images(
