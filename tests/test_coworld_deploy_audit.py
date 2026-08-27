@@ -2,6 +2,9 @@ from __future__ import annotations
 
 from datetime import UTC, datetime
 
+import pytest
+
+import coworld.deploy_audit as deploy_audit_module
 from coworld.deploy_audit import (
     DeployAuditResult,
     RepoDeployAudit,
@@ -10,9 +13,10 @@ from coworld.deploy_audit import (
     _repo_coworld_name,
     classify_workflow,
     format_deploy_audit_markdown,
+    load_coworld_registry,
     summarize_coworld_registry,
 )
-from coworld.upload import CoworldListEntry
+from coworld.upload import CoworldListEntry, CoworldListPage
 
 
 def test_classify_manual_upload_workflow_is_dry_run_gated() -> None:
@@ -106,6 +110,38 @@ def test_registry_summary_marks_latest_noncanonical() -> None:
     assert _repo_alerts(upload_workflows=[], registry=summary, latest_run=None) == [
         "latest upload is non-canonical: ctf:0.7.38"
     ]
+
+
+def test_load_coworld_registry_accumulates_cursor_pages(monkeypatch: pytest.MonkeyPatch) -> None:
+    pages = {
+        None: CoworldListPage(
+            entries=[_coworld("cow_1", "ctf", "0.7.37", canonical=True, created_at="2026-07-20T18:44:10Z")],
+            next_cursor="page-2",
+        ),
+        "page-2": CoworldListPage(
+            entries=[_coworld("cow_2", "ctf", "0.7.38", canonical=False, created_at="2026-07-20T18:49:11Z")],
+            next_cursor=None,
+        ),
+    }
+
+    class _FakeClient:
+        def __enter__(self) -> "_FakeClient":
+            return self
+
+        def __exit__(self, *_exc: object) -> None:
+            return None
+
+        def list_coworlds(self, *, limit: int, cursor: str | None = None) -> CoworldListPage:
+            return pages[cursor]
+
+    class _FakeClientFactory:
+        @classmethod
+        def from_login(cls, *, server_url: str) -> _FakeClient:
+            return _FakeClient()
+
+    monkeypatch.setattr(deploy_audit_module, "CoworldUploadClient", _FakeClientFactory)
+    rows = load_coworld_registry(server="http://test")
+    assert [row.id for row in rows] == ["cow_1", "cow_2"]
 
 
 def test_ctf_repo_deploys_the_shared_paintbot_coworld() -> None:

@@ -9,6 +9,7 @@ from uuid import UUID
 import httpx
 from pydantic import BaseModel, ConfigDict, Field, TypeAdapter, computed_field
 
+from coworld.config import NEXT_CURSOR_HEADER
 from softmax import auth as softmax_auth
 
 
@@ -678,6 +679,13 @@ class ReporterDetailPublic(ReporterPublic):
     latest_output: ReporterOutputPublic | None = None
 
 
+class ReporterListPage(CoworldAPIModel):
+    entries: list[ReporterPublic]
+    # Opaque server-issued token resuming the listing after the last entry;
+    # None on the final page.
+    next_cursor: str | None
+
+
 class CoworldApiClient:
     # Process-scoped: set by the top-level Typer `--elevated` callback in `coworld/cli.py`
     # so it applies to every client constructed later in the same invocation. Client-side
@@ -1164,16 +1172,23 @@ class CoworldApiClient:
         mode: str = "all",
         author: str | None = None,
         limit: int = 200,
-        offset: int = 0,
-    ) -> list[ReporterPublic]:
-        params: dict[str, Any] = {"mode": mode, "limit": limit, "offset": offset}
+        cursor: str | None = None,
+    ) -> ReporterListPage:
+        params: dict[str, Any] = {"mode": mode, "limit": limit}
         if q is not None:
             params["q"] = q
         if types is not None:
             params["type"] = list(types)
         if author is not None:
             params["author"] = author
-        return self._get("/v2/reporters", list[ReporterPublic], params=params)
+        if cursor is not None:
+            params["cursor"] = cursor
+        response = self._http_client.get("/v2/reporters", headers=self._headers(), params=params)
+        _raise_for_status(response)
+        return ReporterListPage(
+            entries=TypeAdapter(list[ReporterPublic]).validate_python(response.json()),
+            next_cursor=response.headers.get(NEXT_CURSOR_HEADER),
+        )
 
     def get_reporter(self, reporter_id: str) -> ReporterDetailPublic:
         return self._get(f"/v2/reporters/{reporter_id}", ReporterDetailPublic)

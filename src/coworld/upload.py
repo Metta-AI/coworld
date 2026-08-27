@@ -29,7 +29,7 @@ from pydantic import BaseModel, Field
 from coworld.bundle import resolve_registry_image_ref
 from coworld.certifier import EXECUTABLE_TRANSCRIPT_PATH, certify_coworld, load_coworld_package
 from coworld.cli_support import validate_run_argv
-from coworld.config import DEFAULT_SUBMIT_SERVER
+from coworld.config import DEFAULT_SUBMIT_SERVER, NEXT_CURSOR_HEADER
 from coworld.image_refs import is_digest_pinned_image_ref, is_mutable_registry_image_ref
 from coworld.manifest import validate_upload_manifest
 from coworld.manifest_validation import validate_coworld_manifest_game_configs
@@ -150,6 +150,18 @@ class CoworldListEntry(BaseModel):
     size_bytes: int
     created_at: datetime
     canonical: bool
+
+
+class CoworldListPage(BaseModel):
+    entries: list[CoworldListEntry]
+    # Opaque server-issued token resuming the listing after the last entry;
+    # None on the final page.
+    next_cursor: str | None
+
+
+class ContainerImagePage(BaseModel):
+    entries: list[ContainerImageResponse]
+    next_cursor: str | None
 
 
 class CoworldLeagueSeedResponse(BaseModel):
@@ -573,27 +585,32 @@ class CoworldUploadClient:
         _raise_for_status(response)
         return response.json()
 
-    def list_coworlds(self, *, limit: int = 200, offset: int = 0) -> list[CoworldListEntry]:
+    def list_coworlds(self, *, limit: int = 200, cursor: str | None = None) -> CoworldListPage:
+        params: dict[str, str | int] = {"limit": limit}
+        if cursor is not None:
+            params["cursor"] = cursor
         response = self._http_client.get(
             "/v2/coworlds",
             headers=self._headers(),
-            params={"limit": limit, "offset": offset},
+            params=params,
             timeout=60.0,
         )
         _raise_for_status(response)
-        return [CoworldListEntry.model_validate(item) for item in response.json()]
+        return CoworldListPage(
+            entries=[CoworldListEntry.model_validate(item) for item in response.json()],
+            next_cursor=response.headers.get(NEXT_CURSOR_HEADER),
+        )
 
     def find_coworld(self, coworld_id: str) -> CoworldListEntry | None:
-        limit = 200
-        offset = 0
+        cursor: str | None = None
         while True:
-            coworlds = self.list_coworlds(limit=limit, offset=offset)
-            for coworld in coworlds:
+            page = self.list_coworlds(limit=200, cursor=cursor)
+            for coworld in page.entries:
                 if coworld.id == coworld_id:
                     return coworld
-            if len(coworlds) < limit:
+            if page.next_cursor is None:
                 return None
-            offset += limit
+            cursor = page.next_cursor
 
     def get_coworld(self, coworld_id: str) -> CoworldUploadResponse:
         response = self._http_client.get(
@@ -630,16 +647,15 @@ class CoworldUploadClient:
 
     def iter_coworlds_by_name(self, name: str) -> Iterator[CoworldListEntry]:
         target_name = _coworld_name_key(name)
-        limit = 200
-        offset = 0
+        cursor: str | None = None
         while True:
-            coworlds = self.list_coworlds(limit=limit, offset=offset)
-            for coworld in coworlds:
+            page = self.list_coworlds(limit=200, cursor=cursor)
+            for coworld in page.entries:
                 if _coworld_name_key(coworld.name) == target_name:
                     yield coworld
-            if len(coworlds) < limit:
+            if page.next_cursor is None:
                 return
-            offset += limit
+            cursor = page.next_cursor
 
     def create_league_seed(
         self,
@@ -804,15 +820,21 @@ class CoworldUploadClient:
         _raise_for_status(response)
         return HostedGameJoinResponse.model_validate(response.json())
 
-    def list_images(self, *, limit: int = 200, offset: int = 0) -> list[ContainerImageResponse]:
+    def list_images(self, *, limit: int = 200, cursor: str | None = None) -> ContainerImagePage:
+        params: dict[str, str | int] = {"limit": limit}
+        if cursor is not None:
+            params["cursor"] = cursor
         response = self._http_client.get(
             "/v2/container_images",
             headers=self._headers(),
-            params={"limit": limit, "offset": offset},
+            params=params,
             timeout=60.0,
         )
         _raise_for_status(response)
-        return [ContainerImageResponse.model_validate(item) for item in response.json()]
+        return ContainerImagePage(
+            entries=[ContainerImageResponse.model_validate(item) for item in response.json()],
+            next_cursor=response.headers.get(NEXT_CURSOR_HEADER),
+        )
 
     def get_image(self, image_id: str) -> ContainerImageResponse:
         response = self._http_client.get(

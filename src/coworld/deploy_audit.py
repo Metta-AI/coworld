@@ -212,14 +212,14 @@ def github_token_from_env() -> str | None:
 
 def load_coworld_registry(*, server: str = DEFAULT_SUBMIT_SERVER, limit: int = 500) -> list[CoworldListEntry]:
     rows: list[CoworldListEntry] = []
-    offset = 0
+    cursor: str | None = None
     with CoworldUploadClient.from_login(server_url=server) as client:
         while True:
-            batch = client.list_coworlds(limit=limit, offset=offset)
-            rows.extend(batch)
-            if len(batch) < limit:
+            page = client.list_coworlds(limit=limit, cursor=cursor)
+            rows.extend(page.entries)
+            if page.next_cursor is None:
                 return rows
-            offset += limit
+            cursor = page.next_cursor
 
 
 def load_active_leagues_by_coworld(*, server: str = DEFAULT_SUBMIT_SERVER) -> dict[str, list[str]]:

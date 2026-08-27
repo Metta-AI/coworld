@@ -1065,8 +1065,9 @@ def test_reporters_list_forwards_search_and_type_filters(httpserver: HTTPServer)
     )
 
     assert result.exit_code == 0, result.output
-    rows = json.loads(result.output)
-    assert rows[0]["id"] == REPORTER_ID
+    page = json.loads(result.output)
+    assert page["next_cursor"] is None
+    assert page["entries"][0]["id"] == REPORTER_ID
     query = next(request for request, _ in httpserver.log if request.path == "/observatory/v2/reporters")
     assert query.args["q"] == "recap"
     assert query.args.getlist("type") == ["render-html"]

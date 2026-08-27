@@ -253,18 +253,22 @@ def register_tournament_commands(app: typer.Typer) -> None:
         mode: Annotated[str, typer.Option("--mode", help="Filter by hosting mode: all, hosted, or external.")] = "all",
         author: Annotated[str | None, typer.Option("--author", help="Owner user id (exact).")] = None,
         limit: Annotated[int, typer.Option("--limit", min=1, max=500, help="Maximum rows to return.")] = 200,
-        offset: Annotated[int, typer.Option("--offset", min=0, help="Rows to skip.")] = 0,
+        cursor: Annotated[
+            str | None, typer.Option("--cursor", help="Resume after a previous page's next cursor.")
+        ] = None,
         server: Annotated[str, typer.Option("--server", help="Observatory API server URL.")] = DEFAULT_SUBMIT_SERVER,
         json_output: Annotated[bool, typer.Option("--json", help="Print raw JSON.")] = False,
     ) -> None:
         with CoworldApiClient.from_login(server_url=server) as client:
-            rows = client.list_reporters(
-                q=query, types=type_filter, mode=mode, author=author, limit=limit, offset=offset
+            page = client.list_reporters(
+                q=query, types=type_filter, mode=mode, author=author, limit=limit, cursor=cursor
             )
         if json_output:
-            emit_json(_dump_models(rows))
+            emit_json(page.model_dump(mode="json"))
             return
-        _print_reporters(rows)
+        _print_reporters(page.entries)
+        if page.next_cursor is not None:
+            typer.echo(f"More rows available. Pass --cursor {page.next_cursor} to continue.")
 
     @reporters_app.command("search")
     def reporters_search(
@@ -274,11 +278,13 @@ def register_tournament_commands(app: typer.Typer) -> None:
     ) -> None:
         """Shorthand for `reporters list --query <text>`."""
         with CoworldApiClient.from_login(server_url=server) as client:
-            rows = client.list_reporters(q=query)
+            page = client.list_reporters(q=query)
         if json_output:
-            emit_json(_dump_models(rows))
+            emit_json(page.model_dump(mode="json"))
             return
-        _print_reporters(rows)
+        _print_reporters(page.entries)
+        if page.next_cursor is not None:
+            typer.echo(f"More rows available. Use `reporters list --query` with --cursor {page.next_cursor}.")
 
     @reporters_app.command("show")
     def reporters_show(

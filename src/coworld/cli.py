@@ -755,15 +755,17 @@ def play(
 def list_coworlds(
     server: Annotated[str, typer.Option("--server", help="Observatory API server URL.")] = DEFAULT_SUBMIT_SERVER,
     limit: Annotated[int, typer.Option("--limit", min=1, max=500, help="Maximum rows to return.")] = 200,
-    offset: Annotated[int, typer.Option("--offset", min=0, help="Rows to skip.")] = 0,
+    cursor: Annotated[str | None, typer.Option("--cursor", help="Resume after a previous page's next cursor.")] = None,
     json_output: Annotated[bool, typer.Option("--json", help="Print raw JSON.")] = False,
 ) -> None:
     with CoworldUploadClient.from_login(server_url=server) as client:
-        coworlds = client.list_coworlds(limit=limit, offset=offset)
+        page = client.list_coworlds(limit=limit, cursor=cursor)
     if json_output:
-        emit_json([coworld.model_dump(mode="json") for coworld in coworlds])
+        emit_json(page.model_dump(mode="json"))
         return
-    _print_coworld_table(coworlds)
+    _print_coworld_table(page.entries)
+    if page.next_cursor is not None:
+        typer.echo(f"More rows available. Pass --cursor {page.next_cursor} to continue.")
 
 
 @app.command("deploy-audit")
@@ -896,16 +898,18 @@ def images(
     image_id: Annotated[str | None, typer.Argument(help="Image ID to inspect. Lists images when omitted.")] = None,
     server: Annotated[str, typer.Option("--server", help="Observatory API server URL.")] = DEFAULT_SUBMIT_SERVER,
     limit: Annotated[int, typer.Option("--limit", min=1, max=500, help="Maximum rows to return.")] = 200,
-    offset: Annotated[int, typer.Option("--offset", min=0, help="Rows to skip.")] = 0,
+    cursor: Annotated[str | None, typer.Option("--cursor", help="Resume after a previous page's next cursor.")] = None,
     json_output: Annotated[bool, typer.Option("--json", help="Print raw JSON.")] = False,
 ) -> None:
     with CoworldUploadClient.from_login(server_url=server) as client:
         if image_id is None:
-            image_list = client.list_images(limit=limit, offset=offset)
+            page = client.list_images(limit=limit, cursor=cursor)
             if json_output:
-                emit_json([image.model_dump(mode="json") for image in image_list])
+                emit_json(page.model_dump(mode="json"))
                 return
-            _print_image_table(image_list)
+            _print_image_table(page.entries)
+            if page.next_cursor is not None:
+                typer.echo(f"More rows available. Pass --cursor {page.next_cursor} to continue.")
             return
         image = client.get_image(image_id)
     if json_output:

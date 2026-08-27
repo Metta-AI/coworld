@@ -17,6 +17,7 @@ from typer.testing import CliRunner
 from werkzeug import Response
 
 from coworld.cli import app
+from coworld.config import NEXT_CURSOR_HEADER
 from coworld.upload import (
     _PACKAGE_ROOT,
     _REGISTRY_UPLOAD_TIMEOUT,
@@ -110,7 +111,7 @@ def test_next_version_command_bumps_canonical_patch(httpserver: HTTPServer) -> N
     httpserver.expect_request(
         "/observatory/v2/coworlds",
         method="GET",
-        query_string="limit=200&offset=0",
+        query_string="limit=200",
     ).respond_with_json(
         [
             _coworld_entry(coworld_id, manifest, name="cogs_vs_clips", version="0.1.22", canonical=True),
@@ -135,7 +136,7 @@ def test_next_version_command_bumps_past_noncanonical_versions(httpserver: HTTPS
     httpserver.expect_request(
         "/observatory/v2/coworlds",
         method="GET",
-        query_string="limit=200&offset=0",
+        query_string="limit=200",
     ).respond_with_json(
         [
             _coworld_entry(
@@ -165,7 +166,7 @@ def test_next_version_command_fails_without_existing_coworld(httpserver: HTTPSer
     httpserver.expect_request(
         "/observatory/v2/coworlds",
         method="GET",
-        query_string="limit=200&offset=0",
+        query_string="limit=200",
     ).respond_with_json([])
 
     result = CliRunner().invoke(app, ["next-version", "crewrift", "--server", httpserver.url_for("")], color=False)
@@ -174,12 +175,12 @@ def test_next_version_command_fails_without_existing_coworld(httpserver: HTTPSer
     assert "Coworld not found: crewrift" in result.output
 
 
-def test_list_command_json_outputs_top_level_array(httpserver: HTTPServer) -> None:
+def test_list_command_json_outputs_page_envelope(httpserver: HTTPServer) -> None:
     manifest = _manifest()
     httpserver.expect_request(
         "/observatory/v2/coworlds",
         method="GET",
-        query_string="limit=200&offset=0",
+        query_string="limit=200",
     ).respond_with_json(
         [
             _coworld_entry(
@@ -196,9 +197,9 @@ def test_list_command_json_outputs_top_level_array(httpserver: HTTPServer) -> No
 
     assert result.exit_code == 0, result.output
     payload = json.loads(result.output)
-    assert isinstance(payload, list)
-    assert payload[0]["name"] == "ctf"
-    assert payload[0]["canonical"] is True
+    assert payload["next_cursor"] is None
+    assert payload["entries"][0]["name"] == "ctf"
+    assert payload["entries"][0]["canonical"] is True
 
 
 def test_upload_coworld_rejects_mutable_registry_image_refs(
@@ -660,7 +661,7 @@ def test_upload_coworld_command_waits_for_hosted_smoke_success(httpserver: HTTPS
     httpserver.expect_request(
         "/observatory/v2/coworlds",
         method="GET",
-        query_string="limit=200&offset=0",
+        query_string="limit=200",
     ).respond_with_json([_coworld_entry(old_coworld_id, manifest, version="0.1.0", canonical=True)])
     httpserver.expect_request("/observatory/v2/coworlds/upload", method="POST").respond_with_json(
         _coworld_entry(new_coworld_id, manifest, version="0.2.0", canonical=False)
@@ -713,7 +714,7 @@ def test_upload_coworld_command_fails_on_hosted_smoke_failure(httpserver: HTTPSe
     httpserver.expect_request(
         "/observatory/v2/coworlds",
         method="GET",
-        query_string="limit=200&offset=0",
+        query_string="limit=200",
     ).respond_with_json([_coworld_entry(old_coworld_id, manifest, version="0.1.0", canonical=True)])
     httpserver.expect_request("/observatory/v2/coworlds/upload", method="POST").respond_with_json(
         _coworld_entry(new_coworld_id, manifest, version="0.2.0", canonical=False)
@@ -775,7 +776,7 @@ def test_upload_coworld_command_waits_for_certification_success(httpserver: HTTP
     httpserver.expect_request(
         "/observatory/v2/coworlds",
         method="GET",
-        query_string="limit=200&offset=0",
+        query_string="limit=200",
     ).respond_with_json([_coworld_entry(old_coworld_id, manifest, version="0.1.0", canonical=True)])
     httpserver.expect_request("/observatory/v2/coworlds/upload", method="POST").respond_with_json(
         _coworld_entry(new_coworld_id, manifest, version="0.2.0", canonical=True)
@@ -822,7 +823,7 @@ def test_upload_coworld_command_wait_certification_fails_with_remediation(httpse
     httpserver.expect_request(
         "/observatory/v2/coworlds",
         method="GET",
-        query_string="limit=200&offset=0",
+        query_string="limit=200",
     ).respond_with_json([_coworld_entry(old_coworld_id, manifest, version="0.1.0", canonical=True)])
     httpserver.expect_request("/observatory/v2/coworlds/upload", method="POST").respond_with_json(
         _coworld_entry(new_coworld_id, manifest, version="0.2.0", canonical=True)
@@ -878,7 +879,7 @@ def test_upload_coworld_command_wait_certification_timeout_exits_3(httpserver: H
     httpserver.expect_request(
         "/observatory/v2/coworlds",
         method="GET",
-        query_string="limit=200&offset=0",
+        query_string="limit=200",
     ).respond_with_json([_coworld_entry(old_coworld_id, manifest, version="0.1.0", canonical=True)])
     httpserver.expect_request("/observatory/v2/coworlds/upload", method="POST").respond_with_json(
         _coworld_entry(new_coworld_id, manifest, version="0.2.0", canonical=True)
@@ -1056,7 +1057,7 @@ def test_upload_coworld_from_existing_manifest_applies_patch_without_images(
     httpserver.expect_request(
         "/observatory/v2/coworlds",
         method="GET",
-        query_string="limit=200&offset=0",
+        query_string="limit=200",
     ).respond_with_json(
         [
             {
@@ -1140,7 +1141,7 @@ def test_upload_coworld_from_existing_manifest_updates_one_role_image(
     httpserver.expect_request(
         "/observatory/v2/coworlds",
         method="GET",
-        query_string="limit=200&offset=0",
+        query_string="limit=200",
     ).respond_with_json(
         [
             {
@@ -1613,7 +1614,7 @@ def test_coworld_list_command_prints_json(httpserver: HTTPServer, monkeypatch: p
         "/observatory/v2/coworlds",
         method="GET",
         headers={"Authorization": "Bearer token"},
-        query_string="limit=50&offset=0",
+        query_string="limit=50",
     ).respond_with_json(
         [
             {
@@ -1641,7 +1642,7 @@ def test_coworld_list_command_prints_json(httpserver: HTTPServer, monkeypatch: p
     )
 
     assert result.exit_code == 0, result.output
-    assert json.loads(result.output)[0]["id"] == "cow_00000000-0000-0000-0000-000000000001"
+    assert json.loads(result.output)["entries"][0]["id"] == "cow_00000000-0000-0000-0000-000000000001"
 
 
 def test_hosted_game_create_posts_play_session(httpserver: HTTPServer, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -1727,7 +1728,7 @@ def test_coworld_show_command_prints_json(httpserver: HTTPServer, monkeypatch: p
         "/observatory/v2/coworlds",
         method="GET",
         headers={"Authorization": "Bearer token"},
-        query_string="limit=200&offset=0",
+        query_string="limit=200",
     ).respond_with_json(
         [
             {
@@ -1765,7 +1766,7 @@ def test_coworld_show_command_pages_until_uploaded_world(
         "/observatory/v2/coworlds",
         method="GET",
         headers={"Authorization": "Bearer token"},
-        query_string="limit=200&offset=0",
+        query_string="limit=200",
     ).respond_with_json(
         [
             {
@@ -1779,13 +1780,14 @@ def test_coworld_show_command_pages_until_uploaded_world(
                 "canonical": False,
             }
             for i in range(200)
-        ]
+        ],
+        headers={NEXT_CURSOR_HEADER: "page-2"},
     )
     httpserver.expect_request(
         "/observatory/v2/coworlds",
         method="GET",
         headers={"Authorization": "Bearer token"},
-        query_string="limit=200&offset=200",
+        query_string="limit=200&cursor=page-2",
     ).respond_with_json(
         [
             {
@@ -1820,7 +1822,7 @@ def test_coworld_images_command_lists_uploaded_images(httpserver: HTTPServer, mo
         "/observatory/v2/container_images",
         method="GET",
         headers={"Authorization": "Bearer token"},
-        query_string="limit=25&offset=0",
+        query_string="limit=25",
     ).respond_with_json(
         [
             {
@@ -1847,7 +1849,7 @@ def test_coworld_images_command_lists_uploaded_images(httpserver: HTTPServer, mo
     )
 
     assert result.exit_code == 0, result.output
-    assert json.loads(result.output)[0]["id"] == "img_00000000-0000-0000-0000-000000000010"
+    assert json.loads(result.output)["entries"][0]["id"] == "img_00000000-0000-0000-0000-000000000010"
 
 
 def test_coworld_images_command_shows_uploaded_image(httpserver: HTTPServer, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -2027,7 +2029,7 @@ def test_download_coworld_command_resolves_canonical_name(
         "/observatory/v2/coworlds",
         method="GET",
         headers={"Authorization": "Bearer token"},
-        query_string="limit=200&offset=0",
+        query_string="limit=200",
     ).respond_with_json(
         [
             {

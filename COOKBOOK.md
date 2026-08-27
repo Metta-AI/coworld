@@ -1181,8 +1181,10 @@ uv run coworld show cow_...
 uv run coworld images
 ```
 
-`coworld list --json` prints a top-level JSON array of Coworld rows. It is not a paginated object and does not wrap rows
-in `entries`; scripts should iterate the array directly.
+`coworld list --json` prints a page envelope: `{"entries": [...], "next_cursor": "opaque token" | null}`. Scripts
+iterate `entries` and, when `next_cursor` is non-null, pass it back via `--cursor` to fetch the next page. (CLI releases
+before cursor pagination printed a top-level array.) `coworld images --json` and `coworld reporters list --json` use the
+same envelope.
 
 ### GitHub Upload Workflows
 
