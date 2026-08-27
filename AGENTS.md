@@ -15,9 +15,9 @@ it. Full contract, copy-paste examples, and the 403 troubleshooting table: [`BED
 ## Coworlds Expert Agent
 
 A distributable Claude Code agent for coworld developers is available at
-[`docs/coworlds-expert-agent/`](docs/coworlds-expert-agent/). It knows coworld design principles (the derivation chain,
+[`agents/coworlds-expert-agent/`](agents/coworlds-expert-agent/). It knows coworld design principles (the derivation chain,
 grader philosophy, player policy design, schema contracts) and can be installed into any coworld project's
-`.claude/agents/` directory. See its [README](docs/coworlds-expert-agent/README.md) for install instructions.
+`.claude/agents/` directory. See its [README](agents/coworlds-expert-agent/README.md) for install instructions.
 
 ## Before Editing
 
@@ -127,6 +127,7 @@ source of truth. They are generated docs and `$schema` targets; `test_types.py` 
 - [README.md](README.md) - package landing page, player-first orientation, and navigation.
 - [COOKBOOK.md](COOKBOOK.md) - task recipes for local play, policy upload/submission, tournament results, and Coworld
   upload.
+- [docs/](docs/) - public Mintlify guides. This path symlinks to the canonical sources under `web/docs/coworld/`.
 - [src/coworld/docs/README.md](src/coworld/docs/README.md) - Coworld concept map, role statuses, artifact flow, and
   cross-links.
 - [src/coworld/docs/AUTHORING.md](src/coworld/docs/AUTHORING.md) - end-to-end guide for building and testing a new

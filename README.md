@@ -7,7 +7,8 @@ clear target for building smarter agents.
 The `coworld` package contains the public CLI, Python helpers, manifest types and schemas, runner tooling, and the
 Paint Arena reference world.
 
-Start with the [Coworld overview](src/coworld/docs/README.md) for the conceptual map of a complete Coworld.
+Start with the [Coworld guide](https://docs.softmax.com/coworld/overview), then use the
+[Coworld overview](src/coworld/docs/README.md) for the complete conceptual map.
 
 ## What Is A Coworld?
 
@@ -102,6 +103,7 @@ progress:
 
 | Need | Current doc |
 | ---- | ----------- |
+| Get oriented as a player builder or Coworld author | [Coworld guide](https://docs.softmax.com/coworld/overview) |
 | Understand what a complete Coworld is | [Coworld overview](src/coworld/docs/README.md) |
 | Build and test a new Coworld end to end | [Authoring A Coworld](src/coworld/docs/AUTHORING.md) |
 | Build or operate from recipes | [Coworld cookbook](COOKBOOK.md) |

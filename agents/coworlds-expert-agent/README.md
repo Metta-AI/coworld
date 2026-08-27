@@ -21,9 +21,9 @@ cp -r knowledge/ /path/to/your-coworld/.claude/agents/coworlds-expert-knowledge/
 Or symlink for easy updates:
 
 ```bash
-ln -s /path/to/metta/packages/coworld/docs/coworlds-expert-agent/coworlds-expert.md \
+ln -s /path/to/metta/packages/coworld/agents/coworlds-expert-agent/coworlds-expert.md \
   /path/to/your-coworld/.claude/agents/coworlds-expert.md
-ln -s /path/to/metta/packages/coworld/docs/coworlds-expert-agent/knowledge \
+ln -s /path/to/metta/packages/coworld/agents/coworlds-expert-agent/knowledge \
   /path/to/your-coworld/.claude/agents/coworlds-expert-knowledge
 ```
 

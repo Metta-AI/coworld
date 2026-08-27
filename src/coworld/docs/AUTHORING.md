@@ -59,7 +59,7 @@ board, and that class of bug ships silently because everything still "works".
 
 For the design method behind good Coworlds — how the game, graders, reporters, and optimizer surface derive from what
 you want players to learn — read
-[Coworld design principles](../../../docs/coworlds-expert-agent/knowledge/coworld-design-principles.md).
+[Coworld design principles](../../../agents/coworlds-expert-agent/knowledge/coworld-design-principles.md).
 
 ## Step 1: Implement The Game Container
 
@@ -304,5 +304,5 @@ Your Coworld is done when all of these are true, in this order:
 - [Paint Arena](../examples/paintarena/README.md) — the complete worked example.
 - [Starter templates](../templates/README.md) — per-role scaffolds.
 - [BEDROCK.md](BEDROCK.md) — required reading before any player or game calls an LLM.
-- [Coworld design principles](../../../docs/coworlds-expert-agent/knowledge/coworld-design-principles.md) — the design
+- [Coworld design principles](../../../agents/coworlds-expert-agent/knowledge/coworld-design-principles.md) — the design
   method behind the checklist.
