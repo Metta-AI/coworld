@@ -9,15 +9,24 @@ This is the implementation guide for a Coworld author or coding agent.
 
 ## Runtime Contract
 
-Observatory opens the uploaded `index.html` with the episode replay URL in the `replay` query parameter:
+The viewer reads the episode replay URL from `#replay=` first, then the legacy `?replay=` query:
 
 ```text
-https://viewer.example/<immutable-coworld-version>/index.html?replay=https%3A%2F%2F...%2Freplay.replay
+https://viewer.example/<immutable-coworld-version>/index.html#replay=https%3A%2F%2F...%2Freplay.replay
 ```
+
+Local viewers may open `index.html?replay=<url>` directly. Hosted Observatory keeps the immutable `index.html`
+network URL stable: `index.html?v=<headers-version>#replay=<url>`. The fragment is not sent in the HTTP request.
+`v` is a shared cache-buster for backend-injected headers and the host bootstrap, not per-episode. A temporary
+host bootstrap copies `#replay=` into `location.search` before game-owned scripts run so already-uploaded bundles
+that only read the query keep working. The query stays set after that copy; already-uploaded React viewers re-read
+`location.search` on later renders. Removing that bootstrap later requires bumping `v`. Observatory remounts still
+load the fragment URL from the session, so the HTML cache key does not vary per episode.
 
 The viewer must:
 
-1. Read `new URLSearchParams(location.search).get("replay")`.
+1. Read `new URLSearchParams(location.hash.slice(1)).get("replay")`, falling back to
+   `new URLSearchParams(location.search).get("replay")`.
 2. Fetch those opaque replay bytes. Hosted replay URLs permit browser CORS; local tests must serve the replay with
    equivalent CORS headers.
 3. Reconstruct public presentation state and render it without a game container or other game-owned server.
@@ -172,7 +181,7 @@ works.
 
 An implementation is ready when an agent can answer yes to each question:
 
-- Does `index.html?replay=<url>` load the replay with no game container?
+- Does `index.html#replay=<url>` (and legacy `index.html?replay=<url>`) load with no game container?
 - Does the manifest name only the generated bundle directory?
 - Is `tools/build_replay_viewer.sh` executable, clean-building, and invoked successfully by `coworld build`?
 - Are generated files gitignored while every source input is committed?

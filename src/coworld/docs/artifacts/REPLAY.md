@@ -20,7 +20,10 @@ bytes — see [Static Replay Viewers](../STATIC_REPLAY_VIEWERS.md).
 
 Replay format is game-owned. The Coworld platform treats the replay as bytes. If the manifest declares
 `game.replay_viewer.bundle`, Observatory loads its inferred `index.html` and supplies the hosted replay URL through the
-`replay` query parameter. The bundle may parse recorded presentation state directly or execute a WASM resimulator.
+`replay` fragment parameter (`#replay=`), with a shared `?v=` cache-buster on the entry HTML. A host bootstrap copies
+that value into the `replay` query so already-uploaded bundles that only read `location.search` keep working. Removing
+the bootstrap later requires bumping `v`. The bundle may parse recorded presentation state directly or execute a WASM
+resimulator.
 
 Without a static bundle, the platform routes the replay back to the same game image. That image must serve replay
 viewing when started with:
@@ -61,7 +64,8 @@ The episode bundle stores replay bytes as `replay` inside the outer zip. Bundle 
 - Local filename: `replay`.
 - Hosted artifact: `REPLAY_URI`, stored as raw `replay.replay`.
 - Episode bundle entry: `replay`.
-- Static viewer mode: immutable bundle `index.html`, with the replay URL in the `replay` query parameter.
+- Static viewer mode: immutable bundle `index.html`, with a host-bootstrapped `#replay=` fragment that does not vary
+  the entrypoint's network URL (`?replay=` remains a local/legacy fallback).
 - Fallback replay server mode: same game image, with `COGAME_LOAD_REPLAY_URI` pointing at the replay bytes.
 - Replay viewer default: autoplay and loop from the recorded end back to tick 0.
 

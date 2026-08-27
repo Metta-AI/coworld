@@ -48,8 +48,11 @@ It must:
 
 The runner validates the final results against `manifest.game.results_schema`. Replay bytes are game-defined. A game
 may declare `game.replay_viewer.bundle` as a package-relative static directory containing `index.html`; upload rewrites
-it to an immutable digest. Observatory runs that bundle in the browser and passes the replay URL in the `replay` query
-parameter. Bundle internals, including optional WASM resimulation, remain game-owned. Such a Coworld must provide an
+it to an immutable digest. The viewer reads the replay URL from `#replay=`, falling back to the `replay` query
+parameter. Hosted Observatory puts that URL in the fragment (`index.html?v=<headers-version>#replay=`) so it does not
+vary the immutable entrypoint's HTTP cache key, and bootstraps the query for already-uploaded bundles. Removing the
+bootstrap later requires bumping `v`. Bundle internals, including optional WASM resimulation, remain game-owned. Such a
+Coworld must provide an
 executable `tools/build_replay_viewer.sh`; `coworld build` runs it with the resolved bundle directory as its only
 argument before writing the hydrated manifest. The hook must recreate that directory so each built Coworld contains a
 viewer generated from its current game and rendering sources without retaining deleted assets. Upload only validates,
