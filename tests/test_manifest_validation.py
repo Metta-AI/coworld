@@ -1,5 +1,4 @@
 import pytest
-from jsonschema.exceptions import ValidationError as JsonSchemaValidationError
 
 from coworld.manifest_validation import (
     authored_game_config_validation_error,
@@ -347,7 +346,7 @@ def test_validate_authored_game_config_uses_supplied_token_count() -> None:
 
     validate_authored_game_config({}, schema, token_count=3)
 
-    with pytest.raises(JsonSchemaValidationError):
+    with pytest.raises(ValueError, match="game_config is invalid at tokens"):
         validate_authored_game_config({}, schema, token_count=5)
 
 

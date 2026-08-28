@@ -3,7 +3,7 @@ from __future__ import annotations
 import copy
 from typing import Any, cast
 
-from coworld.schema_validation import JsonObject, JsonSchema, json_schema_validation_errors, validate_json_schema
+from coworld.schema_validation import JsonObject, JsonSchema, json_schema_validation_errors
 from coworld.types import CoworldManifest
 
 
@@ -81,13 +81,16 @@ def validate_authored_game_config(
     count when a concrete roster is known.
     """
 
-    _token_array_schema(config_schema)
-    if token_count is None:
-        token_count = _placeholder_token_count(config_schema, game_config)
-    validate_json_schema(
-        game_config_with_tokens(game_config, [f"token-{slot}" for slot in range(token_count)]),
-        config_schema,
-    )
+    # A config/schema mismatch is a caller error, not an internal failure: raise
+    # the same ValueError contract as every other check in this module so API
+    # layers map it to a 4xx instead of a retryable 500. Delegating to the
+    # string-returning sibling keeps this module to a single formatter.
+    detail = authored_game_config_validation_error(game_config, config_schema, token_count=token_count)
+    if detail is None:
+        return
+    if detail.startswith("at "):
+        raise ValueError(f"game_config is invalid {detail}")
+    raise ValueError(detail)
 
 
 def authored_game_config_validation_error(

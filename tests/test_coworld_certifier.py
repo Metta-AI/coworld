@@ -1151,7 +1151,7 @@ def test_certify_coworld_records_fixture_failure_before_episode(
     )
     events: list[tuple[str, str, str | None]] = []
 
-    with pytest.raises(JsonSchemaValidationError):
+    with pytest.raises(ValueError, match="game_config is invalid"):
         certify_coworld(
             coworld_manifest_path,
             workspace=tmp_path / "cert",
@@ -1327,7 +1327,7 @@ def test_certify_coworld_rejects_player_without_certification_slot(
 
 
 def test_certification_fixture_validates_after_tokens_are_injected_via_json_schema(tmp_path: Path) -> None:
-    with pytest.raises(JsonSchemaValidationError):
+    with pytest.raises(ValueError, match="game_config is invalid"):
         _write_package(tmp_path, config_schema_required=["tokens", "missing"])
 
 

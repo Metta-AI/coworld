@@ -164,9 +164,11 @@ player can, for example, switch to a cheaper model or shorter prompts as `remain
 
 Separately from spend, each player slot may issue at most `request_limit_per_minute` Bedrock calls per minute — 30 by
 default. A player pod has one bucket. A game pod has independent buckets for each delegated player slot and for its own
-game-attributed traffic. Bedrock quotas are shared across every player, game, and league, so the ceiling prevents one
-logical caller from degrading everyone. It is far above normal play: the busiest real player pods measured on prod run
-a few calls per minute.
+game-attributed traffic; the game bucket's limit is `request_limit_per_minute × player slots served`, because a game
+that invokes models on behalf of its seats carries the whole episode's delegated traffic through that one bucket.
+Bedrock quotas are shared across every player, game, and league, so the ceiling prevents one logical caller from
+degrading everyone. It is far above normal play: the busiest real player pods measured on prod run a few calls per
+minute.
 
 Over-ceiling calls are rejected **before** reaching Bedrock, with the same `ThrottlingException` (`HTTP 429`) as a spend
 cutoff and a real upstream throttle — again, no Softmax-specific exception type, so a player that handles throttling
