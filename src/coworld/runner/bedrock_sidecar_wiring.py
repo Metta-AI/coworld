@@ -16,6 +16,7 @@ BEDROCK_SIDECAR_HEALTH_PATH = f"/healthz/{BEDROCK_SIDECAR_CONTRACT_VERSION}"
 BEDROCK_PROMPT_PREFIX_CONTROL_CONFIG_MAP_NAME = "bedrock-prompt-prefix-measurement"
 BEDROCK_PROMPT_PREFIX_ENABLED_PATH = f"{BEDROCK_SIDECAR_TOKEN_MOUNT_PATH}/prompt-prefix-measurement-enabled"
 BEDROCK_RUNTIME_ENDPOINT_TEMPLATE = "https://bedrock-runtime.{region}.amazonaws.com"
+COWORLD_EGRESS_ENFORCED_LABEL = "coworld-egress-enforced"
 
 # Non-functional placeholder credentials for the app container's AWS SDK. The SDK needs creds to
 # sign before it sends to the localhost sidecar, which then re-signs with the real IRSA identity

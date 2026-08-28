@@ -8,6 +8,7 @@ import json
 import os
 import socket
 import socketserver
+import ssl
 import sys
 import tempfile
 import threading
@@ -19,8 +20,10 @@ from concurrent.futures import Future, ThreadPoolExecutor
 from io import BytesIO
 from pathlib import Path
 from typing import Any, Mapping, cast
+from urllib.parse import urlsplit
 
 import httpx
+import urllib3
 from kubernetes import client, config
 from kubernetes.client.rest import ApiException
 from kubernetes.utils import parse_quantity
@@ -31,6 +34,7 @@ from coworld.runner.bedrock_enablement import BedrockEnablement, resolve_player_
 from coworld.runner.bedrock_metadata import CoworldEpisodeBedrockMetadata, serialize_bedrock_request_metadata
 from coworld.runner.bedrock_sidecar_wiring import (
     BEDROCK_SIDECAR_CONTAINER_NAME,
+    COWORLD_EGRESS_ENFORCED_LABEL,
     RESERVED_SIDECAR_APP_ENV,
     bedrock_app_endpoint_env,
     bedrock_sidecar_token_volume,
@@ -86,6 +90,7 @@ _PLAYER_ARTIFACT_MAX_CONNECTIONS = 4
 _PLAYER_ARTIFACT_MAX_CONNECTIONS_PER_SOURCE = 1
 _PLAYER_ARTIFACT_MAX_ATTEMPTS = 3
 _BEDROCK_SERVICE_ACCOUNT = "episode-runner"
+_KUBERNETES_API_SERVICE_HOST = "kubernetes.default.svc"
 _DIRECT_BEDROCK_APP_ENV = {
     "USE_BEDROCK",
     "AWS_REGION",
@@ -454,8 +459,9 @@ def _run_kubernetes_episode(
     upload_timings: Callable[[EpisodePhaseTimings], None],
 ) -> None:
     worker_start = time.monotonic()
-    _load_incluster_config()
-    core_v1 = client.CoreV1Api()
+    egress_enforcement_enabled = os.environ.get("COWORLD_EGRESS_ENFORCEMENT_ENABLED") == "true"
+    api_client = _load_incluster_config(egress_enforcement_enabled=egress_enforcement_enabled)
+    core_v1 = client.CoreV1Api(api_client)
     namespace = os.environ["JOB_NAMESPACE"]
     service_name = os.environ["COWORLD_SERVICE_NAME"]
     job_id = os.environ["JOB_ID"]
@@ -484,9 +490,72 @@ def _run_kubernetes_episode(
     )
     child_names: list[str] = []
     artifact_server = _start_player_artifact_upload_server(tokens)
+    networking_v1 = client.NetworkingV1Api(api_client) if egress_enforcement_enabled else None
 
     try:
         _create_game_service(core_v1, namespace, service_name, job_id, owner_references)
+        game_pod_ip = None
+        if networking_v1 is not None:
+            game_pod_ip = os.environ["POD_IP"]
+            relay_port = urlsplit(os.environ["COWORLD_EGRESS_RELAY_URL"]).port
+            if relay_port is None:
+                raise ValueError("COWORLD_EGRESS_RELAY_URL must include the relay Service port")
+            networking_v1.create_namespaced_network_policy(
+                namespace=namespace,
+                body=client.V1NetworkPolicy(
+                    metadata=client.V1ObjectMeta(
+                        name=f"{service_name}-player-egress",
+                        namespace=namespace,
+                        owner_references=[
+                            client.V1OwnerReference(
+                                api_version="batch/v1",
+                                kind="Job",
+                                name=os.environ["JOB_NAME"],
+                                uid=os.environ["JOB_UID"],
+                                controller=True,
+                            )
+                        ],
+                    ),
+                    spec=client.V1NetworkPolicySpec(
+                        pod_selector=client.V1LabelSelector(
+                            match_labels={
+                                "job-id": job_id,
+                                "coworld-component": "player",
+                                COWORLD_EGRESS_ENFORCED_LABEL: "true",
+                            }
+                        ),
+                        policy_types=["Egress"],
+                        egress=[
+                            client.V1NetworkPolicyEgressRule(
+                                to=[
+                                    client.V1NetworkPolicyPeer(
+                                        pod_selector=client.V1LabelSelector(
+                                            match_labels={"job-id": job_id, "coworld-component": "game"}
+                                        )
+                                    )
+                                ],
+                                ports=[
+                                    client.V1NetworkPolicyPort(protocol="TCP", port=GAME_PORT),
+                                    client.V1NetworkPolicyPort(protocol="TCP", port=PLAYER_ARTIFACT_PORT),
+                                ],
+                            ),
+                            client.V1NetworkPolicyEgressRule(
+                                to=[
+                                    client.V1NetworkPolicyPeer(
+                                        pod_selector=client.V1LabelSelector(match_labels={"app": "egress-relay"})
+                                    )
+                                ],
+                                ports=[
+                                    client.V1NetworkPolicyPort(
+                                        protocol="TCP",
+                                        port=relay_port,
+                                    )
+                                ],
+                            ),
+                        ],
+                    ),
+                ),
+            )
         _wait_for_health(core_v1, namespace, pod_name, timeout_seconds=timeout_seconds)
         game_ready = time.monotonic()
         timings.game_boot_s = game_ready - worker_start
@@ -514,6 +583,7 @@ def _run_kubernetes_episode(
                 player_memory_request,
                 player_cpu_limit,
                 owner_references,
+                game_pod_ip=game_pod_ip,
             )
         players_launched = time.monotonic()
         timings.player_launch_s = players_launched - player_launch_start
@@ -572,7 +642,7 @@ def _run_kubernetes_episode(
             artifact_server.server_close()
 
 
-def _load_incluster_config() -> None:
+def _load_incluster_config(*, egress_enforcement_enabled: bool) -> client.ApiClient:
     # kubernetes>=36.0.2 stores the service-account token under the
     # 'BearerToken' api_key the generated client reads, and its refresh hook
     # keeps that key current across kubelet token rotations. Normalizing the
@@ -592,7 +662,29 @@ def _load_incluster_config() -> None:
         respect_retry_after_header=True,
         allowed_methods=None,
     )
+    if egress_enforcement_enabled:
+        default.host = f"https://{_KUBERNETES_API_SERVICE_HOST}"
+        refresh_api_key = cast(Any, default).refresh_api_key_hook
+        assert refresh_api_key is not None
+
+        def refresh_api_key_without_restoring_service_ip(configuration: client.Configuration) -> None:
+            refresh_api_key(configuration)
+            configuration.host = f"https://{_KUBERNETES_API_SERVICE_HOST}"
+            cast(Any, configuration).refresh_api_key_hook = refresh_api_key_without_restoring_service_ip
+
+        cast(Any, default).refresh_api_key_hook = refresh_api_key_without_restoring_service_ip
     client.Configuration.set_default(default)
+    api_client = client.ApiClient(default)
+    if egress_enforcement_enabled:
+        api_client.rest_client.pool_manager = urllib3.ProxyManager(
+            proxy_url=os.environ["COWORLD_EGRESS_RELAY_URL"],
+            num_pools=4,
+            maxsize=default.connection_pool_maxsize,
+            cert_reqs=ssl.CERT_REQUIRED,
+            ca_certs=default.ssl_ca_cert,
+            retries=default.retries,
+        )
+    return api_client
 
 
 def _owner_references() -> list[client.V1OwnerReference]:
@@ -612,7 +704,7 @@ def _create_game_service(
     service_name: str,
     job_id: str,
     owner_references: list[client.V1OwnerReference],
-) -> None:
+) -> client.V1Service:
     ports = [client.V1ServicePort(name="http", port=GAME_PORT, target_port=GAME_PORT)]
     human_player_proxy_port = os.environ.get("COWORLD_HUMAN_PLAYER_PROXY_PORT")
     if human_player_proxy_port is not None:
@@ -633,7 +725,7 @@ def _create_game_service(
             ports=ports,
         ),
     )
-    core_v1.create_namespaced_service(namespace=namespace, body=service)
+    return cast(client.V1Service, core_v1.create_namespaced_service(namespace=namespace, body=service))
 
 
 def _create_player_pod(
@@ -650,6 +742,8 @@ def _create_player_pod(
     player_memory_request: str,
     player_cpu_limit: str,
     owner_references: list[client.V1OwnerReference],
+    *,
+    game_pod_ip: str | None = None,
 ) -> None:
     command, args = _command_args(player.run)
     bedrock_enablement = resolve_player_bedrock(policy_secret_env)
@@ -816,6 +910,21 @@ def _create_player_pod(
                 egress_relay_url=egress_relay_url,
             )
         )
+    enforced = os.environ.get("COWORLD_EGRESS_ENFORCEMENT_ENABLED") == "true"
+    host_aliases = None
+    if enforced:
+        if game_pod_ip is None:
+            raise ValueError("game_pod_ip is required when Coworld egress enforcement is enabled")
+        relay_host = urlsplit(os.environ["COWORLD_EGRESS_RELAY_URL"]).hostname
+        if relay_host is None:
+            raise ValueError("COWORLD_EGRESS_RELAY_URL must include the relay Service host")
+        host_aliases = [
+            client.V1HostAlias(ip=game_pod_ip, hostnames=[service_name]),
+            client.V1HostAlias(
+                ip=os.environ["COWORLD_EGRESS_RELAY_IP"],
+                hostnames=[relay_host],
+            ),
+        ]
     pod = client.V1Pod(
         metadata=client.V1ObjectMeta(
             name=name,
@@ -833,6 +942,7 @@ def _create_player_pod(
                 "softmax.com/job-id": job_id,
                 "coworld-component": "player",
                 "coworld-player-slot": str(slot),
+                **({COWORLD_EGRESS_ENFORCED_LABEL: "true"} if enforced else {}),
                 # coworld-id / league-id / coworld-source are AWS cost-attribution labels, forwarded by the
                 # dispatcher through the worker env so player pods carry the same identity
                 # as the game pod. League-less episodes get no COWORLD_LEAGUE_ID.
@@ -852,6 +962,7 @@ def _create_player_pod(
             restart_policy="Never",
             service_account_name=_player_service_account_name(bedrock_enablement),
             automount_service_account_token=False,
+            host_aliases=host_aliases,
             node_selector=_workload_node_selector(),
             tolerations=_workload_tolerations(),
             volumes=pod_volumes,

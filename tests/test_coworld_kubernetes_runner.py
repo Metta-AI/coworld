@@ -76,7 +76,7 @@ def test_load_incluster_config_sets_retries_without_rewriting_auth(monkeypatch):
     monkeypatch.setattr(kubernetes_runner.client.Configuration, "get_default_copy", lambda: loaded)
     monkeypatch.setattr(kubernetes_runner.client.Configuration, "set_default", lambda c: saved.append(c))
 
-    kubernetes_runner._load_incluster_config()
+    kubernetes_runner._load_incluster_config(egress_enforcement_enabled=False)
 
     assert load_calls == [True]
     assert saved == [loaded]
@@ -88,6 +88,37 @@ def test_load_incluster_config_sets_retries_without_rewriting_auth(monkeypatch):
     # ...but the auth fields the refresh hook manages are untouched.
     assert loaded.api_key == {"BearerToken": "sa-token"}
     assert loaded.api_key_prefix == {"BearerToken": "Bearer"}
+
+
+def test_enforced_incluster_config_keeps_relay_hostname_after_token_refresh(monkeypatch):
+    loaded = Configuration()
+    loaded.host = "https://10.96.0.1"
+    loaded.api_key = {"BearerToken": "old-token"}
+    refresh_calls: list[bool] = []
+
+    def sdk_refresh(configuration: Configuration) -> None:
+        refresh_calls.append(True)
+        configuration.host = "https://10.96.0.1"
+        configuration.api_key["BearerToken"] = "new-token"
+        cast(Any, configuration).refresh_api_key_hook = sdk_refresh
+
+    cast(Any, loaded).refresh_api_key_hook = sdk_refresh
+    monkeypatch.setenv("COWORLD_EGRESS_RELAY_URL", "http://egress-relay.jobs.svc.cluster.local:3128")
+    monkeypatch.setattr(kubernetes_runner.config, "load_incluster_config", lambda: None)
+    monkeypatch.setattr(kubernetes_runner.client.Configuration, "get_default_copy", lambda: loaded)
+    monkeypatch.setattr(kubernetes_runner.client.Configuration, "set_default", lambda _configuration: None)
+
+    api_client = kubernetes_runner._load_incluster_config(egress_enforcement_enabled=True)
+    assert loaded.host == "https://kubernetes.default.svc"
+
+    for _ in range(2):
+        assert loaded.refresh_api_key_hook is not None
+        loaded.refresh_api_key_hook(loaded)
+        assert loaded.host == "https://kubernetes.default.svc"
+
+    assert refresh_calls == [True, True]
+    assert loaded.api_key == {"BearerToken": "new-token"}
+    api_client.close()
 
 
 class _FakeCoreV1:
@@ -1651,8 +1682,12 @@ def test_run_kubernetes_episode_keeps_artifacts_authoritative_except_for_certifi
     monkeypatch.setattr(kubernetes_runner, "STATE_PATH", state_path)
     clock = {"now": 100.0}
     monkeypatch.setattr(kubernetes_runner.time, "monotonic", lambda: clock["now"])
-    monkeypatch.setattr(kubernetes_runner, "_load_incluster_config", lambda: None)
-    monkeypatch.setattr(kubernetes_runner.client, "CoreV1Api", lambda: object())
+    monkeypatch.setattr(
+        kubernetes_runner,
+        "_load_incluster_config",
+        lambda *, egress_enforcement_enabled: None,
+    )
+    monkeypatch.setattr(kubernetes_runner.client, "CoreV1Api", lambda _api_client: object())
     monkeypatch.setattr(kubernetes_runner, "_create_game_service", lambda *_args: None)
     monkeypatch.setattr(
         kubernetes_runner, "_wait_for_health", lambda *_args, **_kwargs: clock.__setitem__("now", 120.0)
@@ -1713,7 +1748,10 @@ def test_run_kubernetes_episode_keeps_artifacts_authoritative_except_for_certifi
         player_memory_request,
         player_cpu_limit,
         _owner_references,
+        *,
+        game_pod_ip,
     ):
+        assert game_pod_ip is None
         created.append((slot, player_cpu_request, player_memory_request, player_cpu_limit))
         clock["now"] = 125.0
 
@@ -1966,6 +2004,44 @@ def test_create_player_pod_injects_policy_secret_env(monkeypatch):
         "COWORLD_GAME_PORT": "8080",
         "COWORLD_GAME_WAIT_TIMEOUT_SECONDS": "60",
     }
+
+
+def test_create_player_pod_enforcement_removes_dns_and_uses_secure_pool(monkeypatch):
+    created: dict[str, Any] = {}
+    core_v1 = SimpleNamespace(
+        create_namespaced_pod=lambda *, namespace, body: created.update({"namespace": namespace, "body": body})
+    )
+    monkeypatch.setenv("COWORLD_EGRESS_ENFORCEMENT_ENABLED", "true")
+    monkeypatch.setenv("COWORLD_EGRESS_RELAY_IP", "172.20.10.20")
+    monkeypatch.setenv("COWORLD_EGRESS_RELAY_URL", "http://egress-relay.jobs.svc.cluster.local:3128")
+    monkeypatch.setenv("COWORLD_WORKLOAD_TYPE", "coworld-egress-jobs")
+    monkeypatch.setenv("COWORLD_BEDROCK_REGION", "us-east-1")
+
+    kubernetes_runner._create_player_pod(
+        core_v1,
+        "jobs",
+        "job-player-0",
+        0,
+        "slot-token",
+        PlayerLaunchSpec(image="paintbot:latest", run=(), env={}),
+        {},
+        "job-id",
+        "game-service",
+        "2",
+        "2Gi",
+        "",
+        [],
+        game_pod_ip="172.20.20.30",
+    )
+
+    pod = created["body"]
+    assert pod.metadata.labels["coworld-egress-enforced"] == "true"
+    assert pod.spec.node_selector == {"workload-type": "coworld-egress-jobs"}
+    assert pod.spec.tolerations[0].value == "coworld-egress-jobs"
+    assert [(alias.ip, alias.hostnames) for alias in pod.spec.host_aliases] == [
+        ("172.20.20.30", ["game-service"]),
+        ("172.20.10.20", ["egress-relay.jobs.svc.cluster.local"]),
+    ]
 
 
 def test_create_player_pod_omits_attribution_labels_without_forwarded_env(monkeypatch):
@@ -2234,6 +2310,7 @@ def test_create_player_pod_with_bedrock_sidecar_inverts_bedrock_access(monkeypat
     assert "AWS_SESSION_TOKEN" not in env
     assert "AWS_WEB_IDENTITY_TOKEN_FILE" not in env
     assert "AWS_ROLE_ARN" not in env
+    assert not any("EGRESS_RELAY" in name for name in env)
     assert env["COWORLD_PLAYER_WS_URL"] == "ws://game-service:8080/player?slot=0&token=slot-token"
     assert env["COGAMES_ENGINE_WS_URL"] == "ws://game-service:8080/player?slot=0&token=slot-token"
     assert not player_container.volume_mounts
