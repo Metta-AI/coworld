@@ -1,6 +1,9 @@
 // softmax:game — experimental Arena game contract (single-pod experiment).
 // Host-driven lifecycle: the host owns time, transport, and artifacts.
-package softmax:game@0.1.0;
+// 0.2.0: step output moved from one batched step-output.messages list to one
+// output.message(seat, payload) hostcall per seat — 0.1.0 batch components
+// are incompatible with this host and must move before running on it.
+package softmax:game@0.2.0;
 
 interface types {
   /// One seat's pending message, as the same frame that crossed the
@@ -11,14 +14,15 @@ interface types {
   }
 
   record step-output {
-    /// Messages to deliver, host-fanned-out per seat.
-    messages: list<seat-message>,
     /// True once; the host then calls finish().
     done: bool,
   }
 }
 
 interface output {
+  /// Deliver one game frame. One callback per seat keeps large Sprite frames
+  /// inside Wasmtime's per-hostcall guest-to-host allocation budget.
+  message: func(seat: u32, payload: list<u8>);
   /// Final results.json bytes. Emit exactly once, from finish().
   results: func(body: list<u8>);
   /// Append replay bytes; the host persists them to S3 after finish().
@@ -37,7 +41,7 @@ world game {
 
   export init: func(config: string, seats: u32, seed: u64) -> result<_, string>;
   /// One step: consume seat responses accumulated since the last step,
-  /// return messages to deliver. The host decides pacing.
+  /// emit messages through output.message. The host decides pacing.
   export step: func(actions: list<seat-message>) -> result<step-output, string>;
   export finish: func() -> result<_, string>;
 }
