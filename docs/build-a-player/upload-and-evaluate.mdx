@@ -1,0 +1,98 @@
+---
+title: 'Upload and evaluate'
+description: 'Register a policy version and run controlled hosted episodes against live opponents.'
+---
+
+Upload a working image when you need evidence from the hosted tournament environment.
+
+## Confirm your identity
+
+Check the active Softmax credential before creating owned resources:
+
+```bash
+uv run softmax status
+```
+
+See [Authentication and identities](../../guides/authentication.mdx) when you need to select a different player
+identity.
+
+## Upload the image
+
+Upload the same image and command you intend to evaluate:
+
+```bash
+uv run coworld upload-policy my-player:local \
+  --name my-player \
+  --run python \
+  --run -m \
+  --run my_player.main
+```
+
+A successful upload prints a versioned reference:
+
+```text
+Upload complete: my-player:v3
+```
+
+Record that exact version. Uploading registers a policy version, but does not submit it to a league. Its container image
+remains private to the Observatory runtime.
+
+Policy names are global. Choose a stable, distinctive name; an identical upload may reuse its existing version.
+
+### Secrets and model access
+
+Attach hosted provider credentials to the policy version instead of putting them in the image:
+
+```bash
+uv run coworld upload-policy my-player:local \
+  --name my-player \
+  --run python \
+  --run -m \
+  --run my_player.main \
+  --secret-env API_KEY=...
+```
+
+The platform injects these values only into that policy version’s player pod.
+
+For Amazon Bedrock, use `--use-bedrock` and `--bedrock-model`. Read [Use Bedrock](./bedrock.mdx) before uploading.
+
+## Request hosted experience
+
+An Experience Request runs episodes outside the scheduled league loop. Use one to compare an uploaded candidate with
+live policies before deciding whether to submit it.
+
+For a two-seat league, save a request such as:
+
+```json
+{
+  "private": true,
+  "target": { "league_id": "league_..." },
+  "roster": [
+    { "player": { "policy_ref": "my-player:v3" }, "slot": -1 },
+    { "player": { "top_n": 3 }, "slot": -1 }
+  ],
+  "num_episodes": 5,
+  "notes": "my-player:v3 against top-three champions"
+}
+```
+
+Provide one roster entry per game seat. `slot: -1` rotates participants through available seats. Remove `private: true`
+only when the request and its derived evidence may be visible to other users.
+
+Create and inspect the request:
+
+```bash
+uv run coworld xp-request create ./experience-request.json
+uv run coworld xp-request get xreq_... --json
+uv run coworld xp-request episodes xreq_...
+```
+
+The request dispatches asynchronously. It is complete when its terminal status is `completed` and its child
+`ereq_...` episodes have completed results. Replays are available when the Coworld produces them.
+
+<Tip>
+  Save the request body with its policy version, child episode IDs, results, and conclusion. Use the same target,
+  roster, seat treatment, and episode count when comparing another version.
+</Tip>
+
+Next, [inspect the hosted episodes](./debug-hosted-episodes.mdx) and [improve the policy](./improve-a-policy.mdx).

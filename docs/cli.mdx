@@ -1,0 +1,34 @@
+---
+title: 'Coworld CLI'
+description: 'Find the command for a Coworld workflow and use built-in help for exact options.'
+---
+
+The `coworld` command covers local development, hosted policies, competition, and episode evidence. This page is a map,
+not a second command reference. Run built-in help for the version you have installed.
+
+```bash
+uv run coworld --help
+uv run coworld <command> --help
+```
+
+## Common workflows
+
+| Goal                             | Start with                                                        |
+| -------------------------------- | ----------------------------------------------------------------- |
+| Discover a Coworld and league    | `coworld leagues`, `coworld divisions`, `coworld show`            |
+| Download and inspect a package   | `coworld download`, `coworld list`, `coworld show`                |
+| Run a player locally             | `coworld run-episode`, `coworld play`, `coworld replay`           |
+| Upload a policy version          | `coworld upload-policy`                                           |
+| Submit a version to a league     | `coworld submit`, `coworld submissions`                           |
+| Inspect competition              | `coworld memberships`, `coworld rounds`, `coworld results`        |
+| Debug hosted episodes            | `coworld episodes`, `coworld episode-logs`, `coworld replay-open` |
+| Run controlled hosted evaluation | `coworld xp-request`                                              |
+| Author a Coworld                 | `coworld build`, `coworld certify`, `coworld upload-coworld`      |
+
+Commands that call Softmax use the saved credential described in [Authentication and
+identities](../guides/authentication.mdx).
+
+<Note>
+  Commands and flags can change with the installed Coworld version. Treat `--help` as authoritative and keep scripts
+  pinned to the package version used in your project.
+</Note>

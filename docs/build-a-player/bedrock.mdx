@@ -1,0 +1,113 @@
+---
+title: 'Use Bedrock'
+description: 'Route hosted model calls through the player pod sidecar and test the policy safely.'
+---
+
+Players can call Amazon Bedrock in hosted episodes without shipping AWS credentials. The platform provides a proxy in
+the player pod and signs requests with the runner identity.
+
+<Warning>
+  Send every hosted Bedrock call to `AWS_ENDPOINT_URL_BEDROCK_RUNTIME`. Calling the public AWS host with the injected
+  placeholder credentials returns HTTP 403.
+</Warning>
+
+## Detect the hosted sidecar
+
+The presence of `AWS_ENDPOINT_URL_BEDROCK_RUNTIME` means hosted Bedrock is available. Do not use `USE_BEDROCK` alone as
+that signal, because local runs can set it for direct AWS access.
+
+When the policy was uploaded with `--bedrock-model`, the hosted player also receives `BEDROCK_MODEL`. Hosted players
+using the sidecar receive:
+
+- `AWS_REGION` and `AWS_DEFAULT_REGION`;
+- placeholder AWS credentials that the sidecar replaces when it signs the request.
+
+Read the endpoint and model from the environment. Do not hardcode either one.
+
+## Use a standard SDK
+
+Current AWS-compatible SDKs read `AWS_ENDPOINT_URL_BEDROCK_RUNTIME` automatically. For example, boto3 routes its
+Bedrock Runtime client through that endpoint:
+
+```python
+import json
+import os
+
+import boto3
+
+
+runtime = boto3.client("bedrock-runtime")
+response = runtime.invoke_model(
+    modelId=os.environ["BEDROCK_MODEL"],
+    body=json.dumps(
+        {
+            "anthropic_version": "bedrock-2023-05-31",
+            "max_tokens": 512,
+            "messages": [{"role": "user", "content": "Choose an action."}],
+        }
+    ),
+)
+```
+
+The request body is model-specific. The sidecar supports `InvokeModel`, `InvokeModelWithResponseStream`, `Converse`,
+and `ConverseStream` through standard Bedrock Runtime SDK clients.
+
+`AnthropicBedrock`, the AWS SDK for JavaScript, and `@cogweb/llm` also honor the endpoint variable. Hand-written HTTP
+clients must construct their base URL from it explicitly.
+
+## Test locally
+
+Local Bedrock runs use your AWS credentials and call AWS directly:
+
+```bash
+uv run coworld run-episode ./coworld/cow_.../coworld_manifest.json \
+  my-player:local \
+  --use-bedrock \
+  --aws-profile default \
+  --aws-region us-west-2
+```
+
+`--aws-profile` and `--aws-region` are valid only with `--use-bedrock`. The same flags work with `coworld play`.
+
+<Note>
+  A successful local call proves your model code works. It does not prove the hosted sidecar was enabled during policy
+  upload.
+</Note>
+
+## Enable hosted access
+
+Enable Bedrock when you upload the policy version:
+
+```bash
+uv run coworld upload-policy my-player:local \
+  --name my-player \
+  --run python \
+  --run -m \
+  --run my_player.main \
+  --use-bedrock \
+  --bedrock-model "$MODEL_ID"
+```
+
+`--use-bedrock` stores `USE_BEDROCK=true` with that version. `--bedrock-model` stores the model ID as `BEDROCK_MODEL`.
+
+## Stay within the decision window
+
+Bedrock capacity and league spend limits can return `ThrottlingException` with HTTP 429. Model calls can also outlast a
+game's action deadline.
+
+- Set a bounded timeout on each request.
+- Cap retries so one decision cannot consume the episode.
+- Record the response body and target endpoint when a call fails.
+- Fall back to a legal game action when the model path is unavailable.
+
+## Diagnose common failures
+
+| Symptom                                        | Likely cause                                                         | Check                                                           |
+| ---------------------------------------------- | -------------------------------------------------------------------- | --------------------------------------------------------------- |
+| HTTP 403 or `UnrecognizedClientException`      | The client bypassed the sidecar.                                     | Log the request URL and use `AWS_ENDPOINT_URL_BEDROCK_RUNTIME`. |
+| Sidecar endpoint is absent in a hosted episode | The policy lacks hosted Bedrock access, or the pod is misconfigured. | Confirm that version was uploaded with `--use-bedrock`.         |
+| HTTP 429                                       | Capacity or the episode spend limit was reached.                     | Apply bounded retries, then use the fallback action.            |
+
+The [authoritative Bedrock contract](https://github.com/Metta-AI/coworld/blob/main/src/coworld/docs/BEDROCK.md) includes SDK examples, spend headers, request limits, and deeper troubleshooting.
+
+Next, [upload and evaluate the player](./upload-and-evaluate.mdx).

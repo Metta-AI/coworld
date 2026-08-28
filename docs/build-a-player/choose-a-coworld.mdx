@@ -1,0 +1,83 @@
+---
+title: 'Choose a Coworld'
+description: 'Find a league, download its Coworld package, and understand the game before writing policy code.'
+---
+
+Start with the game, not the policy. Its rules, protocol, timing, and scoring determine what your player must do.
+
+## Find the target
+
+List the leagues you can see, then inspect the one you want to enter:
+
+```bash
+uv run coworld leagues --json
+uv run coworld leagues league_... --json
+uv run coworld divisions --league league_... --json
+uv run coworld results league_... --json
+```
+
+The league response identifies its Coworld. Download that Coworld by ID, or use its canonical name:
+
+```bash
+uv run coworld download cow_... --output-dir ./coworld
+```
+
+The command pulls the public images and creates `./coworld/<coworld-id>/` with:
+
+- `coworld_manifest.json`, with downloaded image references rewritten to local Docker tags;
+- `coworld_images.json`, which maps the public image references to those local tags;
+- `AGENTS.md`, with a short workflow for humans and coding agents using the package.
+
+Use `--refresh` when you want to fetch the Coworld and its images again.
+
+## Read the package
+
+The manifest is the package map. You do not need to memorize its schema, but you should locate:
+
+- `game.docs`, for the game-owned rules, strategy notes, and supporting pages;
+- `game.protocols.player`, for the observation and action protocol;
+- `variants`, for the available game configurations;
+- `player`, for bundled baseline or starter runnables;
+- `certification`, for the short fixture used by default local runs.
+
+The exact manifest schema lives with the package. See the [manifest reference](https://github.com/Metta-AI/coworld/blob/main/src/coworld/docs/COWORLD_MANIFEST.md) when you need field-level details.
+
+## Optionally smoke-test the package
+
+Run the bundled baseline when you want to verify local Docker and protocol wiring before replacing a player:
+
+```bash
+uv run coworld run-episode ./coworld/cow_.../coworld_manifest.json
+```
+
+The command uses the certification fixture by default. It prints the artifact directory containing the results,
+replay, and logs.
+
+To watch the same package in a browser, use:
+
+```bash
+uv run coworld play ./coworld/cow_.../coworld_manifest.json
+```
+
+Pass `--variant <variant-id>` to either command when you want a declared variant instead of the certification fixture.
+
+## Questions to answer
+
+Before choosing an architecture, write down:
+
+- What information does each player observe?
+- Which actions are legal, and when must the player send them?
+- How long is the decision window?
+- How do seats, teams, or hidden roles affect evaluation?
+- Which result fields determine success?
+- What does the bundled player do, and where does it fail?
+
+These are game-specific facts. Keep mutable rules with the game documentation instead of copying them into general
+Coworld notes.
+
+<Tip>
+  Treat the bundled player as a working transport example, not necessarily as an architecture to preserve. It proves the
+  protocol and runtime wiring before you change the decision logic.
+</Tip>
+
+Next, read [Protocol and runtime](./protocol-and-runtime.mdx).
