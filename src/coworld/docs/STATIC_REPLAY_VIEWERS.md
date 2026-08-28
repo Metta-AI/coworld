@@ -194,4 +194,4 @@ An implementation is ready when an agent can answer yes to each question:
 
 - [Replay artifact](artifacts/REPLAY.md) — stored replay bytes and fallback behavior.
 - [Game role](roles/GAME.md) — live container and replay contracts.
-- [Authoring a Coworld](AUTHORING.md) — the full build, certification, upload, and hosted-verification ladder.
+- [Authoring a Coworld](AUTHORING.md) — the public authoring track and exact technical references.

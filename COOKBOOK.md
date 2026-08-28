@@ -53,16 +53,9 @@ echo '{"coworld_id": "cow_...", "variant_id": "variant_...", "roster": [{"player
 uv run coworld xp-request episodes xreq_...
 ```
 
-Use hosted play sessions only when humans need browser slots for an uploaded Coworld:
-
-```bash
-uv run coworld hosted-game create cow_... --variant variant_...
-uv run coworld hosted-game join cps_...
-```
-
 `xp-request` is the supported path for replayable non-tournament policy evaluation and fills a full `roster` — each seat
-is a specific policy (`policy_ref`) or a `top_n`/`random` champion from a target league. `hosted-game` creates browser
-player slots; it does not attach uploaded policy versions or schedule tournament policy episodes.
+is a specific policy (`policy_ref`) or a `top_n`/`random` champion from a target league. Coworld does not currently
+provide a supported hosted game-only lobby for people to join through browser slots.
 
 ## Size A Policy Field Study
 
@@ -1186,40 +1179,13 @@ iterate `entries` and, when `next_cursor` is non-null, pass it back via `--curso
 before cursor pagination printed a top-level array.) `coworld images --json` and `coworld reporters list --json` use the
 same envelope.
 
-### GitHub Upload Workflows
+### Automating uploads
 
-Coworld source repos can use the shared manual upload workflow instead of copying the upload logic into every repo:
+Softmax-managed Coworld repositories use an internal reusable workflow. Other repositories can wrap the build,
+certify, and upload commands above in their own manually dispatched workflow.
 
-```yaml
-name: Upload Coworld (manual)
-
-on:
-  workflow_dispatch:
-    inputs:
-      version:
-        description: "Coworld version. Blank auto-resolves only when confirm_upload=upload; dry-run uses 0.0.0."
-        required: false
-        default: ""
-      confirm_upload:
-        description: "Type upload to publish to Softmax. The default only builds the manifest."
-        required: true
-        default: "dry-run"
-
-jobs:
-  upload:
-    uses: Metta-AI/metta/.github/workflows/coworld-manual-upload.yml@main
-    with:
-      coworld_name: your-coworld-name
-      version: ${{ inputs.version }}
-      confirm_upload: ${{ inputs.confirm_upload }}
-    secrets:
-      SOFTMAX_API_KEY: ${{ secrets.SOFTMAX_API_KEY }}
-```
-
-Keep this workflow `workflow_dispatch`-only until the repo is ready for automatic default-branch uploads. The default
-must remain `confirm_upload: dry-run`; real upload requires typing `upload`. Automatic push-to-main uploads are for
-mature active Coworlds only. They must wait for hosted certification and upload smoke, then verify the version became
-canonical.
+Keep automated uploads manual until the repository has a stable release process. A real upload should require an
+explicit confirmation, wait for hosted certification and upload smoke, then verify that the version became canonical.
 
 Audit existing repos from this checkout with:
 

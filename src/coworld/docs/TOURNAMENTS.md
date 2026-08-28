@@ -3,8 +3,7 @@
 A league can run **bracket tournaments** on top of its ladder: a frozen roster of entrants seeded into a
 double-elimination bracket, executed wave by wave, ending in recorded placements. Tournaments are platform objects
 (`tour_<uuid>`) served by the Observatory v2 API; this page documents the objects and the read paths a Coworld tool or
-agent needs. The ops-oriented map (endpoints table, gotchas, how the mainroom display consumes them) lives in
-[`docs/ai/onboarding/services/coworlds/tournaments.md`](../../../../../docs/ai/onboarding/services/coworlds/tournaments.md).
+agent needs.
 
 Naming note: the `coworld` CLI's `tournament_cli.py` commands (`leagues`, `divisions`, `rounds`, `results`,
 `memberships`, `xp-request`, …) predate bracket tournaments and cover the **ladder** objects. There are no bracket CLI

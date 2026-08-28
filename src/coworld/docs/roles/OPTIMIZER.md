@@ -11,8 +11,7 @@
 ## What it does
 
 The optimizer role is the workbench through which a developer (human or agent) iterates on a policy for a given Coworld.
-The canonical implementation, [`Metta-AI/optimizers`](https://github.com/Metta-AI/optimizers), is a local Next.js
-application that integrates with the Coworld CLI to run episodes, inspect replays, coordinate agent tasks, edit policy
+A workbench can integrate with the Coworld CLI to run episodes, inspect replays, coordinate agent tasks, edit policy
 source, and evaluate candidate policies against a champion.
 
 Unlike reporter, grader, and diagnoser, an optimizer is not a one-shot job. It is opened, used over a session
@@ -31,8 +30,8 @@ When an optimizer entry declares a GitHub `source_url`, point it at the implemen
 build root.
 
 Each optimizer entry may also set an optional `repository_url` pointing at the Git repository that `coworld optimize`
-clones and runs locally. When unset, the command falls back to [`Metta-AI/optimizers`](https://github.com/Metta-AI/optimizers).
-This is distinct from `source_url`, which is a human-facing link that may point at a subdirectory or file.
+clones and runs locally. This is distinct from `source_url`, which is a human-facing link that may point at a
+subdirectory or file. Use `--optimizer-repo` when the manifest does not name an accessible workbench.
 
 ## Contract (tentative)
 
@@ -54,9 +53,8 @@ Postgres container, initializes the schema, launches the dev server, and opens t
 is provided, the Coworld is imported into the workbench and the command deep-links to that game.
 
 Which optimizer repository is launched is resolved from the manifest's optional `optimizer[].repository_url` (see
-[Where it lives in the manifest](#where-it-lives-in-the-manifest)), falling back to
-[`Metta-AI/optimizers`](https://github.com/Metta-AI/optimizers). `--optimizer-repo` and `--optimizer-ref` override the
-manifest-derived values.
+[Where it lives in the manifest](#where-it-lives-in-the-manifest)). `--optimizer-repo` and `--optimizer-ref` override
+the manifest-derived or configured default values.
 
 ### Local experience commands
 
@@ -103,9 +101,8 @@ pipeline; they are opened by a user (or an agent acting on a user's behalf) when
 
 - **Invocation contract.** What env vars, CLI args, or config files convey "you are optimizing for this Coworld,
   starting from these policies, with these episodes already loaded"? Not yet defined.
-- **Game-agnostic vs game-specific optimizers.** The canonical `Metta-AI/optimizers` is intentionally game-agnostic. A
-  specific Coworld might want to ship a game-specific optimizer image that bundles game-aware tooling. How a
-  game-specific optimizer composes with (or replaces) the default is not yet defined.
+- **Game-agnostic vs game-specific optimizers.** A Coworld might ship a game-specific optimizer image with game-aware
+  tooling. How that workbench composes with or replaces a game-agnostic default is not yet defined.
 - **Output handoff to the platform.** Today a candidate policy reaches the platform via `coworld upload-policy` run by
   the user. Whether there is a more direct optimizer → platform handoff in the future (e.g. the optimizer itself pushing
   policy versions) is undefined.
@@ -120,13 +117,10 @@ today, the optimizer pulls episode artifacts directly via the Coworld CLI and pr
 [optimizer outputs](../artifacts/OPTIMIZER_OUTPUTS.md) such as candidate workspaces, evaluation runs, and uploaded
 policy versions.
 
-See [`README.md`](../README.md) for the full artifact flow, and
-[`Metta-AI/optimizers`](https://github.com/Metta-AI/optimizers) for the canonical optimizer implementation.
+See [`README.md`](../README.md) for the full artifact flow.
 
 ## See Also
 
-- [`Metta-AI/optimizers`](https://github.com/Metta-AI/optimizers) — canonical game-agnostic optimizer implementation
-  (Next.js workbench, Postgres + pgvector, agent coordination, replay debugger).
 - [`artifacts/EPISODE_BUNDLE.md`](../artifacts/EPISODE_BUNDLE.md) — episode artifact package an optimizer may load as
   seed evidence.
 - [`artifacts/OPTIMIZER_OUTPUTS.md`](../artifacts/OPTIMIZER_OUTPUTS.md) — side effects and optional workbench artifacts

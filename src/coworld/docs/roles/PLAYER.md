@@ -130,9 +130,6 @@ the image.
   players at league episode time using the same runtime contract, but their container images are not
   user-downloadable.
 
-See [`COWORLD_MECHANICS.md`](../../../../../../app_backend/src/metta/app_backend/v2/COWORLD_MECHANICS.md) for the
-container-image mirror mechanic and the distinction between Coworld-bundled images and policy upload images.
-
 ## Logging and artifacts
 
 Player runnables produce diagnostic [player logs](../artifacts/PLAYER_LOGS.md) through captured stdout/stderr and, when

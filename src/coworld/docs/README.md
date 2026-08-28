@@ -3,9 +3,9 @@
 This page is the conceptual home for Coworld documentation: what a complete Coworld is, which roles it contains, how the
 manifest describes those roles, and how an episode turns into artifacts that player builders can learn from.
 
-For usage-oriented guidance, use the package [README](../../../README.md) and the
-[Coworld cookbook](../../../COOKBOOK.md). For the end-to-end guide to building and testing a new Coworld, use
-[Authoring A Coworld](AUTHORING.md). For browser-only replay bundles and their Coworld build hook, use
+For usage-oriented guidance, use the public [Coworld guide](../../../docs/overview.mdx) and the
+[Coworld cookbook](../../../COOKBOOK.md). The [authoring entry point](AUTHORING.md) links the public authoring track and
+the exact references behind it. For browser-only replay bundles and their Coworld build hook, use
 [Static Replay Viewers](STATIC_REPLAY_VIEWERS.md). The package documentation uses
 [Paint Arena](../examples/paintarena/README.md) as its canonical example. Installable starter templates for every role
 ship under `coworld/templates`. When rebuilding an existing Coworld after the June 2026 repo consolidation, use
@@ -97,7 +97,7 @@ The short version:
    [optimizer outputs](artifacts/OPTIMIZER_OUTPUTS.md).
 7. Humans and coding agents inspect those outputs, improve the player or Coworld, and run the loop again.
 
-The full lifecycle page is under construction: [Coworld lifecycle](LIFECYCLE.md).
+See [Coworld lifecycle](LIFECYCLE.md) for the complete local and hosted execution sequence.
 
 ## Artifact Flow
 
@@ -212,15 +212,15 @@ These boundaries are useful when deciding where a new feature, artifact, or debu
 ## See Also
 
 - Package usage and starting guide: [README](../../../README.md).
-- End-to-end Coworld authoring guide: [AUTHORING.md](AUTHORING.md).
+- Coworld authoring entry point: [AUTHORING.md](AUTHORING.md).
 - Static replay-viewer authoring guide: [STATIC_REPLAY_VIEWERS.md](STATIC_REPLAY_VIEWERS.md).
 - Workflow recipes: [Coworld cookbook](../../../COOKBOOK.md).
 - Rebuild/source ownership guide: [REBUILDING_COWORLDS.md](REBUILDING_COWORLDS.md).
 - Platform ladder leagues: [PLATFORM_LADDER_LEAGUE.md](PLATFORM_LADDER_LEAGUE.md).
 - Migrate off a container commissioner: [MIGRATE_TO_PLATFORM_COMMISSIONER.md](MIGRATE_TO_PLATFORM_COMMISSIONER.md).
 - Manifest reference: [COWORLD_MANIFEST.md](COWORLD_MANIFEST.md).
-- Calling an LLM / Bedrock from a player (route through the `AWS_ENDPOINT_URL_BEDROCK_RUNTIME` sidecar, InvokeModel not
-  Converse): [BEDROCK.md](BEDROCK.md).
+- Calling an LLM / Bedrock from a player (route supported Bedrock Runtime operations through the
+  `AWS_ENDPOINT_URL_BEDROCK_RUNTIME` sidecar): [BEDROCK.md](BEDROCK.md).
 - Lifecycle overview: [LIFECYCLE.md](LIFECYCLE.md).
 - Artifact reference: [artifacts/README.md](artifacts/README.md).
 - Game container contract: [GAME.md](roles/GAME.md).
@@ -230,6 +230,5 @@ These boundaries are useful when deciding where a new feature, artifact, or debu
 - Per-role contracts: [GAME.md](roles/GAME.md), [PLAYER.md](roles/PLAYER.md), [COMMISSIONER.md](roles/COMMISSIONER.md),
   [REPORTER.md](roles/REPORTER.md), [GRADER.md](roles/GRADER.md), [DIAGNOSER.md](roles/DIAGNOSER.md),
   [OPTIMIZER.md](roles/OPTIMIZER.md).
-- Shared role implementations: [Metta-AI/coworld-tools](https://github.com/Metta-AI/coworld-tools) for imported players,
-  commissioners, reporters, graders, diagnosers, and games;
-  [Metta-AI/optimizers](https://github.com/Metta-AI/optimizers) for the active optimizer workbench.
+- Shared public role implementations: [Metta-AI/coworld-tools](https://github.com/Metta-AI/coworld-tools) for imported
+  players, commissioners, reporters, graders, diagnosers, and games.

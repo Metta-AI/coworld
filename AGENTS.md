@@ -7,10 +7,10 @@ Coworld, and the public Coworld docs shipped with the package. It depends on `so
 ## ⚠️ Building a player that calls an LLM / Bedrock? Read [`src/coworld/docs/BEDROCK.md`](src/coworld/docs/BEDROCK.md) FIRST.
 
 The one rule: in a hosted episode, **send every Bedrock call to the `AWS_ENDPOINT_URL_BEDROCK_RUNTIME` endpoint** (the
-per-pod sidecar that signs with the runner identity), using **`InvokeModel`, not `Converse`**. Hitting the real AWS host
-instead → HTTP 403 with the injected placeholder creds, and a silent fall back to a non-LLM baseline. Standard SDKs
-(boto3, `AnthropicBedrock`, AWS SDK for JS, `@cogweb/llm`) honor that env var automatically; hand-rolled HTTP must read
-it. Full contract, copy-paste examples, and the 403 troubleshooting table: [`BEDROCK.md`](src/coworld/docs/BEDROCK.md).
+per-pod sidecar that signs with the runner identity). Hitting the real AWS host instead returns HTTP 403 with the
+injected placeholder credentials. Standard SDKs (boto3, `AnthropicBedrock`, AWS SDK for JS, `@cogweb/llm`) honor that
+environment variable automatically; hand-rolled HTTP must read it. The sidecar supports InvokeModel and Converse,
+including both streaming forms. Full contract, examples, and troubleshooting: [`BEDROCK.md`](src/coworld/docs/BEDROCK.md).
 
 ## Coworlds Expert Agent
 
@@ -130,15 +130,16 @@ source of truth. They are generated docs and `$schema` targets; `test_types.py` 
 - [docs/](docs/) - public Mintlify guides. This path symlinks to the canonical sources under `web/docs/coworld/`.
 - [src/coworld/docs/README.md](src/coworld/docs/README.md) - Coworld concept map, role statuses, artifact flow, and
   cross-links.
-- [src/coworld/docs/AUTHORING.md](src/coworld/docs/AUTHORING.md) - end-to-end guide for building and testing a new
-  Coworld (design, game/player implementation, packaging, local testing, certification, upload, hosted verification).
+- [src/coworld/docs/AUTHORING.md](src/coworld/docs/AUTHORING.md) - stable pointer from older links to the public
+  Coworld authoring track and its exact technical references.
 - [src/coworld/docs/STATIC_REPLAY_VIEWERS.md](src/coworld/docs/STATIC_REPLAY_VIEWERS.md) - static replay bundle,
   manifest, Coworld build-hook, source-sharing, and browser-verification contract.
 - [src/coworld/docs/COWORLD_MANIFEST.md](src/coworld/docs/COWORLD_MANIFEST.md) - manifest semantics and schema source of
   truth.
 - [src/coworld/docs/BEDROCK.md](src/coworld/docs/BEDROCK.md) - **how a player calls Bedrock at runtime** (the
-  `AWS_ENDPOINT_URL_BEDROCK_RUNTIME` sidecar endpoint, InvokeModel-not-Converse, 403 troubleshooting), the hosted
-  Bedrock upload contract, and robustness to shared-quota throttling. Required reading before building an LLM player.
+  `AWS_ENDPOINT_URL_BEDROCK_RUNTIME` sidecar endpoint, supported Bedrock Runtime operations, 403 troubleshooting), the
+  hosted Bedrock upload contract, and robustness to shared-quota throttling. Required reading before building an LLM
+  player.
 - [src/coworld/docs/LIFECYCLE.md](src/coworld/docs/LIFECYCLE.md) - local and hosted episode lifecycle.
 - [src/coworld/docs/TOURNAMENTS.md](src/coworld/docs/TOURNAMENTS.md) - league bracket tournaments (`tour_...` objects,
   waves, bracket matches) and how to read their episodes via the v2 API.

@@ -225,8 +225,9 @@ the repository, directory, or file that implements the runnable, not just a docu
 [REBUILDING_COWORLDS.md](REBUILDING_COWORLDS.md) for the current repo map and source-owner rules.
 
 `repository_url` is an optional, machine-readable field used by `coworld optimize`: on an `optimizer[]` entry it names
-the Git repository the command clones and runs locally (falling back to `Metta-AI/optimizers` when unset). Unlike
-`source_url`, which may point at a subdirectory or file, `repository_url` must be the workbench repository root.
+the Git repository the command clones and runs locally. Unlike `source_url`, which may point at a subdirectory or file,
+`repository_url` must be the workbench repository root. Use `--optimizer-repo` when you need to override the manifest or
+configured default.
 
 ## Role Implementation Ownership
 
@@ -237,8 +238,7 @@ Coworld runtime ownership and role implementation ownership are separate:
   archived `players`, `commissioners`, `reporters`, `graders`, `diagnosers`, and `games` repositories. Treat it as the
   source library for reusable pieces and for starting a game-local copy.
 - A `Metta-AI/coworld-<slug>` game repo owns game-local runnables that should move with that game.
-- [`Metta-AI/optimizers`](https://github.com/Metta-AI/optimizers) remains the active optimizer workbench unless a
-  specific optimizer has moved beside its game.
+- An optimizer workbench belongs in a repository accessible to the people expected to run it.
 
 At episode or round runtime, the runner does not clone those repositories. It executes the image, command, and env
 already recorded in the manifest. Catalogs are an authoring/provenance source: manifest authors may copy the selected
@@ -251,8 +251,8 @@ manifest at that game-local source. Shared pieces point at `coworld-tools` only 
 remain shared across Coworlds. Game-local starter players, game-specific commissioners, and in-tree examples point at
 the game or package repo that owns them.
 
-Backend storage, ECR publishing, public mirrors for bundled images, and private submitted-policy images are backend
-mechanics; see [`COWORLD_MECHANICS.md`](../../../../../app_backend/src/metta/app_backend/v2/COWORLD_MECHANICS.md).
+The platform mirrors Coworld-bundled images publicly and keeps submitted-policy images private. The [player role](roles/PLAYER.md#bundled-players-vs-submitted-policies)
+describes that boundary.
 
 ## Validation And Regeneration
 

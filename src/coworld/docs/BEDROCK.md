@@ -10,19 +10,16 @@ platform runs a per-pod proxy (the "Bedrock sidecar") that holds the real identi
 > In a hosted episode your player pod is given the env var **`AWS_ENDPOINT_URL_BEDROCK_RUNTIME`** (e.g.
 > `http://127.0.0.1:9100`). **Every Bedrock call must go to that endpoint.** If you send to the real AWS host
 > (`https://bedrock-runtime.<region>.amazonaws.com`) instead, you bypass the sidecar, your call carries the
-> **placeholder credentials** the platform injected, and AWS rejects it with **HTTP 403**. The episode then silently
-> falls back to a non-LLM baseline (no useful model calls, and no error visible in the score).
+> **placeholder credentials** the platform injected, and AWS rejects it with **HTTP 403**. Whether the player falls
+> back or fails then depends on the player implementation.
 >
 > **If you use a standard SDK, you get this for free** — boto3, `AnthropicBedrock`, the AWS SDK for JS, and
 > `@cogweb/llm` all read `AWS_ENDPOINT_URL_BEDROCK_RUNTIME` automatically. **Only hand-rolled HTTP must read the env var
 > itself.** Never hardcode the host or the port.
 >
-> Two more rules that follow from the same proxy:
-> - **Use `InvokeModel`, not `Converse`.** The runner identity is granted `bedrock:InvokeModel` only —
->   `bedrock:Converse` returns `AccessDenied`. (boto3 `invoke_model`, `AnthropicBedrock`, and `@cogweb/llm` use
->   InvokeModel; only raw `…/converse` calls hit this.)
-> - **Don't supply real AWS credentials and don't worry about signing.** The sidecar strips whatever auth you send and
->   re-signs with the real runner identity. The `bedrock-sidecar` placeholder creds in your env are deliberately fake.
+> **Don't supply real AWS credentials and don't worry about signing.** The sidecar strips whatever auth you send and
+> re-signs with the real runner identity. The `bedrock-sidecar` placeholder creds in your env are deliberately fake.
+> It supports `InvokeModel`, `InvokeModelWithResponseStream`, `Converse`, and `ConverseStream`.
 
 ## How to make the call
 
@@ -31,8 +28,8 @@ platform runs a per-pod proxy (the "Bedrock sidecar") that holds the real identi
 The presence of **`AWS_ENDPOINT_URL_BEDROCK_RUNTIME`** is the signal that hosted Bedrock is available via the sidecar.
 Gate on that env var — do **not** gate solely on `USE_BEDROCK`, which can also be set for direct local access.
 
-The platform enables the Bedrock sidecar for every hosted Coworld by default and injects this env into a player pod
-when your policy was uploaded with `--use-bedrock`:
+The platform adds the Bedrock sidecar and injects this environment into a hosted player pod when its policy was
+uploaded with `--use-bedrock`:
 
 | Env var | Value in a hosted, sidecar-backed pod | What you do with it |
 | --- | --- | --- |
@@ -40,7 +37,7 @@ when your policy was uploaded with `--use-bedrock`:
 | `AWS_REGION` / `AWS_DEFAULT_REGION` | the Bedrock region | The SigV4 region (the SDK reads it automatically). |
 | `AWS_ACCESS_KEY_ID` / `AWS_SECRET_ACCESS_KEY` | `bedrock-sidecar` (placeholder) | Leave as-is. The sidecar re-signs; these never reach AWS. |
 | `AWS_BEARER_TOKEN_BEDROCK` | `bedrock-sidecar` (placeholder) | Same — placeholder, stripped by the sidecar. |
-| `BEDROCK_MODEL` | the model id from `--bedrock-model` | **Read your model from this**; do not hardcode a model id. |
+| `BEDROCK_MODEL` | the model id from `--bedrock-model`, when provided | Read your model from this when your policy uses the upload option. |
 
 ### Standard SDKs — these route through the sidecar automatically
 
@@ -68,14 +65,14 @@ out = rt.invoke_model(
 ```
 
 ```js
-// JS/TS — @cogweb/llm handles the endpoint + InvokeModel for you. Prefer this in cogweb players.
-// (Under the hood: @aws-sdk/client-bedrock-runtime InvokeModel pointed at AWS_ENDPOINT_URL_BEDROCK_RUNTIME.)
+// JS/TS — @cogweb/llm handles the endpoint and Bedrock Runtime Converse call for you.
+// Prefer this in cogweb players.
 ```
 
-### Hand-rolled HTTP (the only path that must read the env var itself)
+### Hand-rolled InvokeModel HTTP
 
-Build the URL from the endpoint env var and call **`/invoke`** (InvokeModel) with the Anthropic Messages body. No
-`Authorization` header is needed — the sidecar adds the real one:
+Hand-rolled clients must build the URL from the endpoint environment variable. This example calls `InvokeModel` with
+an Anthropic Messages body. No `Authorization` header is needed because the sidecar adds the real one:
 
 ```bash
 curl -sS -X POST \
@@ -86,9 +83,8 @@ curl -sS -X POST \
        "messages":[{"role":"user","content":"ping"}]}'
 ```
 
-In code: `base = AWS_ENDPOINT_URL_BEDROCK_RUNTIME or "https://bedrock-runtime.$AWS_REGION.amazonaws.com"`, then
-`POST {base}/model/{BEDROCK_MODEL}/invoke`. Do **not** set `requestMetadata` — the sidecar replaces it with the trusted
-attribution; anything you put there is overwritten.
+The sidecar also accepts the Bedrock Runtime paths for streaming invoke, Converse, and ConverseStream. Do **not** set
+`requestMetadata` because the sidecar replaces it with trusted attribution.
 
 ### Verify it's reachable
 
@@ -102,12 +98,11 @@ curl -sS "$AWS_ENDPOINT_URL_BEDROCK_RUNTIME/healthz/core-v1" # expect: ok
 | Symptom | Cause | Fix |
 | --- | --- | --- |
 | `HTTP 403` (e.g. `UnrecognizedClientException`, invalid token/signature) on every call | You're hitting the **real AWS host** with the placeholder creds — bypassing the sidecar | Send to `$AWS_ENDPOINT_URL_BEDROCK_RUNTIME`. Log the exact URL you POST to. |
-| `AccessDenied` for `bedrock:Converse` | You used the **Converse** API | Switch to **InvokeModel** (`/model/{id}/invoke`, Anthropic Messages body). |
 | `AWS_ENDPOINT_URL_BEDROCK_RUNTIME` is empty/unset | The policy was not uploaded with `--use-bedrock`, you're running locally, or hosted sidecar infrastructure is misconfigured | Locally, use your own AWS creds (below). For hosted, fix the upload (`--use-bedrock`); if it is already set, report the missing core sidecar as an infrastructure fault. |
 | 0 completed episodes / silent non-LLM baseline in hosted rounds | A failing model call is being swallowed and you fall back | Log the **response body** and the **endpoint URL** before anything else; it's almost always the 403/route issue above. |
 
 When debugging, **log the response body, not just the status code** — the Bedrock error body names the exact failure
-(route vs. action vs. model). A bot that logs only `HTTP 403` hides which one it is.
+(route, authentication, or model). A bot that logs only `HTTP 403` hides which one it is.
 
 ## Enable Bedrock at upload time
 

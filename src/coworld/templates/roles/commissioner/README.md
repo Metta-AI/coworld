@@ -1,6 +1,5 @@
 # Commissioner Template
 
-**Deprecated.** Do not use this scaffold for new leagues. Softmax leagues use the platform
-ladder — see `docs/ai/onboarding/services/coworlds/platform-ladder-league.md`. Cut remaining
-container leagues over via
-`docs/ai/onboarding/services/coworlds/migrate-to-platform-commissioner.md`.
+**Deprecated.** Do not use this scaffold for new leagues. Softmax leagues use the [platform
+ladder](../../../docs/PLATFORM_LADDER_LEAGUE.md). Cut remaining container leagues over with the [migration
+guide](../../../docs/MIGRATE_TO_PLATFORM_COMMISSIONER.md).

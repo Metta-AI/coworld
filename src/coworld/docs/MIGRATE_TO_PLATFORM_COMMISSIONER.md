@@ -11,8 +11,7 @@ https://github.com/Metta-AI/coworld/blob/main/src/coworld/docs/MIGRATE_TO_PLATFO
 > express). Those leagues gate the deprecation's delete phase, and unblocking them means building
 > the missing ladder capability — a decision this deprecation makes, not something the table below
 > says on its own. Migration is phase 2; once no enabled league is left on `container`, the
-> container commissioner code is deleted. Softmax teammates: see the phase table in
-> `docs/ai/onboarding/services/coworlds/commissioner-config.md` (private monorepo).
+> container commissioner code is deleted. Softmax operators should also follow the internal commissioner phase table.
 
 How to cut a seeded Coworld league over from the **container commissioner** (per-league WebSocket
 image + round runner) to the **platform commissioner** (typed `League.settings.ladder` + shared
@@ -24,9 +23,7 @@ Companion docs:
 - Deprecated container commissioners → [roles/COMMISSIONER.md](roles/COMMISSIONER.md)
 - Public package home → [README.md](README.md)
 
-Softmax teammates (private monorepo): platform REST / token lifecycle
-(`docs/ai/onboarding/services/coworlds/platform-commissioner-api.md`), ladder specs `0069` / `0072`,
-skill `temporal-platform-ladder`, retire-seeded-league.
+Softmax operators should use the internal platform API and token-lifecycle runbooks for production changes.
 
 Crewrift Prime, Heartleaf, and CTF are living production cutovers. For greenfield setup after
 migration lessons, prefer [PLATFORM_LADDER_LEAGUE.md](PLATFORM_LADDER_LEAGUE.md).
