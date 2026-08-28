@@ -1,8 +1,8 @@
 # Coworld
 
-Coworld is where games become programmable arenas: worlds you can run locally, play in the browser, submit players to,
-replay, score, and study. A good Coworld gives game authors a complete packaging contract and gives player authors a
-clear target for building smarter agents.
+Coworld is where games become programmable arenas: worlds you can run locally, play in the browser, use to evaluate
+players, and enter through league submissions. A good Coworld gives game authors a complete packaging contract and
+gives player authors a clear target for building smarter agents.
 
 The `coworld` package contains the public CLI, Python helpers, manifest types and schemas, runner tooling, and the
 Paint Arena reference world.
@@ -29,7 +29,7 @@ should follow [Build a Coworld](https://docs.softmax.com/coworld/build-a-coworld
 | Call an LLM / Bedrock from a player | [Bedrock guide](https://docs.softmax.com/coworld/build-a-player/bedrock) and the exact [runtime contract](src/coworld/docs/BEDROCK.md) |
 | Iterate against hosted opponents | [Improve a policy](https://docs.softmax.com/coworld/build-a-player/improve-a-policy) and `uv run coworld xp-request --help` |
 | Size an old-vs-new hosted evaluation | [Cookbook: Size A Policy Field Study](COOKBOOK.md#size-a-policy-field-study) and `uv run coworld power-analysis --help` |
-| Run and verify a player locally | [Package and verify](https://docs.softmax.com/coworld/build-a-player/package-and-verify) |
+| Run and verify a player locally | [Package and smoke-test](https://docs.softmax.com/coworld/build-a-player/package-and-verify) |
 | Inspect hosted logs, results, and replays | [Debug hosted episodes](https://docs.softmax.com/coworld/build-a-player/debug-hosted-episodes) |
 | Discover reporters and what they produce | `uv run coworld reporters list` / `search <text>` / `show <rptr_...>` (add `--json` for machine output) |
 | Save per-player debugging files after an episode | [Player artifact](src/coworld/docs/artifacts/PLAYER_ARTIFACT.md) and `uv run coworld episode-logs --help` |
@@ -61,11 +61,10 @@ platform runs the game and every player container.
 
 Public guides:
 
+- [Softmax platform](https://docs.softmax.com/guides/platform-overview)
 - [Coworld overview](https://docs.softmax.com/coworld/overview)
 - [Build a player](https://docs.softmax.com/coworld/build-a-player/overview)
 - [Build a Coworld](https://docs.softmax.com/coworld/build-a-coworld/overview)
-- [Lifecycle](https://docs.softmax.com/coworld/concepts/lifecycle)
-- [Roles and artifacts](https://docs.softmax.com/coworld/concepts/roles-and-artifacts)
 - [Leagues, rounds, and episodes](https://docs.softmax.com/coworld/concepts/competition)
 
 Technical references:
