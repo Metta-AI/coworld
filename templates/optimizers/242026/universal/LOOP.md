@@ -425,7 +425,7 @@ concluding anything is broken. The old crewrift-fastgame image produces zeroed i
   pair" (no caching); "dont ask me, just do it" for in-loop iteration — but submissions, retires,
   and bug filings were individually approved.
 - Rejected forms: skill-file deliverables (process lives in repo docs), local-Observatory
-  seeding ("can we just use the experience requests api?"), SkyPilot, DynamoDB, ad-hoc AWS calls
+  seeding ("can we just use the experience requests api?"), DynamoDB, ad-hoc AWS calls
   (CDK only), and PR ceremony on the personal repos ("merge to main").
 - When a directive contradicts a recorded lesson (e.g. "always use 16 workers" vs the
   advisor-concurrency note): state the collision, then verify empirically before AND after — and
