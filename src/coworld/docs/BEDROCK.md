@@ -126,6 +126,26 @@ score and still be disqualified in its first hosted rounds if it was uploaded wi
 from the wrong variable, or hardcodes the AWS host instead of `AWS_ENDPOINT_URL_BEDROCK_RUNTIME`; those episodes produce
 no gameplay (0 completed episodes, no replay). Check the upload flags, `BEDROCK_MODEL`, and the endpoint first.
 
+## Prompt caching is on by default — structure your prompts to benefit
+
+For Claude models, the sidecar automatically enables provider prompt caching (5-minute TTL) on your calls unless you
+manage caching yourself: if your request contains any `cache_control` blocks (Anthropic shape) or `cachePoint` blocks
+(Converse shape), the sidecar forwards them untouched and adds nothing. Cache reads bill at ~0.1x the input-token
+price, so caching directly stretches your episode spend limit.
+
+Whether you benefit depends entirely on prompt structure — caching matches a byte-identical **prefix** of your prompt:
+
+- Put stable content first (rules, role, strategy), volatile content last (turn number, board state, standings). A
+  prompt that opens with `TURN 361/400 ...` shares no prefix with the previous call and can never hit the cache.
+- Growing conversation transcripts (append each turn, never rewrite or trim earlier messages) cache best: each call
+  re-reads the whole history from cache and pays full price only for the new turn.
+- Prompts below the model's minimum cacheable size never cache (silently): 1,024 tokens for Sonnet-class models,
+  4,096 for Haiku 4.5.
+
+The sidecar backs off automatically for prompts that keep writing cache entries without ever re-reading them, so a
+volatile-first prompt is not penalized for long — but it also never gets cheaper. Cache usage appears in your
+response's `usage` fields (`cacheReadInputTokenCount` / `cache_read_input_tokens`).
+
 ## Track your spend (and the league's spend limit)
 
 Leagues can set a per-episode LLM spend limit for each player pod. The sidecar meters every call's token usage against
