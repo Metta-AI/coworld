@@ -45,7 +45,8 @@
           "ephemeral-storage": "10Gi"
         },
         "limits": {
-          "cpu": "4"
+          "cpu": "4",
+          "memory": "3Gi"
         }
       }
     },

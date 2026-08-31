@@ -10,3 +10,8 @@
   kind: compatible
   summary: Optional replay_viewer.replay_compression opting public replay copies into gzip.
   fixture: packages/coworld/tests/manifest_versions/v0/replay_compression_manifest.json
+- schema_hash: 34ddc068d50fba9f1370940fe09ceaf67fe042c3c015e91288536482afc6747e
+  kind: compatible
+  summary: Add optional resources.limits.memory alongside the existing resources.limits.cpu; the
+    game role now honors both, the player role still honors only cpu.
+  fixture: packages/coworld/tests/manifest_versions/v0/game_resource_limits_manifest.json

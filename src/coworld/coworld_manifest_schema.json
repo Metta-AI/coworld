@@ -527,8 +527,21 @@
             }
           ],
           "default": null,
-          "description": "Kubernetes CPU limit quantity, e.g. '8'. Caps the container's compute regardless of how many cores the node has, so the runnable behaves the same on every node size. The backend also pins the container's math-library thread pools (OMP/MKL/OpenBLAS/NumExpr) to this many cores. Omit for no limit (the container may burst to the whole node).",
+          "description": "Kubernetes CPU limit quantity, e.g. '8'. Caps the container's compute regardless of how many cores the node has, so the runnable behaves the same on every node size. For the player role, the backend also pins the container's math-library thread pools (OMP/MKL/OpenBLAS/NumExpr) to this many cores. Omit for no limit (the container may burst to the whole node).",
           "title": "Cpu"
+        },
+        "memory": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Kubernetes memory limit quantity, e.g. '3Gi'. Caps the container's memory regardless of node size. Today only the game role honors a memory limit. Omit for no limit.",
+          "title": "Memory"
         }
       },
       "title": "CoworldResourceLimits",
@@ -597,7 +610,7 @@
             }
           ],
           "default": null,
-          "description": "Optional hard compute ceiling. Today only the player role honors a CPU limit; declaring one caps every player pod at that many cores and pins its thread pools to match. Clamped to the role's limit bounds by the backend."
+          "description": "Optional hard compute ceiling. Today the player role honors a CPU limit (also pinning its thread pools to match), and the game role honors both a CPU limit and a memory limit. Declaring a limit field a role does not honor is rejected at registration. Clamped to the role's limit bounds by the backend."
         }
       },
       "title": "CoworldRunnableResources",

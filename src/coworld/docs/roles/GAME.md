@@ -140,7 +140,15 @@ Hosted tournament runs schedule the game as the parent pod and player runnables 
 baseline is 1 CPU / 512Mi for the game container, 250m CPU / 256Mi for the runner worker, 250m CPU / 256Mi for each
 player container, and 2 CPU / 2Gi for replay containers; see
 [`KUBERNETES_RUNNER_README.md`](../../runner/KUBERNETES_RUNNER_README.md#hosted-resource-baseline). These are scheduling
-requests, not CPU or memory limits. Hosted episode Jobs have a 20 minute active deadline.
+requests, not CPU or memory limits — a game gets no compute ceiling by default and may burst to the whole node.
+
+A game runnable may optionally declare `resources.limits.cpu` and/or `resources.limits.memory` for a hard ceiling on
+the game container, each clamped to its own bound envelope by the backend; see
+[`KUBERNETES_RUNNER_README.md`](../../runner/KUBERNETES_RUNNER_README.md#hosted-resource-baseline) for the full
+contract, including the [player CPU limit](../../runner/KUBERNETES_RUNNER_README.md#hosted-resource-baseline)
+equivalent. A declared limit must resolve to at least as much as the resolved request for that field (declared or
+default) — registration rejects a manifest whose limit would undercut its request, since Kubernetes cannot schedule
+such a pod. Hosted episode Jobs have a 20 minute active deadline.
 
 ## Bedrock and AWS access
 

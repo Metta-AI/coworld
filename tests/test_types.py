@@ -84,13 +84,29 @@ def test_runnable_resources_default_to_none() -> None:
     assert spec.resources is None
 
 
-def test_runnable_resources_reject_limits_key() -> None:
+def test_runnable_resources_accept_limits_memory() -> None:
+    # Added alongside the existing limits.cpu: the game role now honors a memory
+    # ceiling too (the S2 runtime-spike ask), so this no longer raises.
+    spec = CoworldRunnableSpec.model_validate(
+        {
+            "type": "game",
+            "image": "game",
+            "resources": {"requests": {"cpu": "4"}, "limits": {"cpu": "4", "memory": "6Gi"}},
+        }
+    )
+    assert spec.resources is not None
+    assert spec.resources.limits is not None
+    assert spec.resources.limits.cpu == "4"
+    assert spec.resources.limits.memory == "6Gi"
+
+
+def test_runnable_resources_reject_unknown_limits_key() -> None:
     with pytest.raises(ValidationError):
         CoworldRunnableSpec.model_validate(
             {
                 "type": "game",
                 "image": "game",
-                "resources": {"requests": {"cpu": "4"}, "limits": {"memory": "6Gi"}},
+                "resources": {"requests": {"cpu": "4"}, "limits": {"gpu": "1"}},
             }
         )
 

@@ -1,0 +1,53 @@
+{
+  "apiVersion": "coworld.softmax.com/v1",
+  "game": {
+    "name": "game-resource-limits-coworld",
+    "version": "1.0.0",
+    "description": "Coworld manifest declaring a game-role CPU and memory limit.",
+    "owner": "coworld@example.com",
+    "config_schema": {},
+    "results_schema": {},
+    "runnable": {
+      "type": "game",
+      "image": "example.com/minimal-game:1",
+      "resources": {
+        "requests": {
+          "cpu": "4",
+          "memory": "3Gi"
+        },
+        "limits": {
+          "cpu": "4",
+          "memory": "3Gi"
+        }
+      }
+    },
+    "protocols": {
+      "player": { "type": "text", "value": "Player protocol" },
+      "global": { "type": "text", "value": "Global protocol" }
+    },
+    "docs": {
+      "readme": { "type": "text", "value": "Game-resource-limits Coworld" }
+    }
+  },
+  "player": [
+    {
+      "type": "player",
+      "image": "example.com/minimal-player:1",
+      "id": "minimal-player",
+      "name": "Minimal Player",
+      "description": "Minimal bundled player."
+    }
+  ],
+  "variants": [
+    {
+      "id": "default",
+      "name": "Default",
+      "game_config": {},
+      "description": "Minimal variant."
+    }
+  ],
+  "certification": {
+    "game_config": {},
+    "players": [{ "player_id": "minimal-player" }]
+  }
+}
