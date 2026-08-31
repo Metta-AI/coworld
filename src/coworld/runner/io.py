@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 import os
 import time
 from datetime import datetime
@@ -11,9 +12,12 @@ from urllib.request import Request, urlopen
 
 import httpx
 from pydantic import BaseModel, ConfigDict, Field
+from tenacity import RetryCallState, Retrying, retry_if_exception, stop_after_attempt, wait_chain, wait_fixed
 
-_WRITE_RETRY_DELAYS_SECONDS = (0.5, 1.0, 2.0)
-_RETRYABLE_WRITE_STATUS_CODES = {429, 500, 502, 503, 504}
+_RETRY_DELAYS_SECONDS = (0.5, 1.0, 2.0)
+_RETRYABLE_STATUS_CODES = {429, 500, 502, 503, 504}
+
+logger = logging.getLogger(__name__)
 
 RunnerErrorType = Literal[
     "player_error",
@@ -88,6 +92,36 @@ class RunnerEpisodeError(RuntimeError):
         self.failed_policy_index = failed_policy_index
 
 
+def _is_retryable_relay_error(error: BaseException) -> bool:
+    return isinstance(error, httpx.TransportError) or (
+        isinstance(error, httpx.HTTPStatusError) and error.response.status_code in _RETRYABLE_STATUS_CODES
+    )
+
+
+def _log_relay_retry(retry_state: RetryCallState) -> None:
+    assert retry_state.outcome is not None
+    error = retry_state.outcome.exception()
+    assert error is not None
+    logger.warning(
+        "Coworld relay request attempt %d/%d failed with %s: %s",
+        retry_state.attempt_number,
+        len(_RETRY_DELAYS_SECONDS) + 1,
+        type(error).__name__,
+        error,
+    )
+
+
+def _relay_request_attempts() -> Retrying:
+    return Retrying(
+        retry=retry_if_exception(_is_retryable_relay_error),
+        stop=stop_after_attempt(len(_RETRY_DELAYS_SECONDS) + 1),
+        wait=wait_chain(*(wait_fixed(delay) for delay in _RETRY_DELAYS_SECONDS)),
+        before_sleep=_log_relay_retry,
+        sleep=time.sleep,
+        reraise=True,
+    )
+
+
 def read_data(uri: str) -> bytes:
     parsed = urlparse(uri)
     if parsed.scheme in ("http", "https"):
@@ -95,10 +129,13 @@ def read_data(uri: str) -> bytes:
         if relay_url is not None:
             if parsed.scheme != "https":
                 raise ValueError("relay-routed reads require an https URI")
-            with _relay_http_client(relay_url) as client:
-                response = client.get(uri)
-                response.raise_for_status()
-                return response.content
+            for attempt in _relay_request_attempts():
+                with attempt:
+                    with _relay_http_client(relay_url) as client:
+                        response = client.get(uri)
+                        response.raise_for_status()
+                        return response.content
+            raise AssertionError("unreachable")
         with urlopen(uri, timeout=30) as response:
             return response.read()
     if parsed.scheme == "file":
@@ -108,42 +145,7 @@ def read_data(uri: str) -> bytes:
     raise ValueError(f"Unsupported URI for read_data: {uri}")
 
 
-def write_data(
-    uri: str,
-    data: bytes | str,
-    *,
-    content_type: str,
-    http_method: Literal["POST", "PUT"] = "PUT",
-) -> None:
-    _write_data(uri, data, content_type=content_type, http_method=http_method)
-
-
-def post_data(uri: str, data: bytes | str, *, content_type: str) -> None:
-    write_data(uri, data, content_type=content_type, http_method="POST")
-
-
-def upload_data(uri: str, data: bytes | str, *, content_type: str) -> None:
-    write_data(uri, data, content_type=content_type, http_method="PUT")
-
-
-def upload_file(uri: str, file: RewindableBinaryStream, *, size: int, content_type: str) -> None:
-    relay_url = os.environ["COWORLD_EGRESS_RELAY_URL"]
-    for retry_index in range(len(_WRITE_RETRY_DELAYS_SECONDS) + 1):
-        file.seek(0)
-        with _relay_http_client(relay_url) as client:
-            response = client.put(
-                uri,
-                content=file,
-                headers={"Content-Type": content_type, "Content-Length": str(size)},
-            )
-        if response.status_code < 400:
-            return
-        if response.status_code not in _RETRYABLE_WRITE_STATUS_CODES or retry_index == len(_WRITE_RETRY_DELAYS_SECONDS):
-            response.raise_for_status()
-        time.sleep(_WRITE_RETRY_DELAYS_SECONDS[retry_index])
-
-
-def _write_data(uri: str, data: bytes | str, *, content_type: str, http_method: Literal["POST", "PUT"]) -> None:
+def write_data(uri: str, data: bytes | str, *, content_type: str) -> None:
     if isinstance(data, str):
         data = data.encode()
 
@@ -151,32 +153,28 @@ def _write_data(uri: str, data: bytes | str, *, content_type: str, http_method: 
     if parsed.scheme in ("http", "https"):
         relay_url = os.environ.get("COWORLD_EGRESS_RELAY_URL")
         if relay_url is not None:
-            for retry_index in range(len(_WRITE_RETRY_DELAYS_SECONDS) + 1):
-                with _relay_http_client(relay_url) as client:
-                    response = client.request(
-                        http_method,
-                        uri,
-                        content=data,
-                        headers={"Content-Type": content_type},
-                    )
-                if response.status_code < 400:
-                    return
-                if response.status_code not in _RETRYABLE_WRITE_STATUS_CODES or retry_index == len(
-                    _WRITE_RETRY_DELAYS_SECONDS
-                ):
-                    response.raise_for_status()
-                time.sleep(_WRITE_RETRY_DELAYS_SECONDS[retry_index])
+            for attempt in _relay_request_attempts():
+                with attempt:
+                    with _relay_http_client(relay_url) as client:
+                        response = client.put(
+                            uri,
+                            content=data,
+                            headers={"Content-Type": content_type},
+                        )
+                        if response.status_code >= 400:
+                            response.raise_for_status()
+                        return
             raise AssertionError("unreachable")
-        request = Request(uri, data=data, method=http_method)
+        request = Request(uri, data=data, method="PUT")
         request.add_header("Content-Type", content_type)
-        for retry_index in range(len(_WRITE_RETRY_DELAYS_SECONDS) + 1):
+        for retry_index in range(len(_RETRY_DELAYS_SECONDS) + 1):
             try:
                 with urlopen(request, timeout=60):
                     return
             except HTTPError as exc:
-                if exc.code not in _RETRYABLE_WRITE_STATUS_CODES or retry_index == len(_WRITE_RETRY_DELAYS_SECONDS):
+                if exc.code not in _RETRYABLE_STATUS_CODES or retry_index == len(_RETRY_DELAYS_SECONDS):
                     raise
-                time.sleep(_WRITE_RETRY_DELAYS_SECONDS[retry_index])
+                time.sleep(_RETRY_DELAYS_SECONDS[retry_index])
     if parsed.scheme == "file":
         path = Path(unquote(parsed.path))
         path.parent.mkdir(parents=True, exist_ok=True)
@@ -188,6 +186,27 @@ def _write_data(uri: str, data: bytes | str, *, content_type: str, http_method: 
         path.write_bytes(data)
         return
     raise ValueError(f"Unsupported URI for write_data: {uri}")
+
+
+def upload_data(uri: str, data: bytes | str, *, content_type: str) -> None:
+    write_data(uri, data, content_type=content_type)
+
+
+def upload_file(uri: str, file: RewindableBinaryStream, *, size: int, content_type: str) -> None:
+    relay_url = os.environ["COWORLD_EGRESS_RELAY_URL"]
+    for attempt in _relay_request_attempts():
+        with attempt:
+            file.seek(0)
+            with _relay_http_client(relay_url) as client:
+                response = client.put(
+                    uri,
+                    content=file,
+                    headers={"Content-Type": content_type, "Content-Length": str(size)},
+                )
+                if response.status_code >= 400:
+                    response.raise_for_status()
+                return
+    raise AssertionError("unreachable")
 
 
 def _relay_http_client(relay_url: str) -> httpx.Client:

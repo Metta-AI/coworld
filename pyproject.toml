@@ -24,6 +24,7 @@ dependencies = [
   "requests>=2.32",
   "rich>=13.7.0",
   "softmax-cli==0.26.32",
+  "tenacity>=9.0.0",
   "typer>=0.19.2",
   "websockets>=15.0.1",
 ]
