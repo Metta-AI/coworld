@@ -71,7 +71,7 @@ The three user-facing pillars (from the founding interview):
 - **Defining "winning."** Ranking semantics (Elo vs bracket vs ladder) are the coworld developer's choice. The
   platform does not impose a standings model.
 - **Replacing the existing manifest/role system.** This PRD *extends* the current `coworld_manifest.json`
-  (see [`MANIFEST_README.md`](src/coworld/MANIFEST_README.md)); it does not start over.
+  (see [`COWORLD_MANIFEST.md`](src/coworld/docs/COWORLD_MANIFEST.md)); it does not start over.
 
 ## 4. Design principles (cross-cutting)
 
@@ -200,7 +200,7 @@ smoke-test episode.
 
 For each family: its **required purposes** (schema-declared), what the **dev supplies**, what the
 **platform/schema supplies**, the **I/O contract**, and **status vs. prior art**. Families inherit the runnable
-shape in [`MANIFEST_README.md` § Runnable Shape](src/coworld/MANIFEST_README.md).
+shape in [`COWORLD_MANIFEST.md` § Images, Runnables, And Releases](src/coworld/docs/COWORLD_MANIFEST.md).
 
 ### 6.1 game (live)
 
@@ -252,7 +252,7 @@ shape in [`MANIFEST_README.md` § Runnable Shape](src/coworld/MANIFEST_README.md
 
 ### 6.3 commissioner (contract defined, runtime pending)
 
-- **Lifecycle:** per-round WebSocket (`/round`); see [`commissioner.md`](src/coworld/docs/roles/commissioner.md).
+- **Lifecycle:** per-round WebSocket (`/round`); see [`COMMISSIONER.md`](src/coworld/docs/roles/COMMISSIONER.md).
 - **Dev supplies:** **two** capabilities — a **server commissioner** (drives league rounds) and a **local
   scrimmage** capability (run realistic tournaments locally). They may share one implementation or be distinct;
   both must be provided.
@@ -293,7 +293,7 @@ shape in [`MANIFEST_README.md` § Runnable Shape](src/coworld/MANIFEST_README.md
 - **Platform/schema supplies:** the bundle-in / report-out contract (`COGAME_EPISODE_BUNDLE_URI` →
   `COGAME_REPORT_URI`) and the `event_log` parquet schema (`ts, player, key, value`) — emitted by the game and
   exposed via the renderer surface (§7.2), consumed by diagnosers, graders, reporters, and the optimizer. See
-  [`reporter.md`](src/coworld/docs/roles/reporter.md).
+  [`REPORTER.md`](src/coworld/docs/roles/REPORTER.md).
 
   > **Spec 0061 supersedes this reporter contract:** a reporter is not a container with a bundle-URI → report-URI
   > contract. It is a submitted wasm component (or an external self-hosted program) that fetches evidence via tools and
@@ -318,7 +318,7 @@ shape in [`MANIFEST_README.md` § Runnable Shape](src/coworld/MANIFEST_README.md
 - **Dev supplies:** a grader per required purpose (+ extras); each labeled `purpose` + `output_format`.
 - **Platform/schema supplies:** bundle-in / score-out contract; the purpose labels. **Scoring basis is the dev's
   choice** (VOR, Elo input, custom); the platform only guarantees volume. See
-  [`grader.md`](src/coworld/docs/roles/grader.md).
+  [`GRADER.md`](src/coworld/docs/roles/GRADER.md).
 
 ### 6.6 diagnoser (reserved → promote)
 
@@ -337,7 +337,7 @@ shape in [`MANIFEST_README.md` § Runnable Shape](src/coworld/MANIFEST_README.md
 - **Dev supplies:** the skill tree (scenarios + metrics + thresholds + coverage); optional richer assays.
 - **Platform/schema supplies:** the schema/requirement for the tree, target-policy input
   (`COGAME_TARGET_POLICY_URI`), and the diagnosis output contract. See
-  [`diagnoser.md`](src/coworld/docs/roles/diagnoser.md).
+  [`DIAGNOSER.md`](src/coworld/docs/roles/DIAGNOSER.md).
 
 ### 6.7 optimizer (reserved → promote)
 
@@ -365,7 +365,7 @@ shape in [`MANIFEST_README.md` § Runnable Shape](src/coworld/MANIFEST_README.md
   needs over time (policy store, experience store, and the like) — provided by the **coworlds package** and surfaced
   through **SDK templates**, *not* built by individual coworld devs. Prior art:
   [`Metta-AI/optimizers`](https://github.com/Metta-AI/optimizers). See
-  [`optimizer.md`](src/coworld/docs/roles/optimizer.md).
+  [`OPTIMIZER.md`](src/coworld/docs/roles/OPTIMIZER.md).
 
 ## 7. Observability contract
 
@@ -441,7 +441,7 @@ So the agent+human can come up to speed fast enough to make good edits. **All th
 - An **interactive sandbox** to poke the game and watch reference policies play.
 
 (Extends the existing required `rules.md` + `play_*.md` docs in
-[`MANIFEST_README.md` § Document Pages](src/coworld/MANIFEST_README.md).)
+[`COWORLD_MANIFEST.md` § Docs In The Manifest](src/coworld/docs/COWORLD_MANIFEST.md).)
 
 ### 8.3 Accumulated wisdom — AGENTS.md + skills (recommended, not required)
 
@@ -525,12 +525,12 @@ player's call.
 
 ## See also
 
-- [`src/coworld/MANIFEST_README.md`](src/coworld/MANIFEST_README.md) — current manifest field reference (the base
-  this PRD extends).
-- [`src/coworld/docs/roles/OVERVIEW.md`](src/coworld/docs/roles/OVERVIEW.md) — how the roles compose; artifact flow.
+- [`src/coworld/docs/COWORLD_MANIFEST.md`](src/coworld/docs/COWORLD_MANIFEST.md) — current manifest field reference
+  (the base this PRD extends).
+- [`src/coworld/docs/README.md`](src/coworld/docs/README.md) — how the roles compose; artifact flow.
 - Per-role contracts under [`src/coworld/docs/roles/`](src/coworld/docs/roles/).
-- [`src/coworld/EPISODE_BUNDLE_README.md`](src/coworld/EPISODE_BUNDLE_README.md) — bundle contract consumed by the
-  post-episode families.
+- [`src/coworld/docs/artifacts/EPISODE_BUNDLE.md`](src/coworld/docs/artifacts/EPISODE_BUNDLE.md) — bundle contract
+  consumed by the post-episode families.
 - Prior art: the **cogsguard SDK** at `mettagrid.sdk.cogsguard`
   (`packages/mettagrid/python/src/mettagrid/sdk/cogsguard/` — `surface.py`, `learnings.py`, `scenarios.py`; the
   `cogames.sdk.cogsguard` paths are now re-export shims), `packages/cogamer/src/cogamer/cvc/`,
