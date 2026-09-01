@@ -24,7 +24,7 @@ non-CLI path is Docker-backed: it starts the same game and player containers the
 variables, and writes the same artifact files.
 
 All examples use Paint Arena as the canonical Coworld example. Replace `cow_...`, `league_...`, `div_...`, `round_...`,
-`pool_...`, and `ereq_...` with the IDs returned by the commands in your environment.
+and `ereq_...` with the IDs returned by the commands in your environment.
 
 ## FAQ
 
@@ -785,7 +785,7 @@ Useful statuses:
 
 - `pending`: accepted by the API but not processed yet.
 - `processing`: being validated or placed.
-- `placed`: successfully placed into a division or pool.
+- `placed`: successfully placed into a division.
 - `rejected`: failed validation or was not accepted into the league.
 
 ### Non-CLI API
@@ -817,7 +817,6 @@ Find completed rounds and standings:
 
 ```bash
 uv run coworld rounds --division div_... --status completed --json
-uv run coworld pools --round round_... --json
 uv run coworld results div_... --json
 uv run coworld results round_... --json
 uv run coworld events --round round_... --json
@@ -874,9 +873,10 @@ uv run coworld xp-request get xreq_... --json
 uv run coworld xp-request episodes xreq_...
 ```
 
-The body is passed through to the backend unchanged, so use the request shape from the v2 API reference (direct
-`coworld_id`/`variant_id`, or a `target` with `league_name`/`division_name`, plus a `roster` of `policy_ref`, `top_n`,
-or `random` participants). For a game-owned private episode input, set `game_config_overlay_secret` to the name
+The body is passed through to the backend unchanged, so use the `POST /v2/experience-requests` schema in the generated
+[API reference](https://docs.softmax.com/api-reference/overview) (direct `coworld_id`/`variant_id`, or a `target` with
+`league_name`/`division_name`, plus a `roster` of `policy_ref`, `top_n`, or `random` participants). For a game-owned
+private episode input, set `game_config_overlay_secret` to the name
 published by the Coworld owner; do not place `secret://` references in public `game_config_overrides`. Stateful Coworlds
 may additionally set a typed `state` object. Omit it for the Coworld's normal new-state start; use `head` for a player's
 live mutable state or `snapshot` for an immutable player/world checkpoint. Both explicit modes require
