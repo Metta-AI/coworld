@@ -1705,12 +1705,10 @@ def test_websocket_ping_probe_rejects_missing_pong() -> None:
     assert exc_info.value.error_type == "game_contract_violation"
 
 
-def test_websocket_ping_probe_survives_unread_global_backlog() -> None:
+def test_global_probe_survives_unread_global_backlog() -> None:
     # Regression for max_queue=None in _require_global_message: hosted
-    # certification blocks in on_connected before it pings, and a game that
-    # streams to /global meanwhile fills the client's receive queue. With default
-    # backpressure the client stops reading the socket, so the Pong is never seen
-    # and the probe times out even though the game answered instantly.
+    # certification blocks in on_connected before receiving a frame, and a game
+    # that streams to /global meanwhile fills the client's receive queue.
     async def run() -> None:
         async def game(ws) -> None:
             try:
@@ -1735,6 +1733,36 @@ def test_websocket_ping_probe_survives_unread_global_backlog() -> None:
             await server.wait_closed()
 
     asyncio.run(run())
+
+
+def test_global_probe_pings_before_starting_players(monkeypatch: pytest.MonkeyPatch) -> None:
+    order: list[str] = []
+
+    async def fake_require_pong(_websocket, _url: str) -> None:
+        order.append("pong")
+
+    monkeypatch.setattr("coworld.runner.runner._require_websocket_pong", fake_require_pong)
+
+    async def run() -> None:
+        async def game(ws) -> None:
+            await ws.send(b"snapshot")
+            await ws.wait_closed()
+
+        server = await websockets.serve(game, "127.0.0.1", 0)
+        port = next(iter(server.sockets)).getsockname()[1]
+        try:
+            await _require_global_message(
+                f"ws://127.0.0.1:{port}/global",
+                timeout_seconds=5.0,
+                on_connected=lambda: order.append("players"),
+                require_pong=True,
+            )
+        finally:
+            server.close()
+            await server.wait_closed()
+
+    asyncio.run(run())
+    assert order == ["pong", "players"]
 
 
 def test_play_coworld_starts_certification_player_containers(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
