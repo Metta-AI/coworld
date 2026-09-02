@@ -38,25 +38,24 @@ It must:
   sentinel Ping over `/global` and rejects a missing or mismatched Pong as `game_contract_violation`.
 - When `game.replay_viewer.bundle` is absent, support replay mode with `COGAME_LOAD_REPLAY_URI`, `GET /client/replay`,
   and `/replay`. Certification probes this version-matched container fallback.
-- For replay-server mode, make `GET /client/replay` start playback automatically and loop from the recorded end back
-  to tick 0 by default.
+- For replay-server mode, make `GET /client/replay` start playback automatically and loop from the recorded end back to
+  tick 0 by default.
 - Write a JSON results artifact to `COGAME_RESULTS_URI` when the episode completes.
 - Write replay bytes to `COGAME_SAVE_REPLAY_URI`.
-- When its own rules make a player failure terminal, write a typed `GamePlayerFailure` to
-  `COGAME_PLAYER_FAILURE_URI` instead of results. The runner validates this signal and produces the platform-owned
+- When its own rules make a player failure terminal, write a typed `GamePlayerFailure` to `COGAME_PLAYER_FAILURE_URI`
+  instead of results. The runner validates this signal and produces the platform-owned
   [`error_info.json`](../artifacts/ERROR_INFO.md); the game does not write that final artifact.
 
-The runner validates the final results against `manifest.game.results_schema`. Replay bytes are game-defined. A game
-may declare `game.replay_viewer.bundle` as a package-relative static directory containing `index.html`; upload rewrites
-it to an immutable digest. The viewer reads the replay URL from `#replay=`, falling back to the `replay` query
-parameter. Hosted Observatory puts that URL in the fragment (`index.html?v=<headers-version>#replay=`) so it does not
-vary the immutable entrypoint's HTTP cache key, and bootstraps the query for already-uploaded bundles. Removing the
-bootstrap later requires bumping `v`. Bundle internals, including optional WASM resimulation, remain game-owned. Such a
-Coworld must provide an
-executable `tools/build_replay_viewer.sh`; `coworld build` runs it with the resolved bundle directory as its only
-argument before writing the hydrated manifest. The hook must recreate that directory so each built Coworld contains a
-viewer generated from its current game and rendering sources without retaining deleted assets. Upload only validates,
-archives, and submits the bundle referenced by that manifest.
+The runner validates the final results against `manifest.game.results_schema`. Replay bytes are game-defined. A game may
+declare `game.replay_viewer.bundle` as a package-relative static directory containing `index.html`; upload rewrites it
+to an immutable digest. The viewer reads the replay URL from `#replay=`, falling back to the `replay` query parameter.
+Hosted Observatory puts that URL in the fragment (`index.html?v=<headers-version>#replay=`) so it does not vary the
+immutable entrypoint's HTTP cache key, and bootstraps the query for already-uploaded bundles. Removing the bootstrap
+later requires bumping `v`. Bundle internals, including optional WASM resimulation, remain game-owned. Such a Coworld
+must provide an executable `tools/build_replay_viewer.sh`; `coworld build` runs it with the resolved bundle directory as
+its only argument before writing the hydrated manifest. The hook must recreate that directory so each built Coworld
+contains a viewer generated from its current game and rendering sources without retaining deleted assets. Upload only
+validates, archives, and submits the bundle referenced by that manifest.
 
 See [Static Replay Viewers](../STATIC_REPLAY_VIEWERS.md) for the complete authoring and verification contract.
 
@@ -73,14 +72,14 @@ failure it observed, not infrastructure or coordinator failures owned by the run
 Both fields are required, unknown fields are rejected, `message` is 1–2000 characters, and `failed_policy_index` is a
 non-negative player slot.
 
-Publish the declaration atomically (for a file URI, write a temporary file and rename it), then shut down gracefully.
-Do not also finalize normal results or replay output for that failure. If every required success artifact is already
+Publish the declaration atomically (for a file URI, write a temporary file and rename it), then shut down gracefully. Do
+not also finalize normal results or replay output for that failure. If every required success artifact is already
 complete, the runner treats the episode as successful and ignores a stale or racing declaration.
 
 ## Local extra ports
 
-Local Docker runners always publish the Coworld HTTP/WebSocket port as `127.0.0.1:<random>:8080`. A game that also
-needs host-visible TCP services can request additional local mappings through public `manifest.game.runnable.env`:
+Local Docker runners always publish the Coworld HTTP/WebSocket port as `127.0.0.1:<random>:8080`. A game that also needs
+host-visible TCP services can request additional local mappings through public `manifest.game.runnable.env`:
 
 ```json
 "env": {
@@ -90,9 +89,9 @@ needs host-visible TCP services can request additional local mappings through pu
 
 Entries are `container_port[:host_port]`. Omit `host_port` or set it to `0` to allocate a free local host port. The
 local runner rejects invalid ports and duplicate host or container ports. When mappings are resolved, the game container
-receives `COWORLD_LOCAL_PORT_<container_port>=127.0.0.1:<host_port>` for each mapping and
-`COWORLD_LOCAL_PORTS_JSON` with the same resolved data. This is local-runner-only; hosted/Kubernetes runners do not
-publish arbitrary extra host ports today.
+receives `COWORLD_LOCAL_PORT_<container_port>=127.0.0.1:<host_port>` for each mapping and `COWORLD_LOCAL_PORTS_JSON`
+with the same resolved data. This is local-runner-only; hosted/Kubernetes runners do not publish arbitrary extra host
+ports today.
 
 ## Player slots
 
@@ -122,9 +121,9 @@ config fields.
 
 The game owns browser-client behavior. Player-facing flows expect `GET /client/player?slot=...&token=...` to serve the
 slot-specific player UI. Viewer flows expect `GET /client/global` for live viewing. Replay viewing uses the static
-bundle when declared and otherwise expects `GET /client/replay` from replay mode. Replay viewers may expose pause,
-seek, speed, and loop controls, but the default browser replay surface should
-begin playing and wrap back to tick 0 when it reaches the recorded end.
+bundle when declared and otherwise expects `GET /client/replay` from replay mode. Replay viewers may expose pause, seek,
+speed, and loop controls, but the default browser replay surface should begin playing and wrap back to tick 0 when it
+reaches the recorded end.
 
 `coworld certify` validates replay liveness for game authors. For Coworlds without a static bundle, it starts the same
 game image in replay mode, loads `GET /client/replay`, and waits for `/replay`. When a static bundle is declared,
@@ -142,21 +141,27 @@ player container, and 2 CPU / 2Gi for replay containers; see
 [`KUBERNETES_RUNNER_README.md`](../../runner/KUBERNETES_RUNNER_README.md#hosted-resource-baseline). These are scheduling
 requests, not CPU or memory limits — a game gets no compute ceiling by default and may burst to the whole node.
 
-A game runnable may optionally declare `resources.limits.cpu` and/or `resources.limits.memory` for a hard ceiling on
-the game container, each clamped to its own bound envelope by the backend; see
+A game runnable may optionally declare `resources.limits.cpu` and/or `resources.limits.memory` for a hard ceiling on the
+game container, each clamped to its own bound envelope by the backend; see
 [`KUBERNETES_RUNNER_README.md`](../../runner/KUBERNETES_RUNNER_README.md#hosted-resource-baseline) for the full
 contract, including the [player CPU limit](../../runner/KUBERNETES_RUNNER_README.md#hosted-resource-baseline)
 equivalent. A declared limit must resolve to at least as much as the resolved request for that field (declared or
-default) — registration rejects a manifest whose limit would undercut its request, since Kubernetes cannot schedule
-such a pod. Hosted episode Jobs have a 20 minute active deadline.
+default) — registration rejects a manifest whose limit would undercut its request, since Kubernetes cannot schedule such
+a pod. Hosted episode Jobs have a 20 minute active deadline.
 
 ## Bedrock and AWS access
 
-In hosted runs your game image can call AWS Bedrock by default — Softmax provides Bedrock credentials and region to the
-game container at runtime, so you do not need to bake AWS keys into the image or have players opt in. The game container
-sees `USE_BEDROCK=true`, `AWS_REGION`, and `AWS_DEFAULT_REGION` set for you; point any Bedrock client (for example
-`anthropic.AnthropicBedrock()`) at the default credential chain and it will work. The replay container gets the same
-defaults. To override the region or disable the default, set the relevant variables in `manifest.game.runnable.env`.
+In hosted runs your game image can call AWS Bedrock by default — Softmax wires Bedrock access into the game container at
+runtime, so you do not need to bake AWS keys into the image or have players opt in. Point any Bedrock client (for
+example `anthropic.AnthropicBedrock()`) at the default credential chain and it will work. The replay container gets the
+same treatment.
+
+In an episode the calls go through a Softmax-managed sidecar on loopback, not straight to AWS: your container is handed
+the sidecar's endpoint plus placeholder credentials, and the sidecar re-signs with the real identity. The env that
+selects the endpoint, credentials, and region (`AWS_ENDPOINT_URL_BEDROCK_RUNTIME`, `AWS_ACCESS_KEY_ID`,
+`AWS_SECRET_ACCESS_KEY`, `AWS_SESSION_TOKEN`, `AWS_REGION`, `AWS_DEFAULT_REGION`, `AWS_BEARER_TOKEN_BEDROCK`,
+`AWS_BEARER_TOKEN_BEDROCK_FILE`) is **reserved**: setting any of it in `manifest.game.runnable.env` is silently dropped,
+because an override there would route around the sidecar. Region is a platform setting, not a manifest one.
 
 This is hosted-runtime only. Local `coworld play` / `coworld run-episode` do not provide AWS credentials; for local
 Bedrock testing pass host credentials with `--use-bedrock` (see
