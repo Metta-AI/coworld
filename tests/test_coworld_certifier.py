@@ -48,12 +48,12 @@ from coworld.runner.runner import (
     REPLAY_SAVE_ENV_VAR,
     RESULTS_ENV_VAR,
     EpisodeArtifacts,
-    _image_command,
     _require_bad_player_rejected,
     _require_global_message,
     _require_websocket_pong,
     assert_docker_image_reachable,
     assert_episode_images_reachable,
+    docker_image_command,
     replay_client_url,
     replay_session_path,
 )
@@ -2374,9 +2374,9 @@ def test_replay_coworld_verify_replay_does_not_call_on_ready_until_probe_succeed
 
 def test_runnable_run_overrides_docker_entrypoint(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     package = _write_package(tmp_path)
-    game_command = _image_command(package.game)
+    game_command = docker_image_command(package.game)
     player = build_player_launch_specs(build_episode_request(package, EpisodeArtifacts.create(tmp_path / "cert")))[0]
-    player_command = _image_command(player)
+    player_command = docker_image_command(player)
 
     assert game_command == ["--entrypoint", "python", "unit-test-runtime:latest", "-m", "unit_test.game"]
     assert player_command == ["--entrypoint", "python", "unit-test-runtime:latest", "-m", "unit_test.player"]

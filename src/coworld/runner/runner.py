@@ -413,7 +413,7 @@ def run_episode_containers(spec: EpisodeRunSpec, *, verify_replay: bool = True) 
                     "-p",
                     f"127.0.0.1:{port}:{GAME_PORT}",
                     *local_port_publish_args(local_ports),
-                    *_env_args(game_env),
+                    *docker_env_args(game_env),
                     "-e",
                     f"{GAME_HOST_ENV_VAR}={GAME_HOST}",
                     "-e",
@@ -428,7 +428,7 @@ def run_episode_containers(spec: EpisodeRunSpec, *, verify_replay: bool = True) 
                     f"{PLAYER_FAILURE_ENV_VAR}=file://{CONTAINER_WORKDIR}/player_failure.json",
                     "-v",
                     f"{spec.artifacts.workspace}:{CONTAINER_WORKDIR}:rw",
-                    *_image_command(spec.game),
+                    *docker_image_command(spec.game),
                 ],
                 stdout=game_stdout,
                 stderr=game_stderr,
@@ -470,7 +470,7 @@ def run_episode_containers(spec: EpisodeRunSpec, *, verify_replay: bool = True) 
                                 LOCAL_DOCKER_NETWORK,
                                 "-v",
                                 artifact_mount,
-                                *_env_args(player.env),
+                                *docker_env_args(player.env),
                                 *secret_env_key_args,
                                 "-e",
                                 f"COWORLD_PLAYER_WS_URL={engine_ws_url}",
@@ -478,7 +478,7 @@ def run_episode_containers(spec: EpisodeRunSpec, *, verify_replay: bool = True) 
                                 f"COGAMES_ENGINE_WS_URL={engine_ws_url}",
                                 "-e",
                                 f"COWORLD_PLAYER_ARTIFACT_UPLOAD_URL={artifact_upload_url}",
-                                *_image_command(player),
+                                *docker_image_command(player),
                             ],
                             stdout=player_log,
                             stderr=subprocess.STDOUT,
@@ -567,7 +567,7 @@ def verify_replay_loadable(
                     "-p",
                     f"127.0.0.1:{replay_port}:{GAME_PORT}",
                     *local_port_publish_args(local_ports),
-                    *_env_args(game_env),
+                    *docker_env_args(game_env),
                     "-e",
                     f"{GAME_HOST_ENV_VAR}={GAME_HOST}",
                     "-e",
@@ -576,7 +576,7 @@ def verify_replay_loadable(
                     f"{REPLAY_LOAD_ENV_VAR}={replay_uri}",
                     "-v",
                     f"{replay_load_dir}:/coworld-replay:ro",
-                    *_image_command(game),
+                    *docker_image_command(game),
                 ],
                 stdout=game_stdout,
                 stderr=game_stderr,
@@ -612,14 +612,14 @@ def _player_query(slot: int, token: str) -> str:
     return urlencode({"slot": slot, "token": token})
 
 
-def _env_args(env: Mapping[str, str]) -> list[str]:
+def docker_env_args(env: Mapping[str, str]) -> list[str]:
     args: list[str] = []
     for key, value in env.items():
         args.extend(["-e", f"{key}={value}"])
     return args
 
 
-def _image_command(runnable: RunnableLaunchSpec) -> list[str]:
+def docker_image_command(runnable: RunnableLaunchSpec) -> list[str]:
     if not runnable.run:
         return [runnable.image]
     return ["--entrypoint", runnable.run[0], runnable.image, *runnable.run[1:]]
