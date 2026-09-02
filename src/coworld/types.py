@@ -642,7 +642,9 @@ class SourceUrlResult(BaseModel):
 
     runnable: str = Field(description="Manifest path identifying the runnable whose source was checked.")
     source_url: str | None = Field(description="Declared source URL, or null when the runnable omitted it.")
-    status: Literal["resolved", "unresolved", "unsupported", "not_declared"]
+    status: Literal["resolved", "unresolved", "unsupported", "not_declared"] = Field(
+        description="Source resolution outcome for this runnable."
+    )
     publicly_accessible: bool = Field(description="Whether certification verified a public source for this runnable.")
     detail: str = Field(description="Human-readable resolution evidence or reason the source was not verified.")
 
