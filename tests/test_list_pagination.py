@@ -131,3 +131,25 @@ def test_list_reporters_resumes_from_cursor(httpserver: HTTPServer) -> None:
         page = client.list_reporters(cursor="tok-3")
     assert page.entries == []
     assert page.next_cursor is None
+
+
+def test_list_rounds_resumes_from_cursor(httpserver: HTTPServer) -> None:
+    httpserver.expect_request(
+        "/observatory/v2/rounds",
+        query_string={"limit": "25", "cursor": "round-page-2"},
+    ).respond_with_json({"entries": [], "next_cursor": None})
+    with CoworldApiClient(server_url=httpserver.url_for(""), token="usr_test") as client:
+        page = client.list_rounds(cursor="round-page-2")
+    assert page.entries == []
+    assert page.next_cursor is None
+
+
+def test_list_experience_requests_resumes_from_cursor(httpserver: HTTPServer) -> None:
+    httpserver.expect_request(
+        "/observatory/v2/experience-requests",
+        query_string={"mine": "false", "limit": "50", "cursor": "xp-page-2"},
+    ).respond_with_json({"entries": [], "next_cursor": None})
+    with CoworldApiClient(server_url=httpserver.url_for(""), token="usr_test") as client:
+        page = client.list_experience_requests(cursor="xp-page-2")
+    assert page.entries == []
+    assert page.next_cursor is None

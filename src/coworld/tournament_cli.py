@@ -196,17 +196,18 @@ def register_tournament_commands(app: typer.Typer) -> None:
     def xp_request_list(
         mine: Annotated[bool, typer.Option("--mine", help="Show only my Experience Requests.")] = False,
         limit: Annotated[int, typer.Option("--limit", min=1, max=1000, help="Maximum rows to return.")] = 50,
-        offset: Annotated[int, typer.Option("--offset", min=0, help="Rows to skip.")] = 0,
+        cursor: Annotated[str | None, typer.Option("--cursor", help="Continue from a prior page cursor.")] = None,
         server: Annotated[str, typer.Option("--server", help="Observatory API server URL.")] = DEFAULT_SUBMIT_SERVER,
         json_output: Annotated[bool, typer.Option("--json", help="Print raw JSON.")] = False,
     ) -> None:
         with CoworldApiClient.from_login(server_url=server) as client:
-            page = client.list_experience_requests(mine=mine, limit=limit, offset=offset)
+            page = client.list_experience_requests(mine=mine, limit=limit, cursor=cursor)
         if json_output:
             emit_json(page.model_dump(mode="json"))
             return
         _print_experience_requests(page.entries)
-        console.print(f"[dim]Rows {page.offset + 1}-{page.offset + len(page.entries)} of {page.total_count}[/dim]")
+        if page.next_cursor is not None:
+            console.print(f"[dim]Next cursor: {page.next_cursor}[/dim]")
 
     @xp_request_app.command("get")
     def xp_request_get(
@@ -385,7 +386,7 @@ def register_tournament_commands(app: typer.Typer) -> None:
         division_id: Annotated[str | None, typer.Option("--division", "-d", help="Filter by division ID.")] = None,
         status: Annotated[str | None, typer.Option("--status", help="Filter by round status.")] = None,
         limit: Annotated[int, typer.Option("--limit", min=1, max=200, help="Maximum rows to return.")] = 25,
-        offset: Annotated[int, typer.Option("--offset", min=0, help="Rows to skip.")] = 0,
+        cursor: Annotated[str | None, typer.Option("--cursor", help="Continue from a prior page cursor.")] = None,
         server: Annotated[str, typer.Option("--server", help="Observatory API server URL.")] = DEFAULT_SUBMIT_SERVER,
         json_output: Annotated[bool, typer.Option("--json", help="Print raw JSON.")] = False,
     ) -> None:
@@ -396,15 +397,14 @@ def register_tournament_commands(app: typer.Typer) -> None:
                     division_id=division_id,
                     status=status,
                     limit=limit,
-                    offset=offset,
+                    cursor=cursor,
                 )
                 if json_output:
                     emit_json(rows.model_dump(mode="json"))
                     return
                 _print_rounds(rows.entries)
-                console.print(
-                    f"[dim]Rows {rows.offset + 1}-{rows.offset + len(rows.entries)} of {rows.total_count}[/dim]"
-                )
+                if rows.next_cursor is not None:
+                    console.print(f"[dim]Next cursor: {rows.next_cursor}[/dim]")
                 return
             round_detail = client.get_round(round_id)
         if json_output:

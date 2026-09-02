@@ -138,8 +138,8 @@ def test_xp_request_list_renders_rows(httpserver: HTTPServer) -> None:
     httpserver.expect_request(
         "/observatory/v2/experience-requests",
         method="GET",
-        query_string={"mine": "true", "limit": "50", "offset": "0"},
-    ).respond_with_json({"entries": [_experience_request_row()], "total_count": 1, "limit": 50, "offset": 0})
+        query_string={"mine": "true", "limit": "50"},
+    ).respond_with_json({"entries": [_experience_request_row()], "next_cursor": None})
 
     result = CliRunner().invoke(
         app, ["xp-request", "list", "--mine", "--server", httpserver.url_for("/")], env={"COLUMNS": "200"}
@@ -152,7 +152,7 @@ def test_xp_request_list_renders_rows(httpserver: HTTPServer) -> None:
 
 def test_xp_request_list_json(httpserver: HTTPServer) -> None:
     httpserver.expect_request("/observatory/v2/experience-requests", method="GET").respond_with_json(
-        {"entries": [_experience_request_row()], "total_count": 1, "limit": 50, "offset": 0}
+        {"entries": [_experience_request_row()], "next_cursor": "page-2"}
     )
 
     result = CliRunner().invoke(app, ["xp-request", "list", "--json", "--server", httpserver.url_for("/")])
@@ -160,6 +160,7 @@ def test_xp_request_list_json(httpserver: HTTPServer) -> None:
     assert result.exit_code == 0, result.output
     payload = json.loads(result.output)
     assert payload["entries"][0]["id"] == XP_REQUEST_ID
+    assert payload["next_cursor"] == "page-2"
 
 
 def test_xp_request_get_renders_detail_and_episodes(httpserver: HTTPServer) -> None:

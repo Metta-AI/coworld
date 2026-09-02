@@ -367,9 +367,7 @@ class RoundPublic(CoworldAPIModel):
 
 class RoundListPublic(CoworldAPIModel):
     entries: list[RoundPublic]
-    total_count: int
-    limit: int
-    offset: int
+    next_cursor: str | None
 
 
 class EnvConfigPublic(CoworldAPIModel):
@@ -561,9 +559,7 @@ class ExperienceRequestDetail(ExperienceRequestRow):
 
 class ExperienceRequestPage(CoworldAPIModel):
     entries: list[ExperienceRequestRow]
-    total_count: int
-    limit: int
-    offset: int
+    next_cursor: str | None
 
 
 class CompetitionEventPublic(CoworldAPIModel):
@@ -888,15 +884,17 @@ class CoworldApiClient:
         division_id: str | None = None,
         status: str | None = None,
         limit: int = 25,
-        offset: int = 0,
+        cursor: str | None = None,
     ) -> RoundListPublic:
-        params: dict[str, str | int] = {"limit": limit, "offset": offset}
+        params: dict[str, str | int] = {"limit": limit}
         if league_id is not None:
             params["league_id"] = league_id
         if division_id is not None:
             params["division_id"] = division_id
         if status is not None:
             params["status"] = status
+        if cursor is not None:
+            params["cursor"] = cursor
         return self._get("/v2/rounds", RoundListPublic, params=params)
 
     def get_round(self, round_id: str) -> RoundDetailPublic:
@@ -1084,12 +1082,15 @@ class CoworldApiClient:
         *,
         mine: bool = False,
         limit: int = 50,
-        offset: int = 0,
+        cursor: str | None = None,
     ) -> ExperienceRequestPage:
+        params: dict[str, str | int] = {"mine": str(mine).lower(), "limit": limit}
+        if cursor is not None:
+            params["cursor"] = cursor
         return self._get(
             "/v2/experience-requests",
             ExperienceRequestPage,
-            params={"mine": str(mine).lower(), "limit": limit, "offset": offset},
+            params=params,
         )
 
     def get_experience_request(self, experience_request_id: str) -> ExperienceRequestDetail:
