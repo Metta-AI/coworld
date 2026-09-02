@@ -38,7 +38,7 @@ from coworld.api_client import (
     V2EpisodeRequestRow,
     V2EpisodeRequestSummary,
 )
-from coworld.cli_support import console, emit_json
+from coworld.cli_support import console, emit_json, print_replay_session
 from coworld.config import DEFAULT_SUBMIT_SERVER
 from coworld.manifest_uri import materialized_replay_path
 from coworld.play import ReplaySession, replay_coworld
@@ -789,7 +789,7 @@ def register_tournament_commands(app: typer.Typer) -> None:
         ] = False,
     ) -> None:
         def on_ready(session: ReplaySession) -> None:
-            _print_replay_session(session)
+            print_replay_session(session)
             if open_browser:
                 webbrowser.open(session.link)
 
@@ -1397,10 +1397,3 @@ def _print_replays(rows: Sequence[V2EpisodeRequestSummary | V2EpisodeRequestList
         command = f"uv run coworld replay {row.coworld_id} {row.replay_url}" if row.coworld_id else "-"
         table.add_row(row.id, row.coworld_id or "-", row.replay_url or "-", command)
     console.print(table)
-
-
-def _print_replay_session(session: ReplaySession) -> None:
-    typer.echo(f"Artifacts: {session.artifacts.workspace}")
-    typer.echo(f"Replay file: {session.replay_path}")
-    typer.echo(f"Replay client: {session.link}")
-    typer.echo("Waiting for the replay container to exit...")

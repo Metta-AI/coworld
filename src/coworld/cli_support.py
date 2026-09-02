@@ -5,7 +5,7 @@ import os
 import shlex
 import sys
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
 from urllib.parse import urlparse, urlunparse
 
 import typer
@@ -13,6 +13,9 @@ from pydantic import BaseModel, Field
 from rich.console import Console
 
 from coworld.api_client import CoworldApiClient
+
+if TYPE_CHECKING:
+    from coworld.play import ReplaySession
 
 console = Console()
 
@@ -36,6 +39,13 @@ def active_docker_context() -> str:
 
 def emit_json(payload: Any) -> None:
     sys.stdout.write(json.dumps(payload, indent=2) + "\n")
+
+
+def print_replay_session(session: ReplaySession) -> None:
+    typer.echo(f"Artifacts: {session.artifacts.workspace}")
+    typer.echo(f"Replay file: {session.replay_path}")
+    typer.echo(f"Replay client: {session.link}")
+    typer.echo("Waiting for the replay container to exit...")
 
 
 def resolve_league_id(client: CoworldApiClient, league: str) -> str:

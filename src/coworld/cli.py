@@ -32,6 +32,7 @@ from coworld.cli_support import (
     console,
     emit_json,
     observatory_web_url,
+    print_replay_session,
     resolve_league_id,
     validate_run_argv,
 )
@@ -1396,7 +1397,7 @@ def replay(
     ] = True,
 ) -> None:
     def on_ready(session: ReplaySession) -> None:
-        _print_replay_session(session)
+        print_replay_session(session)
         if open_browser:
             webbrowser.open(session.link)
 
@@ -1590,13 +1591,6 @@ def _print_play_session(session: PlaySession) -> None:
         for port in local_ports:
             typer.echo(f"  container {port.container_port}/tcp: {port.host}:{port.host_port}")
     typer.echo("Waiting for the game container to exit...")
-
-
-def _print_replay_session(session: ReplaySession) -> None:
-    typer.echo(f"Artifacts: {session.artifacts.workspace}")
-    typer.echo(f"Replay file: {session.replay_path}")
-    typer.echo(f"Replay client: {session.link}")
-    typer.echo("Waiting for the replay container to exit...")
 
 
 def _hosted_game_join_command(session_id: str, server: str) -> str:
