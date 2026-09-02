@@ -2,6 +2,7 @@ import pytest
 
 from coworld.manifest_validation import (
     authored_game_config_validation_error,
+    game_config_with_input_player_controls,
     game_config_with_named_players,
     game_config_with_overwritten_named_players,
     infer_token_count_for_game_config,
@@ -125,6 +126,76 @@ def test_game_config_with_named_players_leaves_noncanonical_name_shapes_unchange
 def test_game_config_with_named_players_rejects_existing_player_names() -> None:
     with pytest.raises(ValueError, match=r"game_config.player_names is not supported"):
         game_config_with_named_players({"player_names": ["stale"]}, ["alpha:v1"], NAMED_PLAYERS_SCHEMA)
+
+
+def test_game_config_with_input_player_controls_rewrites_only_external_seats() -> None:
+    schema = {
+        "type": "object",
+        "properties": {
+            "slots": {
+                "type": "array",
+                "items": {
+                    "type": "object",
+                    "properties": {
+                        "team": {"type": "string"},
+                        "control": {"type": "string", "enum": ["input", "play"]},
+                    },
+                },
+            },
+        },
+    }
+    authored_config = {
+        "slots": [
+            {"team": "red", "control": "play"},
+            {"team": "blue", "control": "play"},
+            {"team": "green", "control": "play"},
+        ]
+    }
+
+    config = game_config_with_input_player_controls(authored_config, [0, 2], schema)
+
+    assert config == {
+        "slots": [
+            {"team": "red", "control": "input"},
+            {"team": "blue", "control": "play"},
+            {"team": "green", "control": "input"},
+        ]
+    }
+    assert authored_config["slots"][0]["control"] == "play"
+
+
+def test_game_config_with_input_player_controls_materializes_missing_external_seats() -> None:
+    schema = {
+        "type": "object",
+        "properties": {
+            "slots": {
+                "type": "array",
+                "items": {
+                    "type": "object",
+                    "properties": {"control": {"type": "string", "enum": ["input", "play"]}},
+                },
+            }
+        },
+    }
+
+    config = game_config_with_input_player_controls({}, [0, 1], schema)
+
+    assert config == {"slots": [{"control": "input"}, {"control": "input"}]}
+
+
+def test_game_config_with_input_player_controls_leaves_other_games_unchanged() -> None:
+    config = {"slots": [{"color": "red"}]}
+    schema = {
+        "type": "object",
+        "properties": {
+            "slots": {
+                "type": "array",
+                "items": {"type": "object", "properties": {"color": {"type": "string"}}},
+            }
+        },
+    }
+
+    assert game_config_with_input_player_controls(config, [0], schema) == config
 
 
 def test_game_config_with_overwritten_named_players_resizes_existing_players() -> None:

@@ -197,6 +197,44 @@ def game_config_with_overwritten_named_players(
     return cast(JsonObject, named_config)
 
 
+def game_config_with_input_player_controls(
+    game_config: dict[str, Any],
+    player_positions: list[int],
+    config_schema: JsonSchema,
+) -> JsonObject:
+    """Use the standard external-player transport for configured lobby seats."""
+
+    input_config = copy.deepcopy(game_config)
+    properties = config_schema.get("properties")
+    if not isinstance(properties, dict):
+        return cast(JsonObject, input_config)
+    slots_schema = properties.get("slots")
+    if not isinstance(slots_schema, dict) or slots_schema.get("type") != "array":
+        return cast(JsonObject, input_config)
+    items_schema = slots_schema.get("items")
+    if not isinstance(items_schema, dict) or items_schema.get("type") != "object":
+        return cast(JsonObject, input_config)
+    slot_properties = items_schema.get("properties")
+    if not isinstance(slot_properties, dict):
+        return cast(JsonObject, input_config)
+    control_schema = slot_properties.get("control")
+    if not isinstance(control_schema, dict) or control_schema.get("type") != "string":
+        return cast(JsonObject, input_config)
+    control_values = control_schema.get("enum")
+    if not isinstance(control_values, list) or "input" not in control_values or "play" not in control_values:
+        return cast(JsonObject, input_config)
+
+    if not player_positions:
+        return cast(JsonObject, input_config)
+    slots = input_config.get("slots", [])
+    slot_configs = _player_config_objects(slots, "game_config.slots")
+    slot_configs.extend({} for _ in range(max(player_positions) + 1 - len(slot_configs)))
+    for position in player_positions:
+        slot_configs[position] = {**slot_configs[position], "control": "input"}
+    input_config["slots"] = slot_configs
+    return cast(JsonObject, input_config)
+
+
 def validate_game_config_players_match_count(game_config: dict[str, Any], player_count: int) -> None:
     players = game_config.get("players")
     if isinstance(players, list) and len(players) != player_count:
