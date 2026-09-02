@@ -5,6 +5,7 @@ import asyncio
 import hmac
 import http.server
 import json
+import logging
 import os
 import socket
 import socketserver
@@ -71,6 +72,8 @@ from coworld.runner.runner import (
     _player_query as _episode_player_query,
 )
 from coworld.types import CoworldEpisodeJobSpec, CoworldHumanPlayerSpec
+
+logger = logging.getLogger(__name__)
 
 WORKDIR = Path(os.environ.get("COWORLD_WORKDIR", "/coworld"))
 STATE_PATH = WORKDIR / "state.json"
@@ -489,6 +492,9 @@ def _run_kubernetes_episode(
         else DEFAULT_PLAYER_CONNECT_TIMEOUT_SECONDS
     )
     child_names: list[str] = []
+    # Detection-time record of player containers that failed and became dead seats: teardown log
+    # collection falls back to it when the pod itself is gone by then (terminated-pod GC).
+    dead_seat_statuses: dict[int, PlayerRuntimeStatus] = {}
     artifact_server = _start_player_artifact_upload_server(tokens)
     networking_v1 = client.NetworkingV1Api(api_client) if egress_enforcement_enabled else None
 
@@ -604,6 +610,8 @@ def _run_kubernetes_episode(
                     namespace,
                     child_names,
                     timeout_seconds=max(0.0, player_start_deadline - time.monotonic()),
+                    player_images={slot: player.image for slot, player in policy_players},
+                    dead_seat_statuses=dead_seat_statuses,
                 ),
                 on_connect_failure=lambda: _raise_if_player_pod_failed(core_v1, namespace, child_names),
                 require_pong=job.episode_tags.get("source") == CERTIFICATION_EPISODE_SOURCE,
@@ -635,7 +643,7 @@ def _run_kubernetes_episode(
                 timeout_seconds=DEFAULT_PLAYER_EXIT_TIMEOUT_SECONDS,
             )
     finally:
-        _collect_logs(core_v1, namespace, pod_name, child_names, artifacts)
+        _collect_logs(core_v1, namespace, pod_name, child_names, artifacts, dead_seat_statuses=dead_seat_statuses)
         _delete_child_resources(core_v1, namespace, service_name, child_names)
         if artifact_server is not None:
             artifact_server.shutdown()
@@ -1102,20 +1110,33 @@ def _ensure_player_pods_started(
     player_pod_names: tuple[str, ...] | list[str],
     *,
     timeout_seconds: float,
+    player_images: Mapping[int, str] | None = None,
+    dead_seat_statuses: dict[int, PlayerRuntimeStatus] | None = None,
 ) -> None:
-    """Wait for every original player container to start.
+    """Wait for every original player container to start or fail.
 
     Each player pod owns a one-shot game slot credential. Kubernetes status can lag the process
     long enough for it to acquire that slot, so replacing a waiting or vanished pod could start a
     second process while the original still owns the slot. Infrastructure retries therefore
     create a fresh episode instead of replacing player pods inside a live episode. Once a process
     has started, a later 404 is inconclusive because terminated-pod GC may have reaped it.
+
+    A player container that fails (non-zero exit, or a waiting reason that means the policy
+    image itself is broken) is that seat's own loss, not the episode's: the seat is recorded in
+    ``dead_seat_statuses`` and logged, and the gate stops waiting for it. The game owns the
+    silent seat from there — its player-connect window starts the episode without the missing
+    join, and the episode plays out for the other seats. Only Kubernetes failing to run a
+    healthy pod at all (never scheduled, status forever pending) stays fatal, because those
+    pods got no chance to play and infrastructure should retry with a fresh episode.
     """
     deadline = time.monotonic() + timeout_seconds
     started: set[str] = set()
+    dead: set[str] = set()
     while True:
         waiting_reasons: list[str] = []
         for player_pod_name in player_pod_names:
+            if player_pod_name in dead:
+                continue
             slot = _player_pod_slot(player_pod_name)
             try:
                 player_pod = core_v1.read_namespaced_pod(name=player_pod_name, namespace=namespace)
@@ -1126,7 +1147,20 @@ def _ensure_player_pods_started(
                     continue
                 waiting_reasons.append(f"slot {slot}: pod {player_pod_name} not found")
                 continue
-            _raise_if_player_container_failed(player_pod, player_pod_name, slot)
+            failure = _player_container_failure(player_pod, player_pod_name, slot)
+            if failure is not None:
+                dead.add(player_pod_name)
+                failure_status, failure_message = failure
+                image = (player_images or {}).get(slot)
+                logger.error(
+                    "Player slot %s%s failed and plays the episode as a dead seat: %s",
+                    slot,
+                    f" (policy image {image})" if image else "",
+                    failure_message,
+                )
+                if dead_seat_statuses is not None:
+                    dead_seat_statuses[slot] = failure_status
+                continue
             if _container_has_started(player_pod, "player"):
                 started.add(player_pod_name)
             if player_pod_name in started:
@@ -1156,6 +1190,12 @@ def _player_waiting_reason(pod) -> str | None:
 
 
 def _raise_if_player_pod_failed(core_v1, namespace: str, player_pod_names: tuple[str, ...] | list[str]) -> None:
+    """Attribute an already-failed episode to a crashed player, if one crashed.
+
+    Only called on paths where the episode cannot complete anyway (viewer connect failure,
+    artifact timeout). A live player crash during a healthy episode is a dead seat, not an
+    episode failure — see _ensure_player_pods_started.
+    """
     for player_pod_name in player_pod_names:
         slot = _player_pod_slot(player_pod_name)
         try:
@@ -1164,10 +1204,13 @@ def _raise_if_player_pod_failed(core_v1, namespace: str, player_pod_names: tuple
             if exc.status == 404:
                 continue
             raise
-        _raise_if_player_container_failed(player_pod, player_pod_name, slot)
+        failure = _player_container_failure(player_pod, player_pod_name, slot)
+        if failure is not None:
+            raise PlayerPodFailure(slot, failure[1])
 
 
-def _raise_if_player_container_failed(player_pod, player_pod_name: str, slot: int) -> None:
+def _player_container_failure(player_pod, player_pod_name: str, slot: int) -> tuple[PlayerRuntimeStatus, str] | None:
+    """Detect a failed player container: (runtime status, human-readable message), or None."""
     for status in player_pod.status.container_statuses or []:
         if status.name != "player":
             continue
@@ -1180,14 +1223,27 @@ def _raise_if_player_container_failed(player_pod, player_pod_name: str, slot: in
                 continue
             parts = [f"Player pod {player_pod_name} for slot {slot} terminated with exit code {terminated.exit_code}"]
             parts.extend(part for part in (terminated.reason, terminated.message) if part)
-            raise PlayerPodFailure(slot, ": ".join(parts))
+            return (
+                PlayerRuntimeStatus(
+                    slot=slot,
+                    state="exited",
+                    exit_code=terminated.exit_code,
+                    reason=terminated.reason,
+                    finished_at=terminated.finished_at,
+                ),
+                ": ".join(parts),
+            )
         waiting = state.waiting
         waiting_reason = waiting.reason if waiting is not None else None
         if waiting_reason in _PLAYER_WAITING_POLICY_FAILURE_REASONS:
             parts = [f"Player pod {player_pod_name} for slot {slot} waiting: {waiting_reason}"]
             if waiting.message:
                 parts.append(waiting.message)
-            raise PlayerPodFailure(slot, ": ".join(parts))
+            return (
+                PlayerRuntimeStatus(slot=slot, state="not_started", reason=waiting_reason),
+                ": ".join(parts),
+            )
+    return None
 
 
 def _wait_for_players_to_complete(
@@ -1257,11 +1313,18 @@ def _collect_logs(
     pod_name: str,
     player_pod_names: list[str],
     artifacts: EpisodeArtifacts,
+    *,
+    dead_seat_statuses: Mapping[int, PlayerRuntimeStatus] | None = None,
 ) -> None:
     # Every policy slot gets a log file, and so does the game: when logs cannot be collected
     # (pod already reaped, container never started, log endpoint 404), the file says so.
     # Absence would be indistinguishable from "never existed" downstream — hosted consumers
     # list uploaded artifacts and would silently analyze an incomplete observability set.
+    #
+    # dead_seat_statuses carries what the start gate observed for player containers that failed
+    # mid-episode: episodes now play on past a dead seat, so by teardown the crashed pod may have
+    # been reaped and live status alone would report an uninformative "unavailable" for exactly
+    # the seat whose exit code matters most.
     game_log = _read_pod_log(core_v1, namespace, pod_name, "game")
     if game_log is None:
         game_log = _log_unavailable(pod_name, "game", "the pod was gone before log collection")
@@ -1269,11 +1332,14 @@ def _collect_logs(
     player_statuses: list[PlayerRuntimeStatus] = []
     for player_pod_name in player_pod_names:
         slot = _player_pod_slot(player_pod_name)
+        detected = (dead_seat_statuses or {}).get(slot)
         try:
             player_pod = core_v1.read_namespaced_pod(name=player_pod_name, namespace=namespace)
         except (ApiException, HTTPError) as exc:
             player_statuses.append(
-                PlayerRuntimeStatus(
+                detected
+                if detected is not None
+                else PlayerRuntimeStatus(
                     slot=slot,
                     state="unavailable",
                     reason="pod_not_found"
@@ -1293,7 +1359,9 @@ def _collect_logs(
         )
         if player_container_status is None:
             player_statuses.append(
-                PlayerRuntimeStatus(slot=slot, state="not_started", reason="container_status_unavailable")
+                detected
+                if detected is not None
+                else PlayerRuntimeStatus(slot=slot, state="not_started", reason="container_status_unavailable")
             )
         elif player_container_status.state.terminated is not None:
             terminated = player_container_status.state.terminated

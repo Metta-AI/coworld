@@ -1,5 +1,6 @@
 import asyncio
 import json
+import logging
 import os
 import socket
 import socketserver
@@ -185,7 +186,7 @@ def _container_status(
             waiting=SimpleNamespace(reason=reason, message=message) if waiting else None,
         ),
         last_state=SimpleNamespace(
-            terminated=SimpleNamespace(exit_code=last_exit_code, reason=reason, message=message)
+            terminated=SimpleNamespace(exit_code=last_exit_code, reason=reason, message=message, finished_at=None)
             if last_exit_code is not None
             else None,
         ),
@@ -1112,12 +1113,16 @@ def _run_player_start_gate(
     core_v1,
     *,
     pod_names: tuple[str, ...] = ("job-player-0",),
+    player_images: dict[int, str] | None = None,
+    dead_seat_statuses: dict[int, runner_io.PlayerRuntimeStatus] | None = None,
 ) -> None:
     kubernetes_runner._ensure_player_pods_started(
         core_v1,
         "default",
         pod_names,
         timeout_seconds=10.0,
+        player_images=player_images,
+        dead_seat_statuses=dead_seat_statuses,
     )
 
 
@@ -1156,17 +1161,20 @@ def test_ensure_player_pods_started_waits_for_a_late_starting_slot(gate_clock):
 
 
 @pytest.mark.parametrize("reason", sorted(kubernetes_runner._PLAYER_WAITING_POLICY_FAILURE_REASONS))
-def test_ensure_player_pods_started_policy_failures_are_player_error_not_retried(gate_clock, reason: str):
+def test_ensure_player_pods_started_tolerates_policy_image_failures_as_dead_seats(gate_clock, reason: str):
+    # A broken policy image is that seat's own loss, not the episode's: the gate stops
+    # waiting for it and the episode plays on with the seat empty.
     core_v1 = _FakeGateCoreV1(reads={"job-player-0": [[_container_status("player", waiting=True, reason=reason)]]})
+    dead_seat_statuses: dict[int, runner_io.PlayerRuntimeStatus] = {}
 
-    with pytest.raises(kubernetes_runner.PlayerPodFailure) as exc_info:
-        _run_player_start_gate(core_v1)
+    _run_player_start_gate(core_v1, dead_seat_statuses=dead_seat_statuses)
 
-    assert exc_info.value.failed_policy_index == 0
-    assert reason in str(exc_info.value)
+    assert dead_seat_statuses[0].state == "not_started"
+    assert dead_seat_statuses[0].reason == reason
+    assert gate_clock["now"] == 0.0
 
 
-def test_ensure_player_pods_started_preserves_last_player_termination(gate_clock):
+def test_ensure_player_pods_started_records_last_player_termination_as_dead_seat(gate_clock, caplog):
     core_v1 = _FakeGateCoreV1(
         reads={
             "job-player-0": [
@@ -1174,12 +1182,20 @@ def test_ensure_player_pods_started_preserves_last_player_termination(gate_clock
             ]
         }
     )
+    dead_seat_statuses: dict[int, runner_io.PlayerRuntimeStatus] = {}
 
-    with pytest.raises(kubernetes_runner.PlayerPodFailure) as exc_info:
-        _run_player_start_gate(core_v1)
+    with caplog.at_level(logging.ERROR, logger="coworld.runner.kubernetes_runner"):
+        _run_player_start_gate(
+            core_v1,
+            player_images={0: "registry.example/policy:sha-abc"},
+            dead_seat_statuses=dead_seat_statuses,
+        )
 
-    assert exc_info.value.failed_policy_index == 0
-    assert "terminated with exit code 1" in str(exc_info.value)
+    assert dead_seat_statuses[0].state == "exited"
+    assert dead_seat_statuses[0].exit_code == 1
+    assert "slot 0 (policy image registry.example/policy:sha-abc)" in caplog.text
+    assert "terminated with exit code 1" in caplog.text
+    assert "policy crashed" in caplog.text
 
 
 def test_ensure_player_pods_started_counts_clean_last_termination_as_started(gate_clock):
@@ -1223,7 +1239,9 @@ def test_ensure_player_pods_started_treats_missing_started_pod_as_inconclusive(g
     _run_player_start_gate(core_v1, pod_names=("job-player-0", "job-player-1"))
 
 
-def test_ensure_player_pods_started_rejects_started_player_crash_while_another_starts(gate_clock):
+def test_ensure_player_pods_started_continues_past_started_player_crash_while_another_starts(gate_clock):
+    # One seat crashing must not end the episode for the other fifteen: the crash becomes a
+    # recorded dead seat and the gate keeps waiting for the players that are still coming up.
     core_v1 = _FakeGateCoreV1(
         reads={
             "job-player-0": [
@@ -1236,11 +1254,38 @@ def test_ensure_player_pods_started_rejects_started_player_crash_while_another_s
             ],
         }
     )
+    dead_seat_statuses: dict[int, runner_io.PlayerRuntimeStatus] = {}
 
-    with pytest.raises(kubernetes_runner.PlayerPodFailure, match="policy crashed") as exc_info:
-        _run_player_start_gate(core_v1, pod_names=("job-player-0", "job-player-1"))
+    _run_player_start_gate(
+        core_v1,
+        pod_names=("job-player-0", "job-player-1"),
+        dead_seat_statuses=dead_seat_statuses,
+    )
 
-    assert exc_info.value.failed_policy_index == 0
+    assert dead_seat_statuses[0].state == "exited"
+    assert dead_seat_statuses[0].exit_code == 1
+
+
+def test_ensure_player_pods_started_returns_when_every_seat_is_dead(gate_clock):
+    # All seats crashing still hands the episode to the game: its player-connect window and
+    # the runner's overall artifact timeout (which attributes the failure to a crashed
+    # player) own the endgame, not the start gate.
+    core_v1 = _FakeGateCoreV1(
+        reads={
+            "job-player-0": [[_container_status("player", exit_code=1, reason="Error", message="policy crashed")]],
+            "job-player-1": [[_container_status("player", waiting=True, reason="ImagePullBackOff")]],
+        }
+    )
+    dead_seat_statuses: dict[int, runner_io.PlayerRuntimeStatus] = {}
+
+    _run_player_start_gate(
+        core_v1,
+        pod_names=("job-player-0", "job-player-1"),
+        dead_seat_statuses=dead_seat_statuses,
+    )
+
+    assert sorted(dead_seat_statuses) == [0, 1]
+    assert gate_clock["now"] == 0.0
 
 
 def test_player_pod_slot_requires_the_production_name_shape():
@@ -1430,6 +1475,74 @@ def test_collect_logs_records_typed_player_runtime_statuses(tmp_path):
             },
         ],
     }
+
+
+def test_collect_logs_prefers_detected_dead_seat_over_teardown_absence(tmp_path):
+    # An episode now plays on past a dead seat, so the crashed pod can be reaped before
+    # teardown. The detection-time record must survive into player_status.json instead of
+    # degrading to "unavailable" for exactly the seat whose exit code matters most.
+    artifacts = EpisodeArtifacts.create(tmp_path)
+    core_v1 = _FakeLogCoreV1(
+        {
+            "game-pod": [],
+            "job-player-1": [_container_status("player", running=True)],
+        },
+        missing_pods={"job-player-0"},
+    )
+
+    _collect_logs(
+        core_v1,
+        "default",
+        "game-pod",
+        ["job-player-0", "job-player-1"],
+        artifacts,
+        dead_seat_statuses={
+            0: runner_io.PlayerRuntimeStatus(slot=0, state="exited", exit_code=1, reason="Error"),
+        },
+    )
+
+    payload = json.loads(artifacts.player_status_path.read_text(encoding="utf-8"))
+    assert payload["players"][0] == {
+        "slot": 0,
+        "state": "exited",
+        "exit_code": 1,
+        "reason": "Error",
+        "finished_at": None,
+    }
+    assert payload["players"][1]["state"] == "running"
+
+
+def test_collect_logs_live_terminated_state_wins_over_detected_dead_seat(tmp_path):
+    # While the pod still exists at teardown, live Kubernetes status is ground truth (it
+    # carries finished_at); the detection-time record is only a fallback for reaped pods.
+    artifacts = EpisodeArtifacts.create(tmp_path)
+    core_v1 = _FakeLogCoreV1(
+        {
+            "game-pod": [],
+            "job-player-0": [
+                _container_status(
+                    "player",
+                    exit_code=1,
+                    reason="Error",
+                    finished_at="2026-09-01T03:14:00Z",
+                )
+            ],
+        }
+    )
+
+    _collect_logs(
+        core_v1,
+        "default",
+        "game-pod",
+        ["job-player-0"],
+        artifacts,
+        dead_seat_statuses={
+            0: runner_io.PlayerRuntimeStatus(slot=0, state="exited", exit_code=1, reason="Error"),
+        },
+    )
+
+    payload = json.loads(artifacts.player_status_path.read_text(encoding="utf-8"))
+    assert payload["players"][0]["finished_at"] == "2026-09-01T03:14:00Z"
 
 
 def test_collect_logs_records_marker_for_missing_player_pods(tmp_path):
@@ -1718,7 +1831,7 @@ def test_run_kubernetes_episode_keeps_artifacts_authoritative_except_for_certifi
         "_ensure_player_pods_started",
         record_player_start,
     )
-    monkeypatch.setattr(kubernetes_runner, "_collect_logs", lambda *_args: None)
+    monkeypatch.setattr(kubernetes_runner, "_collect_logs", lambda *_args, **_kwargs: None)
     monkeypatch.setattr(kubernetes_runner, "_delete_child_resources", lambda *_args: None)
     monkeypatch.setattr(kubernetes_runner, "_policy_secrets_from_env", lambda: {})
     monkeypatch.setattr(
