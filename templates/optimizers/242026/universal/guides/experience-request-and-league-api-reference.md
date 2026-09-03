@@ -126,8 +126,8 @@ are transient early (read-after-write lag, scheduling) — retry within budget; 
 `GET /v2/experience-requests` lists the caller's visible XP-request history; it is **not a search API**.
 Ordinary users see requests they created plus system-created requests involving policies owned by one
 of their players, while player credentials see requests involving that player. It does not expose
-unrelated users' XP requests. To find recorded episodes that do not involve one of your policies, use
-`POST /v2/episodes/search`, which searches the shared episode corpus.
+unrelated users' XP requests. To find episodes across a Game's Coworld versions, use
+`GET /v2/games/{game_id}/episodes` with the relevant workflow sources.
 
 ### Body schema (post-2026-06-12 unified roster)
 
