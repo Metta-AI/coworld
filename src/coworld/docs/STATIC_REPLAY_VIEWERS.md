@@ -36,6 +36,40 @@ The viewer must:
 The bundle may be a small HTML/JavaScript viewer, a Three.js/WebGL application, a Bitworld viewer backed by WASM, or
 another static browser program. There is no required `viewer.wasm`, JavaScript API, or presentation schema.
 
+## Readiness Protocol
+
+Observatory embeds the viewer in an iframe and keeps a "Loading replay..." overlay over it. The iframe's `load` event
+only says `index.html` arrived, so a viewer should tell the host when it has a picture. Post to `window.parent` with
+`src: "coworld-replay"` (target origin `"*"`: the bundle cannot know its embedder, the host checks the sender window,
+and the payload is timings only). Only post when `window.parent !== window`.
+
+| Message | When |
+| --- | --- |
+| `{type: "loading"}` | As early as the entry script evaluates, before `load`. After this, only `ready` lifts the overlay. |
+| `{type: "phase", phase, bytes?, compressed?}` | Optional marks: `bundle_ready` (app mounted, about to fetch), `replay_fetch_start`, `replay_fetch_end` (with `bytes` = downloaded byte count and `compressed` = gzip/zlib magic sniffed), `replay_parsed` (decoded, validated, and reduced into whatever the renderer draws from). |
+| `{type: "ready"}` | After the first frame is committed. Post from the commit (a `setTimeout(…, 0)` or equivalent), not from `requestAnimationFrame`: the host mounts the iframe lazily and browsers throttle animation frames in offscreen cross-origin frames, which would bill scroll dwell as draw time. |
+| `{type: "error", message}` | The replay could not be fetched, parsed, or drawn. |
+
+The host stamps every message with its own clock on receipt, so phases are host-receipt times (same-machine
+`postMessage` latency is sub-millisecond) and carry no timestamp of their own. They land in Datadog RUM as `bundle_ready_ms`, `replay_fetch_ms`,
+`replay_parse_ms`, `replay_draw_ms`, `replay_bytes`, and `replay_compressed`; viewers that post no phases leave those
+fields absent. Games built on `@cogweb/ui` get all of this from `useFeedStore` and `loadReplayFrames`; the magic sniff
+they share is `replayCompression` from `@cogweb/protocol`. Any other viewer:
+
+```js
+const post = (m) => { if (window.parent !== window) window.parent.postMessage({ src: "coworld-replay", ...m }, "*"); };
+post({ type: "loading" });                                   // top of the entry script
+post({ type: "phase", phase: "bundle_ready" });              // app mounted, about to fetch
+post({ type: "phase", phase: "replay_fetch_start" });
+const bytes = new Uint8Array(await (await fetch(replayUrl)).arrayBuffer());
+const gzip = bytes[0] === 0x1f && bytes[1] === 0x8b;
+const zlib = (bytes[0] & 15) === 8 && (bytes[0] >> 4) <= 7 && ((bytes[0] << 8) | bytes[1]) % 31 === 0;
+post({ type: "phase", phase: "replay_fetch_end", bytes: bytes.byteLength, compressed: gzip || zlib });
+const replay = parse(gzip ? await inflate(bytes, "gzip") : zlib ? await inflate(bytes, "deflate") : bytes);
+post({ type: "phase", phase: "replay_parsed" });
+draw(replay); setTimeout(() => post({ type: "ready" }), 0);          // or post({ type: "error", message }) on failure
+```
+
 ## Choose The Replay Producer
 
 | Replay contains | Bundle normally contains | Preferred sharing boundary |
@@ -98,8 +132,9 @@ that download the dominant cost of opening a replay (tens of seconds on ordinary
 
 and the platform stores the public copy as gzip bytes instead. The bytes are served with **no** `Content-Encoding`
 header and an unchanged URL, so `Content-Length` remains the on-the-wire byte count for byte-driven progress UIs.
-Opt in only when the viewer detects compression by content — check the first two bytes for the gzip magic number
-`0x1f 0x8b` (for example via `DecompressionStream("gzip")`) — never by URL suffix or response headers. The stored
+Opt in only when the viewer detects compression by content — the gzip magic `0x1f 0x8b` (`DecompressionStream("gzip")`)
+or a valid zlib CMF/FLG header (`DecompressionStream("deflate")`) from an un-recompressed runner artifact —
+never by URL suffix or response headers. `replayCompression` in `@cogweb/protocol` is the reference sniff. The stored
 replay artifact the game and reporters read is never recompressed; only the public browser copy changes.
 
 ## Required Coworld Build Hook
