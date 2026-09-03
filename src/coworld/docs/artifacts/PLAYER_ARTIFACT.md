@@ -19,13 +19,13 @@ filesystem; the player must perform the upload.
 
 ## Upload window
 
-The player may upload at any time. Once the game finishes, the player container/pod stays alive only for a bounded
-teardown timeout — the player must complete the upload before teardown or the artifact is lost. The platform does not
-block teardown waiting for an upload.
+The player may upload at any time and may overwrite the same object with newer checkpoints during the episode. Once the
+game finishes, the player container/pod stays alive only for a bounded teardown timeout — the player must complete the
+last upload before teardown or that checkpoint is lost. The platform does not block teardown waiting for an upload.
 
 ## Contract
 
-- Exactly one object per player slot.
+- Exactly one object per player slot. Each successful upload replaces that slot's previous contents.
 - Maximum size: 200 MB.
 - Format: a `.zip`. The player may bundle whatever it wants inside (parquet, sqlite, csv, json, trace files). The
   platform stores and serves the bytes as-is and does not unzip them. The `.zip` extension is a storage convention,

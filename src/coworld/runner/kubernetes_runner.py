@@ -91,7 +91,6 @@ _PLAYER_ARTIFACT_HEADER_DEADLINE_SECONDS = 5.0
 _PLAYER_ARTIFACT_BODY_DEADLINE_SECONDS = 60.0
 _PLAYER_ARTIFACT_MAX_CONNECTIONS = 4
 _PLAYER_ARTIFACT_MAX_CONNECTIONS_PER_SOURCE = 1
-_PLAYER_ARTIFACT_MAX_ATTEMPTS = 3
 _BEDROCK_SERVICE_ACCOUNT = "episode-runner"
 _KUBERNETES_API_SERVICE_HOST = "kubernetes.default.svc"
 _DIRECT_BEDROCK_APP_ENV = {
@@ -179,8 +178,6 @@ class _PlayerArtifactUploadServer(socketserver.ThreadingMixIn, http.server.HTTPS
         super().__init__(("0.0.0.0", PLAYER_ARTIFACT_PORT), _PlayerArtifactUploadHandler)
         self.targets = targets
         self.tokens = tokens
-        self.attempts: Counter[int] = Counter()
-        self.completed_slots: set[int] = set()
         self.inflight_slots: set[int] = set()
         self.active_by_source: Counter[str] = Counter()
         self.active_connections = 0
@@ -267,17 +264,9 @@ class _PlayerArtifactUploadHandler(http.server.BaseHTTPRequestHandler):
             self.send_error(413)
             return
         with self.server.state_lock:
-            if slot in self.server.completed_slots:
-                self.send_response(204)
-                self.end_headers()
-                return
             if slot in self.server.inflight_slots:
                 self.send_error(409)
                 return
-            if self.server.attempts[slot] >= _PLAYER_ARTIFACT_MAX_ATTEMPTS:
-                self.send_error(429)
-                return
-            self.server.attempts[slot] += 1
             self.server.inflight_slots.add(slot)
         try:
             with tempfile.SpooledTemporaryFile(max_size=8 * 1024 * 1024) as artifact:
@@ -295,8 +284,6 @@ class _PlayerArtifactUploadHandler(http.server.BaseHTTPRequestHandler):
                     size=size,
                     content_type=self.headers.get("Content-Type", "application/zip"),
                 )
-            with self.server.state_lock:
-                self.server.completed_slots.add(slot)
             self.send_response(201)
             self.end_headers()
         finally:

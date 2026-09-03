@@ -1943,7 +1943,7 @@ def test_create_game_service_exposes_internal_artifact_upload_only_with_relay(mo
     assert ports["player-artifact"].target_port == 9091
 
 
-def test_player_artifact_upload_server_is_bounded_and_idempotent(monkeypatch):
+def test_player_artifact_upload_server_accepts_periodic_overwrites(monkeypatch):
     uploads: list[tuple[str, bytes, int, str]] = []
 
     def upload_file(uri, file, *, size, content_type):
@@ -1972,13 +1972,13 @@ def test_player_artifact_upload_server_is_bounded_and_idempotent(monkeypatch):
         with urlopen(
             Request(
                 f"http://127.0.0.1:{port}/player-artifact/0/secret",
-                data=b"artifact",
+                data=b"new-artifact",
                 method="PUT",
                 headers={"Content-Type": "application/zip"},
             ),
             timeout=2,
         ) as response:
-            assert response.status == 204
+            assert response.status == 201
         deadline = time.monotonic() + 1
         while server.active_connections:
             assert time.monotonic() < deadline
@@ -1998,7 +1998,10 @@ def test_player_artifact_upload_server_is_bounded_and_idempotent(monkeypatch):
         server.server_close()
         thread.join()
 
-    assert uploads == [("https://s3.example/artifact", b"artifact", 8, "application/zip")]
+    assert uploads == [
+        ("https://s3.example/artifact", b"artifact", 8, "application/zip"),
+        ("https://s3.example/artifact", b"new-artifact", 12, "application/zip"),
+    ]
 
 
 def test_player_artifact_upload_server_enforces_total_header_deadline(monkeypatch):
