@@ -1,26 +1,25 @@
 ---
 name: upload-player-artifact
-description: "Use when a Coworld player needs to upload a debug artifact at episode end."
+description: "Use when a Coworld player needs to checkpoint or upload a debug artifact."
 ---
 
 # Upload Player Artifact
 
-Help a Coworld player policy upload a single debug artifact at the end of an episode, separate from
-logs, for profiling and post-hoc analysis. The runner hands each player a presigned upload URL; the
-player uploads itself.
+Help a Coworld player policy maintain one replaceable debug artifact object, separate from logs, for
+profiling and post-hoc analysis. The runner hands each player an upload destination; the player uploads itself.
 
 ## Contract
 
 The runner injects one environment variable into the player container:
 
 - `COWORLD_PLAYER_ARTIFACT_UPLOAD_URL` — where this player slot uploads its artifact.
-  - Hosted: a presigned `https://` `PUT` URL (already authorized, no auth header needed).
+  - Hosted: a slot-scoped HTTP `PUT` endpoint (already authorized, no auth header needed).
   - Local: a `file://` path into the mounted workspace.
   - Absent: the player skips uploading. Always treat this as optional.
 
 Rules the player must follow:
 
-- Upload exactly one object. There is one URL per player slot.
+- Maintain exactly one object per player slot. Each successful upload replaces its previous contents.
 - Maximum size 200 MB. Larger uploads are rejected.
 - Use HTTP `PUT` with header `Content-Type: application/zip`. No auth header (the URL is presigned).
 - For `file://` URLs, just write the bytes to that path (create parent dirs).
@@ -54,8 +53,7 @@ Keep the zip well under 200 MB. If a sampling dump is too large, downsample, com
 1. Read `COWORLD_PLAYER_ARTIFACT_UPLOAD_URL` from the environment. If it is empty or unset, skip the
    upload entirely and return.
 2. Collect debug data into one or more in-memory files while the episode runs.
-3. At episode end (after the final game message, before exiting), build a single `.zip` of those
-   files in memory.
+3. Periodically, and after the final game message, build a `.zip` of the latest files in memory.
 4. `PUT` the zip bytes to the URL with `Content-Type: application/zip`. For `file://` URLs, write
    the bytes to the path instead. Finish before the container exits.
 5. Do not raise on upload failure unless losing the artifact should fail the episode; log and move
@@ -105,7 +103,7 @@ def upload_player_artifact(files: dict[str, bytes]) -> None:
     response.raise_for_status()
 ```
 
-Call it at episode end, for example after the player receives the `final` message:
+Call it periodically for checkpointing and after the player receives the `final` message:
 
 ```python
 async for raw_message in websocket:
@@ -159,7 +157,7 @@ proc uploadPlayerArtifact(files: seq[(string, string)]) =
     payload,
     60.0'f32
   )
-  if response.code != 200:
+  if response.code < 200 or response.code >= 300:
     # A missing artifact never fails the episode; log instead of crashing.
     echo "artifact upload failed: HTTP ", response.code, " ", response.body
 ```
@@ -167,7 +165,7 @@ proc uploadPlayerArtifact(files: seq[(string, string)]) =
 ## Review checklist
 
 - The player reads `COWORLD_PLAYER_ARTIFACT_UPLOAD_URL` and skips cleanly when it is absent.
-- Exactly one `.zip` is uploaded per slot, well under 200 MB.
+- Every upload replaces the slot's one `.zip` object and stays well under 200 MB.
 - The PUT sets `Content-Type: application/zip` and no auth header.
 - `file://` URLs are handled for local runs (write bytes, create parent dirs).
 - The upload completes before the player exits / the container is torn down.

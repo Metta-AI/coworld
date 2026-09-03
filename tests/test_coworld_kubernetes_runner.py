@@ -9,6 +9,7 @@ import sys
 import threading
 import time
 import zipfile
+from concurrent.futures import ThreadPoolExecutor
 from io import BytesIO
 from pathlib import Path
 from types import SimpleNamespace
@@ -1956,33 +1957,23 @@ def test_player_artifact_upload_server_accepts_periodic_overwrites(monkeypatch):
     thread = threading.Thread(target=server.serve_forever, daemon=True)
     thread.start()
     port = server.server_address[1]
-    request = Request(
-        f"http://127.0.0.1:{port}/player-artifact/0/secret",
-        data=b"artifact",
-        method="PUT",
-        headers={"Content-Type": "application/zip"},
-    )
+    payloads = [b"artifact-1", b"artifact-2", b"artifact-3", b"artifact-4"]
     try:
-        with urlopen(request, timeout=2) as response:
-            assert response.status == 201
-        deadline = time.monotonic() + 1
-        while server.active_connections:
-            assert time.monotonic() < deadline
-            time.sleep(0.01)
-        with urlopen(
-            Request(
-                f"http://127.0.0.1:{port}/player-artifact/0/secret",
-                data=b"new-artifact",
-                method="PUT",
-                headers={"Content-Type": "application/zip"},
-            ),
-            timeout=2,
-        ) as response:
-            assert response.status == 201
-        deadline = time.monotonic() + 1
-        while server.active_connections:
-            assert time.monotonic() < deadline
-            time.sleep(0.01)
+        for payload in payloads:
+            with urlopen(
+                Request(
+                    f"http://127.0.0.1:{port}/player-artifact/0/secret",
+                    data=payload,
+                    method="PUT",
+                    headers={"Content-Type": "application/zip"},
+                ),
+                timeout=2,
+            ) as response:
+                assert response.status == 201
+            deadline = time.monotonic() + 1
+            while server.active_connections:
+                assert time.monotonic() < deadline
+                time.sleep(0.01)
         with pytest.raises(HTTPError) as error:
             urlopen(
                 Request(
@@ -1999,9 +1990,51 @@ def test_player_artifact_upload_server_accepts_periodic_overwrites(monkeypatch):
         thread.join()
 
     assert uploads == [
-        ("https://s3.example/artifact", b"artifact", 8, "application/zip"),
-        ("https://s3.example/artifact", b"new-artifact", 12, "application/zip"),
+        ("https://s3.example/artifact", payload, len(payload), "application/zip") for payload in payloads
     ]
+
+
+def test_player_artifact_upload_server_allows_one_connection_per_player(monkeypatch):
+    player_count = 8
+    uploads_started = threading.Barrier(player_count)
+
+    def upload_file(_uri, _file, *, size, content_type):
+        assert size == 8
+        assert content_type == "application/zip"
+        uploads_started.wait(timeout=5)
+
+    monkeypatch.setattr(kubernetes_runner, "PLAYER_ARTIFACT_PORT", 0)
+    monkeypatch.setattr(kubernetes_runner, "_PLAYER_ARTIFACT_MAX_CONNECTIONS_PER_SOURCE", player_count)
+    monkeypatch.setattr(kubernetes_runner, "upload_file", upload_file)
+    server = kubernetes_runner._PlayerArtifactUploadServer(
+        {slot: f"https://s3.example/artifact-{slot}" for slot in range(player_count)},
+        [f"secret-{slot}" for slot in range(player_count)],
+    )
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    port = server.server_address[1]
+
+    def upload(slot: int) -> int:
+        with urlopen(
+            Request(
+                f"http://127.0.0.1:{port}/player-artifact/{slot}/secret-{slot}",
+                data=b"artifact",
+                method="PUT",
+                headers={"Content-Type": "application/zip"},
+            ),
+            timeout=10,
+        ) as response:
+            return response.status
+
+    try:
+        with ThreadPoolExecutor(max_workers=player_count) as pool:
+            statuses = list(pool.map(upload, range(player_count)))
+    finally:
+        server.shutdown()
+        server.server_close()
+        thread.join()
+
+    assert statuses == [201] * player_count
 
 
 def test_player_artifact_upload_server_enforces_total_header_deadline(monkeypatch):

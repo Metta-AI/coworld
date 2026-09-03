@@ -40,12 +40,12 @@ The player runnable is a short-lived container started by the episode runner onc
   slot/token pair; a player must not attempt to control other slots.
 - Exit cleanly when the episode ends.
 
-A player may also, optionally, upload a single artifact at episode end:
+A player may also upload an optional artifact during the episode and at episode end:
 
-- Read `COWORLD_PLAYER_ARTIFACT_UPLOAD_URL` from the environment. When present, it is a destination the player may upload
-  one file to (a presigned `PUT` URL hosted, a `file://` path locally). When absent, the player simply skips uploading.
-- Upload at most one `.zip` (max 200 MB). The player may bundle whatever debug data it wants inside (parquet, sqlite,
-  csv, json, trace files); the platform stores and serves the bytes as-is.
+- Read `COWORLD_PLAYER_ARTIFACT_UPLOAD_URL` from the environment. When present, it identifies one object for the player
+  slot (an HTTP `PUT` endpoint hosted, a `file://` path locally). When absent, the player skips uploading.
+- Upload a `.zip` of at most 200 MB. Each successful upload replaces the slot's prior object, so players may retain
+  newer checkpoints during the episode. The platform stores and serves the bytes as-is.
 - Upload before the container is torn down. The player may upload at any time, but once the game finishes the container
   stays alive only for a bounded teardown window; an upload that does not finish before teardown is lost. The platform
   does not block teardown waiting for an upload, and a missing artifact never fails an otherwise successful
@@ -136,9 +136,9 @@ Player runnables produce diagnostic [player logs](../artifacts/PLAYER_LOGS.md) t
 available, optional `COGAME_LOG_URI` posting. Container output is diagnostic only — the source of truth for episode
 success is the game's results and replay artifacts, not player logs.
 
-A player may also upload a [player artifact](../artifacts/PLAYER_ARTIFACT.md): a single `.zip` (max 200 MB) it
-writes to `COWORLD_PLAYER_ARTIFACT_UPLOAD_URL` for post-hoc profiling and analysis, separate from logs. This is the only
-file a player authors directly; it never modifies the game-owned results or replay artifacts.
+A player may also upload a [player artifact](../artifacts/PLAYER_ARTIFACT.md): one replaceable `.zip` object (max 200
+MB) at `COWORLD_PLAYER_ARTIFACT_UPLOAD_URL` for post-hoc profiling and analysis, separate from logs. This is the only
+object a player authors directly; it never modifies the game-owned results or replay artifacts.
 
 The player does not receive or assemble an episode bundle. Its actions are represented in the
 [replay artifact](../artifacts/REPLAY.md), its container logs may be included as
@@ -160,6 +160,7 @@ game's output artifacts after the episode. Players' per-slot actions plus the ga
 - [`BEDROCK.md`](../BEDROCK.md) — hosted Bedrock upload contract and robustness to shared-quota throttling.
 - [`artifacts/EPISODE_BUNDLE.md`](../artifacts/EPISODE_BUNDLE.md) — how player-related artifacts can be bundled.
 - [`artifacts/PLAYER_LOGS.md`](../artifacts/PLAYER_LOGS.md) — diagnostic logs produced by player containers.
-- [`artifacts/PLAYER_ARTIFACT.md`](../artifacts/PLAYER_ARTIFACT.md) — optional artifact a player uploads at episode end.
+- [`artifacts/PLAYER_ARTIFACT.md`](../artifacts/PLAYER_ARTIFACT.md) — optional artifact a player may checkpoint and
+  upload at episode end.
 - [`artifacts/REPLAY.md`](../artifacts/REPLAY.md) — replay artifact containing player actions and game state.
 - [`README.md`](../README.md) — full artifact flow.

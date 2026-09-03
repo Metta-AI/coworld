@@ -122,7 +122,7 @@ class EpisodeArtifacts:
         return self.logs_dir / f"policy_agent_{slot}.log"
 
     def policy_artifact_path(self, slot: int) -> Path:
-        """Per-player artifact (single .zip) the player uploads at episode end.
+        """Per-player artifact object the player may replace with a newer .zip.
 
         Lives in the workspace root (not logs/) since it is a separate artifact from logs.
         """

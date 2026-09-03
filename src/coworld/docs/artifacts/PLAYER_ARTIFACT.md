@@ -1,6 +1,6 @@
 # Player Artifact
 
-A **player artifact** is an optional file a player uploads at the end of an episode to save debug data —
+A **player artifact** is an optional file a player uploads during or at the end of an episode to save debug data —
 separate from [player logs](PLAYER_LOGS.md). It is intended for profiling and post-hoc analysis where stdout/stderr
 logs are too large or too unstructured (logs routinely grow to gigabytes).
 

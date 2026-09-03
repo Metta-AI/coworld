@@ -245,10 +245,10 @@ Outputs:
 - `POLICY_LOG_URLS`: JSON object mapping each player slot to a destination URI. Each player log is uploaded from
   `policy_agent_{slot}.log` and contains that player container's combined stdout and stderr. Player logs are also
   included in `DEBUG_URI`'s zip; `POLICY_LOG_URLS` exposes them individually for per-player consumption.
-- `PLAYER_ARTIFACT_UPLOAD_URLS`: JSON object mapping each player slot to a presigned `PUT` URL. Unlike the other
-  outputs, the coordinator does **not** upload these itself — it forwards each slot's URL into the player pod as
-  `COWORLD_PLAYER_ARTIFACT_UPLOAD_URL`, and the player uploads its own single artifact `.zip` (max 200 MB) before its
-  pod is torn down. See [player artifact](../docs/artifacts/PLAYER_ARTIFACT.md).
+- `PLAYER_ARTIFACT_UPLOAD_URLS`: JSON object mapping each player slot to a presigned `PUT` target. Unlike the other
+  outputs, the coordinator exposes each target through the slot-scoped `COWORLD_PLAYER_ARTIFACT_UPLOAD_URL`. Each
+  successful `.zip` upload (max 200 MB) replaces that slot's prior object. See
+  [player artifact](../docs/artifacts/PLAYER_ARTIFACT.md).
 
 Per-player logs are diagnostic only. After the game has produced valid results, the coordinator reads the last 10,000
 combined stdout/stderr lines from player pods whose `player` container has started and skips pods whose container is

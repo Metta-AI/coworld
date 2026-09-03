@@ -126,6 +126,7 @@ filegroup(
     srcs = [
         "COOKBOOK.md",
         "README.md",
+        "agents/coworlds-expert-agent/skills/upload-player-artifact/SKILL.md",
     ] + glob(["src/coworld/docs/**/*.md"]),
     visibility = ["//packages/coworld/tests:__pkg__"],
 )

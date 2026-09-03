@@ -60,5 +60,5 @@ project's `.claude/skills/` directory to use it:
 cp -r skills/upload-player-artifact /path/to/your-coworld/.claude/skills/
 ```
 
-- `upload-player-artifact` — how a player uploads a single debug artifact at episode end via
+- `upload-player-artifact` — how a player checkpoints one replaceable debug artifact object via
   `COWORLD_PLAYER_ARTIFACT_UPLOAD_URL` (zip guidance, 200 MB cap, Python and Nim upload examples).

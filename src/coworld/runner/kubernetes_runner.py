@@ -89,7 +89,6 @@ _ARTIFACT_POLL_SECONDS = 1.0
 _PLAYER_ARTIFACT_MAX_BYTES = 200 * 1024 * 1024
 _PLAYER_ARTIFACT_HEADER_DEADLINE_SECONDS = 5.0
 _PLAYER_ARTIFACT_BODY_DEADLINE_SECONDS = 60.0
-_PLAYER_ARTIFACT_MAX_CONNECTIONS = 4
 _PLAYER_ARTIFACT_MAX_CONNECTIONS_PER_SOURCE = 1
 _BEDROCK_SERVICE_ACCOUNT = "episode-runner"
 _KUBERNETES_API_SERVICE_HOST = "kubernetes.default.svc"
@@ -178,6 +177,7 @@ class _PlayerArtifactUploadServer(socketserver.ThreadingMixIn, http.server.HTTPS
         super().__init__(("0.0.0.0", PLAYER_ARTIFACT_PORT), _PlayerArtifactUploadHandler)
         self.targets = targets
         self.tokens = tokens
+        self.max_connections = len(targets)
         self.inflight_slots: set[int] = set()
         self.active_by_source: Counter[str] = Counter()
         self.active_connections = 0
@@ -186,7 +186,7 @@ class _PlayerArtifactUploadServer(socketserver.ThreadingMixIn, http.server.HTTPS
     def process_request(self, request: Any, client_address: tuple[str, int]) -> None:
         source = client_address[0]
         with self.state_lock:
-            if self.active_connections >= _PLAYER_ARTIFACT_MAX_CONNECTIONS:
+            if self.active_connections >= self.max_connections:
                 request.close()
                 return
             if self.active_by_source[source] >= _PLAYER_ARTIFACT_MAX_CONNECTIONS_PER_SOURCE:
