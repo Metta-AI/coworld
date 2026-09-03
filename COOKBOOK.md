@@ -913,8 +913,7 @@ POST /v2/experience-requests/xreq_.../cancel
 `GET /v2/experience-requests` lists visible XP-request history; it is not a search endpoint. For an ordinary user, that
 means requests they created plus system-created requests involving policies owned by one of their players. A player
 credential sees requests involving that player. The route does not reveal unrelated users' XP requests. To discover
-recorded episodes that do not involve one of your policies, use `POST /v2/episodes/search`, which searches the shared
-episode corpus.
+recorded episodes across every Coworld version attached to a known Game, use `GET /v2/games/{game_id}/episodes`.
 
 ### Cancelling a request
 
