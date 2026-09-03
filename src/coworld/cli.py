@@ -68,7 +68,10 @@ from coworld.upload import (
     upload_coworld_cmd,
     upload_policy_cmd,
 )
-from softmax.players import player_app
+from softmax import auth as softmax_auth
+from softmax.players import list_players, player_app
+
+_DEFAULT_POLICY_NAME_MAX_LENGTH = 64
 
 app = typer.Typer(no_args_is_help=True, pretty_exceptions_enable=False)
 register_tournament_commands(app)
@@ -1040,7 +1043,14 @@ def download(
 @app.command("upload-policy", cls=_DockerCommand)
 def upload_policy(
     image: Annotated[str, typer.Argument(help="Local Docker image to upload as a CoWorld policy.")],
-    name: Annotated[str, typer.Option("--name", "-n", help="Policy name.")],
+    name: Annotated[
+        str | None,
+        typer.Option(
+            "--name",
+            "-n",
+            help="Policy name override. Defaults to a unique name derived from the active or default player.",
+        ),
+    ] = None,
     run: Annotated[
         list[str] | None,
         typer.Option("--run", help="Command argv for images that contain multiple Coworld roles."),
@@ -1091,6 +1101,25 @@ def upload_policy(
         for kv in tag:
             key, val = _parse_secret_env(kv)
             parsed_tags[key] = val
+
+    if name is None:
+        user_token = softmax_auth.load_user_token(server=server)
+        if user_token is None:
+            raise RuntimeError(f"Not authenticated. Run: softmax login --server {server}")
+        players = list_players(server=server, token=user_token)
+        active_player_id = (
+            softmax_auth.get_active_player_id(server=server)
+            if softmax_auth.load_player_session(server=server) is not None
+            else None
+        )
+        player = (
+            next(player for player in players if player.is_default)
+            if active_player_id is None
+            else next(player for player in players if player.id == active_player_id)
+        )
+        player_name = player.name.replace(":", "-")[: _DEFAULT_POLICY_NAME_MAX_LENGTH - len(player.id) - 1]
+        name = f"{player_name}-{player.id}"
+    typer.echo(f"Policy name: {name}")
 
     upload_policy_cmd(
         image,

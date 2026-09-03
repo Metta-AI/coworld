@@ -29,7 +29,7 @@ def _resolve_policy_version(client: CoworldApiClient, policy_identifier: str) ->
     if policy_version is None:
         version_hint = f":v{version}" if version is not None else ""
         console.print(f"[red]Policy '{name}{version_hint}' not found.[/red]")
-        console.print("[dim]Upload a Coworld policy first with: uv run coworld upload-policy IMAGE --name NAME[/dim]")
+        console.print("[dim]Upload a Coworld policy first with: uv run coworld upload-policy IMAGE[/dim]")
         raise typer.Exit(1)
     return policy_version
 

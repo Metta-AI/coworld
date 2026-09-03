@@ -6,6 +6,7 @@ import re
 import subprocess
 import tarfile
 import zipfile
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import cast
 
@@ -16,7 +17,7 @@ from pytest_httpserver import HTTPServer
 from typer.testing import CliRunner
 from werkzeug import Response
 
-from coworld.cli import app
+from coworld.cli import _DEFAULT_POLICY_NAME_MAX_LENGTH, app
 from coworld.config import NEXT_CURSOR_HEADER
 from coworld.upload import (
     _PACKAGE_ROOT,
@@ -50,6 +51,7 @@ from coworld.upload import (
     _submit_wasm_reporters,
     upload_coworld,
 )
+from softmax.players import PlayerResponse
 
 
 @pytest.fixture(autouse=True)
@@ -1424,7 +1426,78 @@ def test_upload_policy_command_creates_docker_image_policy(
     )
 
     assert result.exit_code == 0, result.output
+    assert "Policy name: paintbot" in result.output
     assert "Upload complete: paintbot:v1" in result.output
+
+
+@pytest.mark.parametrize(
+    ("player_session", "active_player_id", "expected_name"),
+    [
+        ("player-token", "ply_active", "Tournament Player-ply_active"),
+        (None, None, "Account Default-ply_default"),
+    ],
+)
+def test_upload_policy_command_defaults_name_from_authenticated_identity(
+    monkeypatch: pytest.MonkeyPatch,
+    player_session: str | None,
+    active_player_id: str | None,
+    expected_name: str,
+) -> None:
+    uploaded_names: list[str] = []
+    monkeypatch.setattr("softmax.auth.load_user_token", lambda *, server: "user-token")
+    monkeypatch.setattr("softmax.auth.load_player_session", lambda *, server: player_session)
+    monkeypatch.setattr("softmax.auth.get_active_player_id", lambda *, server: active_player_id)
+    monkeypatch.setattr(
+        "coworld.cli.list_players",
+        lambda *, server, token: [
+            PlayerResponse(
+                id="ply_default",
+                name="Account Default",
+                is_default=True,
+                created_at=datetime(2026, 1, 1, tzinfo=UTC),
+            ),
+            PlayerResponse(
+                id="ply_active",
+                name="Tournament Player",
+                created_at=datetime(2026, 1, 2, tzinfo=UTC),
+            ),
+        ],
+    )
+    monkeypatch.setattr(
+        "coworld.cli.upload_policy_cmd",
+        lambda image, name, **kwargs: uploaded_names.append(name),
+    )
+
+    result = CliRunner().invoke(app, ["upload-policy", "unit-test-policy:latest"])
+
+    assert result.exit_code == 0, result.output
+    assert uploaded_names == [expected_name]
+    assert f"Policy name: {expected_name}" in result.output
+
+
+def test_upload_policy_command_default_name_satisfies_policy_contract(monkeypatch: pytest.MonkeyPatch) -> None:
+    player_id = "ply_00000000-0000-0000-0000-000000000001"
+    uploaded_names: list[str] = []
+    monkeypatch.setattr("softmax.auth.load_player_session", lambda *, server: "player-token")
+    monkeypatch.setattr("softmax.auth.get_active_player_id", lambda *, server: player_id)
+    monkeypatch.setattr(
+        "coworld.cli.list_players",
+        lambda *, server, token: [
+            PlayerResponse(
+                id=player_id,
+                name="Tournament: Player Name That Exceeds The Policy Name Limit",
+                created_at=datetime(2026, 1, 1, tzinfo=UTC),
+            )
+        ],
+    )
+    monkeypatch.setattr("coworld.cli.upload_policy_cmd", lambda image, name, **kwargs: uploaded_names.append(name))
+
+    result = CliRunner().invoke(app, ["upload-policy", "unit-test-policy:latest"])
+
+    assert result.exit_code == 0, result.output
+    assert uploaded_names[0].endswith(f"-{player_id}")
+    assert len(uploaded_names[0]) == _DEFAULT_POLICY_NAME_MAX_LENGTH
+    assert ":" not in uploaded_names[0]
 
 
 def test_upload_policy_command_sends_policy_secrets(

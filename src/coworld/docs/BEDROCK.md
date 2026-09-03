@@ -109,11 +109,15 @@ When debugging, **log the response body, not just the status code** — the Bedr
 Bedrock is opt-in per submitted policy, set by upload flags — it is not inferred from your image:
 
 ```bash
-uv run coworld upload-policy my-player:latest --name "$USER-my-player" \
+uv run coworld upload-policy my-player:latest \
   --run python --run -m --run my_player.module \
   --use-bedrock \
   --bedrock-model us.anthropic.claude-haiku-4-5-20251001-v1:0
 ```
+
+The policy name is derived from the active Softmax player's name and ID, making it globally unique. Without an active
+player session, it uses the account's default player. Pass `--name` to override the default or upload another version
+of an existing named policy.
 
 - `--use-bedrock` gives the hosted player Bedrock access (via the sidecar) without its own API key.
 - `--bedrock-model MODEL` sets `BEDROCK_MODEL`. Your player must read its model from `BEDROCK_MODEL` — do not hardcode a
