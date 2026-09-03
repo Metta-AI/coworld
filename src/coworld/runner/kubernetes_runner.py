@@ -768,7 +768,7 @@ def _create_player_pod(
         player_env = player_env | {"USE_BEDROCK": "true"} | endpoint_env
     elif uses_bedrock:
         bedrock_region = os.environ["COWORLD_BEDROCK_REGION"]
-        player_env = {"AWS_REGION": bedrock_region, "AWS_DEFAULT_REGION": bedrock_region} | player_env
+        player_env = player_env | {"AWS_REGION": bedrock_region, "AWS_DEFAULT_REGION": bedrock_region}
     player_ws_url = _player_service_ws_url(service_name, slot, token)
     player_artifact_upload_url = _player_artifact_upload_url(slot, service_name, token)
     artifact_env_vars = (
