@@ -2282,6 +2282,9 @@ def test_push_archive_to_registry_reuses_layers_and_preserves_oci_manifest(https
     httpserver.expect_request(f"/v2/repo/test/blobs/{new_layer_digest}", method="HEAD").respond_with_data(
         "", status=404
     )
+    httpserver.expect_request(f"/v2/repo/test/blobs/{_sha256_digest(config)}", method="HEAD").respond_with_data(
+        "", status=404
+    )
 
     # Only the missing layer is uploaded.
     httpserver.expect_request("/v2/repo/test/blobs/uploads/", method="POST").respond_with_data(
@@ -2312,6 +2315,23 @@ def test_push_archive_to_registry_reuses_layers_and_preserves_oci_manifest(https
 
     manifest_req = next(req for req, _ in httpserver.log if "/manifests/" in req.path)
     assert json.loads(manifest_req.data) == json.loads(blobs[_oci_blob_name(manifest_descriptor["digest"])])
+
+
+def test_push_archive_to_registry_reuses_blobs_missing_from_sparse_archive(httpserver: HTTPServer) -> None:
+    config = b'{"architecture":"amd64","os":"linux"}'
+    layer = b"existing-layer-content"
+    manifest_descriptor, blobs = _oci_image(config=config, layers=[layer])
+    manifest_name = _oci_blob_name(manifest_descriptor["digest"])
+    archive_bytes = _oci_archive(_oci_index([manifest_descriptor]), {manifest_name: blobs[manifest_name]})
+
+    layer_digest = _sha256_digest(layer)
+    config_digest = _sha256_digest(config)
+    httpserver.expect_request(f"/v2/repo/test/blobs/{layer_digest}", method="HEAD").respond_with_data("", status=200)
+    httpserver.expect_request(f"/v2/repo/test/blobs/{config_digest}", method="HEAD").respond_with_data("", status=200)
+    httpserver.expect_request("/v2/repo/test/manifests/v1", method="PUT").respond_with_data("", status=201)
+
+    base_url = httpserver.url_for("/v2/repo/test")
+    _push_archive_to_registry(io.BytesIO(archive_bytes), base_url, "v1", "dGVzdDp0ZXN0")
 
 
 @pytest.mark.parametrize("nested_index", [False, True], ids=["direct-index", "nested-index"])

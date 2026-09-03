@@ -1985,11 +1985,6 @@ def _push_archive_to_registry(archive: Any, base_url: str, tag: str, auth_header
         manifest_bytes, manifest = _select_oci_image_manifest(tar, index)
 
         for descriptor in manifest.layers:
-            layer_name = _archive_blob_name(descriptor.digest)
-            layer = tar.getmember(layer_name)
-            if layer.size != descriptor.size:
-                raise RuntimeError(f"Docker archive layer size does not match {descriptor.digest}")
-
             resp = client.head(f"{base_url}/blobs/{descriptor.digest}", headers=headers)
             if resp.status_code == 200:
                 _logger.info("Reused layer %s (%d bytes)", descriptor.digest, descriptor.size)
@@ -1997,6 +1992,10 @@ def _push_archive_to_registry(archive: Any, base_url: str, tag: str, auth_header
             if resp.status_code != 404:
                 resp.raise_for_status()
 
+            layer_name = _archive_blob_name(descriptor.digest)
+            layer = tar.getmember(layer_name)
+            if layer.size != descriptor.size:
+                raise RuntimeError(f"Docker archive layer size does not match {descriptor.digest}")
             layer_file = tar.extractfile(layer)
             if layer_file is None:
                 raise RuntimeError(f"Docker image archive is missing {layer_name}")
@@ -2010,14 +2009,23 @@ def _push_archive_to_registry(archive: Any, base_url: str, tag: str, auth_header
             )
             _logger.info("Pushed layer %s (%d bytes)", descriptor.digest, descriptor.size)
 
-        config_file = tar.extractfile(_archive_blob_name(manifest.config.digest))
-        if config_file is None:
-            raise RuntimeError(f"Docker image archive is missing config {manifest.config.digest}")
-        config_bytes = config_file.read()
-        config_descriptor = _push_blob(client, base_url, headers, config_bytes, manifest.config.media_type)
-        if config_descriptor["digest"] != manifest.config.digest or config_descriptor["size"] != manifest.config.size:
-            raise RuntimeError(f"Docker image archive config does not match {manifest.config.digest}")
-        _logger.info("Pushed config %s", manifest.config.digest)
+        resp = client.head(f"{base_url}/blobs/{manifest.config.digest}", headers=headers)
+        if resp.status_code == 200:
+            _logger.info("Reused config %s", manifest.config.digest)
+        elif resp.status_code == 404:
+            config_file = tar.extractfile(_archive_blob_name(manifest.config.digest))
+            if config_file is None:
+                raise RuntimeError(f"Docker image archive is missing config {manifest.config.digest}")
+            config_bytes = config_file.read()
+            config_descriptor = _push_blob(client, base_url, headers, config_bytes, manifest.config.media_type)
+            if (
+                config_descriptor["digest"] != manifest.config.digest
+                or config_descriptor["size"] != manifest.config.size
+            ):
+                raise RuntimeError(f"Docker image archive config does not match {manifest.config.digest}")
+            _logger.info("Pushed config %s", manifest.config.digest)
+        else:
+            resp.raise_for_status()
 
         # PUT the manifest directly — no HEAD pre-check (which is what breaks docker push + ECR).
         resp = client.put(
