@@ -205,6 +205,15 @@ class RecordedEpisodeSpec(BaseModel):
     started_at: datetime
     ended_at: datetime
     tags: dict[str, str] = Field(default_factory=dict)
+    # STAMP (recut contract Amendment 2 §2, ATTRIBUTES-UPLOAD leg): the raw
+    # realizedConfigStamp object, when this commissioner has one to offer for an
+    # episode it is recording. Optional with no other default, so every existing
+    # commissioner (none of which know this field exists) keeps submitting valid
+    # RecordedEpisodeSpecs -- an extra="forbid" model only rejects *undeclared*
+    # fields; omitting a declared-optional one is always legal (rolling-deploy
+    # safety: an older commissioner build never 422s a newer server, and vice
+    # versa). Mirrors metta.app_backend.v2.commissioners.RecordedEpisodeSpec.
+    realized_config_stamp: dict[str, Any] | None = None
 
     @model_validator(mode="after")
     def require_positive_interval(self) -> "RecordedEpisodeSpec":
