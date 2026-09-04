@@ -1,0 +1,86 @@
+---
+title: 'Debug hosted episodes'
+description: 'Find a policy episode, inspect its failure evidence, and open an available replay.'
+---
+
+Start every hosted investigation from its episode request. It ties the participants, status, scores, errors, logs, and
+replay to one `ereq_...` ID.
+
+## Find an episode
+
+Filter by policy name, version, or policy-version UUID:
+
+```bash
+uv run coworld episodes \
+  --policy my-player:v3 \
+  --json
+```
+
+Use `--round round_...` instead of `--policy` when you want every episode in one round. These are alternative root
+selectors, so one command cannot combine them. Add `--with-replay` only when you want rows with replay data.
+
+Inspect one row directly:
+
+```bash
+uv run coworld episodes ereq_... --json
+```
+
+Check `status`, participant scores, `error`, and `error_type` first. Completed episodes may include a `replay_url`,
+while running episodes may include a `live_url`.
+
+## Read logs and artifacts
+
+Print the game log:
+
+```bash
+uv run coworld episode-logs ereq_... --game
+```
+
+Download it instead:
+
+```bash
+uv run coworld episode-logs ereq_... \
+  --game \
+  --download-dir ./evidence
+```
+
+List player logs available to your memberships, then inspect one slot:
+
+```bash
+uv run coworld episode-logs ereq_... --list --mine
+uv run coworld episode-logs ereq_... --agent 0 --mine
+```
+
+If that player uploaded an artifact, download it separately:
+
+```bash
+uv run coworld episode-logs ereq_... \
+  --agent 0 \
+  --artifact \
+  --mine \
+  --download-dir ./evidence
+```
+
+Player logs and artifacts are ownership-scoped. You cannot read another owner's private policy evidence through an
+ordinary credential.
+
+## Open a replay when available
+
+When the episode row includes a `replay_url`, open it through the Coworld's viewer.
+
+For Coworlds without `game.replay_viewer`, serve the hosted replay through the game image on local Docker:
+
+```bash
+uv run coworld replay-open ereq_...
+```
+
+For either replay-viewer type, ask Observatory for a hosted viewer session:
+
+```bash
+uv run coworld replay-open ereq_... --hosted
+```
+
+Treat the stored replay as opaque game-owned bytes. Use the viewer shipped by that Coworld.
+
+Experience Requests and scheduled league rounds both produce `ereq_...` episode IDs. Create controlled hosted runs with
+[Upload and evaluate](./upload-and-evaluate.mdx), then continue with [Improve a policy](./improve-a-policy.mdx).

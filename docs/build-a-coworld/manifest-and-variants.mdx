@@ -1,0 +1,148 @@
+---
+title: 'Write the manifest'
+description: 'Describe the Coworld package, its runtime schemas, variants, documentation, and certification fixture.'
+---
+
+`coworld_manifest.json` is the package map. It tells Coworld tooling what to run, what the game accepts, which variants
+exist, and which episode proves the package works.
+
+Start from the
+[Paint Arena template](https://github.com/Metta-AI/coworld/blob/main/src/coworld/examples/paintarena/coworld_manifest_template.json).
+Keep the generated
+[manifest schema](https://github.com/Metta-AI/coworld/blob/main/src/coworld/coworld_manifest_schema.json) open while
+you edit.
+
+<Note>
+  The generated JSON Schema is the field-level source of truth. This guide explains authoring decisions and does not
+  reproduce every property.
+</Note>
+
+## Declare the live roles first
+
+Every manifest requires one game and at least one bundled player.
+
+- `game` describes the game, its runnable, schemas, protocols, documentation, and optional replay viewer.
+- `player` contains the bundled clients used for examples, local play, and certification.
+- `reporter`, `grader`, `diagnoser`, and `optimizer` are optional supporting roles.
+
+For new Softmax Coworlds, omit commissioner runnables. Softmax leagues use the platform ladder instead of starting a
+commissioner container.
+
+Only declare supporting roles that have a concrete use and working implementation. Their exact behavior belongs in
+the [role contracts](https://github.com/Metta-AI/coworld/tree/main/src/coworld/docs/roles).
+
+## Describe the runtime config
+
+`game.config_schema` validates the config the game reads at startup. It must require a `tokens` array of strings.
+
+Set `minItems` and `maxItems` on that array to the game's supported seat bounds. Tokens authenticate player slots; they
+do not choose the scheduled roster size.
+
+Do not place token values in author-owned configs:
+
+- `variants[].game_config` omits `tokens`.
+- `certification.game_config` omits `tokens`.
+
+The runner adds fresh tokens after it knows the episode roster.
+
+If the game displays player names, declare a `players` array whose items require a string `name`. Hosted dispatch can
+then replace placeholder names with the resolved player names.
+
+Keep game-specific seat mechanics in game-specific fields. For example, role, team, color, or spawn data can live in a
+`slots` structure owned by your game.
+
+## Describe successful results
+
+`game.results_schema` validates the JSON object written when an episode completes successfully. It must include a
+numeric `scores` array with one value per player slot.
+
+Add fields that help people explain those scores. Painted tiles, objectives completed, or team outcomes may be useful,
+depending on the game.
+
+The schema should reject incomplete results. Diagnostic logs are not a substitute for structured episode truth.
+
+## Link the protocols and game docs
+
+The manifest stores inline text or public HTTP(S) references. A referenced document must remain available after upload.
+
+Provide:
+
+- `game.protocols.player` for the exact observation and action exchange;
+- `game.protocols.global` for the spectator stream; and
+- `game.docs.readme` for rules, setup, strategy, and game-specific guidance.
+
+Use `game.docs.pages` for optional longer material. Keep Softmax login, policy upload, league submission, and replay
+retrieval in the platform guides instead of repeating them in each game repository.
+
+## Create useful variants
+
+A variant is a named, token-free game configuration. Declare at least one.
+
+Use variants for supported ways to run the same game image, such as:
+
+- different seat counts within the schema bounds;
+- shorter or longer episodes;
+- alternate maps or rule toggles; or
+- fixed scenarios used for comparisons.
+
+The default competitive variant should usually omit a fixed seed. This gives episodes fresh initial states. Add seeded
+variants when reproducibility is the purpose.
+
+Do not use variants to bypass the config schema. Each variant must remain a valid config after the runner injects its
+tokens.
+
+## Make certification small and complete
+
+The `certification` fixture is the token-free config and bundled-player roster used by `coworld certify` and default
+local episode runs.
+
+It should:
+
+- finish quickly enough to run during every authoring loop;
+- exercise the real player protocol and game completion path;
+- include every declared bundled player at least once;
+- produce valid results and replay data; and
+- remain deterministic enough to debug.
+
+Certification is a package smoke test, not a gameplay benchmark. A weak baseline score can still certify if the
+episode and contracts are healthy.
+
+## Keep the template buildable
+
+Author `coworld_manifest_template.json` with image placeholders. A Compose service named `my-game` maps to the
+placeholder `{{MY_GAME_IMAGE}}`.
+
+Do not set `game.version` in the template. `coworld build --version` stamps the release version into the hydrated
+manifest.
+
+It is common for one image to implement several runnables with different commands. Pin Compose services to
+`linux/amd64`, which matches the hosted runners.
+
+When you add `source_url`, point it at the public source for that runnable. Prefer a commit SHA over a branch. Source
+metadata helps people inspect provenance, but the runtime executes the recorded image and command.
+
+## Treat manifest environment as public
+
+Uploaded manifests and bundled images are visible to users. Do not put raw credentials in runnable `env`.
+
+For game-container secrets needed during hosted episodes, upload the value with `coworld secret put` and use a
+`secret://coworld/...` reference. Local runs must override that reference with a local value they can read.
+
+See the
+[manifest secret contract](https://github.com/Metta-AI/coworld/blob/main/src/coworld/docs/COWORLD_MANIFEST.md#hosted-episode-game-secrets)
+before adding a secret reference.
+
+## Review before building
+
+- [ ] `game` and at least one bundled `player` are declared.
+- [ ] `tokens` is required and has correct seat bounds.
+- [ ] Author-owned configs omit token values.
+- [ ] Results require one numeric score per slot.
+- [ ] Player and global protocols point to durable public documents.
+- [ ] The game README explains rules and strategy.
+- [ ] At least one valid variant exists.
+- [ ] Certification seats every declared bundled player.
+- [ ] Images build for `linux/amd64`.
+- [ ] Public environment values contain no secrets.
+
+Next, [build, certify, and upload the package](./build-certify-upload.mdx).

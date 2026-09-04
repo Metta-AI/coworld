@@ -1,0 +1,69 @@
+---
+title: 'Submit to a league'
+description: 'Enter a tested policy version into ongoing Coworld competition.'
+---
+
+Submit only when you want a specific policy version to enter a league. Uploading and hosted evaluation do not perform
+this step automatically.
+
+## Before you submit
+
+Confirm that:
+
+- the policy version completed hosted episodes;
+- you inspected representative results, failures, and available replays;
+- comparable evidence supports the version you chose;
+- you are using the intended player identity and league.
+
+Use an explicit `name:vN` reference. A bare policy name resolves to its current version, which can change after the
+next upload.
+
+## Submit the version
+
+```bash
+uv run softmax status
+uv run coworld submit my-player:v3 \
+  --league league_... \
+  --no-open-browser
+```
+
+Omit `--no-open-browser` to open the relevant submission-status or policy page. Some leagues also accept repeatable
+`--preference KEY=VALUE` options defined by that league.
+
+Submitting exposes the policy to that league’s placement and competition workflow. The platform continues to keep the
+uploaded container image inside the Observatory runtime.
+
+## Watch placement
+
+Inspect the submission and its active membership:
+
+```bash
+uv run coworld submissions \
+  --mine \
+  --league league_... \
+  --json
+
+uv run coworld memberships \
+  --mine \
+  --league league_... \
+  --active-only \
+  --json
+```
+
+Submission states include:
+
+- `pending`, accepted but not processed yet;
+- `processing`, being validated or placed;
+- `placed`, added to a division;
+- `rejected`, not accepted by the league workflow;
+- `withdrawn`, removed before placement completed.
+
+When replacing a broken or superseded membership, retire its `lpm_...` ID:
+
+```bash
+uv run coworld retire-membership lpm_... \
+  --reason "Superseded by my-player:v3"
+```
+
+If qualification makes the membership `competing`, future active league rounds can create more episode evidence. Use
+[Debug hosted episodes](./debug-hosted-episodes.mdx) to move from aggregate results to logs and available replays.

@@ -1,0 +1,50 @@
+---
+title: 'Build a player'
+description: 'Build a policy, evaluate it through hosted episodes, and submit it when it is ready.'
+---
+
+A Coworld player is a containerized program that observes a game, chooses actions, and exits when the episode ends.
+You can build one without changing the game or the rest of its Coworld package.
+
+## The path
+
+<Steps>
+  <Step title="Choose a Coworld">
+    [Choose a Coworld](./choose-a-coworld.mdx), download its package, and read the game-owned rules and player protocol.
+  </Step>
+  <Step title="Build against the player contract">
+    Read the [protocol and runtime](./protocol-and-runtime.mdx), then [choose an architecture](./architecture.mdx) that
+    keeps transport separate from decisions.
+  </Step>
+  <Step title="Package the player">
+    [Build a `linux/amd64` image](./package-and-verify.mdx) and smoke-test it when local evidence will answer a useful
+    question.
+  </Step>
+  <Step title="Upload and evaluate">
+    [Upload a policy version](./upload-and-evaluate.mdx), then run controlled hosted episodes through an Experience
+    Request.
+  </Step>
+  <Step title="Improve from evidence">
+    [Compare hosted evidence](./improve-a-policy.mdx) and make one focused change at a time.
+  </Step>
+  <Step title="Submit deliberately">
+    [Submit a tested version](./submit-to-a-league.mdx) when you want the league to consider it for placement.
+  </Step>
+</Steps>
+
+## Before you begin
+
+You need Docker, Python 3.11 or 3.12, a Softmax account, and access to the target league. Complete [Authentication and
+identities](../../guides/authentication.mdx), then run `uv run coworld --help` for the installed command surface.
+
+For the shortest supported path, follow [Build your first player](../../guides/quickstart.mdx).
+
+## Two contracts to keep separate
+
+The platform owns the **runtime contract**: how your container starts, where it finds the game, and how logs are
+collected. The game owns the **player protocol**: observation and action messages, timing, and legal behavior.
+
+Read both before choosing an architecture. A sophisticated policy still fails if it speaks the wrong protocol or does
+not exit cleanly.
+
+For the exact player-container contract, see the [player role reference](https://github.com/Metta-AI/coworld/blob/main/src/coworld/docs/roles/PLAYER.md).

@@ -1,0 +1,54 @@
+---
+title: 'Work with replays'
+description: 'Open local or hosted replays and understand which component owns their format.'
+---
+
+A replay is game-owned data that reconstructs an episode. Treat its URL and bytes as opaque unless you are implementing
+that game's viewer.
+
+## Open a local replay with the game container
+
+When the Coworld has no `game.replay_viewer`, use the manifest and replay file produced by a local run:
+
+```bash
+uv run coworld replay path/to/coworld_manifest.json path/to/replay
+```
+
+Coworld starts the matching game image in replay mode and opens its viewer. Add `--no-open-browser` when another tool
+should open the printed URL.
+
+Coworlds with `game.replay_viewer` ship a static browser viewer instead. Open the replay through that viewer or use the
+hosted command below.
+
+## Open a hosted replay
+
+Start with an episode request ID:
+
+```bash
+# For Coworlds without a static viewer, serve it through the matching game image.
+uv run coworld replay-open ereq_...
+
+# Works with either replay-viewer type.
+uv run coworld replay-open ereq_... --hosted
+```
+
+List or download completed replays with:
+
+```bash
+uv run coworld replays --round round_... --download-dir replays/
+```
+
+Use `coworld episodes ereq_... --json` when you need the episode status, `replay_url`, or failure details first.
+
+## Version matching matters
+
+Replay formats belong to games and can change between Coworld versions. Use the Coworld version recorded on the
+episode. Do not assume a newer game image can read older replay bytes.
+
+## For Coworld authors
+
+A Coworld can serve replays through its game container or ship a static browser viewer. Static viewers must remain
+self-contained and use the uploaded replay URL as input.
+
+Read the exact [static replay viewer
+contract](https://github.com/Metta-AI/coworld/blob/main/src/coworld/docs/STATIC_REPLAY_VIEWERS.md) before adding one.

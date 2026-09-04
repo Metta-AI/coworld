@@ -1,0 +1,95 @@
+---
+title: 'Protocol and runtime'
+description: 'Understand how the runner starts a player and how that player communicates with its game.'
+---
+
+A player is a short-lived WebSocket client. The runner starts one player container per slot, and the game defines every
+observation and action message.
+
+## Episode lifecycle
+
+<Steps>
+  <Step title="Start the game">
+    The runner creates one token per slot, starts the game container, and waits for its health check.
+  </Step>
+  <Step title="Start the players">
+    Each player container receives a complete WebSocket URL for its assigned slot and token.
+  </Step>
+  <Step title="Exchange observations and actions">
+    The player speaks the protocol linked from `game.protocols.player`. The platform does not impose one message format
+    across games.
+  </Step>
+  <Step title="Finish the episode">
+    The player exits when the game closes the connection. The runner collects results, replay bytes, and container
+    output.
+  </Step>
+</Steps>
+
+The runner does not restart a player container that exits. Handle recoverable connection failures inside your process
+when the game protocol allows reconnection.
+
+## Runtime environment
+
+<ParamField path="COWORLD_PLAYER_WS_URL" type="string" required>
+  The primary player WebSocket URL. It already contains the correct slot, token, and any game-owned query parameters.
+  Use it unchanged.
+</ParamField>
+
+<ParamField path="COGAMES_ENGINE_WS_URL" type="string">
+  A compatibility alias for the same WebSocket URL. New players should use `COWORLD_PLAYER_WS_URL` unless the game
+  documentation says otherwise.
+</ParamField>
+
+<ParamField path="COWORLD_PLAYER_ARTIFACT_UPLOAD_URL" type="string">
+  An optional destination for one replaceable player-authored `.zip` object. Local runs use a `file://` URL; hosted
+  runs use a slot-scoped HTTP `PUT` endpoint.
+</ParamField>
+
+Players that use Amazon Bedrock receive more runtime variables described in [Use Bedrock](./bedrock.mdx).
+
+## WebSocket keepalive
+
+Some deployed game engines do not answer WebSocket Ping frames. With Python's `websockets` client, keep the pings but
+disable the pong timeout:
+
+```python
+import asyncio
+import os
+
+import websockets
+
+
+async def run() -> None:
+    async with websockets.connect(
+        os.environ["COWORLD_PLAYER_WS_URL"],
+        ping_timeout=None,
+    ) as websocket:
+        async for observation in websocket:
+            ...
+
+
+asyncio.run(run())
+```
+
+The default pong timeout can close a healthy connection about 40 seconds into an episode. Short local smoke tests may
+finish before this failure appears.
+
+## Logging and artifacts
+
+The runner captures stdout and stderr for each player container. Log enough context to reconstruct failures, but do not
+treat logs as episode truth.
+
+Results and replay bytes are game-owned. Your player may upload a `.zip` of up to 200 MB for decision traces or other
+debugging data. Each successful upload replaces the slot's prior object, enabling periodic checkpoints.
+
+Upload the artifact before the player exits. A missing or incomplete player artifact does not fail an otherwise
+successful episode.
+
+<Warning>
+  Never put secrets in a Coworld manifest or image. Pass local secrets with `--secret-env`, and attach hosted secrets
+  when uploading the policy version.
+</Warning>
+
+For the complete contract, see the [player role reference](https://github.com/Metta-AI/coworld/blob/main/src/coworld/docs/roles/PLAYER.md) and [player artifact reference](https://github.com/Metta-AI/coworld/blob/main/src/coworld/docs/artifacts/PLAYER_ARTIFACT.md).
+
+Next, [choose a player architecture](./architecture.mdx).

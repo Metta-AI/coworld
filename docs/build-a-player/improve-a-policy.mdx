@@ -1,0 +1,98 @@
+---
+title: 'Improve a policy'
+description: 'Use comparable episode evidence to make focused changes and decide whether they helped.'
+---
+
+Policy improvement is a measurement loop. Define what should change, gather comparable evidence, change one behavior,
+and keep or reject the candidate from the result.
+
+```text
+measure → inspect → explain → change → verify → keep or reject
+```
+
+## Start with a specific objective
+
+Name the behavior and the measure that represents it. Examples include league score, completion rate, a matchup, or a
+game-owned result field.
+
+A useful objective also names its guardrails. A candidate that improves one matchup but crashes more often is not a
+clear improvement.
+
+## Preserve the baseline
+
+Record the exact policy version, Coworld ID, variant, opponents, seat assignment, episode count, and request body. Use
+explicit `name:vN` references instead of a moving policy name.
+
+Choose the smallest check that can answer the current question:
+
+1. unit-test the decision behavior;
+2. optionally run one local episode for transport and packaging;
+3. use hosted Experience Requests for comparisons against live policies;
+4. submit only after the candidate survives the relevant guardrails.
+
+Local episodes catch wiring and obvious behavior problems. Use comparable hosted Experience Requests for strategy
+measurement.
+
+## Inspect failures before strategy
+
+For failed or unexpectedly weak episodes, inspect the episode row and logs before analyzing aggregate scores. Open the
+replay too when its row includes a `replay_url`:
+
+```bash
+uv run coworld episodes ereq_... --json
+uv run coworld episode-logs ereq_... --game
+uv run coworld episode-logs ereq_... --agent 0 --mine
+uv run coworld replay-open ereq_... --hosted
+```
+
+A disconnect, invalid action, provider failure, or timeout is a runtime problem. Fix it before drawing a strategic
+conclusion from the score.
+
+## Write down what you expect
+
+State what the policy does now, what you will change, and what evidence would reject the change. Then change one
+behavioral concept.
+
+Examples:
+
+- prefer safe movement near a deadline, expecting fewer invalid actions;
+- cache an expensive feature, expecting lower decision latency without changing choices;
+- revise one opponent heuristic, expecting improvement in that matchup without broad regression.
+
+Keep transport, parsing, and unrelated cleanup out of the same candidate when possible.
+
+## Compare equivalent runs
+
+Use the same Coworld, variant, opponent selection, seat treatment, and episode count for baseline and candidate. Store
+both Experience Request bodies with their child episode IDs.
+
+When a league has enough completed history, `power-analysis` can estimate episodes needed to detect selected Elo
+differences:
+
+```bash
+uv run coworld power-analysis league_... \
+  --policy my-player:v3 \
+  --elo 25,50,100
+```
+
+This command is read-only and dispatches no episodes. Treat its output as an evaluation input, not as proof that a
+candidate improved.
+
+## Keep evidence together
+
+For each comparison, retain:
+
+- the candidate commit and policy version;
+- the Experience Request JSON;
+- episode rows and game-owned results;
+- available replays for representative wins, losses, and failures;
+- owned player logs and optional player artifacts;
+- a short decision explaining why the candidate was kept or rejected.
+
+This record lets another person reproduce the conclusion and protects later work from repeating a failed idea.
+
+<Tip>
+  Promote from repeated, comparable evidence. One successful episode is a debugging milestone, not an evaluation.
+</Tip>
+
+Return to [hosted debugging](./debug-hosted-episodes.mdx), or [submit the tested version](./submit-to-a-league.mdx).
