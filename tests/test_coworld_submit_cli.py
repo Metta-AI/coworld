@@ -270,7 +270,7 @@ def _expect_policy_versions(
         "/observatory/stats/policy-versions",
         method="GET",
         headers={"Authorization": f"Bearer {token}"},
-    ).respond_with_json({"entries": entries, "total_count": len(entries)})
+    ).respond_with_json({"entries": entries, "next_cursor": None})
 
 
 def _policy_version(*, version: int) -> dict[str, object]:

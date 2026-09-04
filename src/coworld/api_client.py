@@ -9,7 +9,7 @@ from uuid import UUID
 import httpx
 from pydantic import BaseModel, ConfigDict, Field, TypeAdapter, computed_field
 
-from coworld.config import NEXT_CURSOR_HEADER
+from coworld.config import catalog_page_payload
 from softmax import auth as softmax_auth
 
 
@@ -622,8 +622,8 @@ class PolicyVersionRow(CoworldAPIModel):
 
 class PolicyVersionsResponse(CoworldAPIModel):
     entries: list[PolicyVersionRow]
-    # Unread by the CLI; optional so the server can eventually stop sending it.
-    total_count: int | None = None
+    # The lookup reads one page; servers that predate cursor pages omit this.
+    next_cursor: str | None = None
 
 
 class ReporterOutputPublic(CoworldAPIModel):
@@ -1186,9 +1186,10 @@ class CoworldApiClient:
             params["cursor"] = cursor
         response = self._http_client.get("/v2/reporters", headers=self._headers(), params=params)
         _raise_for_status(response)
+        entries, next_cursor = catalog_page_payload(response)
         return ReporterListPage(
-            entries=TypeAdapter(list[ReporterPublic]).validate_python(response.json()),
-            next_cursor=response.headers.get(NEXT_CURSOR_HEADER),
+            entries=TypeAdapter(list[ReporterPublic]).validate_python(entries),
+            next_cursor=next_cursor,
         )
 
     def get_reporter(self, reporter_id: str) -> ReporterDetailPublic:
