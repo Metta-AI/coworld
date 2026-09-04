@@ -138,8 +138,14 @@ filegroup(
 )
 
 filegroup(
-    name = "arena_wit_files",
-    srcs = glob(["src/coworld/wit/**"]),
+    name = "arena_game_wit",
+    srcs = ["src/coworld/wit/softmax-game/world.wit"],
+    visibility = ["//app_backend/tests:__pkg__"],
+)
+
+filegroup(
+    name = "arena_player_wit",
+    srcs = ["src/coworld/wit/softmax-player/world.wit"],
     visibility = ["//app_backend/tests:__pkg__"],
 )
 
