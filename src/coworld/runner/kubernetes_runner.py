@@ -124,20 +124,21 @@ _PLAYER_THREAD_POOL_ENV_VARS = (
 _WAIT_FOR_GAME_SERVICE_SCRIPT = """
 import contextlib
 import os
-import socket
 import time
+from urllib.request import ProxyHandler, build_opener
 
 deadline = time.monotonic() + float(os.environ["COWORLD_GAME_WAIT_TIMEOUT_SECONDS"])
 host = os.environ["COWORLD_GAME_HOST"]
 port = int(os.environ["COWORLD_GAME_PORT"])
+url = f"http://{host}:{port}/healthz"
+opener = build_opener(ProxyHandler({}))
 while time.monotonic() < deadline:
-    with contextlib.suppress(socket.gaierror):
-        with socket.socket() as connection:
-            connection.settimeout(1)
-            if connection.connect_ex((host, port)) == 0:
+    with contextlib.suppress(OSError):
+        with opener.open(url, timeout=1) as response:
+            if response.status == 200:
                 raise SystemExit(0)
     time.sleep(0.5)
-raise SystemExit(f"Timed out waiting for {host}:{port}")
+raise SystemExit(f"Timed out waiting for {url}")
 """.strip()
 
 

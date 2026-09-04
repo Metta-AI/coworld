@@ -2237,6 +2237,9 @@ def test_player_service_gate_waits_for_delayed_endpoint():
         time.sleep(0.1)
         listener.listen()
         connection, _ = listener.accept()
+        request = connection.recv(4096)
+        assert request.startswith(b"GET /healthz HTTP/1.1\r\n")
+        connection.sendall(b"HTTP/1.1 200 OK\r\nContent-Length: 0\r\nConnection: close\r\n\r\n")
         connection.close()
         listener.close()
 
@@ -2259,34 +2262,64 @@ def test_player_service_gate_waits_for_delayed_endpoint():
     assert not thread.is_alive()
 
 
-def test_player_service_gate_retries_transient_dns_failure():
-    flaky_socket_setup = """
-import socket
+def test_player_service_gate_rejects_a_tcp_listener_without_http_health():
+    listener = socket.socket()
+    listener.bind(("127.0.0.1", 0))
+    listener.listen()
+    port = listener.getsockname()[1]
 
-outcomes = iter([socket.gaierror(), 0])
+    def accept_one_connection() -> None:
+        connection, _ = listener.accept()
+        connection.close()
+        listener.close()
 
-class FlakySocket:
-    def __enter__(self):
-        return self
+    thread = threading.Thread(target=accept_one_connection, daemon=True)
+    thread.start()
+    completed = subprocess.run(
+        [sys.executable, "-c", kubernetes_runner._WAIT_FOR_GAME_SERVICE_SCRIPT],
+        env={
+            **os.environ,
+            "COWORLD_GAME_HOST": "127.0.0.1",
+            "COWORLD_GAME_PORT": str(port),
+            "COWORLD_GAME_WAIT_TIMEOUT_SECONDS": "0.2",
+        },
+        check=False,
+        timeout=3,
+    )
+    thread.join(timeout=1)
 
-    def __exit__(self, *args):
-        pass
+    assert completed.returncode != 0
+    assert not thread.is_alive()
 
-    def settimeout(self, timeout):
-        pass
 
-    def connect_ex(self, address):
+def test_player_service_gate_retries_dns_without_http_proxy():
+    flaky_health_setup = """
+from urllib.error import URLError
+import urllib.request
+from types import SimpleNamespace
+
+outcomes = iter([URLError("temporary DNS failure"), None])
+
+class FlakyOpener:
+    def open(self, url, timeout):
         outcome = next(outcomes)
         if isinstance(outcome, Exception):
             raise outcome
-        return outcome
+        return contextlib.nullcontext(SimpleNamespace(status=200))
 
-socket.socket = FlakySocket
+def direct_opener(*handlers):
+    assert len(handlers) == 1
+    assert isinstance(handlers[0], urllib.request.ProxyHandler)
+    assert handlers[0].proxies == {}
+    return FlakyOpener()
+
+urllib.request.build_opener = direct_opener
 """
     completed = subprocess.run(
-        [sys.executable, "-c", f"{flaky_socket_setup}\n{kubernetes_runner._WAIT_FOR_GAME_SERVICE_SCRIPT}"],
+        [sys.executable, "-c", f"{flaky_health_setup}\n{kubernetes_runner._WAIT_FOR_GAME_SERVICE_SCRIPT}"],
         env={
             **os.environ,
+            "HTTP_PROXY": "http://proxy.invalid:8080",
             "COWORLD_GAME_HOST": "game-service",
             "COWORLD_GAME_PORT": "8080",
             "COWORLD_GAME_WAIT_TIMEOUT_SECONDS": "2",
