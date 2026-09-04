@@ -84,6 +84,7 @@ fallback_version = "0.0.0"
 git_describe_command = ["git", "describe", "--dirty", "--tags", "--long", "--match", "coworld-v*"]
 
 [tool.pytest.ini_options]
+addopts = "--import-mode=importlib"
 pythonpath = ["src"]
 testpaths = ["tests"]
 markers = ["slow: marks tests as slow"]
