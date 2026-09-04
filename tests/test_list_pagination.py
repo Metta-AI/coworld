@@ -52,6 +52,52 @@ def _reporter_entry(index: int) -> dict[str, Any]:
     }
 
 
+def _league() -> dict[str, Any]:
+    return {
+        "id": "league_1",
+        "name": "Paint League",
+        "game": {"id": "game_1", "name": "Paint Arena", "created_at": "2026-08-20T12:00:00Z"},
+        "created_at": "2026-08-20T12:00:00Z",
+    }
+
+
+def _policy_version() -> dict[str, Any]:
+    return {
+        "id": "00000000-0000-0000-0000-000000000031",
+        "policy": {"id": "00000000-0000-0000-0000-000000000032", "name": "paintbot"},
+        "version": 3,
+    }
+
+
+def _membership() -> dict[str, Any]:
+    return {
+        "id": "lpm_1",
+        "status": "competing",
+        "league": _league(),
+        "division": {
+            "id": "division_1",
+            "name": "Bronze",
+            "level": 1,
+            "type": "competition",
+            "hidden": False,
+            "league": _league(),
+            "created_at": "2026-08-20T12:00:00Z",
+        },
+        "policy_version": _policy_version(),
+        "created_at": "2026-08-20T12:00:00Z",
+    }
+
+
+def _submission() -> dict[str, Any]:
+    return {
+        "id": "submission_1",
+        "status": "accepted",
+        "league": _league(),
+        "policy_version": _policy_version(),
+        "created_at": "2026-08-20T12:00:00Z",
+    }
+
+
 def test_list_coworlds_page_carries_next_cursor(httpserver: HTTPServer) -> None:
     httpserver.expect_request("/observatory/v2/coworlds", query_string={"limit": "5"}).respond_with_json(
         [_coworld_entry(0)], headers={NEXT_CURSOR_HEADER: "tok-1"}
@@ -130,6 +176,56 @@ def test_list_reporters_resumes_from_cursor(httpserver: HTTPServer) -> None:
     with CoworldApiClient(server_url=httpserver.url_for(""), token="usr_test") as client:
         page = client.list_reporters(cursor="tok-3")
     assert page.entries == []
+    assert page.next_cursor is None
+
+
+def test_list_memberships_carries_and_resumes_from_cursor(httpserver: HTTPServer) -> None:
+    httpserver.expect_request(
+        "/observatory/v2/league-policy-memberships",
+        query_string={
+            "active_only": "false",
+            "champions_only": "false",
+            "mine": "true",
+            "limit": "25",
+            "cursor": "membership-page-2",
+        },
+    ).respond_with_json([_membership()], headers={NEXT_CURSOR_HEADER: "membership-page-3"})
+    with CoworldApiClient(server_url=httpserver.url_for(""), token="usr_test") as client:
+        page = client.list_memberships(mine=True, limit=25, cursor="membership-page-2")
+    assert [membership.id for membership in page.entries] == ["lpm_1"]
+    assert page.next_cursor == "membership-page-3"
+
+
+def test_list_memberships_omits_limit_before_server_cutover(httpserver: HTTPServer) -> None:
+    httpserver.expect_request(
+        "/observatory/v2/league-policy-memberships",
+        query_string={"active_only": "false", "champions_only": "false", "mine": "false"},
+    ).respond_with_json([_membership()])
+    with CoworldApiClient(server_url=httpserver.url_for(""), token="usr_test") as client:
+        page = client.list_memberships()
+    assert [membership.id for membership in page.entries] == ["lpm_1"]
+    assert page.next_cursor is None
+
+
+def test_list_submissions_carries_and_resumes_from_cursor(httpserver: HTTPServer) -> None:
+    httpserver.expect_request(
+        "/observatory/v2/league-submissions",
+        query_string={"mine": "true", "limit": "25", "cursor": "submission-page-2"},
+    ).respond_with_json([_submission()], headers={NEXT_CURSOR_HEADER: "submission-page-3"})
+    with CoworldApiClient(server_url=httpserver.url_for(""), token="usr_test") as client:
+        page = client.list_submissions(mine=True, limit=25, cursor="submission-page-2")
+    assert [submission.id for submission in page.entries] == ["submission_1"]
+    assert page.next_cursor == "submission-page-3"
+
+
+def test_list_submissions_omits_limit_before_server_cutover(httpserver: HTTPServer) -> None:
+    httpserver.expect_request(
+        "/observatory/v2/league-submissions",
+        query_string={"mine": "false"},
+    ).respond_with_json([_submission()])
+    with CoworldApiClient(server_url=httpserver.url_for(""), token="usr_test") as client:
+        page = client.list_submissions()
+    assert [submission.id for submission in page.entries] == ["submission_1"]
     assert page.next_cursor is None
 
 

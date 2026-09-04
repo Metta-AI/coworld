@@ -176,7 +176,7 @@ NOT cruxes).
   verify the swapped seat by `episodes[].participants[].position`, not by matching pvid.
 - **Re-validate every pvid right before launch.** The league rolls policy versions
   mid-session; a pvid valid an hour ago may be stale. Re-fetch `live_members` /
-  `client.list_memberships(active_only=True)` immediately before each submit.
+  `client.list_memberships(active_only=True).entries` immediately before each submit.
 - **Empty Competition division:** server-side `{"player": {"top_n": 7}}` auto-fill draws
   ONLY from the Competition-division champion pool, which is empty today (all play is in
   Qualifiers), so it returns too few opponents and 400s. Use the explicit `policy_ref`

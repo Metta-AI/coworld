@@ -9,7 +9,7 @@ from uuid import UUID
 import httpx
 from pydantic import BaseModel, ConfigDict, Field, TypeAdapter, computed_field
 
-from coworld.config import catalog_page_payload
+from coworld.config import list_page_payload
 from softmax import auth as softmax_auth
 
 
@@ -198,6 +198,16 @@ class LeagueSubmissionPublic(CoworldAPIModel):
     league_policy_membership_id: str | None = None
     notes: str | None = None
     created_at: datetime
+
+
+class LeaguePolicyMembershipPage(CoworldAPIModel):
+    entries: list[LeaguePolicyMembershipPublic]
+    next_cursor: str | None
+
+
+class LeagueSubmissionPage(CoworldAPIModel):
+    entries: list[LeagueSubmissionPublic]
+    next_cursor: str | None
 
 
 class AutoChampion(str, Enum):
@@ -911,7 +921,8 @@ class CoworldApiClient:
         champions_only: bool = False,
         mine: bool = False,
         limit: int | None = None,
-    ) -> list[LeaguePolicyMembershipPublic]:
+        cursor: str | None = None,
+    ) -> LeaguePolicyMembershipPage:
         params: dict[str, str | int | bool] = {
             "active_only": str(active_only).lower(),
             "champions_only": str(champions_only).lower(),
@@ -927,7 +938,15 @@ class CoworldApiClient:
             params["player_id"] = player_id
         if limit is not None:
             params["limit"] = limit
-        return self._get("/v2/league-policy-memberships", list[LeaguePolicyMembershipPublic], params=params)
+        if cursor is not None:
+            params["cursor"] = cursor
+        response = self._http_client.get("/v2/league-policy-memberships", headers=self._headers(), params=params)
+        _raise_for_status(response)
+        entries, next_cursor = list_page_payload(response)
+        return LeaguePolicyMembershipPage(
+            entries=TypeAdapter(list[LeaguePolicyMembershipPublic]).validate_python(entries),
+            next_cursor=next_cursor,
+        )
 
     def retire_membership(
         self,
@@ -952,7 +971,8 @@ class CoworldApiClient:
         policy_version_id: UUID | None = None,
         mine: bool = False,
         limit: int | None = None,
-    ) -> list[LeagueSubmissionPublic]:
+        cursor: str | None = None,
+    ) -> LeagueSubmissionPage:
         params: dict[str, str | int | bool] = {"mine": str(mine).lower()}
         if league_id is not None:
             params["league_id"] = league_id
@@ -962,7 +982,15 @@ class CoworldApiClient:
             params["policy_version_id"] = str(policy_version_id)
         if limit is not None:
             params["limit"] = limit
-        return self._get("/v2/league-submissions", list[LeagueSubmissionPublic], params=params)
+        if cursor is not None:
+            params["cursor"] = cursor
+        response = self._http_client.get("/v2/league-submissions", headers=self._headers(), params=params)
+        _raise_for_status(response)
+        entries, next_cursor = list_page_payload(response)
+        return LeagueSubmissionPage(
+            entries=TypeAdapter(list[LeagueSubmissionPublic]).validate_python(entries),
+            next_cursor=next_cursor,
+        )
 
     def submit_to_league(
         self,
@@ -1186,7 +1214,7 @@ class CoworldApiClient:
             params["cursor"] = cursor
         response = self._http_client.get("/v2/reporters", headers=self._headers(), params=params)
         _raise_for_status(response)
-        entries, next_cursor = catalog_page_payload(response)
+        entries, next_cursor = list_page_payload(response)
         return ReporterListPage(
             entries=TypeAdapter(list[ReporterPublic]).validate_python(entries),
             next_cursor=next_cursor,

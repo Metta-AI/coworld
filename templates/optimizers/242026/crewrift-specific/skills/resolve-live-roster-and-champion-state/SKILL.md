@@ -95,11 +95,19 @@ in breach of a no-submit instruction; it stayed invisible for a full day and onl
 surfaced during a full roster pull. (session-derived, unverified)
 
 ```python
-members = client.list_memberships(league_id=LEAGUE, active_only=True)  # NO name filter
-for m in members:
-    pid   = str(m.player.id if m.player else m.policy_version.player_id)
-    pname = m.player.name if m.player else m.policy_version.label
-    print(pid, pname, m.policy_version.label, m.policy_version.version, str(m.policy_version.id))
+cursor = None
+while True:
+    # NO name filter
+    member_page = client.list_memberships(
+        league_id=LEAGUE, active_only=True, cursor=cursor
+    )
+    for m in member_page.entries:
+        pid   = str(m.player.id if m.player else m.policy_version.player_id)
+        pname = m.player.name if m.player else m.policy_version.label
+        print(pid, pname, m.policy_version.label, m.policy_version.version, str(m.policy_version.id))
+    if member_page.next_cursor is None:
+        break
+    cursor = member_page.next_cursor
 ```
 
 Cross-check every row against the policies you *expect* to own. Any membership you did

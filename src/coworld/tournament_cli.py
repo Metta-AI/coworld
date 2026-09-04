@@ -427,6 +427,7 @@ def register_tournament_commands(app: typer.Typer) -> None:
             bool, typer.Option("--champions-only", help="Only show champion memberships.")
         ] = False,
         limit: Annotated[int | None, typer.Option("--limit", min=1, max=1000, help="Maximum rows to return.")] = None,
+        cursor: Annotated[str | None, typer.Option("--cursor", help="Continue from a previous page token.")] = None,
         server: Annotated[str, typer.Option("--server", help="Observatory API server URL.")] = DEFAULT_SUBMIT_SERVER,
         json_output: Annotated[bool, typer.Option("--json", help="Print raw JSON.")] = False,
     ) -> None:
@@ -441,11 +442,14 @@ def register_tournament_commands(app: typer.Typer) -> None:
                 champions_only=champions_only,
                 mine=mine,
                 limit=limit,
+                cursor=cursor,
             )
         if json_output:
-            emit_json(_dump_models(rows))
+            emit_json(rows.model_dump(mode="json"))
             return
-        _print_memberships(rows)
+        _print_memberships(rows.entries)
+        if rows.next_cursor is not None:
+            console.print(f"[dim]Next cursor: {rows.next_cursor}[/dim]")
 
     @app.command("retire-membership")
     def retire_membership(
@@ -474,6 +478,7 @@ def register_tournament_commands(app: typer.Typer) -> None:
         player_id: Annotated[str | None, typer.Option("--player", help="Filter by player ID.")] = None,
         mine: Annotated[bool, typer.Option("--mine", help="Show my submissions.")] = False,
         limit: Annotated[int | None, typer.Option("--limit", min=1, max=1000, help="Maximum rows to return.")] = None,
+        cursor: Annotated[str | None, typer.Option("--cursor", help="Continue from a previous page token.")] = None,
         server: Annotated[str, typer.Option("--server", help="Observatory API server URL.")] = DEFAULT_SUBMIT_SERVER,
         json_output: Annotated[bool, typer.Option("--json", help="Print raw JSON.")] = False,
     ) -> None:
@@ -485,11 +490,14 @@ def register_tournament_commands(app: typer.Typer) -> None:
                 policy_version_id=policy_version_id,
                 mine=mine,
                 limit=limit,
+                cursor=cursor,
             )
         if json_output:
-            emit_json(_dump_models(rows))
+            emit_json(rows.model_dump(mode="json"))
             return
-        _print_submissions(rows)
+        _print_submissions(rows.entries)
+        if rows.next_cursor is not None:
+            console.print(f"[dim]Next cursor: {rows.next_cursor}[/dim]")
 
     @app.command("events")
     def events(
@@ -1122,12 +1130,19 @@ def _collect_episode_requests(
 
 
 def _mine_policy_version_ids(client: CoworldApiClient, *, division_id: str | None) -> set[UUID]:
-    memberships = client.list_memberships(
-        division_id=division_id,
-        mine=True,
-        limit=1000,
-    )
-    return {membership.policy_version.id for membership in memberships}
+    policy_version_ids: set[UUID] = set()
+    cursor = None
+    while True:
+        memberships = client.list_memberships(
+            division_id=division_id,
+            mine=True,
+            limit=1000,
+            cursor=cursor,
+        )
+        policy_version_ids.update(membership.policy_version.id for membership in memberships.entries)
+        cursor = memberships.next_cursor
+        if cursor is None:
+            return policy_version_ids
 
 
 def _print_episodes(rows: Sequence[V2EpisodeRequestSummary | V2EpisodeRequestListRow]) -> None:

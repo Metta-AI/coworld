@@ -203,7 +203,7 @@ Operational rules learned the hard way:
 - **Resolve all pvids before submitting any arm** — there is no server-side cancel; a late name
   failure orphans a full run.
 - **Re-resolve the roster immediately before EVERY launch.** Use
-  `list_memberships(league_id, division_id, active_only=True)` — never names (ambiguous 400s),
+  `list_memberships(league_id, division_id, active_only=True).entries` — never names (ambiguous 400s),
   never round-result pvids (stale 400s), never yesterday's roster file. The league rolls policy
   versions mid-session (crewborg v19→v21→v22 in one day).
 - Opponents land in **list order**; verify seat assignment from `participants[].position`, not by

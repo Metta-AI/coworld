@@ -265,7 +265,7 @@ def test_memberships_accepts_status_substatus_payload(
         "/observatory/v2/league-policy-memberships",
         method="GET",
         headers={"Authorization": "Bearer token"},
-    ).respond_with_json([_membership(substatus="champion")])
+    ).respond_with_json([_membership(substatus="champion")], headers={"X-Next-Cursor": "next-page"})
 
     result = CliRunner().invoke(
         app,
@@ -279,11 +279,12 @@ def test_memberships_accepts_status_substatus_payload(
     )
 
     assert result.exit_code == 0, result.output
-    rows = json.loads(result.output)
-    assert rows[0]["status"] == "competing"
-    assert rows[0]["substatus"] == "champion"
-    assert "is_active" not in rows[0]
-    assert rows[0]["is_champion"] is False
+    page = json.loads(result.output)
+    assert page["entries"][0]["status"] == "competing"
+    assert page["entries"][0]["substatus"] == "champion"
+    assert "is_active" not in page["entries"][0]
+    assert page["entries"][0]["is_champion"] is False
+    assert page["next_cursor"] == "next-page"
 
 
 def test_retire_membership_posts_reason_json(

@@ -800,9 +800,11 @@ from softmax.auth import get_api_server
 
 
 with CoworldApiClient.from_login(server_url=get_api_server()) as client:
-    submissions = client.list_submissions(league_id="league_...", mine=True)
-    memberships = client.list_memberships(division_id="div_...", mine=True, active_only=True)
+    submission_page = client.list_submissions(league_id="league_...", mine=True)
+    membership_page = client.list_memberships(division_id="div_...", mine=True, active_only=True)
 ```
+
+Read each page's rows from `.entries` and pass `.next_cursor` back as `cursor` to continue.
 
 To withdraw a broken or superseded active membership from future rounds, retire the membership ID:
 

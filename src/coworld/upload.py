@@ -29,7 +29,7 @@ from pydantic import BaseModel, Field
 from coworld.bundle import resolve_registry_image_ref
 from coworld.certifier import EXECUTABLE_TRANSCRIPT_PATH, certify_coworld, load_coworld_package
 from coworld.cli_support import validate_run_argv
-from coworld.config import DEFAULT_SUBMIT_SERVER, catalog_page_payload
+from coworld.config import DEFAULT_SUBMIT_SERVER, list_page_payload
 from coworld.image_refs import is_digest_pinned_image_ref, is_mutable_registry_image_ref
 from coworld.manifest import validate_upload_manifest
 from coworld.manifest_validation import validate_coworld_manifest_game_configs
@@ -596,7 +596,7 @@ class CoworldUploadClient:
             timeout=60.0,
         )
         _raise_for_status(response)
-        entries, next_cursor = catalog_page_payload(response)
+        entries, next_cursor = list_page_payload(response)
         return CoworldListPage(
             entries=[CoworldListEntry.model_validate(item) for item in entries],
             next_cursor=next_cursor,
@@ -832,7 +832,7 @@ class CoworldUploadClient:
             timeout=60.0,
         )
         _raise_for_status(response)
-        entries, next_cursor = catalog_page_payload(response)
+        entries, next_cursor = list_page_payload(response)
         return ContainerImagePage(
             entries=[ContainerImageResponse.model_validate(item) for item in entries],
             next_cursor=next_cursor,

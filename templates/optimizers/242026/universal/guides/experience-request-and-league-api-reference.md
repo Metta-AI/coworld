@@ -108,7 +108,7 @@ results are rejected with 400s; player *names* are ambiguous and also 400. Use o
 league_roster.live_members(client, league_id=…)
 # → ranked [{player_id, player_name, label, policy_version_id, score}]
 
-client.list_memberships(league_id=…, division_id=…, active_only=True)
+client.list_memberships(league_id=…, division_id=…, active_only=True).entries
 ```
 
 **Re-resolve the roster immediately before EVERY launch.** The league rolls policy versions mid-session
