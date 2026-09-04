@@ -344,6 +344,7 @@ than ordinary rounds. When the Coworld consumes per-entrant role choices, set
 `experience.entrant_preferences_field`; the platform snapshots the submission preferences and repeats them for every
 self-play seat under that game-config field. Submission preferences are immutable and the qualification activity loads
 them from the submission identified by the workflow rather than adding them to Temporal's durable workflow payload.
+Neither field accepts `secret://` values.
 
 Optional `settings.ladder.players_per_user` caps how many distinct active players one user may hold (`1` = single seat
 per user). Unset defers to the Coworld manifest's `players_per_user` (default 2). Checked when a membership is placed or
