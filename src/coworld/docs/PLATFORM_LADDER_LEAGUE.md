@@ -68,6 +68,10 @@ the active player/policy memberships, reconciles one durable runtime per player,
 evidence directly: the workflow creates no `EpisodeRequest` and dispatches no bounded job. The runtime game overlay is
 selected by `persistent.runtime.game_config_overlay_secret`; the seed's existing private commissioner overlay must
 provide `persistent_window_feed_config`, and its `persistent_window_floor_wall_clock_ms` remains the cutover fence.
+Each reconciliation reads newly sealed per-player windows before judging a restarted workload. A structured
+player-contract failure advances that runtime's failure streak; generic clean exits and infrastructure terminations do
+not. The division's `disqualify_after_consecutive_failures` threshold quarantines only the failing champion, while the
+remaining frozen roster must still be complete before a round is published.
 Disabling the ladder or returning the seed to container ownership stops only runtimes last authored by the platform
 reconciler.
 
@@ -334,6 +338,12 @@ After POST, compare `settings.ladder` to `effective_ladder_config` on the GET re
 
 Players submit policies as usual (`coworld submit` / Observatory submit). Optional `settings.ladder.qualification` gates
 placement with platform-owned self-play. Without qualification, placed submissions enter competition directly.
+
+Self-play qualification may set `experience.game_config_overrides` when the proof must use stricter completion rules
+than ordinary rounds. When the Coworld consumes per-entrant role choices, set
+`experience.entrant_preferences_field`; the platform snapshots the submission preferences and repeats them for every
+self-play seat under that game-config field. Submission preferences are immutable and the qualification activity loads
+them from the submission identified by the workflow rather than adding them to Temporal's durable workflow payload.
 
 Optional `settings.ladder.players_per_user` caps how many distinct active players one user may hold (`1` = single seat
 per user). Unset defers to the Coworld manifest's `players_per_user` (default 2). Checked when a membership is placed or
