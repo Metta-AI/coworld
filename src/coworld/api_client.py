@@ -588,6 +588,11 @@ class CompetitionEventPublic(CoworldAPIModel):
     created_at: datetime
 
 
+class CompetitionEventPage(CoworldAPIModel):
+    entries: list[CompetitionEventPublic]
+    next_cursor: str | None
+
+
 class AgentStatsDetail(CoworldAPIModel):
     agent_id: int
     reward: float
@@ -1141,7 +1146,8 @@ class CoworldApiClient:
         player_id: str | None = None,
         policy_version_id: UUID | None = None,
         limit: int = 50,
-    ) -> list[CompetitionEventPublic]:
+        cursor: str | None = None,
+    ) -> CompetitionEventPage:
         params: dict[str, str | int] = {"limit": limit}
         if league_id is not None:
             params["league_id"] = league_id
@@ -1157,7 +1163,15 @@ class CoworldApiClient:
             params["player_id"] = player_id
         if policy_version_id is not None:
             params["policy_version_id"] = str(policy_version_id)
-        return self._get("/v2/competition-events", list[CompetitionEventPublic], params=params)
+        if cursor is not None:
+            params["cursor"] = cursor
+        response = self._http_client.get("/v2/competition-events", headers=self._headers(), params=params)
+        _raise_for_status(response)
+        entries, next_cursor = list_page_payload(response)
+        return CompetitionEventPage(
+            entries=TypeAdapter(list[CompetitionEventPublic]).validate_python(entries),
+            next_cursor=next_cursor,
+        )
 
     def get_job_artifact_bytes(self, job_id: UUID, artifact_type: str) -> bytes:
         return self.get_bytes(f"/jobs/{job_id}/artifacts/{artifact_type}")

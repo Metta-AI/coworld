@@ -850,7 +850,7 @@ with CoworldApiClient.from_login(server_url=get_api_server()) as client:
     rounds = client.list_rounds(division_id="div_...", status="completed", limit=5)
     round_detail = client.get_round("round_...")
     episodes = client.list_round_episode_requests("round_...", limit=100)
-    events = client.list_events(round_id="round_...")
+    events = client.list_events(round_id="round_...").entries
 ```
 
 Raw API routes:

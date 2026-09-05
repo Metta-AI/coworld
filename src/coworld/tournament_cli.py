@@ -511,13 +511,14 @@ def register_tournament_commands(app: typer.Typer) -> None:
             typer.Option("--policy", "-p", help="Filter by policy name/version or policy version UUID."),
         ] = None,
         player_id: Annotated[str | None, typer.Option("--player", help="Filter by player ID.")] = None,
-        limit: Annotated[int, typer.Option("--limit", min=1, max=1000, help="Maximum rows to return.")] = 50,
+        limit: Annotated[int, typer.Option("--limit", min=1, max=200, help="Maximum rows to return.")] = 50,
+        cursor: Annotated[str | None, typer.Option("--cursor", help="Continue from a prior page cursor.")] = None,
         server: Annotated[str, typer.Option("--server", help="Observatory API server URL.")] = DEFAULT_SUBMIT_SERVER,
         json_output: Annotated[bool, typer.Option("--json", help="Print raw JSON.")] = False,
     ) -> None:
         with CoworldApiClient.from_login(server_url=server) as client:
             policy_version_id = _resolve_policy_filter(client, policy) if policy is not None else None
-            rows = client.list_events(
+            page = client.list_events(
                 league_id=league_id,
                 division_id=division_id,
                 round_id=round_id,
@@ -526,11 +527,14 @@ def register_tournament_commands(app: typer.Typer) -> None:
                 player_id=player_id,
                 policy_version_id=policy_version_id,
                 limit=limit,
+                cursor=cursor,
             )
         if json_output:
-            emit_json(_dump_models(rows))
+            emit_json(page.model_dump(mode="json"))
             return
-        _print_events(rows)
+        _print_events(page.entries)
+        if page.next_cursor is not None:
+            console.print(f"[dim]Next cursor: {page.next_cursor}[/dim]")
 
     @app.command("episodes")
     def episodes(
