@@ -13,13 +13,14 @@ showing up in CI.
 
 from collections.abc import Iterator
 from typing import Any
+from uuid import UUID
 
 import httpx
 import pytest
 from pydantic import ValidationError
 from pytest_httpserver import HTTPServer
 
-from coworld.api_client import CoworldApiClient, LeaderboardEntryPublic, _raise_for_status
+from coworld.api_client import CoworldApiClient, LeaderboardEntryPublic, PolicySelectionAccess, _raise_for_status
 from coworld.upload import CoworldUploadClient
 from coworld.upload import _raise_for_status as _raise_for_upload_status
 
@@ -96,6 +97,31 @@ def test_request_pins_null_and_empty_body_behavior(
             client._request("GET", "/edge", response_type)
     else:
         assert client._request("GET", "/edge", response_type) == expected
+
+
+def test_get_policy_selection_access(httpserver: HTTPServer, client: CoworldApiClient) -> None:
+    policy_id = "10000000-0000-0000-0000-000000000001"
+    httpserver.expect_request(
+        f"/observatory/v2/policies/{policy_id}/selection-access",
+        method="GET",
+    ).respond_with_json({"selection_scope": "owner_visible"})
+
+    response = client.get_policy_selection_access(UUID(policy_id))
+
+    assert response == PolicySelectionAccess(selection_scope="owner_visible")
+
+
+def test_set_policy_selection_access(httpserver: HTTPServer, client: CoworldApiClient) -> None:
+    policy_id = "10000000-0000-0000-0000-000000000001"
+    httpserver.expect_oneshot_request(
+        f"/observatory/v2/policies/{policy_id}/selection-access",
+        method="PUT",
+        json={"selection_scope": "owner_visible"},
+    ).respond_with_json({"selection_scope": "owner_visible"})
+
+    response = client.set_policy_selection_access(UUID(policy_id), selection_scope="owner_visible")
+
+    assert response.selection_scope == "owner_visible"
 
 
 def test_elevated_flag_defaults_off(httpserver: HTTPServer) -> None:

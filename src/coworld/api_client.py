@@ -34,6 +34,10 @@ class PolicyVersionPublic(CoworldAPIModel):
         return f"{self.policy.name}:v{self.version}"
 
 
+class PolicySelectionAccess(CoworldAPIModel):
+    selection_scope: Literal["any_request", "owner_visible"]
+
+
 class PlayerPublic(CoworldAPIModel):
     id: str
     name: str | None = None
@@ -1054,6 +1058,22 @@ class CoworldApiClient:
             f"/v2/policy-versions/{policy_version_id}/episode-requests",
             EpisodeRequestSummaryPage,
             params=params,
+        )
+
+    def get_policy_selection_access(self, policy_id: UUID) -> PolicySelectionAccess:
+        return self._get(f"/v2/policies/{policy_id}/selection-access", PolicySelectionAccess)
+
+    def set_policy_selection_access(
+        self,
+        policy_id: UUID,
+        *,
+        selection_scope: Literal["any_request", "owner_visible"],
+    ) -> PolicySelectionAccess:
+        return self._request(
+            "PUT",
+            f"/v2/policies/{policy_id}/selection-access",
+            PolicySelectionAccess,
+            json={"selection_scope": selection_scope},
         )
 
     def list_coworld_episode_requests(
