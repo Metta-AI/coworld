@@ -654,8 +654,8 @@ def test_run_episode_prints_fast_feedback_commands(monkeypatch: MonkeyPatch, tmp
     assert result.exit_code == 0, result.output
     assert "Scores: 0=3, 1=1.5" in result.output
     assert (
-        f"Inspect replay: uv run coworld replay {manifest_path} {output_dir.resolve() / 'replay'} "
-        "--server https://staging.example/api" in result.output
+        f"Inspect replay: open {output_dir.resolve() / 'replay'} in your static replay viewer bundle "
+        "(see STATIC_REPLAY_VIEWERS.md)" in result.output
     )
     assert f"Inspect logs: ls {output_dir.resolve() / 'logs'}" in result.output
 

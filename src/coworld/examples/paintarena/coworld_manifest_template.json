@@ -5,6 +5,10 @@
     "name": "paintarena",
     "description": "Continuous tick-based territory painting game used to certify the Coworld contract.",
     "owner": "coworld@softmax.com",
+    "replay_viewer": {
+      "bundle": "build/static-replay-viewer",
+      "replay_compression": "gzip"
+    },
     "runnable": {
       "type": "game",
       "image": "{{PAINTARENA_IMAGE}}",

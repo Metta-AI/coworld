@@ -138,6 +138,16 @@ filegroup(
 )
 
 filegroup(
+    name = "paintarena_static_replay_files",
+    srcs = [
+        "src/coworld/examples/paintarena/coworld_manifest_template.json",
+        "src/coworld/examples/paintarena/game/client/replay.html",
+        "src/coworld/examples/paintarena/tools/build_replay_viewer.sh",
+    ],
+    visibility = ["//packages/coworld/tests:__pkg__"],
+)
+
+filegroup(
     name = "arena_game_wit",
     srcs = ["src/coworld/wit/softmax-game/world.wit"],
     visibility = ["//app_backend/tests:__pkg__"],

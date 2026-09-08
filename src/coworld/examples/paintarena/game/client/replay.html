@@ -1,4 +1,5 @@
 <!doctype html>
+<meta charset="utf-8">
 <title>Coworld Paint Arena Replay Client</title>
 <style>
   body {
@@ -207,16 +208,19 @@
       </div>
       <input id="scrubber" aria-label="Replay frame" min="0" type="range" value="0" />
     </div>
-    <div id="status">Connecting</div>
+    <div id="status">Loading</div>
   </header>
   <section id="arenaShell">
     <div id="arena"></div>
   </section>
 </main>
 <script type="module">
-  const websocketUrl = new URL(window.location.href);
-  websocketUrl.protocol = websocketUrl.protocol === "https:" ? "wss:" : "ws:";
-  websocketUrl.pathname = websocketUrl.pathname.replace(/\/client\/replay(\/.*)?$/, "/replay$1");
+  const notifyHost = (message) => {
+    if (window.parent !== window) {
+      window.parent.postMessage({ src: "coworld-replay", ...message }, "*");
+    }
+  };
+  notifyHost({ type: "loading" });
 
   const arena = document.getElementById("arena");
   const arenaShell = document.getElementById("arenaShell");
@@ -234,6 +238,45 @@
   let frameIndex = 0;
   let speed = 1;
   let timer = null;
+
+  function replayUrl() {
+    return new URLSearchParams(location.hash.slice(1)).get("replay")
+      || new URLSearchParams(location.search).get("replay");
+  }
+
+  function replayCompression(bytes) {
+    if (bytes[0] === 0x1f && bytes[1] === 0x8b) return "gzip";
+    const zlib = bytes.length >= 2
+      && (bytes[0] & 15) === 8
+      && (bytes[0] >> 4) <= 7
+      && ((bytes[0] << 8) | bytes[1]) % 31 === 0;
+    return zlib ? "deflate" : null;
+  }
+
+  async function parseReplay(bytes, compression) {
+    const decoded = compression
+      ? await new Response(new Blob([bytes]).stream().pipeThrough(new DecompressionStream(compression))).arrayBuffer()
+      : bytes;
+    return JSON.parse(new TextDecoder().decode(decoded));
+  }
+
+  function receiveContainerReplay() {
+    status.textContent = "Connecting";
+    const websocketUrl = new URL(window.location.href);
+    websocketUrl.protocol = websocketUrl.protocol === "https:" ? "wss:" : "ws:";
+    websocketUrl.pathname = websocketUrl.pathname.replace(/\/client\/replay(\/.*)?$/, "/replay$1");
+    return new Promise((resolve, reject) => {
+      const socket = new WebSocket(websocketUrl);
+      socket.onmessage = (event) => {
+        const message = JSON.parse(event.data);
+        if (message.type !== "replay") return;
+        resolve(message);
+        socket.close();
+      };
+      socket.onerror = () => reject(new Error("Replay connection failed"));
+      socket.onclose = () => reject(new Error("Replay connection closed"));
+    });
+  }
 
   function draw(message) {
     scrubber.value = frameIndex;
@@ -320,24 +363,44 @@
     }, 200 / speed);
   }
 
-  const socket = new WebSocket(websocketUrl);
-  socket.onopen = () => {
-    status.textContent = "Connected";
-  };
-  socket.onmessage = (event) => {
-    const message = JSON.parse(event.data);
-    if (message.type !== "replay") return;
-    frames = message.frames.map(frame => ({ ...frame, player_names: message.player_names }));
-    results = message.results;
-    scrubber.max = Math.max(frames.length - 1, 0);
-    if (frames.length > 0) {
+  async function loadReplay() {
+    try {
+      notifyHost({ type: "phase", phase: "bundle_ready" });
+      const url = replayUrl();
+      let message;
+      if (url) {
+        notifyHost({ type: "phase", phase: "replay_fetch_start" });
+        const response = await fetch(url);
+        if (!response.ok) throw new Error(`Replay request failed (${response.status})`);
+        const bytes = new Uint8Array(await response.arrayBuffer());
+        const compression = replayCompression(bytes);
+        notifyHost({
+          type: "phase",
+          phase: "replay_fetch_end",
+          bytes: bytes.byteLength,
+          compressed: compression !== null,
+        });
+        message = await parseReplay(bytes, compression);
+      } else {
+        message = await receiveContainerReplay();
+      }
+      if (!Array.isArray(message.frames) || message.frames.length === 0) {
+        throw new Error("Replay contains no frames");
+      }
+      frames = message.frames.map(frame => ({ ...frame, player_names: message.player_names }));
+      results = message.results;
+      scrubber.max = frames.length - 1;
+      notifyHost({ type: "phase", phase: "replay_parsed" });
       showFrame(0);
       start();
+      setTimeout(() => notifyHost({ type: "ready" }), 0);
+    } catch (error) {
+      stop();
+      const message = error instanceof Error ? error.message : String(error);
+      status.textContent = `Replay unavailable · ${message}`;
+      notifyHost({ type: "error", message });
     }
-  };
-  socket.onclose = () => {
-    if (frames.length === 0) status.textContent = "Disconnected";
-  };
+  }
 
   play.onclick = () => start();
   pause.onclick = () => stop();
@@ -358,4 +421,5 @@
   window.addEventListener("resize", () => {
     if (frames.length > 0) resizeArena(frames[frameIndex]);
   });
+  loadReplay();
 </script>
