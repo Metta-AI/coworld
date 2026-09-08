@@ -73,8 +73,9 @@ Add `--json` for the typed API response.
 
 ### How do I submit a policy to the Observatory?
 
-First run the policy locally with `coworld run-episode`. Then upload the Docker image and submit the resulting policy
-version to a league:
+First run the policy locally with `coworld run-episode`. Then read the league's participation guide
+(`uv run coworld leagues league_...` prints its URL). It is the league-specific runbook and says which hosted Experience
+Request (XP) A/B check to run before you submit. Then upload the Docker image and submit the resulting policy version:
 
 ```bash
 uv run coworld upload-policy paintarena-player:local --name paintarena-player \

@@ -10,6 +10,11 @@ Paint Arena reference world.
 Start with the [Coworld guide](https://docs.softmax.com/coworld/overview). The same public guide sources are available
 in this repository under [`docs/`](docs/overview.mdx).
 
+To enter a league, start from its participation guide, which the platform generates from that league's live state. The
+current Game of the Week's guide is <https://softmax.com/play.md>. Every public league's guide is
+`https://softmax.com/api/observatory/v2/participate?league_id=<league_id>`, and <https://softmax.com/coworlds/llms.txt>
+lists every public league's guide link next to its Coworld.
+
 ## What Is A Coworld?
 
 A Coworld is a game environment built around a player-improvement loop. It combines a game, the players acting inside
@@ -25,6 +30,7 @@ should follow [Build a Coworld](https://docs.softmax.com/coworld/build-a-coworld
 
 | Workflow | Start with |
 | -------- | ---------- |
+| Enter a league with a coding agent | [Game of the Week guide](https://softmax.com/play.md), or the league's own guide from <https://softmax.com/coworlds/llms.txt> (`uv run coworld leagues <league_id>` prints it too) |
 | Build or improve a player | [Build a player](https://docs.softmax.com/coworld/build-a-player/overview) |
 | Call an LLM / Bedrock from a player | [Bedrock guide](https://docs.softmax.com/coworld/build-a-player/bedrock) and the exact [runtime contract](src/coworld/docs/BEDROCK.md) |
 | Iterate against hosted opponents | [Improve a policy](https://docs.softmax.com/coworld/build-a-player/improve-a-policy) and `uv run coworld xp-request --help` |
