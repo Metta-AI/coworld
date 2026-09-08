@@ -263,3 +263,8 @@ filegroup(
     visibility = ["//visibility:public"],
     tags = ["manual"],
 )
+
+exports_files(
+    ["pyproject.toml"],
+    visibility = ["//:__pkg__"],
+)
