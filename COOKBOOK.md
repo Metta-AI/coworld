@@ -83,6 +83,14 @@ uv run coworld upload-policy paintarena-player:local --name paintarena-player \
 uv run coworld submit paintarena-player --league league_...
 ```
 
+Run `uv run softmax status` to check which saved identity the CLI uses. An active player can browse and download
+Coworlds as well as submit its policies.
+
+When using your user credential, select a nondefault player with `coworld submit ... --player ply_...`. When a player
+session is active, use `coworld player use ply_...` to change players before submitting. A policy version already
+assigned to one player cannot be submitted as another player. A permission error explains the rejected action; logging
+in again does not change which resources that identity may access.
+
 Add `--use-bedrock` (and `--bedrock-model MODEL`, which your player reads from `BEDROCK_MODEL`) during `upload-policy`
 when the hosted policy uses Bedrock; see [Bedrock for Coworld players](src/coworld/docs/BEDROCK.md). Add
 `--secret-env NAME=value` for other hosted provider credentials. For local Bedrock tests, use

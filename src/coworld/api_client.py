@@ -1326,7 +1326,7 @@ def _raise_for_status(response: httpx.Response) -> None:
             raise RuntimeError(f"Access denied (403): {detail}\n{elevated_hint}")
         raise RuntimeError(
             f"Access denied (403) for {response.request.url.path}. "
-            "You may lack permissions, or your token may be expired. Run: uv run softmax login. "
+            f"{response.text.strip() or 'Permission denied'}. "
             f"{elevated_hint}"
         )
     if response.is_error and detail:

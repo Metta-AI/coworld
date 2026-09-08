@@ -1159,8 +1159,8 @@ def submit(
         typer.Option(
             "--player",
             help=(
-                "Submit as this player id (ply_...). Defaults to the account's default player; "
-                "list yours with GET /players. The player must belong to you."
+                "Submit as this player id (ply_...). Defaults to the active player, otherwise the account's default. "
+                "Must match an active player session; with a user credential, the player must belong to you."
             ),
         ),
     ] = None,

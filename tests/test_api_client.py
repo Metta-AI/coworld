@@ -200,7 +200,10 @@ def test_upload_client_elevated_refuses_player_token(httpserver: HTTPServer) -> 
     [
         pytest.param(_raise_for_status, None, id="api-client-without-detail"),
         pytest.param(_raise_for_status, {"detail": "You do not own this resource"}, id="api-client-with-detail"),
-        pytest.param(_raise_for_upload_status, None, id="upload-client"),
+        pytest.param(_raise_for_upload_status, None, id="upload-client-without-detail"),
+        pytest.param(
+            _raise_for_upload_status, {"detail": "You do not own this resource"}, id="upload-client-with-detail"
+        ),
     ],
 )
 def test_403_errors_suggest_elevated_team_access(raise_for_status: Any, response_body: Any) -> None:
@@ -215,3 +218,18 @@ def test_403_errors_suggest_elevated_team_access(raise_for_status: Any, response
         raise_for_status(response)
 
     assert "coworld --elevated <command>" in str(error.value)
+    assert "softmax login" not in str(error.value)
+    assert "expired" not in str(error.value)
+    if response_body is not None:
+        assert response_body["detail"] in str(error.value)
+
+
+@pytest.mark.parametrize("raise_for_status", [_raise_for_status, _raise_for_upload_status])
+def test_403_errors_preserve_non_json_reason(raise_for_status: Any) -> None:
+    response = httpx.Response(
+        403,
+        text="This credential cannot read the catalog",
+        request=httpx.Request("GET", "https://softmax.com/api/observatory/v2/coworlds"),
+    )
+    with pytest.raises(RuntimeError, match="This credential cannot read the catalog"):
+        raise_for_status(response)

@@ -26,7 +26,7 @@ import httpx
 import typer
 from pydantic import BaseModel, Field
 
-from coworld.api_client import CoworldApiClient, LeaguePublic
+from coworld.api_client import CoworldApiClient, LeaguePublic, _detail
 from coworld.bundle import resolve_registry_image_ref
 from coworld.certifier import EXECUTABLE_TRANSCRIPT_PATH, certify_coworld, load_coworld_package
 from coworld.cli_support import validate_run_argv
@@ -1429,9 +1429,9 @@ def _raise_for_status(response: httpx.Response) -> None:
     if response.status_code == 401:
         raise RuntimeError("Authentication failed (401). Your token may be expired. Run: uv run softmax login")
     if response.status_code == 403:
+        detail = _detail(response) or response.text.strip()
         raise RuntimeError(
-            f"Access denied (403) for {response.request.url.path}. "
-            "You may lack permissions, or your token may be expired. Run: uv run softmax login. "
+            f"Access denied (403) for {response.request.url.path}: {detail or 'Permission denied'}. "
             "Softmax team members can request team access by rerunning as "
             "`coworld --elevated <command> ...`."
         )
