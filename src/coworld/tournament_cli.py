@@ -39,11 +39,12 @@ from coworld.api_client import (
     V2EpisodeRequestSummary,
 )
 from coworld.cli_support import console, emit_json, print_replay_session
-from coworld.config import DEFAULT_SUBMIT_SERVER
+from coworld.config import DEFAULT_SUBMIT_SERVER, participation_guide_url
 from coworld.manifest_uri import materialized_replay_path
 from coworld.play import ReplaySession, replay_coworld
 from coworld.submit import parse_policy_identifier
 from coworld.upload import download_coworld, downloaded_coworld_manifest_path, pull_and_tag_image
+from softmax import auth as softmax_auth
 
 _UUID_RE = re.compile(r"^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$")
 _XP_REQUEST_HELP = (
@@ -308,19 +309,21 @@ def register_tournament_commands(app: typer.Typer) -> None:
         server: Annotated[str, typer.Option("--server", help="Observatory API server URL.")] = DEFAULT_SUBMIT_SERVER,
         json_output: Annotated[bool, typer.Option("--json", help="Print raw JSON.")] = False,
     ) -> None:
-        with CoworldApiClient.from_login(server_url=server) as client:
-            if league_id is None:
+        if league_id is None:
+            # The listing is a public read; a stored login only adds the caller's own private leagues.
+            with CoworldApiClient(server_url=server, token=softmax_auth.load_current_token(server=server)) as client:
                 rows = client.list_leagues()
-                if json_output:
-                    emit_json(_dump_models(rows))
-                    return
-                _print_leagues(rows)
+            if json_output:
+                emit_json(_dump_models(rows))
                 return
+            _print_leagues(rows, server=server)
+            return
+        with CoworldApiClient.from_login(server_url=server) as client:
             league = client.get_league(league_id)
         if json_output:
             emit_json(league.model_dump(mode="json"))
             return
-        _print_league_detail(league)
+        _print_league_detail(league, server=server)
 
     @app.command("divisions")
     def divisions(
@@ -945,7 +948,7 @@ def _print_reporter_detail(row: ReporterDetailPublic) -> None:
         )
 
 
-def _print_leagues(rows: list[LeaguePublic]) -> None:
+def _print_leagues(rows: list[LeaguePublic], *, server: str) -> None:
     table = Table(title="Coworld Leagues", box=box.SIMPLE_HEAVY, show_lines=False, pad_edge=False)
     table.add_column("ID")
     table.add_column("Name")
@@ -955,14 +958,21 @@ def _print_leagues(rows: list[LeaguePublic]) -> None:
     for row in rows:
         table.add_row(row.id, row.name, row.game.name, str(row.public).lower(), _format_dt(row.created_at))
     console.print(table)
+    console.print(
+        f"Participation guide for a public league: {participation_guide_url(server, '<league_id>')}",
+        soft_wrap=True,
+    )
 
 
-def _print_league_detail(row: LeaguePublic) -> None:
+def _print_league_detail(row: LeaguePublic, *, server: str) -> None:
     console.print(f"[bold]League:[/bold] {row.id}")
     console.print(f"Name: {row.name}")
     console.print(f"Game: {row.game.name} ({row.game.id})")
     if row.game.coworld_id is not None:
         console.print(f"Coworld: {row.game.coworld_id}")
+    # The guide route serves exactly the leagues an anonymous reader can see.
+    if row.public and not row.hidden:
+        console.print(f"Participation guide: {participation_guide_url(server, row.id)}", soft_wrap=True)
     console.print(f"Public: {row.public}")
     console.print(f"Hidden: {row.hidden}")
     console.print(f"Created: {_format_dt(row.created_at)}")

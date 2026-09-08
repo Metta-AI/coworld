@@ -1957,6 +1957,29 @@ def test_coworld_images_command_shows_uploaded_image(httpserver: HTTPServer, mon
     assert json.loads(result.output)["name"] == "unit-test-runtime"
 
 
+DOWNLOAD_LEAGUE_ID = "league_00000000-0000-0000-0000-000000000050"
+
+
+def _public_league(coworld_id: str) -> dict[str, object]:
+    return {
+        "id": DOWNLOAD_LEAGUE_ID,
+        "name": "Unit Test League",
+        "game": {
+            "id": "game_00000000-0000-0000-0000-000000000051",
+            "name": "Unit Test Game",
+            "coworld_name": "unit-test-game",
+            "coworld_id": coworld_id,
+            "created_at": "2026-05-12T00:00:00Z",
+        },
+        "public": True,
+        "created_at": "2026-05-12T00:00:00Z",
+    }
+
+
+def _expect_public_leagues(httpserver: HTTPServer, leagues: list[dict[str, object]]) -> None:
+    httpserver.expect_request("/observatory/v2/leagues", method="GET").respond_with_json(leagues)
+
+
 def test_download_coworld_command_writes_local_package(
     tmp_path: Path,
     httpserver: HTTPServer,
@@ -2016,6 +2039,7 @@ def test_download_coworld_command_writes_local_package(
             "canonical": True,
         }
     )
+    _expect_public_leagues(httpserver, [_public_league(coworld_id)])
 
     result = CliRunner().invoke(
         app,
@@ -2047,7 +2071,13 @@ def test_download_coworld_command_writes_local_package(
     image_map = json.loads((output_dir / coworld_id / "coworld_images.json").read_text())
     assert image_map["images"] == [{"public_image_uri": public_image_uri, "local_image": local_image}]
     agents_path = output_dir / coworld_id / "AGENTS.md"
-    assert "Champion means your nominated policy version" in agents_path.read_text(encoding="utf-8")
+    agents_md = agents_path.read_text(encoding="utf-8")
+    assert "Champion means your nominated policy version" in agents_md
+    guide_url = f"{httpserver.url_for('').rstrip('/')}/observatory/v2/participate?league_id={DOWNLOAD_LEAGUE_ID}"
+    assert agents_md.index("## Start\n\n- Read the league participation guide") < agents_md.index("coworld_manifest")
+    assert f"  - Unit Test League: {guide_url}\n" in agents_md
+    leagues_request = next(request for request, _ in httpserver.log if request.path == "/observatory/v2/leagues")
+    assert "Authorization" not in leagues_request.headers
     assert "Downloaded Coworld: unit-test-game:0.1.0" in result.output
     assert f"Agent guide: {agents_path}" in result.output
     assert f"Play: uv run coworld play {coworld_id}" in result.output
@@ -2131,6 +2161,7 @@ def test_download_coworld_command_resolves_canonical_name(
             "canonical": True,
         }
     )
+    _expect_public_leagues(httpserver, [_public_league(coworld_id)])
 
     result = CliRunner().invoke(
         app,
@@ -2156,6 +2187,7 @@ def test_download_coworld_command_resolves_canonical_name(
 
 def test_download_coworld_command_skips_cached_coworld_by_id(
     tmp_path: Path,
+    httpserver: HTTPServer,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     coworld_id = "cow_00000000-0000-0000-0000-000000000040"
@@ -2164,6 +2196,7 @@ def test_download_coworld_command_skips_cached_coworld_by_id(
     cached_dir.mkdir(parents=True)
     (cached_dir / "coworld_manifest.json").write_text('{"cached": true}\n', encoding="utf-8")
     (cached_dir / "coworld_images.json").write_text('{"cached": true}\n', encoding="utf-8")
+    (cached_dir / "AGENTS.md").write_text("# AGENTS.md from the first download\n", encoding="utf-8")
     docker_calls: list[list[str]] = []
 
     def fake_run(command: list[str], **_kwargs: object) -> subprocess.CompletedProcess[str]:
@@ -2172,11 +2205,16 @@ def test_download_coworld_command_skips_cached_coworld_by_id(
 
     monkeypatch.setattr("coworld.upload.subprocess.run", fake_run)
 
-    result = CliRunner().invoke(app, ["download", coworld_id, "--output-dir", str(output_dir)])
+    result = CliRunner().invoke(
+        app,
+        ["download", coworld_id, "--output-dir", str(output_dir), "--server", httpserver.url_for("")],
+    )
 
     assert result.exit_code == 0, result.output
     assert docker_calls == []
-    assert "Champion means your nominated policy version" in (cached_dir / "AGENTS.md").read_text(encoding="utf-8")
+    # A cache hit is offline: no request, and the first download's AGENTS.md stays as it was.
+    assert httpserver.log == []
+    assert (cached_dir / "AGENTS.md").read_text(encoding="utf-8") == "# AGENTS.md from the first download\n"
     assert f"Coworld already downloaded: {coworld_id}" in result.output
     assert f"Manifest: {cached_dir / 'coworld_manifest.json'}" in result.output
     assert f"Agent guide: {cached_dir / 'AGENTS.md'}" in result.output
@@ -2216,6 +2254,8 @@ def test_download_coworld_command_refreshes_cached_coworld(
             "canonical": True,
         }
     )
+    # A league for some other Coworld: this download gets the generic pointer.
+    _expect_public_leagues(httpserver, [_public_league("cow_00000000-0000-0000-0000-000000000099")])
 
     result = CliRunner().invoke(
         app,
@@ -2238,7 +2278,11 @@ def test_download_coworld_command_refreshes_cached_coworld(
     ]
     manifest = json.loads((cached_dir / "coworld_manifest.json").read_text())
     assert manifest["game"]["runnable"]["image"] == local_image
-    assert "Champion means your nominated policy version" in (cached_dir / "AGENTS.md").read_text(encoding="utf-8")
+    agents_md = (cached_dir / "AGENTS.md").read_text(encoding="utf-8")
+    assert "Champion means your nominated policy version" in agents_md
+    assert "No public league runs this Coworld version" in agents_md
+    assert f"{httpserver.url_for('').rstrip('/')}/observatory/v2/participate?league_id=<league_id>" in agents_md
+    assert "Unit Test League" not in agents_md
 
 
 def test_downloaded_image_tags_include_coworld_id() -> None:

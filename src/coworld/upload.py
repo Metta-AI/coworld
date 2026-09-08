@@ -26,10 +26,11 @@ import httpx
 import typer
 from pydantic import BaseModel, Field
 
+from coworld.api_client import CoworldApiClient, LeaguePublic
 from coworld.bundle import resolve_registry_image_ref
 from coworld.certifier import EXECUTABLE_TRANSCRIPT_PATH, certify_coworld, load_coworld_package
 from coworld.cli_support import validate_run_argv
-from coworld.config import DEFAULT_SUBMIT_SERVER, list_page_payload
+from coworld.config import DEFAULT_SUBMIT_SERVER, list_page_payload, participation_guide_url
 from coworld.image_refs import is_digest_pinned_image_ref, is_mutable_registry_image_ref
 from coworld.manifest import validate_upload_manifest
 from coworld.manifest_validation import validate_coworld_manifest_game_configs
@@ -51,7 +52,25 @@ _REPLAY_VIEWER_BUNDLE_WAIT_SECONDS = 600.0
 _CERTIFICATION_CACHE_VERSION = "coworld-certification-v1"
 _PACKAGE_ROOT = Path(__file__).parent
 _DOCKER_AUTH_CONFIG_KEYS = {"auths", "credsStore", "credHelpers"}
-DOWNLOAD_AGENTS_MD = """# AGENTS.md
+
+
+def download_agents_md(server: str, leagues: list[LeaguePublic]) -> str:
+    """The `AGENTS.md` written next to a downloaded Coworld package.
+
+    `leagues` are the public leagues that run this Coworld; each one's participation guide is
+    the platform-generated runbook for entering it.
+    """
+    if leagues:
+        guide_bullet = "- Read the league participation guide before entering a league:\n" + "".join(
+            f"  - {league.name}: {participation_guide_url(server, league.id)}\n" for league in leagues
+        )
+    else:
+        guide_bullet = (
+            "- No public league runs this Coworld version. Before entering any league, read its participation\n"
+            f"  guide: `uv run coworld leagues` lists leagues, and a league's guide is\n"
+            f"  {participation_guide_url(server, '<league_id>')}.\n"
+        )
+    return f"""# AGENTS.md
 
 Guidance for coding agents working from this downloaded Coworld package.
 
@@ -62,7 +81,7 @@ Guidance for coding agents working from this downloaded Coworld package.
 
 ## Start
 
-- Read `coworld_manifest.json` before changing policy code.
+{guide_bullet}- Read `coworld_manifest.json` before changing policy code.
 - Treat `game.protocols.player`, `game.docs.pages`, `variants`, and `certification` as the local contract for this
   package.
 - Run `uv run coworld run-episode ./coworld_manifest.json --timeout-seconds 120` with the bundled players before
@@ -1630,10 +1649,9 @@ def download_coworld_cmd(
     coworld_id = resolve_coworld_download_id(coworld_ref, server=server)
     manifest_path = downloaded_coworld_manifest_path(output_dir, coworld_id)
     image_map_path = downloaded_coworld_images_path(output_dir, coworld_id)
+    agents_path = manifest_path.with_name("AGENTS.md")
     if downloaded_coworld_exists(output_dir, coworld_id) and not refresh:
         typer.echo(f"Coworld already downloaded: {coworld_id}")
-        agents_path = manifest_path.with_name("AGENTS.md")
-        agents_path.write_text(DOWNLOAD_AGENTS_MD, encoding="utf-8")
         _print_download_paths(coworld_id, manifest_path, image_map_path, agents_path)
         return
 
@@ -1665,8 +1683,10 @@ def download_coworld_cmd(
         + "\n",
         encoding="utf-8",
     )
-    agents_path = manifest_path.with_name("AGENTS.md")
-    agents_path.write_text(DOWNLOAD_AGENTS_MD, encoding="utf-8")
+    # Anonymous read: the league listing is public, so the guide links need no login.
+    with CoworldApiClient(server_url=server) as client:
+        leagues = [league for league in client.list_leagues() if league.game.coworld_id == coworld_id]
+    agents_path.write_text(download_agents_md(server, leagues), encoding="utf-8")
 
     typer.echo(f"Downloaded Coworld: {coworld.name}:{coworld.version}")
     _print_download_paths(coworld.id, manifest_path, image_map_path, agents_path)

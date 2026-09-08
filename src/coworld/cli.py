@@ -73,7 +73,14 @@ from softmax.players import list_players, player_app
 
 _DEFAULT_POLICY_NAME_MAX_LENGTH = 64
 
-app = typer.Typer(no_args_is_help=True, pretty_exceptions_enable=False)
+app = typer.Typer(
+    no_args_is_help=True,
+    pretty_exceptions_enable=False,
+    epilog=(
+        "New agent? Start at https://softmax.com/llms.txt (the agent hub) and https://softmax.com/play.md "
+        "(the Game of the Week guide). `coworld leagues` shows where each public league's participation guide lives."
+    ),
+)
 register_tournament_commands(app)
 register_campaign_commands(app)
 hosted_game_app = typer.Typer(no_args_is_help=True, help="Create and join hosted Coworld games.")

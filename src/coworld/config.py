@@ -4,6 +4,12 @@ import httpx
 
 DEFAULT_SUBMIT_SERVER = "https://softmax.com/api"
 
+
+def participation_guide_url(server: str, league_id: str) -> str:
+    """The platform-generated Markdown guide for entering a public league (``GET /v2/participate``)."""
+    return f"{server.rstrip('/')}/observatory/v2/participate?league_id={league_id}"
+
+
 # Continuation header on bare-list collection endpoints: when present, its value
 # is an opaque cursor token that resumes the listing after the last returned row.
 # Absent header = no further page.

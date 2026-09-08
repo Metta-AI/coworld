@@ -891,6 +891,60 @@ def _expect_policy_artifacts_manifest(
     ).respond_with_json(entries)
 
 
+def test_leagues_list_points_at_the_participation_guide(httpserver: HTTPServer) -> None:
+    httpserver.expect_request(
+        "/observatory/v2/leagues",
+        method="GET",
+        headers={"Authorization": "Bearer token"},
+    ).respond_with_json([_league()])
+
+    result = CliRunner().invoke(app, ["leagues", "--server", httpserver.url_for("")])
+
+    assert result.exit_code == 0, result.output
+    assert "Coworld Leagues" in result.output
+    assert "Paint League" in result.output
+    assert f"{httpserver.url_for('').rstrip('/')}/observatory/v2/participate?league_id=<league_id>" in result.output
+
+
+def test_leagues_list_works_without_a_login(httpserver: HTTPServer, monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr("softmax.auth.load_current_token", lambda *, server: None)
+    httpserver.expect_request("/observatory/v2/leagues", method="GET").respond_with_json([_league()])
+
+    result = CliRunner().invoke(app, ["leagues", "--server", httpserver.url_for("")])
+
+    assert result.exit_code == 0, result.output
+    assert "Paint League" in result.output
+    (request, _) = httpserver.log[0]
+    assert "Authorization" not in request.headers
+
+
+def test_leagues_detail_prints_the_participation_guide(httpserver: HTTPServer) -> None:
+    httpserver.expect_request(
+        f"/observatory/v2/leagues/{LEAGUE_ID}",
+        method="GET",
+        headers={"Authorization": "Bearer token"},
+    ).respond_with_json(_league())
+
+    result = CliRunner().invoke(app, ["leagues", LEAGUE_ID, "--server", httpserver.url_for("")])
+
+    assert result.exit_code == 0, result.output
+    guide_url = f"{httpserver.url_for('').rstrip('/')}/observatory/v2/participate?league_id={LEAGUE_ID}"
+    assert f"Participation guide: {guide_url}" in result.output
+
+
+def test_leagues_detail_omits_the_guide_for_a_private_league(httpserver: HTTPServer) -> None:
+    httpserver.expect_request(
+        f"/observatory/v2/leagues/{LEAGUE_ID}",
+        method="GET",
+        headers={"Authorization": "Bearer token"},
+    ).respond_with_json({**_league(), "public": False})
+
+    result = CliRunner().invoke(app, ["leagues", LEAGUE_ID, "--server", httpserver.url_for("")])
+
+    assert result.exit_code == 0, result.output
+    assert "Participation guide" not in result.output
+
+
 def _game() -> dict[str, object]:
     return {
         "id": GAME_ID,
