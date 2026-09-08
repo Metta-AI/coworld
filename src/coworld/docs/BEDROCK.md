@@ -148,7 +148,10 @@ Whether you benefit depends entirely on prompt structure — caching matches a b
 
 The sidecar backs off automatically for prompts that keep writing cache entries without ever re-reading them, so a
 volatile-first prompt is not penalized for long — but it also never gets cheaper. Cache usage appears in your
-response's `usage` fields (`cacheReadInputTokenCount` / `cache_read_input_tokens`).
+response's `usage` fields (`cacheReadInputTokens` for Converse, `cacheReadInputTokenCount` for Nova InvokeModel,
+or `cache_read_input_tokens` for Claude InvokeModel).
+Cache count fields can be absent when the provider does not report them. Absence means unreported usage,
+not a measured zero; clients must tolerate missing cache counts.
 
 ## Track your spend (and the league's spend limit)
 
