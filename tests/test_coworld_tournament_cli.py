@@ -27,6 +27,20 @@ OTHER_POLICY_VERSION_ID = "00000000-0000-0000-0000-000000000033"
 OTHER_POLICY_ID = "00000000-0000-0000-0000-000000000034"
 
 
+def _coworld_manifest(
+    *, game_image: str, player_image: str, replay_viewer: dict[str, object] | None = None
+) -> dict[str, Any]:
+    manifest: dict[str, Any] = json.loads(
+        (Path(__file__).parent / "manifest_versions/v1/minimal_manifest.json").read_text()
+    )
+    game = manifest["game"]
+    game["runnable"]["image"] = game_image
+    manifest["player"][0]["image"] = player_image
+    if replay_viewer is not None:
+        game["replay_viewer"] = replay_viewer
+    return manifest
+
+
 @pytest.fixture(autouse=True)
 def _fake_softmax_token(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr("softmax.auth.load_current_token", lambda *, server: "token")
@@ -762,10 +776,7 @@ def test_replay_open_downloads_only_game_image_for_local_replay(
             id=COWORLD_ID,
             name="unit-test-game",
             version="0.1.0",
-            manifest={
-                "game": {"runnable": {"image": game_image}},
-                "player": [{"image": player_image}],
-            },
+            manifest=_coworld_manifest(game_image=game_image, player_image=player_image),
         )
 
     def fake_docker_run(command: list[str], **kwargs: Any) -> Any:
@@ -847,6 +858,51 @@ def test_replay_open_hosted_opens_viewer_url(httpserver: HTTPServer, monkeypatch
             "--server",
             httpserver.url_for(""),
         ],
+    )
+
+    assert result.exit_code == 0, result.output
+    assert viewer_url in result.output
+    assert opened_urls == [viewer_url]
+
+
+def test_replay_open_static_viewer_uses_hosted_session_without_docker(
+    httpserver: HTTPServer, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    monkeypatch.chdir(tmp_path)
+    opened_urls: list[str] = []
+    replay_url = "https://storage.example/replay.replay"
+    viewer_url = "https://softmax.example/observatory/coworld-replays/static"
+    httpserver.expect_request(
+        f"/observatory/v2/episode-requests/{EPISODE_REQUEST_ID}",
+        method="GET",
+        headers={"Authorization": "Bearer token"},
+    ).respond_with_json(_episode_request(episode_request_id=EPISODE_REQUEST_ID, replay_url=replay_url))
+    httpserver.expect_request(
+        "/observatory/v2/coworlds/replays/session",
+        method="POST",
+        headers={"Authorization": "Bearer token"},
+    ).respond_with_json({"viewer_url": viewer_url, "ready": True})
+
+    def fake_download_coworld(_coworld_ref: str, *, server: str) -> Any:
+        return SimpleNamespace(
+            manifest=_coworld_manifest(
+                game_image="unused:latest",
+                player_image="unused-player:latest",
+                replay_viewer={"bundle": f"sha256:{'a' * 64}", "future_viewer_field": True},
+            )
+        )
+
+    def fail_if_local_runtime_is_used(*_args: object, **_kwargs: object) -> None:
+        raise AssertionError("static replay-open must not use a local game container")
+
+    monkeypatch.setattr("coworld.tournament_cli.download_coworld", fake_download_coworld)
+    monkeypatch.setattr("coworld.tournament_cli.pull_and_tag_image", fail_if_local_runtime_is_used)
+    monkeypatch.setattr("coworld.tournament_cli.replay_coworld", fail_if_local_runtime_is_used)
+    monkeypatch.setattr("coworld.tournament_cli.webbrowser.open", opened_urls.append)
+
+    result = CliRunner().invoke(
+        app,
+        ["replay-open", EPISODE_REQUEST_ID, "--server", httpserver.url_for("")],
     )
 
     assert result.exit_code == 0, result.output

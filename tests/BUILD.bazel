@@ -55,6 +55,7 @@ pyproject_test(
         "test_coworld_macos_docs": {"data": ["//packages/coworld:docs_files"]},
         "test_coworld_artifact_docs": {"data": ["//packages/coworld:docs_files"]},
         "test_coworld_certify_docs": {"data": ["//packages/coworld:docs_files"]},
+        "test_coworld_tournament_cli": {"data": [":manifest_version_fixtures"]},
         "test_coworld_templates": {"data": ["//packages/coworld:package_metadata_files"]},
         "test_manifest_versions": {"data": [":manifest_version_fixtures"]},
         "test_paintarena_static_replay": {"data": ["//packages/coworld:paintarena_static_replay_files"]},

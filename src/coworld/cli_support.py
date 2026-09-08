@@ -45,7 +45,7 @@ def print_replay_session(session: ReplaySession) -> None:
     typer.echo(f"Artifacts: {session.artifacts.workspace}")
     typer.echo(f"Replay file: {session.replay_path}")
     typer.echo(f"Replay client: {session.link}")
-    typer.echo("Waiting for the replay container to exit...")
+    typer.echo("Waiting for the replay viewer to exit...")
 
 
 def resolve_league_id(client: CoworldApiClient, league: str) -> str:

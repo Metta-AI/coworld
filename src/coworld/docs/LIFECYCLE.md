@@ -139,12 +139,12 @@ headless episode and local artifact files.
 
 ### Local Replay Viewing
 
-Local replay viewing starts the same game image in replay mode with `COGAME_LOAD_REPLAY_URI=<file-or-http-uri>`. The
-replay viewer enters through `/client/replay`, and the game's replay WebSocket streams replay data loaded from that
-startup URI.
+For a source manifest with `game.replay_viewer`, local replay viewing serves the static bundle and replay file from
+localhost without Docker. The viewer receives the replay URL through `index.html#replay=<url>`.
 
-Replay mode runs the game container only. It opens the local replay viewer by default and does not start player
-containers, commissioner, or supporting roles.
+Without a static bundle, local replay viewing starts the game image with
+`COGAME_LOAD_REPLAY_URI=<file-or-http-uri>`. The viewer enters through `/client/replay`, and the game's `/replay`
+WebSocket streams the replay. This legacy mode starts only the game container.
 
 ## Hosted Tournament Lifecycle
 

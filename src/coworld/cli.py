@@ -1421,7 +1421,7 @@ def _split_episode_request_and_player_images(values: list[str] | None) -> tuple[
     return None, values
 
 
-@app.command("replay", cls=_DockerCommand)
+@app.command("replay")
 def replay(
     manifest_uri: Annotated[str, typer.Argument(help="Path, URI, or Coworld ID for coworld_manifest.json.")],
     replay_uri: Annotated[str, typer.Argument(help="Path or URI to a replay artifact JSON file.")],

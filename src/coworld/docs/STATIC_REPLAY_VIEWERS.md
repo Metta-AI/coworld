@@ -7,6 +7,10 @@ replay format, renderer, WASM ABI, or internal file layout.
 
 This is the implementation guide for a Coworld author or coding agent.
 
+`coworld replay <source-manifest> <replay-file>` serves the declared bundle and replay from localhost without starting
+the game image. Uploaded manifests contain a content digest instead of the source directory; open those episodes with
+`coworld replay-open <episode-request-id>`, which uses Observatory's static bundle route without starting a game pod.
+
 ## Runtime Contract
 
 The viewer reads the episode replay URL from `#replay=` first, then the legacy `?replay=` query:

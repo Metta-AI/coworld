@@ -9,6 +9,7 @@ from pathlib import Path
 from types import SimpleNamespace
 from typing import Any, cast
 from urllib.parse import parse_qs, urlparse
+from urllib.request import urlopen
 from uuid import UUID
 
 import httpx
@@ -2138,6 +2139,48 @@ def test_replay_coworld_starts_replay_container_and_reports_link(
         "-m",
         "unit_test.game",
     ]
+
+
+def test_replay_coworld_serves_static_bundle_and_replay_without_docker(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    coworld_manifest_path = _write_package_files(tmp_path)
+    manifest = json.loads(coworld_manifest_path.read_text(encoding="utf-8"))
+    manifest["game"]["replay_viewer"] = {"bundle": "replay-viewer"}
+    coworld_manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
+    bundle_dir = coworld_manifest_path.parent / "replay-viewer"
+    bundle_dir.mkdir()
+    (bundle_dir / "index.html").write_text("<!doctype html><title>Static replay</title>", encoding="utf-8")
+    replay_path = tmp_path / "replay.json"
+    replay_path.write_text('{"frames":[1]}', encoding="utf-8")
+
+    def fail_if_docker_is_used(*_args: object, **_kwargs: object) -> None:
+        raise AssertionError("static replay viewers must not use Docker")
+
+    class ReplayViewed(Exception):
+        pass
+
+    def inspect_session(session: ReplaySession) -> None:
+        viewer_url = urlparse(session.link)
+        replay_url = parse_qs(viewer_url.fragment)["replay"][0]
+        with urlopen(session.link.split("#", 1)[0]) as response:
+            assert response.read() == b"<!doctype html><title>Static replay</title>"
+            assert response.headers["Content-Security-Policy"]
+        with urlopen(replay_url) as response:
+            assert response.read() == b'{"frames":[1]}'
+        raise ReplayViewed
+
+    monkeypatch.setattr("coworld.play.assert_docker_image_reachable", fail_if_docker_is_used)
+    monkeypatch.setattr("coworld.play.subprocess.Popen", fail_if_docker_is_used)
+    monkeypatch.setattr("coworld.play.subprocess.run", fail_if_docker_is_used)
+
+    with pytest.raises(ReplayViewed):
+        replay_coworld(
+            coworld_manifest_path,
+            replay_path,
+            workspace=tmp_path / "replay-workspace",
+            on_ready=inspect_session,
+        )
 
 
 def _replay_coworld_with_probe(

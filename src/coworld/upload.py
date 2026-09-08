@@ -34,6 +34,7 @@ from coworld.config import DEFAULT_SUBMIT_SERVER, list_page_payload, participati
 from coworld.image_refs import is_digest_pinned_image_ref, is_mutable_registry_image_ref
 from coworld.manifest import validate_upload_manifest
 from coworld.manifest_validation import validate_coworld_manifest_game_configs
+from coworld.replay_viewer import source_replay_viewer_bundle
 from coworld.runner.runner import assert_docker_image_reachable
 from coworld.types import MANIFEST_ROLE_SECTIONS
 from softmax import auth as softmax_auth
@@ -987,17 +988,8 @@ def _replay_viewer_bundle_files(manifest: dict[str, Any], package_root: Path) ->
     if replay_viewer is None or replay_viewer["bundle"].startswith("sha256:"):
         return None
 
-    root = package_root.resolve()
-    bundle_dir = (root / replay_viewer["bundle"]).resolve()
-    bundle_dir.relative_to(root)
-    if not bundle_dir.is_dir():
-        raise ValueError(f"Replay viewer bundle is not a directory: {bundle_dir}")
-    if not (bundle_dir / "index.html").is_file():
-        raise ValueError(f"Replay viewer bundle has no index.html: {bundle_dir}")
-
+    bundle_dir = source_replay_viewer_bundle(package_root, replay_viewer["bundle"])
     entries = list(bundle_dir.rglob("*"))
-    if any(path.is_symlink() for path in entries):
-        raise ValueError(f"Replay viewer bundle cannot contain symlinks: {bundle_dir}")
     files = sorted(path for path in entries if path.is_file())
     return bundle_dir, files
 

@@ -40,6 +40,7 @@ from coworld.api_client import (
 )
 from coworld.cli_support import console, emit_json, print_replay_session
 from coworld.config import DEFAULT_SUBMIT_SERVER, participation_guide_url
+from coworld.manifest import read_downloaded_manifest
 from coworld.manifest_uri import materialized_replay_path
 from coworld.play import ReplaySession, replay_coworld
 from coworld.submit import parse_policy_identifier
@@ -831,15 +832,31 @@ def register_tournament_commands(app: typer.Typer) -> None:
                 if open_browser:
                     webbrowser.open(session.viewer_url)
                 return
-        manifest_path = downloaded_coworld_manifest_path(Path("./coworld"), episode.coworld_id)
+            manifest_path = downloaded_coworld_manifest_path(Path("./coworld"), episode.coworld_id)
+            downloaded_coworld = None
+            if manifest_path.is_file():
+                manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+            else:
+                downloaded_coworld = download_coworld(episode.coworld_id, server=server)
+                manifest = downloaded_coworld.manifest
+            if read_downloaded_manifest(manifest).game.replay_viewer is not None:
+                session = client.create_replay_session(
+                    coworld_id=episode.coworld_id,
+                    episode_id=episode.episode_id,
+                    replay_uri=episode.replay_url,
+                )
+                console.print(session.viewer_url)
+                if open_browser:
+                    webbrowser.open(session.viewer_url)
+                return
         with ExitStack() as stack:
             if manifest_path.is_file():
                 replay_manifest_path = manifest_path.resolve()
             else:
-                coworld = download_coworld(episode.coworld_id, server=server)
-                manifest = copy.deepcopy(coworld.manifest)
+                assert downloaded_coworld is not None
+                manifest = copy.deepcopy(downloaded_coworld.manifest)
                 game_image = manifest["game"]["runnable"]["image"]
-                local_game_image = f"coworld/{coworld.id}/replay-game:downloaded"
+                local_game_image = f"coworld/{downloaded_coworld.id}/replay-game:downloaded"
                 pull_and_tag_image(game_image, local_game_image)
                 manifest["game"]["runnable"]["image"] = local_game_image
                 manifest_temp_dir = stack.enter_context(tempfile.TemporaryDirectory(prefix="coworld-replay-manifest-"))

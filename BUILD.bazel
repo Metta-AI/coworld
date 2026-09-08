@@ -88,6 +88,7 @@ _CORE_SRCS = [
     "src/coworld/manifest/v1/converter.py",
     "src/coworld/manifest/v1/model.py",
     "src/coworld/play.py",
+    "src/coworld/replay_viewer.py",
     "src/coworld/report.py",
     "src/coworld/runner/__init__.py",
     "src/coworld/runner/bedrock_metadata.py",

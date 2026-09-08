@@ -5,6 +5,7 @@ import json
 import os
 import secrets
 import subprocess
+import threading
 from contextlib import ExitStack
 from dataclasses import dataclass
 from pathlib import Path
@@ -18,6 +19,7 @@ from coworld.certifier import (
     load_manifest_episode_job_spec,
     load_results,
 )
+from coworld.replay_viewer import LocalReplayViewerServer, source_replay_viewer_bundle
 from coworld.runner.runner import (
     CONFIG_ENV_VAR,
     CONTAINER_WORKDIR,
@@ -317,12 +319,31 @@ def replay_coworld(
     on_ready: Callable[[ReplaySession], None],
 ) -> ReplaySession:
     package = load_coworld_package(manifest_path, tolerate_newer_fields=True)
-    assert_docker_image_reachable(package.game.image, label="game.runnable.image")
     replay_path = replay_path.resolve()
     if not replay_path.is_file():
         raise FileNotFoundError(f"Replay file does not exist or is not a file: {replay_path}")
 
     artifacts = EpisodeArtifacts.create(workspace, prefix="coworld-replay-")
+    if replay_viewer := package.manifest.game.replay_viewer:
+        bundle_dir = source_replay_viewer_bundle(package.manifest_path.parent, replay_viewer.bundle)
+        with LocalReplayViewerServer(bundle_dir, replay_path, port=0) as server:
+            server_thread = threading.Thread(target=server.serve_forever, name="coworld-replay-viewer", daemon=True)
+            server_thread.start()
+            session = ReplaySession(
+                package=package,
+                artifacts=artifacts,
+                replay_path=replay_path,
+                link=server.viewer_url,
+            )
+            try:
+                on_ready(session)
+                server_thread.join()
+            finally:
+                server.shutdown()
+                server_thread.join()
+        return session
+
+    assert_docker_image_reachable(package.game.image, label="game.runnable.image")
     replay_port = _free_local_port()
     container_replay_uri = f"file:///coworld-replay/{replay_path.name}"
     session = ReplaySession(

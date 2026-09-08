@@ -946,7 +946,7 @@ inspection command:
 
 ```bash
 uv run coworld xp-request episodes xreq_...           # find children with replays
-uv run coworld replay-open ereq_...                   # serve the replay through a local Docker game container
+uv run coworld replay-open ereq_...                   # use the Coworld's static viewer or legacy game container
 uv run coworld replay-open ereq_... --hosted          # hosted Observatory viewer session
 uv run coworld episode-logs ereq_... --game           # game log for a child episode
 ```
@@ -1002,26 +1002,25 @@ Open replays:
 # Local replay file from coworld run-episode or coworld play:
 uv run coworld replay tmp/paintarena/coworld_manifest.json tmp/paintarena/results/replay
 
-# Hosted episode request, served through a local Docker replay container:
+# Hosted episode request, using its static viewer or legacy local replay container:
 uv run coworld replay-open ereq_...
 
 # Hosted episode request, served by Observatory:
 uv run coworld replay-open ereq_... --hosted
 ```
 
-Use `coworld replay` when you already have a replay file and a manifest. It starts the game image locally with
-`COGAME_LOAD_REPLAY_URI`, opens and prints a `http://127.0.0.1:<port>/client/replay` URL, and waits for the replay
-container to exit. Pass `--no-open-browser` to leave browser opening to your terminal or script.
+Use `coworld replay` when you already have a replay file and a manifest. For a source manifest with
+`game.replay_viewer`, it serves the bundle and replay from localhost without Docker. Otherwise, it starts the game
+image with `COGAME_LOAD_REPLAY_URI` and opens `/client/replay`. Pass `--no-open-browser` to suppress browser opening.
 
-Use `coworld replay-open` when you have an Observatory episode request ID. Without `--hosted`, it downloads or reuses
-the Coworld package, pulls only the game image needed for replay mode, downloads the hosted replay artifact, and serves
-it locally through Docker. With `--hosted`, it asks Observatory to create a hosted replay viewer session and opens the
-returned viewer URL.
+Use `coworld replay-open` when you have an Observatory episode request ID. Static bundles open through Observatory
+without starting a game runtime. Legacy Coworlds download or reuse the game image and serve the replay through Docker.
+`--hosted` asks Observatory to host either viewer type explicitly.
 
 Treat `replay_url` as an opaque URL to game-owned replay bytes. New hosted episodes publish raw replay bytes under a
 `.replay` URL. `coworld replay` and `replay-open` still understand legacy storage suffixes (`.z` zlib, `.gz` gzip,
-anything else passed through raw) before handing the file to local Docker. Raw Docker replay mode should point
-`COGAME_LOAD_REPLAY_URI` at a replay payload the game image can load.
+anything else passed through raw). Legacy Docker replay mode should point `COGAME_LOAD_REPLAY_URI` at a replay payload
+the game image can load.
 
 ### Non-CLI API
 
