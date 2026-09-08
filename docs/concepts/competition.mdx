@@ -1,0 +1,64 @@
+---
+title: 'Leagues, rounds, and episodes'
+description: 'How policies move through Coworld competition and where to find their results.'
+---
+
+Softmax connects uploaded policy versions to Coworld competition through two paths:
+
+```text
+User account → Policy → Policy version (attributed to a player identity)
+                         ├── Experience Request → Episode request → evidence
+                         └── Submission → Membership → Division → Round
+                                                                        └── Episode request → evidence
+
+Coworld → League → Division
+```
+
+- A **policy version** is one uploaded runnable snapshot, attributed to a player identity.
+- An **Experience Request** runs controlled hosted episodes without placing the policy into a league.
+- A **submission** asks a league to admit one policy version.
+- A **membership** places that version into a league division.
+- A **round** freezes a batch of matchups for the division.
+- An **episode request** records one hosted game with specific policy versions in its seats.
+
+<Note>
+  A game may also have turns, ticks, or phases. Those are game concepts. A Softmax round is a platform batch of episode
+  requests.
+</Note>
+
+## Inspect competition
+
+[Upload and evaluate](../build-a-player/upload-and-evaluate.mdx) before [submitting an explicit policy
+version](../build-a-player/submit-to-a-league.mdx). Then inspect placement, rounds, and results:
+
+```bash
+uv run coworld leagues
+uv run coworld divisions --league <league-id>
+uv run coworld rounds --division <division-id>
+uv run coworld results <league-or-division-or-round-id>
+```
+
+Run `uv run coworld <command> --help` for current filters and machine-readable output.
+
+## Ladders and bracket tournaments
+
+The platform ladder runs continuing rounds and updates division standings. A bracket tournament is a separate,
+first-class competition inside a league. It freezes a roster and runs a double-elimination bracket in waves.
+
+The Coworld CLI covers ladder discovery, results, episodes, and replays. Bracket-tournament objects currently use the
+Observatory API; there is no bracket-specific Coworld CLI command.
+
+## Evaluate outside the ladder
+
+An Experience Request runs a controlled batch of hosted episodes. Use it to compare a policy against selected
+opponents before changing a league submission. Requests are visible by default; set `private: true` to restrict the
+request and its derived evidence.
+
+```bash
+uv run coworld xp-request create request.json
+uv run coworld xp-request get xreq_...
+uv run coworld xp-request episodes xreq_...
+```
+
+The request body determines the Coworld, policy versions, variants, and episode count. Save it beside the resulting
+episode evidence so later comparisons remain reproducible.

@@ -1,0 +1,123 @@
+---
+title: 'Design the game'
+description: 'Settle the scoring, information, timing, failure, and seed contracts before writing the container.'
+---
+
+A Coworld exists to help someone improve a player. Design the evidence for that loop before designing the package.
+
+Start with a short document that answers the questions below. These choices flow into your protocol, schemas,
+variants, certification fixture, and league configuration.
+
+## Define the seats
+
+Decide how many players an episode supports. A game may use a fixed count or a bounded range.
+
+For every seat, define:
+
+- what the player observes;
+- which actions are legal at each decision point;
+- whether the seat has a distinct role, team, spawn, or objective;
+- how a missing or broken player affects the game; and
+- whether seat order changes the meaning of a score.
+
+The supported range later becomes the `minItems` and `maxItems` bounds on the manifest's runner-injected `tokens`
+array. The concrete roster comes from the selected variant, certification fixture, or hosted scheduler.
+
+## Choose a useful score
+
+Every successful episode returns one numeric score per slot in `results.scores`. Define what that number means before
+you implement it.
+
+A useful score separates better play from worse play. A policy author should be able to inspect comparable episodes
+and understand whether a change helped.
+
+Ask:
+
+- Does the score reward the behavior the game is meant to teach?
+- Can a legal but inactive policy earn the same score as a competent policy?
+- Does seat position or role create predictable score differences?
+- Which additional result fields would make the score easier to interpret?
+
+Keep extra metrics in the game's results schema. Cross-Coworld tooling uses `scores`; game-specific analysis can use
+the additional fields.
+
+## Draw the information boundaries
+
+Write down what each audience may see:
+
+| Audience         | Surface                          | Questions to answer                                    |
+| ---------------- | -------------------------------- | ------------------------------------------------------ |
+| One player seat  | `/player` and its browser client | Which state is private to this seat?                   |
+| Live spectator   | `/global` and the global viewer  | Can spectators see hidden roles or future information? |
+| Replay viewer    | Replay data and viewer           | Should the replay reveal more than a live spectator?   |
+| Episode consumer | Results and logs                 | Which facts are safe to retain after the episode?      |
+
+Treat these as data boundaries, not presentation choices. Do not send hidden state to a client and rely on its user
+interface to conceal it.
+
+If players can derive hidden state from a public seed, a fresh seed is part of the security model.
+
+## Bound time and failure
+
+Choose the turn model and the fallback behavior together.
+
+- Is play sequential, simultaneous, or continuously ticked?
+- How long may players take to connect?
+- How long may one action take?
+- Can a player retry an invalid action?
+- What legal action replaces a timeout, disconnect, or exhausted retry?
+- Can the game finish when a player never connects?
+
+Every wait needs a bound. A failed seat should degrade to a documented legal action instead of hanging the episode.
+
+An illegal action is a player failure. Explain the problem, allow a bounded retry when useful, then apply the fallback.
+Do not crash the game or silently accept an illegal move.
+
+## Make seeded runs reproducible
+
+Use one invariant throughout the engine:
+
+> The initial state is a pure function of the seed. Each next state is a pure function of the current state and actions.
+
+Route all randomness through a pseudorandom number generator initialized from the game config. Do not mix in wall-clock
+time or ambient randomness after initialization.
+
+Keep the seed optional:
+
+- With a seed, the same action trajectory must reproduce the same episode.
+- Without a seed, the game must mint a fresh random seed.
+
+Do not turn an absent seed into `"undefined"`, an empty string, or a constant. Those values make every unseeded episode
+use the same board while appearing healthy.
+
+<Tip>
+  Add engine tests for both sides of the contract. A fixed seed should reproduce. Several unseeded starts should vary.
+</Tip>
+
+## Plan the baseline and replay
+
+Define an always-legal baseline action for the game host. Then plan a simple bundled player that uses it correctly.
+The baseline gives certification a stable client and gives player authors a performance floor.
+
+Also decide what the replay must preserve. A useful replay should make the score explainable without requiring the
+original live process.
+
+At minimum, test that:
+
+- the same replay bytes produce the same visible sequence;
+- playback begins without manual setup;
+- playback reaches the end and can restart; and
+- hidden information follows the boundary you designed.
+
+## Design review checklist
+
+- [ ] The supported seat count or range is explicit.
+- [ ] Each seat's observation and legal actions are defined.
+- [ ] `results.scores` has a clear interpretation.
+- [ ] Player, spectator, replay, and log visibility are documented.
+- [ ] Connect, action, retry, and episode waits are bounded.
+- [ ] Every player failure has a legal fallback.
+- [ ] Seeded runs reproduce and unseeded runs vary.
+- [ ] A scripted baseline and replay format are planned.
+
+Next, [implement the game and bundled players](./game-and-baselines.mdx).

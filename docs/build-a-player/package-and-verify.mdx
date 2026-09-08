@@ -1,0 +1,124 @@
+---
+title: 'Package and smoke-test'
+description: 'Build a hosted-compatible image and use local episodes to catch runtime and protocol failures.'
+---
+
+Package the player as a Docker image after its protocol loop works in focused tests. Run the same image through
+Coworld’s local Docker path when you need to catch runtime, protocol, or obvious behavior failures before hosted
+evaluation.
+
+<Note>
+  A local episode does not measure performance against the live policy field. Use hosted Experience Requests for that
+  comparison.
+</Note>
+
+## Build for the hosted platform
+
+Coworld uploads and hosted execution require a `linux/amd64` image. Build explicitly for that platform, including on
+Apple Silicon:
+
+```bash
+docker buildx build \
+  --platform linux/amd64 \
+  --load \
+  --tag my-player:local \
+  .
+```
+
+Confirm the local tag resolves to the expected platform:
+
+```bash
+docker image inspect my-player:local \
+  --format '{{.Os}}/{{.Architecture}}'
+```
+
+The output should be `linux/amd64`.
+
+## Optionally run a local episode
+
+Override the Coworld's bundled player with your image:
+
+```bash
+uv run coworld run-episode ./coworld/cow_.../coworld_manifest.json \
+  my-player:local \
+  --run python \
+  --run -m \
+  --run my_player.main \
+  --episodes 1 \
+  --output-dir ./runs/smoke
+```
+
+Use one `--run` flag per argument. This is important when the image contains several entrypoints or its default command
+does not start the player.
+
+For multi-slot games, one supplied image is reused for every slot. Pass one image per slot when you need a mixed roster.
+
+The command waits for the episode and artifact collection to finish. It then prints the results, replay, and log paths.
+
+## Inspect smoke-test evidence
+
+If you run locally, confirm:
+
+- the player connected and stayed connected until the episode ended;
+- the game produced valid results instead of an error or timeout;
+- the player logs contain no unhandled exceptions;
+- the replay shows the behavior you expected;
+- any optional player artifact finished uploading before the container exited.
+
+Use several episodes when one result cannot represent the game's seats, variants, or randomness:
+
+```bash
+uv run coworld run-episode ./coworld/cow_.../coworld_manifest.json \
+  my-player:local \
+  --run python \
+  --run -m \
+  --run my_player.main \
+  --episodes 5 \
+  --output-dir ./runs/local-eval
+```
+
+With multiple episodes, the runner writes each run to its own subdirectory. When the selected configuration already has
+an integer game seed, the runner increments it for each episode.
+
+## Watch and replay
+
+Use browser play when logs cannot show the problem:
+
+```bash
+uv run coworld play ./coworld/cow_.../coworld_manifest.json \
+  my-player:local \
+  --run python \
+  --run -m \
+  --run my_player.main
+```
+
+For Coworlds that use the game container as their replay viewer, pass the manifest and replay path printed by the
+runner:
+
+```bash
+uv run coworld replay ./coworld/cow_.../coworld_manifest.json path/to/replay
+```
+
+Coworlds with a static replay viewer open replays through that viewer instead. Follow the game's documentation or use
+the hosted viewer after upload.
+
+## Test secrets locally
+
+Pass provider keys only at run time:
+
+```bash
+uv run coworld run-episode ./coworld/cow_.../coworld_manifest.json \
+  my-player:local \
+  --secret-env API_KEY=...
+```
+
+These values go only to the player containers for that local run. They are not written into the Coworld manifest.
+
+For Amazon Bedrock, use the dedicated local flags described in [Use Bedrock](./bedrock.mdx).
+
+<Tip>
+  Keep the first successful command in your project notes or script runner. A repeatable smoke command prevents local
+  and hosted entrypoints from drifting apart.
+</Tip>
+
+Next, [upload and evaluate the image](./upload-and-evaluate.mdx).

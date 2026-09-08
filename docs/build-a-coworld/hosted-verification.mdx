@@ -1,0 +1,140 @@
+---
+title: 'Verify hosted execution'
+description: 'Inspect real hosted episodes, scores, logs, and replays before opening a Coworld to players.'
+---
+
+Local certification proves the package on your machine. Upload smoke and hosted certification prove the same package
+can run on the platform.
+
+Before announcing a Coworld, inspect the hosted evidence yourself.
+
+## Start with the upload checks
+
+Upload runs hosted smoke episodes from the manifest's bundled certification fixture. When you pass
+`--wait-certification`, it also waits for the hosted certification transcript.
+
+Record the uploaded `cow_...` ID and the smoke episode IDs printed by the command. Check the release again at any time:
+
+```bash
+uv run coworld status cow_...
+```
+
+Do not move on while either hosted check is pending or failed.
+
+## Run the competitive variant
+
+The bundled fixture is intentionally short. Use an Experience Request when you want several hosted episodes against a
+real variant and uploaded policy versions.
+
+An Experience Request requires one participant for every seat. Each `policy_ref` is a policy label such as
+`name:v3`, or a raw policy-version UUID.
+
+This two-seat example targets Paint Arena's `default` variant:
+
+```json xp-request.json
+{
+  "coworld_id": "cow_...",
+  "variant_id": "default",
+  "roster": [
+    { "player": { "policy_ref": "your-baseline:v1" }, "slot": 0 },
+    { "player": { "policy_ref": "your-baseline:v1" }, "slot": 1 }
+  ],
+  "num_episodes": 3,
+  "notes": "Hosted verification for version 0.1.0"
+}
+```
+
+Adjust the roster length to the selected variant's seat count. Upload the baseline through `coworld upload-policy`
+first if it does not already have a policy version.
+
+Create and inspect the request:
+
+```bash
+uv run coworld xp-request create xp-request.json
+uv run coworld xp-request get xreq_... --json
+uv run coworld xp-request episodes xreq_...
+```
+
+Each requested episode starts in `pending` and dispatches asynchronously. Wait until every episode reaches a terminal
+state.
+
+## Inspect every episode
+
+For each returned `ereq_...` ID, inspect the episode row:
+
+```bash
+uv run coworld episodes ereq_... --json
+```
+
+Check four things.
+
+### Scores
+
+Scores must be present, correctly ordered by slot, and plausible for the episode. Repeated minimum or identical scores
+can indicate a protocol or startup failure instead of weak strategy.
+
+### Player behavior
+
+Confirm every seat connected and acted. Look for long timeouts, repeated fallback actions, disconnects, and early
+container exits.
+
+### Logs
+
+Read the game log:
+
+```bash
+uv run coworld episode-logs ereq_... --game
+```
+
+Player logs are access-controlled. Owners can inspect logs for their own policy versions. Do not design public
+debugging around access to another user's private player logs.
+
+### Replay
+
+Open the hosted replay:
+
+```bash
+uv run coworld replay-open ereq_... --hosted
+```
+
+Watch it from start to finish. Confirm that it starts without manual repair, matches the score, respects information
+boundaries, and reaches a clear end state.
+
+## Check seed behavior
+
+If the game accepts a seed, verify both modes through hosted runs:
+
+- repeat a fixed seed and confirm the same opening state and action-dependent trajectory;
+- omit the seed across several episodes and confirm the opening states vary.
+
+Use recorded game config and replay state as evidence. Do not infer the seed from a log line alone.
+
+## Diagnose hosted-only failures
+
+Hosted execution can reveal problems hidden by local Docker:
+
+| Symptom                                     | First checks                                                             |
+| ------------------------------------------- | ------------------------------------------------------------------------ |
+| Image never starts                          | Image architecture, pullability, and runnable `run` arguments.           |
+| Every seat times out                        | Player WebSocket URL handling, protocol version, and connect deadline.   |
+| LLM player becomes a baseline               | Bedrock endpoint, upload options, model access, and throttling logs.     |
+| Results are missing                         | Game completion path and results-schema validation.                      |
+| Replay exists but never plays               | Remote replay loading, browser console, and replay startup behavior.     |
+| Local secrets worked, hosted secrets failed | Manifest references, Coworld secret namespace, and runtime URI handling. |
+
+Fix the root cause, build a new version, and repeat the proof ladder. Do not patch an uploaded manifest without
+re-running the affected checks.
+
+## Ready-to-share checklist
+
+- [ ] Upload smoke passed with the bundled certification fixture.
+- [ ] Hosted certification passed.
+- [ ] The main variant completed several hosted episodes.
+- [ ] Scores were present and matched observed play.
+- [ ] Every expected player connected and acted.
+- [ ] Game and owned-player logs contained no unexplained failures.
+- [ ] A human watched a hosted replay from start to finish.
+- [ ] Seeded runs reproduced and unseeded runs varied, when applicable.
+- [ ] The public game docs are enough for a new player author to begin.
+
+A Coworld is ready when the hosted evidence is useful, not merely when its release exists.

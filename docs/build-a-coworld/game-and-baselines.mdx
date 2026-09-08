@@ -1,0 +1,126 @@
+---
+title: 'Build the game and baselines'
+description: 'Implement the authoritative game container, browser surfaces, replay, and bundled players.'
+---
+
+In a bounded Coworld, one game container owns each episode. The runner starts it first, waits for health, then starts
+one player container per seat.
+
+The game and player protocols are exact runtime contracts. Use this page for the implementation shape, then verify the
+details against the [game contract](https://github.com/Metta-AI/coworld/blob/main/src/coworld/docs/roles/GAME.md) and
+[player contract](https://github.com/Metta-AI/coworld/blob/main/src/coworld/docs/roles/PLAYER.md).
+
+## Implement the game as the authority
+
+The game owns the rules and all authoritative episode outputs. A player proposes actions; it never writes the score or
+changes another seat's state directly.
+
+The container must:
+
+- read its concrete config from the runner-provided URI;
+- report healthy only after it can accept player connections;
+- authenticate each player slot and serve the game-defined player protocol;
+- expose live player and global browser surfaces;
+- validate actions and advance the game state;
+- write results that match the declared results schema; and
+- write replay bytes that the declared viewer can load.
+
+The exact routes, environment variables, WebSocket behavior, and artifact URIs live in the game contract. Avoid copying
+that field-level contract into game prose because it changes with the runtime.
+
+## Fail clearly, then keep the episode moving
+
+Crash during startup when required configuration is missing. A half-configured game creates artifacts that nobody can
+trust.
+
+Once play begins, keep failures bounded:
+
+<Steps>
+  <Step title="Wait for players">
+    Use a finite connection deadline. Missing seats must not block the episode forever.
+  </Step>
+  <Step title="Request an action">Give each decision a finite deadline appropriate for the game's pace.</Step>
+  <Step title="Validate the response">Check both its data shape and whether it is legal in the current state.</Step>
+  <Step title="Recover predictably">
+    Explain invalid input, allow bounded retries, then apply the documented baseline action.
+  </Step>
+</Steps>
+
+Write complete results and replay data only after the episode has finished. Hosted runners begin tearing down player
+containers when the game outputs are complete.
+
+## Build the browser surfaces
+
+The same game image supports three audiences:
+
+- **Player client:** a slot-specific interface for observing and acting.
+- **Global viewer:** a read-only view of a live episode.
+- **Replay viewer:** a view of recorded state and actions.
+
+When no static replay bundle is declared, the runner restarts the game image in replay mode. The image loads the replay
+URI and serves the replay client and stream.
+
+The replay URI may be an HTTPS URL during hosted use. Do not assume it is a local file.
+
+You may instead declare a static browser replay bundle. Follow the
+[static replay viewer contract](https://github.com/Metta-AI/coworld/blob/main/src/coworld/docs/STATIC_REPLAY_VIEWERS.md)
+for its build hook, manifest entry, and browser checks.
+
+In either mode, make the default replay start automatically and restart from the beginning after it ends.
+
+## Ship a small, dependable player set
+
+Every manifest declares at least one bundled player. These players make local examples and certification work without
+an external policy submission.
+
+Always include a scripted player that:
+
+- uses no large language model (LLM);
+- returns legal actions for every reachable observation;
+- handles malformed or unexpected input without leaving the game loop; and
+- exits cleanly when the episode ends.
+
+This player is the certification baseline and the floor that submitted policies should beat.
+
+If the game targets LLM players, you may also ship an LLM baseline. Keep the scripted fallback inside it. Read the
+[Bedrock runtime guide](https://github.com/Metta-AI/coworld/blob/main/src/coworld/docs/BEDROCK.md) before implementing
+an Amazon Bedrock call.
+
+<Warning>
+  Bundled player images are distributed with the Coworld. Treat their code, image contents, and manifest environment as
+  public. Never bake credentials into them.
+</Warning>
+
+## Keep players as clients
+
+A player reads `COWORLD_PLAYER_WS_URL`, connects to the encoded slot and token, speaks the game protocol, and exits.
+It does not start the game or orchestrate other containers.
+
+A player may upload one optional debugging artifact. It must upload before its bounded teardown window closes. The
+exact limits and environment variable live in the player contract.
+
+A single Docker image can serve the game and bundled players. Give each runnable a different `run` command in the
+manifest. Separate images are also valid when the implementations need different dependencies.
+
+## Exercise every bundled player
+
+Certification confirms that every declared bundled player started. The certification fixture must include each player
+ID in at least one seat.
+
+Do not declare planned players that cannot complete the smoke episode. Add them only when their image, command, and
+protocol implementation work.
+
+## Use Paint Arena as a concrete example
+
+[Paint Arena](https://github.com/Metta-AI/coworld/tree/main/src/coworld/examples/paintarena) keeps the complete surface
+in one project:
+
+- `game/server.py` owns the rules, routes, results, and replay;
+- `game/client/` contains the player, global, admin, and replay pages;
+- `game/docs/` specifies the player and global protocols;
+- `player/player.py` implements a deterministic sweep player; and
+- one image uses different commands for its runnable roles.
+
+Use its structure as a starting point. Your protocol and rules remain game-specific.
+
+Once the containers and docs exist, [package them in the manifest](./manifest-and-variants.mdx).

@@ -1,0 +1,145 @@
+---
+title: 'Build, certify, and upload'
+description: 'Turn committed Coworld source into a locally proven and hosted release.'
+---
+
+Build produces the concrete manifest. Certification proves that package locally. Upload publishes the same manifest
+and images, then runs hosted checks.
+
+Before starting, install the Coworld package, start Docker, and commit the source you intend to publish.
+
+## 1. Build the package
+
+Run this from the parent of your Coworld project:
+
+```bash
+uv run coworld build --project path/to/your-coworld --version 0.1.0
+```
+
+The project directory contains `compose.yaml` and `coworld_manifest_template.json`. By default, build writes:
+
+```text
+path/to/your-coworld/dist/coworld_manifest.json
+```
+
+The command builds or pulls the Compose images, resolves image references, replaces template placeholders, stamps the
+version, and validates the hydrated manifest.
+
+Build from committed and pushed source when you declare `source_url`. This lets the build pin public repository paths
+to a commit that other people can inspect.
+
+<Tip>
+  Open the generated manifest once. Confirm the version, image references, commands, public source links, and docs
+  before running containers.
+</Tip>
+
+## 2. Run headless episodes
+
+Start with the certification fixture:
+
+```bash
+uv run coworld run-episode path/to/your-coworld/dist/coworld_manifest.json
+```
+
+Then exercise the default competitive variant and several seeds:
+
+```bash
+uv run coworld run-episode path/to/your-coworld/dist/coworld_manifest.json \
+  --variant <variant-id> --episodes 3
+```
+
+`run-episode` prints the artifact directory. Inspect its results, replay, and game and player logs.
+
+Confirm that:
+
+- results validate and scores match what happened;
+- each expected player connected and acted;
+- no seat spent the episode waiting on timeouts;
+- the replay file exists; and
+- seeded runs reproduce while unseeded runs vary.
+
+## 3. Check the browser experience
+
+```bash
+uv run coworld play path/to/your-coworld/dist/coworld_manifest.json --variant <variant-id>
+```
+
+Open every printed surface. Join and finish through the player client, watch the global view, and inspect the replay.
+
+Verify information boundaries with more than one seat. A correct player view does not prove the spectator or replay
+view is safe.
+
+## 4. Run certification
+
+```bash
+uv run coworld certify path/to/your-coworld/dist/coworld_manifest.json
+```
+
+Certification runs the manifest fixture and records an ordered transcript. It checks the manifest, images, player
+launches, results, replay output, and implemented supporting-role probes.
+
+The command writes an HTML transcript report and opens it by default. It also prints artifact paths and a replay
+command.
+
+Open the replay and watch it. The automated replay probe checks that data can load; it cannot judge whether the game
+state, controls, or redaction are correct.
+
+<Note>
+  Certification is a protocol smoke test. A low score is acceptable. Missing players, invalid results, or a broken
+  replay are not.
+</Note>
+
+Certification caches the exact successful manifest, certifier code, transcript, and local image identities. Any change
+to those inputs invalidates the cached proof.
+
+## 5. Log in and upload
+
+Coworld upload requires a user credential. Clear any active player session, confirm authentication, then upload the
+certified manifest:
+
+```bash
+uv run coworld player unset
+uv run softmax status
+uv run coworld upload-coworld path/to/your-coworld/dist/coworld_manifest.json \
+  --wait-certification
+```
+
+See [Authentication and identities](../../guides/authentication.mdx) if the status command is not authenticated.
+
+If the certification inputs are unchanged, upload reuses the local proof. Otherwise, it certifies again before pushing
+any image archive.
+
+By default, upload waits for hosted smoke episodes using the bundled certification fixture. `--wait-certification`
+also waits for the full hosted certification transcript.
+
+The first authenticated upload of a `game.name` establishes its owner. Later versions of that name must come from the
+same owner or a Softmax team member.
+
+## Understand the hosted result
+
+The new version is visible after upload. It becomes the version resolved by name only after hosted certification and
+upload smoke both pass.
+
+You can inspect the current result later:
+
+```bash
+uv run coworld status cow_...
+```
+
+Use the exit code and transcript to decide what failed:
+
+| Result               | Meaning                                                     |
+| -------------------- | ----------------------------------------------------------- |
+| Upload smoke failure | The bundled fixture failed through the hosted episode path. |
+| Certification exit 2 | The author controls the failed contract or artifact.        |
+| Certification exit 3 | The platform failed or the wait timed out.                  |
+
+After a retryable external failure, retry the unchanged candidate with `coworld retry-certification cow_...`. Rebuild
+and upload a new version when source, images, or the manifest must change.
+
+## What upload does not prove
+
+Hosted automation proves the package can execute. It does not prove the competitive variant is balanced, the scores
+are informative, or the browser replay tells the right story.
+
+Finish with [hosted verification](./hosted-verification.mdx).

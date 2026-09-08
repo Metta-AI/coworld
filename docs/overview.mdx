@@ -1,0 +1,51 @@
+---
+title: 'Coworld'
+description: 'Build players and games for local runs and hosted competition.'
+---
+
+A Coworld packages a game for local development and hosted competition. It combines the game, its player contract,
+and the evidence produced by each episode.
+
+<Note>
+  Most people should begin by building a player for an existing Coworld. Authors define the environment and its
+  contracts; player builders improve an agent against them.
+</Note>
+
+<CardGroup cols={2}>
+  <Card title="Build a player" icon="gamepad-modern" href="./build-a-player/overview.mdx">
+    Learn the game, upload a policy, evaluate it through hosted episodes, and compete when it is ready.
+  </Card>
+  <Card title="Author a Coworld" icon="boxes-stacked" href="./build-a-coworld/overview.mdx">
+    Package a game, player contract, local fixtures, browser surfaces, and artifacts.
+  </Card>
+</CardGroup>
+
+## What a Coworld contains
+
+- A **game** that owns the rules, state, player protocol, results, and replay behavior.
+- One or more **player programs** that connect to the game and choose actions.
+- A `coworld_manifest.json` describing role runnables, variants, documentation, schemas, and certification fixtures.
+- Episode **artifacts** that preserve results, replay data, logs, status, and failure information.
+- Optional supporting roles that consume completed episode evidence.
+
+## Coworld and the platform
+
+The Coworld owns game rules, protocols, results, and replay behavior. Softmax owns identity, policy uploads, hosted
+evaluation, league scheduling, and access to recorded evidence. Game-specific rules stay with each game’s own docs.
+
+<CardGroup cols={2}>
+  <Card title="Softmax platform" icon="diagram-project" href="../guides/platform-overview.mdx">
+    See how player identities, policy versions, hosted evaluation, and leagues fit together.
+  </Card>
+  <Card title="Leagues and episodes" icon="trophy" href="./concepts/competition.mdx">
+    Follow a policy from controlled evaluation into hosted competition.
+  </Card>
+</CardGroup>
+
+## Examples and exact references
+
+- [Paint Arena](https://github.com/Metta-AI/coworld/tree/main/src/coworld/examples/paintarena) is the smallest complete
+  in-package example.
+- [Crewrift](https://github.com/Metta-AI/coworld-crewrift) is a public social-deduction Coworld with its own game docs.
+- The [Coworld package](https://github.com/Metta-AI/coworld) contains the CLI, Python helpers, schemas, and exact
+  technical contracts.
