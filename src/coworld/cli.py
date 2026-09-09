@@ -22,6 +22,7 @@ from coworld.campaign_cli import register_campaign_commands
 from coworld.certification_report import write_certification_report
 from coworld.certifier import (
     build_manifest_episode_job_spec,
+    certification_player_file_paths,
     certify_coworld,
     load_coworld_package,
     load_executable_transcript,
@@ -1049,7 +1050,14 @@ def download(
 
 @app.command("upload-policy", cls=_DockerCommand)
 def upload_policy(
-    image: Annotated[str, typer.Argument(help="Local Docker image to upload as a CoWorld policy.")],
+    image: Annotated[
+        str | None,
+        typer.Argument(help="Local Docker image to upload as a Coworld policy. Omit when using --file."),
+    ] = None,
+    player_file: Annotated[
+        Path | None,
+        typer.Option("--file", help="File or directory to upload as a game-hosted player policy."),
+    ] = None,
     name: Annotated[
         str | None,
         typer.Option(
@@ -1092,6 +1100,12 @@ def upload_policy(
     ] = None,
     server: Annotated[str, typer.Option("--server", help="Observatory API server URL.")] = DEFAULT_SUBMIT_SERVER,
 ) -> None:
+    if (image is None) == (player_file is None):
+        raise typer.BadParameter("Provide exactly one of IMAGE or --file")
+    if player_file is not None and (run or secret_env or use_bedrock or bedrock_model is not None):
+        raise typer.BadParameter(
+            "--file cannot be combined with --run, --secret-env, --use-bedrock, or --bedrock-model"
+        )
     if bedrock_model is not None and not use_bedrock:
         raise typer.BadParameter("--bedrock-model requires --use-bedrock")
     parsed_secret_env: dict[str, str] = {}
@@ -1135,6 +1149,7 @@ def upload_policy(
         secret_env=parsed_secret_env if parsed_secret_env else None,
         tags=parsed_tags if parsed_tags else None,
         server=server,
+        **({"player_file": player_file} if player_file is not None else {}),
     )
 
 
@@ -1267,26 +1282,63 @@ def run_episode(
         raise typer.BadParameter("--aws-profile and --aws-region require --use-bedrock")
     validate_run_argv(run)
     parsed_secret_env: dict[str, str] = {}
-    if use_bedrock:
-        parsed_secret_env.update(_resolve_bedrock_aws_env(aws_profile=aws_profile, aws_region=aws_region).container_env)
     if secret_env:
         for kv in secret_env:
             key, val = _parse_secret_env(kv)
             parsed_secret_env[key] = val
-    episode_request_path, player_images = _split_episode_request_and_player_images(episode_request_or_player_images)
-    if episode_request_path is not None and (variant_id is not None or run):
-        raise typer.BadParameter("episode request files cannot be combined with --variant or --run")
+    player_file_paths: list[Path] | None = None
     with _materialized_manifest_path(manifest_uri, server=server) as manifest_path:
         package = load_coworld_package(manifest_path, tolerate_newer_fields=True)
-        if episode_request_path is None:
-            spec = build_manifest_episode_job_spec(
-                package,
-                variant_id=variant_id,
-                player_images=player_images,
-                player_run=run,
+        if package.manifest.game.player_runtime == "game-hosted":
+            if run or use_bedrock or aws_profile is not None or aws_region is not None or secret_env:
+                raise typer.BadParameter(
+                    "game-hosted Coworlds do not support --run, --use-bedrock, --aws-profile, "
+                    "--aws-region, or --secret-env"
+                )
+            episode_request_path = None
+            player_images = None
+        else:
+            if use_bedrock:
+                parsed_secret_env.update(
+                    _resolve_bedrock_aws_env(aws_profile=aws_profile, aws_region=aws_region).container_env
+                )
+            episode_request_path, player_images = _split_episode_request_and_player_images(
+                episode_request_or_player_images
             )
+            if episode_request_path is not None and (variant_id is not None or run):
+                raise typer.BadParameter("episode request files cannot be combined with --variant or --run")
+        game_hosted = package.manifest.game.player_runtime == "game-hosted"
+        override_paths = (
+            [Path(value) for value in episode_request_or_player_images]
+            if game_hosted and episode_request_or_player_images
+            else None
+        )
+        if episode_request_path is None:
+            try:
+                spec = build_manifest_episode_job_spec(
+                    package,
+                    variant_id=variant_id,
+                    player_images=player_images,
+                    player_run=run,
+                    player_files=override_paths,
+                )
+            except ValueError as exc:
+                if "player file paths" not in str(exc):
+                    raise
+                raise typer.BadParameter(str(exc)) from exc
         else:
             spec = load_manifest_episode_job_spec(package, episode_request_path)
+        if game_hosted:
+            if override_paths is not None:
+                player_file_paths = override_paths
+            else:
+                try:
+                    player_file_paths = certification_player_file_paths(package, len(spec.players))
+                except ValueError as exc:
+                    raise typer.BadParameter(
+                        "this manifest references its player files by digest; run `coworld download` to "
+                        "materialize them, or pass one player file path per seat"
+                    ) from exc
         parsed_manifest_uri = urlparse(manifest_uri)
         if output_dir is not None:
             artifacts_dir = output_dir
@@ -1318,6 +1370,7 @@ def run_episode(
             verify_replay=verify_replay,
             container_prefix="coworld-run",
             **({"secret_env": parsed_secret_env} if parsed_secret_env else {}),
+            **({"player_file_paths": player_file_paths} if player_file_paths is not None else {}),
         )
         typer.echo(f"Artifacts: {artifacts.workspace}")
         typer.echo(f"Results: {artifacts.results_path}")

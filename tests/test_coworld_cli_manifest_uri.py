@@ -1,3 +1,4 @@
+import hashlib
 import json
 from pathlib import Path
 from types import SimpleNamespace
@@ -5,6 +6,7 @@ from typing import Callable, cast
 from urllib.parse import urlparse
 from urllib.request import url2pathname
 
+import pytest
 from pytest import MonkeyPatch
 from pytest_httpserver import HTTPServer
 from typer.testing import CliRunner
@@ -12,7 +14,7 @@ from typer.testing import CliRunner
 from coworld.certifier import load_executable_transcript
 from coworld.cli import app
 from coworld.runner.runner import EpisodeArtifacts
-from coworld.types import CoworldEpisodeJobSpec, StepResult
+from coworld.types import CoworldEpisodeJobSpec, CoworldPlayerFileSpec, StepResult
 
 COWORLD_ID = "cow_00000000-0000-0000-0000-000000000001"
 COWORLD_PATH = f"/v2/coworlds/{COWORLD_ID}"
@@ -395,7 +397,7 @@ def test_coworld_play_downloads_missing_coworld_id_cache(tmp_path: Path, monkeyp
 
 
 def test_coworld_certify_downloads_missing_coworld_id_cache(tmp_path: Path, monkeypatch: MonkeyPatch) -> None:
-    manifest = {"game": {"name": "downloaded-cache"}}
+    manifest = {"game": {"name": "downloaded-cache"}, "player": []}
     captured: dict[str, object] = {}
     downloads: list[tuple[str, Path, str, bool]] = []
 
@@ -766,6 +768,54 @@ def test_run_episode_accepts_one_player_image_per_slot(monkeypatch: MonkeyPatch,
     assert [player.run for player in spec.players] == [expected_run, expected_run]
 
 
+def test_run_episode_passes_exact_game_hosted_player_paths(monkeypatch: MonkeyPatch, tmp_path: Path) -> None:
+    manifest_path = _game_hosted_manifest(tmp_path)
+    first = tmp_path / "first.wasm"
+    second = tmp_path / "second.wasm"
+    first.write_bytes(b"first")
+    second.write_bytes(b"second")
+
+    spec, kwargs = _invoke_run_episode(monkeypatch, tmp_path, str(manifest_path), str(first), str(second))
+
+    assert all(isinstance(player, CoworldPlayerFileSpec) for player in spec.players)
+    assert [cast(CoworldPlayerFileSpec, player).content_hash for player in spec.players] == [
+        hashlib.sha256(b"first").hexdigest(),
+        hashlib.sha256(b"second").hexdigest(),
+    ]
+    assert kwargs["player_file_paths"] == [first, second]
+
+
+def test_run_episode_defaults_game_hosted_paths_to_certification_files(
+    monkeypatch: MonkeyPatch, tmp_path: Path
+) -> None:
+    manifest_path = _game_hosted_manifest(tmp_path)
+
+    _spec, kwargs = _invoke_run_episode(monkeypatch, tmp_path, str(manifest_path))
+
+    assert kwargs["player_file_paths"] == [manifest_path.parent / "players/player.wasm"] * 2
+
+
+@pytest.mark.parametrize(
+    "args",
+    [
+        ["--run", "python"],
+        ["--secret-env", "TOKEN=value"],
+        ["--use-bedrock"],
+        ["--use-bedrock", "--aws-profile", "profile"],
+        ["--use-bedrock", "--aws-region", "us-west-2"],
+    ],
+)
+def test_run_episode_rejects_image_options_for_game_hosted_manifest(
+    monkeypatch: MonkeyPatch, tmp_path: Path, args: list[str]
+) -> None:
+    manifest_path = _game_hosted_manifest(tmp_path)
+
+    result = CliRunner().invoke(app, ["run-episode", str(manifest_path), *args])
+
+    assert result.exit_code != 0
+    assert "game-hosted Coworlds do not support" in result.output
+
+
 def test_run_episode_player_image_override_does_not_invent_manifest_env(
     monkeypatch: MonkeyPatch,
     tmp_path: Path,
@@ -986,6 +1036,20 @@ def _example_manifest(tmp_path: Path) -> Path:
     )
 
 
+def _game_hosted_manifest(tmp_path: Path) -> Path:
+    manifest_path = _example_manifest(tmp_path)
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    manifest["game"]["player_runtime"] = "game-hosted"
+    for player in manifest["player"]:
+        player.pop("image")
+        player["file"] = "players/player.wasm"
+    manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
+    player_path = manifest_path.parent / "players/player.wasm"
+    player_path.parent.mkdir(parents=True)
+    player_path.write_bytes(b"fixture-player")
+    return manifest_path
+
+
 def _cogs_vs_clips_manifest(tmp_path: Path) -> Path:
     players = [{"name": f"Player {slot + 1}"} for slot in range(8)]
     game_config = {
@@ -1131,3 +1195,49 @@ def _write_episode_request(tmp_path: Path, manifest_path: Path) -> Path:
         encoding="utf-8",
     )
     return request_path
+
+
+def test_run_episode_rejects_digest_referenced_player_files_from_a_backend_manifest(
+    httpserver: HTTPServer,
+    monkeypatch: MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    manifest = json.loads(_game_hosted_manifest(tmp_path).read_text(encoding="utf-8"))
+    for player in manifest["player"]:
+        player["file"] = f"sha256:{'a' * 64}"
+    httpserver.expect_request(COWORLD_PATH).respond_with_json({"manifest": manifest})
+    monkeypatch.setattr(
+        "coworld.cli.run_coworld_episode",
+        lambda *_args, **_kwargs: pytest.fail("run-episode started without player files"),
+    )
+    monkeypatch.chdir(tmp_path)
+
+    result = CliRunner().invoke(app, ["run-episode", COWORLD_PATH, "--server", httpserver.url_for("")])
+
+    assert result.exit_code != 0
+    assert "coworld download" in result.output
+
+
+def test_run_episode_overrides_do_not_require_the_bundled_fixture(monkeypatch: MonkeyPatch, tmp_path: Path) -> None:
+    manifest_path = _game_hosted_manifest(tmp_path)
+    (manifest_path.parent / "players/player.wasm").unlink()
+    overrides = [tmp_path / "first.wasm", tmp_path / "second.wasm"]
+    overrides[0].write_bytes(b"first")
+    overrides[1].write_bytes(b"second")
+    captured: dict[str, object] = {}
+
+    def fake_run_coworld_episode(spec: CoworldEpisodeJobSpec, artifacts: object, **kwargs: object) -> None:
+        captured["spec"] = spec
+        captured["kwargs"] = kwargs
+
+    monkeypatch.setattr("coworld.cli.run_coworld_episode", fake_run_coworld_episode)
+
+    result = CliRunner().invoke(app, ["run-episode", str(manifest_path), str(overrides[0]), str(overrides[1])])
+
+    assert result.exit_code == 0, result.output
+    spec = cast(CoworldEpisodeJobSpec, captured["spec"])
+    assert [cast(CoworldPlayerFileSpec, player).content_hash for player in spec.players] == [
+        hashlib.sha256(b"first").hexdigest(),
+        hashlib.sha256(b"second").hexdigest(),
+    ]
+    assert cast(dict[str, object], captured["kwargs"])["player_file_paths"] == overrides

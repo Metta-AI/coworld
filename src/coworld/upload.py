@@ -35,6 +35,7 @@ from coworld.image_refs import is_digest_pinned_image_ref, is_mutable_registry_i
 from coworld.manifest import validate_upload_manifest
 from coworld.manifest_validation import validate_coworld_manifest_game_configs
 from coworld.replay_viewer import source_replay_viewer_bundle
+from coworld.player_files import player_file_bytes
 from coworld.runner.runner import assert_docker_image_reachable
 from coworld.types import MANIFEST_ROLE_SECTIONS
 from softmax import auth as softmax_auth
@@ -51,6 +52,7 @@ _REPLAY_VIEWER_BUNDLE_POLL_SECONDS = 2.0
 _REPLAY_VIEWER_BUNDLE_POLL_MAX_SECONDS = 15.0
 _REPLAY_VIEWER_BUNDLE_WAIT_SECONDS = 600.0
 _CERTIFICATION_CACHE_VERSION = "coworld-certification-v1"
+_PLAYER_FILE_CONTENT_TYPE = "application/octet-stream"
 _PACKAGE_ROOT = Path(__file__).parent
 _DOCKER_AUTH_CONFIG_KEYS = {"auths", "credsStore", "credHelpers"}
 
@@ -137,6 +139,15 @@ class PolicyVersionResponse(BaseModel):
     version: int
     pools: list[str] | None = None
     submit_error: str | None = None
+
+
+class PlayerFilePolicyUploadResponse(BaseModel):
+    upload_url: str | None = None
+    existing_policy_version: PolicyVersionResponse | None = None
+
+
+class CoworldPlayerFileUploadResponse(BaseModel):
+    upload_url: str | None
 
 
 class EcrPushInfo(BaseModel):
@@ -436,6 +447,20 @@ class CoworldUploadClient:
         )
         _raise_for_status(response)
         return CoworldUploadResponse.model_validate(response.json())
+
+    def request_coworld_player_file_upload(
+        self, *, content_hash: str, size_bytes: int
+    ) -> CoworldPlayerFileUploadResponse:
+        response = self._http_client.post(
+            "/v2/coworlds/player-files/upload",
+            headers=self._headers(),
+            json={"content_hash": content_hash, "size_bytes": size_bytes},
+            timeout=60.0,
+        )
+        if response.status_code == 409:
+            return CoworldPlayerFileUploadResponse(upload_url=None)
+        _raise_for_status(response)
+        return CoworldPlayerFileUploadResponse.model_validate(response.json())
 
     def register_reporter(
         self, *, name: str, display_name: str, description: str, outputs: list[dict[str, Any]]
@@ -923,10 +948,87 @@ class CoworldUploadClient:
         _raise_for_status(response)
         return PolicyVersionResponse.model_validate(response.json())
 
+    def request_player_file_upload(
+        self,
+        *,
+        name: str,
+        content_hash: str,
+        size_bytes: int,
+        tags: dict[str, str] | None,
+    ) -> PlayerFilePolicyUploadResponse:
+        response = self._http_client.post(
+            "/stats/policies/files/upload",
+            headers=self._headers(),
+            json={
+                "name": name,
+                "content_hash": content_hash,
+                "size_bytes": size_bytes,
+                "tags": tags or {},
+            },
+            timeout=120.0,
+        )
+        if response.status_code == 409:
+            return PlayerFilePolicyUploadResponse()
+        _raise_for_status(response)
+        return PlayerFilePolicyUploadResponse.model_validate(response.json())
+
+    def complete_player_file_policy(
+        self,
+        *,
+        name: str,
+        content_hash: str,
+        size_bytes: int,
+        tags: dict[str, str] | None,
+    ) -> PolicyVersionResponse:
+        response = self._http_client.post(
+            "/stats/policies/files/complete",
+            headers=self._headers(),
+            json={
+                "name": name,
+                "content_hash": content_hash,
+                "size_bytes": size_bytes,
+                "tags": tags or {},
+            },
+            timeout=120.0,
+        )
+        _raise_for_status(response)
+        return PolicyVersionResponse.model_validate(response.json())
+
 
 def _humanize_reporter_id(reporter_id: str) -> str:
     """Fallback display title from a reporter id: 'round-recap' -> 'Round Recap'."""
     return re.sub(r"[-_]+", " ", reporter_id).strip().title()
+
+
+def _submit_player_files(
+    client: CoworldUploadClient,
+    manifest: dict[str, Any],
+    package_root: Path,
+) -> dict[str, Any]:
+    updated = copy.deepcopy(manifest)
+    uploaded_hashes: set[str] = set()
+    for player in updated.get("player") or []:
+        reference = player.get("file")
+        if reference is None or reference.startswith("sha256:"):
+            continue
+        contents = player_file_bytes(Path(reference), package_root=package_root)
+        content_hash = hashlib.sha256(contents).hexdigest()
+        if content_hash not in uploaded_hashes:
+            upload = client.request_coworld_player_file_upload(
+                content_hash=content_hash,
+                size_bytes=len(contents),
+            )
+            if upload.upload_url is not None:
+                response = httpx.put(
+                    upload.upload_url,
+                    content=contents,
+                    headers={"Content-Type": _PLAYER_FILE_CONTENT_TYPE},
+                    timeout=600.0,
+                )
+                response.raise_for_status()
+            uploaded_hashes.add(content_hash)
+        player["file"] = f"sha256:{content_hash}"
+    return updated
 
 
 def _submit_wasm_reporters(client: CoworldUploadClient, manifest: dict[str, Any], package_root: Path) -> dict[str, Any]:
@@ -1056,6 +1158,7 @@ def upload_coworld(
 
     with CoworldUploadClient.from_login(server_url=server) as client:
         upload_manifest = _manifest_with_softmax_image_ids(client, manifest)
+        upload_manifest = _submit_player_files(client, upload_manifest, manifest_path.parent)
         upload_manifest = _submit_wasm_reporters(client, upload_manifest, manifest_path.parent)
         upload_manifest = _submit_replay_viewer_bundle(client, upload_manifest, manifest_path.parent)
         response = client.upload_manifest(upload_manifest)
@@ -1526,24 +1629,54 @@ def upload_coworld_cmd(
 
 
 def upload_policy_cmd(
-    image: str,
+    image: str | None,
     name: str,
     *,
+    player_file: Path | None = None,
     run: list[str] | None = None,
     secret_env: dict[str, str] | None = None,
     tags: dict[str, str] | None = None,
     server: str = DEFAULT_SUBMIT_SERVER,
 ) -> None:
+    if (image is None) == (player_file is None):
+        raise ValueError("Exactly one of image or player_file is required")
     validate_run_argv(run)
     with CoworldUploadClient.from_login(server_url=server) as client:
-        uploaded_image = _upload_container_image(client, image)
-        result = client.complete_docker_image_policy(
-            name=name,
-            container_image_id=uploaded_image.id,
-            run=run,
-            secret_env=secret_env,
-            tags=tags,
-        )
+        if player_file is not None:
+            if run or secret_env:
+                raise ValueError("player-file policies do not support run commands or secret environments")
+            contents = player_file_bytes(player_file)
+            content_hash = hashlib.sha256(contents).hexdigest()
+            upload = client.request_player_file_upload(
+                name=name,
+                content_hash=content_hash,
+                size_bytes=len(contents),
+                tags=tags,
+            )
+            if upload.existing_policy_version is None and upload.upload_url is not None:
+                response = httpx.put(
+                    upload.upload_url,
+                    content=contents,
+                    headers={"Content-Type": _PLAYER_FILE_CONTENT_TYPE},
+                    timeout=600.0,
+                )
+                response.raise_for_status()
+            result = client.complete_player_file_policy(
+                name=name,
+                content_hash=content_hash,
+                size_bytes=len(contents),
+                tags=tags,
+            )
+        else:
+            assert image is not None
+            uploaded_image = _upload_container_image(client, image)
+            result = client.complete_docker_image_policy(
+                name=name,
+                container_image_id=uploaded_image.id,
+                run=run,
+                secret_env=secret_env,
+                tags=tags,
+            )
     typer.echo(f"Upload complete: {result.name}:v{result.version}")
 
 
@@ -1624,11 +1757,51 @@ def downloaded_coworld_images_path(output_dir: Path, coworld_id: str) -> Path:
     return output_dir / coworld_id / "coworld_images.json"
 
 
+def downloaded_coworld_player_files_path(output_dir: Path, coworld_id: str) -> Path:
+    return output_dir / coworld_id / "player-files"
+
+
 def downloaded_coworld_exists(output_dir: Path, coworld_id: str) -> bool:
-    return (
-        downloaded_coworld_manifest_path(output_dir, coworld_id).is_file()
-        and downloaded_coworld_images_path(output_dir, coworld_id).is_file()
+    manifest_path = downloaded_coworld_manifest_path(output_dir, coworld_id)
+    if not manifest_path.is_file() or not downloaded_coworld_images_path(output_dir, coworld_id).is_file():
+        return False
+    manifest = validate_upload_manifest(json.loads(manifest_path.read_text(encoding="utf-8"))).runtime_manifest
+    return all(
+        player.file is None
+        or (not player.file.startswith("sha256:") and (manifest_path.parent / player.file).is_file())
+        for player in manifest.player
     )
+
+
+def _download_coworld_player_files(
+    coworld: CoworldUploadResponse,
+    output_dir: Path,
+    *,
+    server: str,
+) -> dict[str, Any]:
+    manifest = copy.deepcopy(coworld.manifest)
+    files_dir = downloaded_coworld_player_files_path(output_dir, coworld.id)
+    downloaded: dict[str, str] = {}
+    with httpx.Client(base_url=f"{server.rstrip('/')}/observatory", timeout=120.0) as http_client:
+        for player in manifest.get("player") or []:
+            reference = player.get("file")
+            if reference is None:
+                continue
+            if not reference.startswith("sha256:"):
+                raise ValueError(f"Published Coworld player file is not content-addressed: {reference}")
+            content_hash = reference.removeprefix("sha256:")
+            if content_hash not in downloaded:
+                response = http_client.get(f"/v2/coworlds/{coworld.id}/player-files/{content_hash}")
+                response.raise_for_status()
+                contents = response.content
+                if hashlib.sha256(contents).hexdigest() != content_hash:
+                    raise ValueError(f"Downloaded Coworld player file does not match sha256:{content_hash}")
+                files_dir.mkdir(parents=True, exist_ok=True)
+                destination = files_dir / content_hash
+                destination.write_bytes(contents)
+                downloaded[content_hash] = destination.relative_to(files_dir.parent).as_posix()
+            player["file"] = downloaded[content_hash]
+    return manifest
 
 
 def download_coworld_cmd(
@@ -1654,7 +1827,8 @@ def download_coworld_cmd(
         pull_and_tag_image(public_image_uri, local_tag)
 
     (output_dir / coworld.id).mkdir(parents=True, exist_ok=True)
-    manifest = _manifest_with_local_images(coworld.manifest, image_tags)
+    manifest = _download_coworld_player_files(coworld, output_dir, server=server)
+    manifest = _manifest_with_local_images(manifest, image_tags)
     manifest_path.write_text(json.dumps(manifest, indent=2) + "\n", encoding="utf-8")
     image_map_path.write_text(
         json.dumps(
@@ -1688,6 +1862,9 @@ def _print_download_paths(coworld_id: str, manifest_path: Path, image_map_path: 
     typer.echo(f"Coworld: {coworld_id}")
     typer.echo(f"Manifest: {manifest_path}")
     typer.echo(f"Images: {image_map_path}")
+    player_files_path = downloaded_coworld_player_files_path(manifest_path.parent.parent, coworld_id)
+    if player_files_path.is_dir():
+        typer.echo(f"Player files: {player_files_path}")
     typer.echo(f"Agent guide: {agents_path}")
     typer.echo(f"Play: {shlex.join(['uv', 'run', 'coworld', 'play', coworld_id])}")
 
@@ -1832,12 +2009,27 @@ def _coworld_cache_path(filename: str) -> Path:
 
 def _certification_cache_key(manifest_path: Path, *, manifest: dict[str, object] | None = None) -> str:
     manifest_data = manifest if manifest is not None else json.loads(manifest_path.read_text(encoding="utf-8"))
+    player_file_digests = []
+    players = manifest_data["player"]
+    assert isinstance(players, list)
+    for player in players:
+        assert isinstance(player, dict)
+        reference = player.get("file")
+        if not isinstance(reference, str):
+            continue
+        digest = (
+            reference
+            if reference.startswith("sha256:")
+            else _sha256_digest(player_file_bytes(Path(reference), package_root=manifest_path.parent))
+        )
+        player_file_digests.append({"id": player["id"], "digest": digest})
     key = {
         "cache_version": _CERTIFICATION_CACHE_VERSION,
         "certifier_code": _certification_code_digest(),
         "manifest": _sha256_digest(manifest_path.read_bytes()),
         "transcript": _sha256_digest(EXECUTABLE_TRANSCRIPT_PATH.read_bytes()),
         "local_images": _certification_local_image_hashes(manifest_data),
+        "player_files": player_file_digests,
     }
     return _sha256_digest(json.dumps(key, sort_keys=True, separators=(",", ":")).encode())
 

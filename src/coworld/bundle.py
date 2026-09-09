@@ -12,6 +12,7 @@ from urllib.parse import urlparse, urlunparse
 
 from coworld.image_refs import image_ref_without_tag, is_digest_pinned_image_ref, is_mutable_registry_image_ref
 from coworld.manifest import validate_upload_manifest
+from coworld.player_files import resolve_player_file
 from coworld.schema_validation import load_json_object
 from coworld.types import CoworldManifest, CoworldRunnableSpec
 
@@ -70,11 +71,41 @@ def build_coworld_manifest(
 
     output_path.parent.mkdir(parents=True, exist_ok=True)
     _build_replay_viewer_bundle(manifest, template_path.parent, output_path.parent)
+    _copy_player_files(manifest, template_path.parent, output_path.parent)
     output_path.write_text(
         json.dumps(manifest.model_dump(exclude_none=True), indent=2) + "\n",
         encoding="utf-8",
     )
     return output_path
+
+
+def _copy_player_files(manifest: CoworldManifest, source_root: Path, output_root: Path) -> None:
+    """Materialize file-backed players next to the built manifest.
+
+    ``player[].file`` stays package-relative in the built manifest, and upload,
+    certification and ``run-episode`` all resolve it against the manifest's directory,
+    so the built package must carry the bytes, not point back at the source tree.
+    """
+    output_root = output_root.resolve()
+    for player in manifest.player:
+        if player.file is None or player.file.startswith("sha256:"):
+            continue
+        source = resolve_player_file(Path(player.file), package_root=source_root)
+        destination = (output_root / player.file).resolve()
+        destination.relative_to(output_root)
+        if destination == source:
+            continue
+        # Replace, never merge: a rebuild into the same dist/ must not keep files the
+        # source player has since deleted or renamed.
+        if destination.is_dir() and not destination.is_symlink():
+            shutil.rmtree(destination)
+        elif destination.exists() or destination.is_symlink():
+            destination.unlink()
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        if source.is_dir():
+            shutil.copytree(source, destination)
+        else:
+            shutil.copy2(source, destination)
 
 
 def _build_replay_viewer_bundle(manifest: CoworldManifest, source_root: Path, output_root: Path) -> None:
@@ -125,7 +156,9 @@ def _load_template_manifest(
         if section in manifest_json:
             runnables.extend(manifest_json[section])
     for runnable in runnables:
-        image = runnable["image"]
+        image = runnable.get("image")
+        if image is None:
+            continue  # a file-backed player has no image to hydrate
         if image in image_placeholders:
             runnable["image"] = image_placeholders[image]
         elif image.startswith("{{") and image.endswith("}}"):
@@ -312,7 +345,7 @@ def _pull_image_refs(
 def _manifest_images(manifest: CoworldManifest) -> tuple[str, ...]:
     images = [manifest.game.runnable.image]
     for section in ROLE_SECTIONS:
-        images.extend(runnable.image for runnable in getattr(manifest, section))
+        images.extend(runnable.image for runnable in getattr(manifest, section) if runnable.image is not None)
     return tuple(dict.fromkeys(images))
 
 
@@ -334,7 +367,9 @@ def _with_image_tags(manifest: CoworldManifest, image_tags: dict[str, str]) -> C
     updates: dict[str, object] = {"game": game}
     for section in ROLE_SECTIONS:
         updates[section] = [
-            runnable.model_copy(update={"image": image_tags.get(runnable.image, runnable.image)})
+            runnable
+            if runnable.image is None
+            else runnable.model_copy(update={"image": image_tags.get(runnable.image, runnable.image)})
             for runnable in getattr(manifest, section)
         ]
     return manifest.model_copy(update=updates)

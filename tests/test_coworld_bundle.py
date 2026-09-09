@@ -10,7 +10,9 @@ import pytest
 from typer.testing import CliRunner
 
 from coworld.bundle import _github_source_contexts, _pinned_source_url, build_coworld_manifest
+from coworld.certifier import load_coworld_package
 from coworld.cli import app
+from coworld.player_files import player_file_bytes
 
 REAL_SUBPROCESS_RUN = subprocess.run
 
@@ -107,6 +109,77 @@ def test_build_coworld_manifest_runs_compose_and_writes_hydrated_manifest(
             {"check": True},
         ),
     ]
+
+
+@pytest.mark.parametrize("player_file", ["players/player.py", "players/bot"])
+def test_build_coworld_manifest_keeps_file_backed_players(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, player_file: str
+) -> None:
+    template_path = _write_manifest(
+        tmp_path,
+        game_image="{{GAME_IMAGE}}",
+        player_image="unused",
+        include_version=False,
+    )
+    template = json.loads(template_path.read_text(encoding="utf-8"))
+    template["game"]["player_runtime"] = "game-hosted"
+    for player in template["player"]:
+        player.pop("image")
+        player["file"] = player_file
+    template_path.write_text(json.dumps(template), encoding="utf-8")
+    source = tmp_path / player_file
+    if player_file.endswith(".py"):
+        source.parent.mkdir()
+        source.write_text("print('hi')\n", encoding="utf-8")
+    else:
+        (source / "lib").mkdir(parents=True)
+        (source / "main.py").write_text("print('hi')\n", encoding="utf-8")
+        (source / "lib" / "util.py").write_text("X = 1\n", encoding="utf-8")
+    (tmp_path / "compose.yaml").write_text("services: {}\n", encoding="utf-8")
+    calls: list[tuple[list[str], dict[str, object]]] = []
+    monkeypatch.setattr(
+        "coworld.bundle.subprocess.run",
+        _fake_docker_run(
+            {"game": "game-runtime:latest", "grader": "ghcr.io/metta-ai/graders-default:latest"},
+            {
+                "game-runtime:latest": "sha256:1111111111112222222222222222222222222222222222222222222222222222",
+                "ghcr.io/metta-ai/graders-default:latest": (
+                    "sha256:eeeeeeeeeeeefffffffffffffffffffffffffffffffffffffffffffffffffffff"
+                ),
+            },
+            calls,
+        ),
+    )
+
+    built_manifest_path = build_coworld_manifest(
+        tmp_path / "compose.yaml", template_path, "0.2.0", tmp_path / "dist" / "coworld_manifest.json"
+    )
+
+    built_manifest = json.loads(built_manifest_path.read_text(encoding="utf-8"))
+    assert built_manifest["game"]["player_runtime"] == "game-hosted"
+    assert built_manifest["game"]["runnable"]["image"] == "game-runtime:coworld-111111111111"
+    assert built_manifest["player"][0]["file"] == player_file
+    assert "image" not in built_manifest["player"][0]
+    assert not any("player-runtime" in " ".join(command) for command, _ in calls)
+    # The built package is self-contained: the bytes live next to dist/coworld_manifest.json
+    # and resolve the way upload, certification and run-episode resolve them.
+    assert player_file_bytes(Path(player_file), package_root=built_manifest_path.parent) == player_file_bytes(
+        Path(player_file), package_root=tmp_path
+    )
+    package = load_coworld_package(built_manifest_path)
+    assert package.manifest.player[0].file == player_file
+
+    # Rebuilding into the same dist/ replaces the player: a file deleted from the source
+    # must not survive from the previous build.
+    if source.is_dir():
+        (source / "lib" / "util.py").unlink()
+        stale = built_manifest_path.parent / player_file / "lib" / "util.py"
+        assert stale.exists()
+        build_coworld_manifest(tmp_path / "compose.yaml", template_path, "0.2.1", built_manifest_path)
+        assert not stale.exists()
+        assert player_file_bytes(Path(player_file), package_root=built_manifest_path.parent) == player_file_bytes(
+            Path(player_file), package_root=tmp_path
+        )
 
 
 def test_build_coworld_manifest_builds_declared_replay_viewer(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:

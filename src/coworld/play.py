@@ -130,6 +130,8 @@ def play_coworld(
     on_ready: Callable[[PlaySession], None],
 ) -> PlayResult:
     package = load_coworld_package(manifest_path, tolerate_newer_fields=True)
+    if package.manifest.game.player_runtime == "game-hosted":
+        raise ValueError("coworld play does not support game-hosted Coworlds")
     artifacts = EpisodeArtifacts.create(workspace, prefix="coworld-play-")
     if episode_request_path is not None and (variant_id is not None or player_images or player_run):
         raise ValueError("episode_request_path cannot be combined with variant_id, player_images, or player_run")

@@ -19,6 +19,7 @@ from werkzeug import Response
 
 from coworld.cli import _DEFAULT_POLICY_NAME_MAX_LENGTH, app
 from coworld.config import NEXT_CURSOR_HEADER
+from coworld.player_files import player_file_bytes
 from coworld.upload import (
     _PACKAGE_ROOT,
     _REGISTRY_UPLOAD_TIMEOUT,
@@ -47,6 +48,7 @@ from coworld.upload import (
     _push_archive_to_registry,
     _replay_viewer_bundle_files,
     _select_oci_image_manifest,
+    _submit_player_files,
     _submit_replay_viewer_bundle,
     _submit_wasm_reporters,
     upload_coworld,
@@ -528,6 +530,27 @@ def test_certification_cache_key_changes_with_certifier_code(
 
     assert key_v1 == key_v1_again
     assert key_v1 != key_v2
+
+
+def test_certification_cache_key_changes_with_player_file_bytes(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    manifest = _manifest()
+    player = cast(list[dict[str, object]], manifest["player"])[0]
+    player["file"] = "players/player.wasm"
+    manifest_path = _write_manifest(tmp_path, manifest)
+    player_path = manifest_path.parent / "players/player.wasm"
+    player_path.parent.mkdir(parents=True)
+    monkeypatch.setattr("coworld.upload._certification_code_digest", lambda: "sha256:certifier")
+    monkeypatch.setattr("coworld.upload._local_image_client_hash", lambda image: f"sha256:{image}")
+
+    player_path.write_bytes(b"first")
+    first_key = _certification_cache_key(manifest_path)
+    player_path.write_bytes(b"second")
+    second_key = _certification_cache_key(manifest_path)
+
+    assert first_key != second_key
 
 
 def test_certification_code_digest_covers_the_whole_package(
@@ -1430,6 +1453,228 @@ def test_upload_policy_command_creates_docker_image_policy(
     assert "Upload complete: paintbot:v1" in result.output
 
 
+def test_upload_policy_command_uploads_player_file(httpserver: HTTPServer, tmp_path: Path) -> None:
+    player_file = tmp_path / "player.wasm"
+    contents = b"game-hosted-player"
+    player_file.write_bytes(contents)
+    content_hash = hashlib.sha256(contents).hexdigest()
+    httpserver.expect_request(
+        "/observatory/stats/policies/files/upload",
+        method="POST",
+        headers={"Authorization": "Bearer token"},
+        json={"name": "paintbot", "content_hash": content_hash, "size_bytes": len(contents), "tags": {}},
+    ).respond_with_json({"upload_url": httpserver.url_for("/player-file-upload"), "existing_policy_version": None})
+    httpserver.expect_request(
+        "/player-file-upload",
+        method="PUT",
+        headers={
+            "Content-Type": "application/octet-stream",
+            "Content-Length": str(len(contents)),
+        },
+        data=contents,
+    ).respond_with_data("", status=200)
+    httpserver.expect_request(
+        "/observatory/stats/policies/files/complete",
+        method="POST",
+        headers={"Authorization": "Bearer token"},
+        json={"name": "paintbot", "content_hash": content_hash, "size_bytes": len(contents), "tags": {}},
+    ).respond_with_json({"id": "00000000-0000-0000-0000-000000000031", "name": "paintbot", "version": 2})
+
+    result = CliRunner().invoke(
+        app,
+        ["upload-policy", "--file", str(player_file), "--name", "paintbot", "--server", httpserver.url_for("")],
+    )
+
+    assert result.exit_code == 0, result.output
+    assert "Upload complete: paintbot:v2" in result.output
+
+
+def test_upload_policy_command_updates_tags_for_existing_player_file_policy(
+    httpserver: HTTPServer, tmp_path: Path
+) -> None:
+    player_file = tmp_path / "player.wasm"
+    contents = b"existing-player"
+    player_file.write_bytes(contents)
+    content_hash = hashlib.sha256(contents).hexdigest()
+    httpserver.expect_request(
+        "/observatory/stats/policies/files/upload",
+        method="POST",
+        json={
+            "name": "paintbot",
+            "content_hash": content_hash,
+            "size_bytes": len(contents),
+            "tags": {"stage": "champion"},
+        },
+    ).respond_with_json(
+        {
+            "upload_url": None,
+            "existing_policy_version": {
+                "id": "00000000-0000-0000-0000-000000000031",
+                "name": "paintbot",
+                "version": 7,
+            },
+        }
+    )
+    httpserver.expect_request(
+        "/observatory/stats/policies/files/complete",
+        method="POST",
+        json={
+            "name": "paintbot",
+            "content_hash": content_hash,
+            "size_bytes": len(contents),
+            "tags": {"stage": "champion"},
+        },
+    ).respond_with_json(
+        {
+            "id": "00000000-0000-0000-0000-000000000031",
+            "name": "paintbot",
+            "version": 7,
+        }
+    )
+
+    result = CliRunner().invoke(
+        app,
+        [
+            "upload-policy",
+            "--file",
+            str(player_file),
+            "--name",
+            "paintbot",
+            "--tag",
+            "stage=champion",
+            "--server",
+            httpserver.url_for(""),
+        ],
+    )
+
+    assert result.exit_code == 0, result.output
+    assert "Upload complete: paintbot:v7" in result.output
+
+
+def test_upload_policy_command_completes_already_stored_player_file(httpserver: HTTPServer, tmp_path: Path) -> None:
+    player_file = tmp_path / "player.wasm"
+    contents = b"shared-player"
+    player_file.write_bytes(contents)
+    content_hash = hashlib.sha256(contents).hexdigest()
+    httpserver.expect_request(
+        "/observatory/stats/policies/files/upload",
+        method="POST",
+        json={"name": "paintbot", "content_hash": content_hash, "size_bytes": len(contents), "tags": {}},
+    ).respond_with_json({"detail": "already stored"}, status=409)
+    httpserver.expect_request(
+        "/observatory/stats/policies/files/complete",
+        method="POST",
+        json={"name": "paintbot", "content_hash": content_hash, "size_bytes": len(contents), "tags": {}},
+    ).respond_with_json({"id": "00000000-0000-0000-0000-000000000031", "name": "paintbot", "version": 8})
+
+    result = CliRunner().invoke(
+        app,
+        ["upload-policy", "--file", str(player_file), "--name", "paintbot", "--server", httpserver.url_for("")],
+    )
+
+    assert result.exit_code == 0, result.output
+    assert "Upload complete: paintbot:v8" in result.output
+
+
+@pytest.mark.parametrize(
+    "args",
+    [
+        [],
+        ["unit-test-policy:latest", "--file", "player.wasm"],
+    ],
+)
+def test_upload_policy_command_requires_exactly_one_source(args: list[str]) -> None:
+    result = CliRunner().invoke(app, ["upload-policy", *args, "--name", "paintbot"])
+
+    assert result.exit_code != 0
+    assert "exactly one of IMAGE or --file" in result.output
+
+
+@pytest.mark.parametrize(
+    "forbidden_args",
+    [
+        ["--run", "python"],
+        ["--secret-env", "TOKEN=value"],
+        ["--use-bedrock"],
+        ["--bedrock-model", "model-id"],
+    ],
+)
+def test_upload_policy_command_rejects_container_options_with_file(tmp_path: Path, forbidden_args: list[str]) -> None:
+    player_file = tmp_path / "player.wasm"
+    player_file.write_bytes(b"player")
+
+    result = CliRunner().invoke(
+        app,
+        ["upload-policy", "--file", str(player_file), "--name", "paintbot", *forbidden_args],
+    )
+
+    assert result.exit_code != 0
+    assert "--file cannot be combined" in result.output
+
+
+def test_player_file_directory_archive_is_deterministic(tmp_path: Path) -> None:
+    first = tmp_path / "first"
+    second = tmp_path / "second"
+    (first / "nested").mkdir(parents=True)
+    (second / "nested").mkdir(parents=True)
+    (first / "b.txt").write_bytes(b"b")
+    (first / "nested" / "a.txt").write_bytes(b"a")
+    (second / "nested" / "a.txt").write_bytes(b"a")
+    (second / "b.txt").write_bytes(b"b")
+
+    assert player_file_bytes(first) == player_file_bytes(second)
+
+
+def test_player_file_size_cap_is_enforced_before_reading(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    player_file = tmp_path / "player.bin"
+    player_file.write_bytes(b"oversized")
+    monkeypatch.setattr("coworld.player_files.PLAYER_FILE_MAX_BYTES", 4)
+    monkeypatch.setattr(Path, "read_bytes", lambda _self: pytest.fail("oversized file was read"))
+
+    with pytest.raises(ValueError, match="size limit"):
+        player_file_bytes(player_file)
+
+
+def test_submit_player_files_deduplicates_equal_bytes(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    (tmp_path / "one.wasm").write_bytes(b"same-player")
+    (tmp_path / "two.wasm").write_bytes(b"same-player")
+    requests: list[tuple[str, int]] = []
+    uploads: list[bytes] = []
+
+    class RecordingClient:
+        def request_coworld_player_file_upload(self, *, content_hash: str, size_bytes: int):
+            requests.append((content_hash, size_bytes))
+            return type("Upload", (), {"upload_url": "https://upload.example/player"})()
+
+    class PutResponse:
+        def raise_for_status(self) -> None:
+            return None
+
+    def put(_url: str, *, content: bytes, headers: dict[str, str], timeout: float) -> PutResponse:
+        assert headers == {"Content-Type": "application/octet-stream"}
+        assert timeout == 600.0
+        uploads.append(content)
+        return PutResponse()
+
+    monkeypatch.setattr("coworld.upload.httpx.put", put)
+    manifest = {"player": [{"file": "one.wasm"}, {"file": "two.wasm"}]}
+
+    updated = _submit_player_files(cast(CoworldUploadClient, RecordingClient()), manifest, tmp_path)
+
+    content_hash = hashlib.sha256(b"same-player").hexdigest()
+    assert requests == [(content_hash, len(b"same-player"))]
+    assert uploads == [b"same-player"]
+    assert [player["file"] for player in updated["player"]] == [f"sha256:{content_hash}"] * 2
+
+
+@pytest.mark.parametrize("reference", ["missing.wasm", "../outside.wasm"])
+def test_submit_player_files_rejects_missing_or_out_of_package_paths(tmp_path: Path, reference: str) -> None:
+    (tmp_path.parent / "outside.wasm").write_bytes(b"outside")
+
+    with pytest.raises(ValueError):
+        _submit_player_files(cast(CoworldUploadClient, object()), {"player": [{"file": reference}]}, tmp_path)
+
+
 @pytest.mark.parametrize(
     ("player_session", "active_player_id", "expected_name"),
     [
@@ -2083,6 +2328,94 @@ def test_download_coworld_command_writes_local_package(
     assert f"Play: uv run coworld play {coworld_id}" in result.output
 
 
+def test_download_coworld_command_materializes_player_files(
+    tmp_path: Path,
+    httpserver: HTTPServer,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    coworld_id = "cow_00000000-0000-0000-0000-000000000040"
+    public_image_uri = "public.ecr.aws/softmax/coworld@sha256:public-digest"
+    contents = b"bundled-player"
+    content_hash = hashlib.sha256(contents).hexdigest()
+    output_dir = tmp_path / "downloaded"
+    monkeypatch.setattr(
+        "coworld.upload.subprocess.run",
+        lambda command, **_kwargs: subprocess.CompletedProcess(command, 0),
+    )
+    httpserver.expect_request(f"/observatory/v2/coworlds/{coworld_id}", method="GET").respond_with_json(
+        {
+            "id": coworld_id,
+            "name": "unit-test-game",
+            "version": "0.1.0",
+            "manifest": _manifest_with_player_file(public_image_uri, content_hash),
+            "manifest_hash": "sha256:manifest-hash",
+            "size_bytes": 1234,
+            "canonical": True,
+        }
+    )
+    httpserver.expect_request(
+        f"/observatory/v2/coworlds/{coworld_id}/player-files/{content_hash}", method="GET"
+    ).respond_with_data(contents, content_type="application/octet-stream")
+
+    _expect_public_leagues(httpserver, [])
+
+    result = CliRunner().invoke(
+        app,
+        ["download", coworld_id, "--output-dir", str(output_dir), "--server", httpserver.url_for("")],
+    )
+
+    assert result.exit_code == 0, result.output
+    player_path = output_dir / coworld_id / "player-files" / content_hash
+    assert player_path.read_bytes() == contents
+    manifest = json.loads((output_dir / coworld_id / "coworld_manifest.json").read_text(encoding="utf-8"))
+    assert manifest["player"][0]["file"] == f"player-files/{content_hash}"
+    assert f"Player files: {player_path.parent}" in result.output
+
+
+def test_download_coworld_command_fetches_a_shared_player_file_once(
+    tmp_path: Path,
+    httpserver: HTTPServer,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    coworld_id = "cow_00000000-0000-0000-0000-000000000041"
+    contents = b"bundled-player"
+    content_hash = hashlib.sha256(contents).hexdigest()
+    manifest = _manifest_with_player_file("public.ecr.aws/softmax/coworld@sha256:public-digest", content_hash)
+    manifest["player"].append({**manifest["player"][0], "id": "twin", "name": "Twin"})
+    monkeypatch.setattr(
+        "coworld.upload.subprocess.run",
+        lambda command, **_kwargs: subprocess.CompletedProcess(command, 0),
+    )
+    httpserver.expect_request(f"/observatory/v2/coworlds/{coworld_id}", method="GET").respond_with_json(
+        {
+            "id": coworld_id,
+            "name": "unit-test-game",
+            "version": "0.1.0",
+            "manifest": manifest,
+            "manifest_hash": "sha256:manifest-hash",
+            "size_bytes": 1234,
+            "canonical": True,
+        }
+    )
+    httpserver.expect_request(
+        f"/observatory/v2/coworlds/{coworld_id}/player-files/{content_hash}", method="GET"
+    ).respond_with_data(contents, content_type="application/octet-stream")
+    _expect_public_leagues(httpserver, [])
+
+    result = CliRunner().invoke(
+        app,
+        ["download", coworld_id, "--output-dir", str(tmp_path / "downloaded"), "--server", httpserver.url_for("")],
+    )
+
+    assert result.exit_code == 0, result.output
+    file_requests = [req for req, _ in httpserver.log if req.path.endswith(f"/player-files/{content_hash}")]
+    assert len(file_requests) == 1
+    downloaded = json.loads(
+        (tmp_path / "downloaded" / coworld_id / "coworld_manifest.json").read_text(encoding="utf-8")
+    )
+    assert [player["file"] for player in downloaded["player"]] == [f"player-files/{content_hash}"] * 2
+
+
 def test_prepare_public_ecr_docker_config_uses_home_when_env_is_empty(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
@@ -2194,7 +2527,7 @@ def test_download_coworld_command_skips_cached_coworld_by_id(
     output_dir = tmp_path / "downloaded"
     cached_dir = output_dir / coworld_id
     cached_dir.mkdir(parents=True)
-    (cached_dir / "coworld_manifest.json").write_text('{"cached": true}\n', encoding="utf-8")
+    (cached_dir / "coworld_manifest.json").write_text(json.dumps(_manifest()), encoding="utf-8")
     (cached_dir / "coworld_images.json").write_text('{"cached": true}\n', encoding="utf-8")
     (cached_dir / "AGENTS.md").write_text("# AGENTS.md from the first download\n", encoding="utf-8")
     docker_calls: list[list[str]] = []
@@ -2231,7 +2564,7 @@ def test_download_coworld_command_refreshes_cached_coworld(
     output_dir = tmp_path / "downloaded"
     cached_dir = output_dir / coworld_id
     cached_dir.mkdir(parents=True)
-    (cached_dir / "coworld_manifest.json").write_text('{"cached": true}\n', encoding="utf-8")
+    (cached_dir / "coworld_manifest.json").write_text(json.dumps(_manifest()), encoding="utf-8")
     (cached_dir / "coworld_images.json").write_text('{"cached": true}\n', encoding="utf-8")
     docker_calls: list[list[str]] = []
 
@@ -2695,6 +3028,17 @@ def _manifest_with_image(image: str) -> dict[str, object]:
     grader = graders[0]
     assert isinstance(grader, dict)
     grader["image"] = image
+    return manifest
+
+
+def _manifest_with_player_file(image: str, content_hash: str) -> dict[str, object]:
+    manifest = _manifest_with_image(image)
+    game = cast(dict[str, object], manifest["game"])
+    game["player_runtime"] = "game-hosted"
+    player = cast(list[dict[str, object]], manifest["player"])[0]
+    del player["image"]
+    player.pop("run", None)
+    player["file"] = f"sha256:{content_hash}"
     return manifest
 
 

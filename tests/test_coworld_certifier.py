@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import hashlib
 import importlib
 import json
 import subprocess
@@ -20,7 +21,10 @@ from jsonschema.exceptions import ValidationError as JsonSchemaValidationError
 from pydantic import ValidationError as PydanticValidationError
 from websockets.exceptions import ConnectionClosedOK
 
+import coworld.certifier as certifier_module
 from coworld.certifier import (
+    _image_references,
+    _run_local_certifier_episode,
     build_episode_request,
     build_manifest_episode_job_spec,
     build_player_launch_specs,
@@ -32,14 +36,17 @@ from coworld.certifier import (
     load_results,
     request_commissioner_once,
     run_certification_supporting_roles,
+    validate_players_ran,
     validate_reporter_references,
 )
 from coworld.commissioner.protocol import LeagueInfo, ScheduleRoundsRequest, ScheduleRoundsResponse
 from coworld.manifest_validation import game_config_with_tokens
 from coworld.play import BedrockAwsEnv, ReplaySession, build_play_links, play_coworld, replay_coworld
+from coworld.player_files import player_file_bytes
 from coworld.runner.io import RunnerEpisodeError
 from coworld.runner.runner import (
     CONFIG_ENV_VAR,
+    GAME_HOSTED_PLAYER_LOG_MISSING,
     LOCAL_DOCKER_NETWORK,
     LOCAL_EXTRA_PORTS_ENV_VAR,
     LOCAL_GAME_NETWORK_ALIAS_PREFIX,
@@ -59,7 +66,15 @@ from coworld.runner.runner import (
     replay_session_path,
 )
 from coworld.schema_validation import validate_json_schema
-from coworld.types import CoworldEpisodeJobSpec, CoworldManifest, CoworldRunnableSpec, SourceUrlResult, TranscriptStep
+from coworld.types import (
+    CoworldEpisodeJobSpec,
+    CoworldManifest,
+    CoworldPlayerFileSpec,
+    CoworldRunnableSpec,
+    SourceUrlResult,
+    TranscriptStep,
+)
+from coworld.upload import CoworldUploadClient, _submit_player_files
 
 CANONICAL_ENGINE_RUNTIMES = ("mettagrid", "cogweb", "bitworld", "nimgrid")
 
@@ -1010,7 +1025,7 @@ def _stub_executable_pipeline(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr("coworld.certifier.build_episode_request", lambda package, artifacts: {})
     monkeypatch.setattr("coworld.certifier.build_coworld_episode_job_spec", lambda request: None)
 
-    def fake_run_episode(job, artifacts, timeout_seconds):
+    def fake_run_episode(_package, job, artifacts, timeout_seconds):
         artifacts.replay_path.write_text("{}")
         artifacts.results_path.write_text(json.dumps({"scores": [1.0]}), encoding="utf-8")
         artifacts.game_stdout_path.write_text("game started\n")
@@ -1168,7 +1183,7 @@ def test_certify_coworld_records_smoke_episode_runner_error_type(
     coworld_manifest_path = _write_package_files(tmp_path)
     _stub_executable_pipeline(monkeypatch)
 
-    def fail_episode(job, artifacts, timeout_seconds):
+    def fail_episode(_package, job, artifacts, timeout_seconds):
         raise RunnerEpisodeError("game failed", error_type="game_unhealthy")
 
     monkeypatch.setattr("coworld.certifier._run_local_certifier_episode", fail_episode)
@@ -1228,7 +1243,7 @@ def test_certify_coworld_records_replay_present_failure(tmp_path: Path, monkeypa
     coworld_manifest_path = _write_package_files(tmp_path)
     _stub_executable_pipeline(monkeypatch)
 
-    def no_replay(job, artifacts, timeout_seconds):
+    def no_replay(_package, job, artifacts, timeout_seconds):
         artifacts.results_path.write_text(json.dumps({"scores": [1.0]}), encoding="utf-8")
         artifacts.game_stdout_path.write_text("game started\n")
         artifacts.policy_log_path(0).write_text("player started\n")
@@ -1282,7 +1297,7 @@ def test_certify_coworld_rejects_player_without_launch_log(tmp_path: Path, monke
     coworld_manifest_path = _write_package_files(tmp_path)
     _stub_executable_pipeline(monkeypatch)
 
-    def fake_run_episode(job, artifacts, timeout_seconds):
+    def fake_run_episode(_package, job, artifacts, timeout_seconds):
         artifacts.replay_path.write_text("{}")
         artifacts.game_stdout_path.write_text("game started\n")
 
@@ -1502,6 +1517,180 @@ def test_build_manifest_episode_job_spec_defaults_to_certification_config(tmp_pa
 
     assert spec.game_config == {"difficulty": "smoke"}
     assert spec.episode_tags == {"source": "coworld_certification"}
+
+
+def test_build_manifest_episode_job_spec_preserves_game_hosted_player_files(tmp_path: Path) -> None:
+    manifest_path = _write_game_hosted_package(tmp_path)
+    package = load_coworld_package(manifest_path)
+
+    spec = build_manifest_episode_job_spec(package)
+
+    assert len(spec.players) == 2
+    assert all(isinstance(player, CoworldPlayerFileSpec) for player in spec.players)
+    player = cast(CoworldPlayerFileSpec, spec.players[0])
+    contents = (manifest_path.parent / "players/player.wasm").read_bytes()
+    assert player.content_hash == hashlib.sha256(contents).hexdigest()
+    assert player.size_bytes == len(contents)
+    assert _image_references(package) == [
+        ("game.runnable.image", "unit-test-runtime:latest"),
+        ("Coworld grader[0].image", "ghcr.io/metta-ai/graders-default:latest"),
+    ]
+
+
+def test_local_certifier_runs_game_hosted_episode_with_fixture_paths(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    manifest_path = _write_game_hosted_package(tmp_path)
+    package = load_coworld_package(manifest_path)
+    job = build_manifest_episode_job_spec(package)
+    artifacts = EpisodeArtifacts.create(tmp_path / "cert")
+    calls: list[tuple[CoworldEpisodeJobSpec, dict[str, object]]] = []
+
+    def fake_run(spec: CoworldEpisodeJobSpec, _artifacts: EpisodeArtifacts, **kwargs: object) -> None:
+        calls.append((spec, kwargs))
+
+    monkeypatch.setattr("coworld.certifier.run_coworld_episode", fake_run)
+
+    _run_local_certifier_episode(package, job, artifacts, 12.0)
+
+    assert calls == [
+        (
+            job,
+            {
+                "timeout_seconds": 12.0,
+                "verify_replay": False,
+                "player_file_paths": [manifest_path.parent / "players/player.wasm"] * 2,
+                "require_websocket_pong": True,
+            },
+        )
+    ]
+
+
+def test_directory_player_uses_same_digest_for_local_certification_and_upload(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    manifest_path = _write_game_hosted_package(tmp_path)
+    player_path = manifest_path.parent / "players/player.wasm"
+    player_path.unlink()
+    player_path.mkdir()
+    (player_path / "policy.py").write_text("print('player')\n", encoding="utf-8")
+    (player_path / "weights.bin").write_bytes(b"weights")
+    package = load_coworld_package(manifest_path)
+    job = build_manifest_episode_job_spec(package)
+    artifacts = EpisodeArtifacts.create(tmp_path / "cert")
+    local_paths: list[Path] = []
+    uploaded_hashes: list[str] = []
+
+    def fake_run(_spec: CoworldEpisodeJobSpec, _artifacts: EpisodeArtifacts, **kwargs: object) -> None:
+        local_paths.extend(cast(list[Path], kwargs["player_file_paths"]))
+
+    class RecordingClient:
+        def request_coworld_player_file_upload(self, *, content_hash: str, size_bytes: int):
+            uploaded_hashes.append(content_hash)
+            return SimpleNamespace(upload_url=None)
+
+    monkeypatch.setattr("coworld.certifier.run_coworld_episode", fake_run)
+    _run_local_certifier_episode(package, job, artifacts, 12.0)
+    uploaded_manifest = _submit_player_files(
+        cast(CoworldUploadClient, RecordingClient()),
+        package.manifest.model_dump(exclude_none=True, by_alias=True),
+        manifest_path.parent,
+    )
+
+    packed_hash = hashlib.sha256(player_file_bytes(player_path)).hexdigest()
+    assert local_paths == [player_path, player_path]
+    assert cast(CoworldPlayerFileSpec, job.players[0]).content_hash == packed_hash
+    assert uploaded_hashes == [packed_hash]
+    assert uploaded_manifest["player"][0]["file"] == f"sha256:{packed_hash}"
+
+
+def test_build_manifest_episode_job_spec_resolves_overrides_without_reading_fixtures(tmp_path: Path) -> None:
+    manifest_path = _write_game_hosted_package(tmp_path)
+    package = load_coworld_package(manifest_path)
+    (manifest_path.parent / "players/player.wasm").unlink()  # the bundled fixture is gone
+    overrides = [tmp_path / "first.wasm", tmp_path / "second.wasm"]
+    overrides[0].write_bytes(b"first")
+    overrides[1].write_bytes(b"second")
+
+    job = build_manifest_episode_job_spec(package, player_files=overrides)
+
+    assert [cast(CoworldPlayerFileSpec, player).content_hash for player in job.players] == [
+        hashlib.sha256(b"first").hexdigest(),
+        hashlib.sha256(b"second").hexdigest(),
+    ]
+    with pytest.raises(ValueError, match="expected 2 player file paths, got 1"):
+        build_manifest_episode_job_spec(package, player_files=overrides[:1])
+
+
+def test_build_manifest_episode_job_spec_hashes_a_shared_player_file_once(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    package = load_coworld_package(_write_game_hosted_package(tmp_path))  # two seats, one declared player
+    reads: list[Path] = []
+    original = certifier_module.player_file_bytes
+
+    def counting_player_file_bytes(source: Path, **kwargs):
+        reads.append(source)
+        return original(source, **kwargs)
+
+    monkeypatch.setattr(certifier_module, "player_file_bytes", counting_player_file_bytes)
+
+    job = build_manifest_episode_job_spec(package)
+    assert len(job.players) == 2 and len(reads) == 1
+
+    override = tmp_path / "shared.wasm"
+    override.write_bytes(b"shared")
+    reads.clear()
+    job = build_manifest_episode_job_spec(package, player_files=[override, override])
+    assert [cast(CoworldPlayerFileSpec, player).content_hash for player in job.players] == [
+        hashlib.sha256(b"shared").hexdigest()
+    ] * 2
+    assert reads == [override]
+
+
+def test_local_certifier_rejects_hash_only_game_hosted_fixture(tmp_path: Path) -> None:
+    manifest_path = _write_game_hosted_package(tmp_path)
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    manifest["player"][0]["file"] = f"sha256:{'a' * 64}"
+    manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
+    package = load_coworld_package(manifest_path)
+    job = build_manifest_episode_job_spec(package)
+
+    with pytest.raises(ValueError, match="local certification needs package-relative player files"):
+        _run_local_certifier_episode(package, job, EpisodeArtifacts.create(tmp_path / "cert"), 12.0)
+
+
+def test_game_hosted_certification_requires_real_log_for_every_slot(tmp_path: Path) -> None:
+    package = load_coworld_package(_write_game_hosted_package(tmp_path))
+    artifacts = EpisodeArtifacts.create(tmp_path / "cert")
+    artifacts.game_stdout_path.write_text("game started\n", encoding="utf-8")
+    artifacts.policy_log_path(0).write_text("slot zero\n", encoding="utf-8")
+    artifacts.policy_log_path(1).write_text("slot one\n", encoding="utf-8")
+
+    validate_players_ran(package, artifacts)
+
+    artifacts.policy_log_path(1).write_text(GAME_HOSTED_PLAYER_LOG_MISSING, encoding="utf-8")
+    with pytest.raises(ValueError, match="slot 1 left only the missing-log marker"):
+        validate_players_ran(package, artifacts)
+
+    artifacts.policy_log_path(1).unlink()
+    with pytest.raises(ValueError, match="slot 1 left no launch log"):
+        validate_players_ran(package, artifacts)
+
+
+def test_game_hosted_certification_requires_a_slot_for_every_bundled_player(tmp_path: Path) -> None:
+    manifest_path = _write_game_hosted_package(tmp_path)
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    manifest["player"].append({**manifest["player"][0], "id": "never-seated", "name": "Never Seated"})
+    manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
+    package = load_coworld_package(manifest_path)
+    artifacts = EpisodeArtifacts.create(tmp_path / "cert")
+    artifacts.game_stdout_path.write_text("game started\n", encoding="utf-8")
+    artifacts.policy_log_path(0).write_text("slot zero\n", encoding="utf-8")
+    artifacts.policy_log_path(1).write_text("slot one\n", encoding="utf-8")
+
+    with pytest.raises(ValueError, match="player\\[1\\] \\('never-seated'\\) has no certification slot"):
+        validate_players_ran(package, artifacts)
 
 
 def test_build_manifest_episode_job_spec_deep_copies_config_and_player_env(tmp_path: Path) -> None:
@@ -1764,6 +1953,23 @@ def test_global_probe_pings_before_starting_players(monkeypatch: pytest.MonkeyPa
 
     asyncio.run(run())
     assert order == ["pong", "players"]
+
+
+def test_play_coworld_rejects_game_hosted_before_creating_artifacts(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    manifest_path = _write_game_hosted_package(tmp_path)
+    monkeypatch.setattr(
+        "coworld.play.EpisodeArtifacts.create",
+        lambda *_args, **_kwargs: pytest.fail("created play artifacts"),
+    )
+
+    with pytest.raises(ValueError, match="does not support game-hosted"):
+        play_coworld(
+            manifest_path,
+            workspace=tmp_path / "play",
+            on_ready=lambda _session: None,
+        )
 
 
 def test_play_coworld_starts_certification_player_containers(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -2625,6 +2831,27 @@ def _write_package_files(
         )
     )
     return coworld_manifest_path
+
+
+def _write_game_hosted_package(tmp_path: Path) -> Path:
+    manifest_path = _write_package_files(
+        tmp_path,
+        certification={
+            "game_config": {"difficulty": "easy"},
+            "players": [{"player_id": "unit-test-player"}, {"player_id": "unit-test-player"}],
+        },
+    )
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    manifest["game"]["player_runtime"] = "game-hosted"
+    manifest["game"]["config_schema"]["properties"]["tokens"]["maxItems"] = 2
+    player = manifest["player"][0]
+    player.pop("image")
+    player["file"] = "players/player.wasm"
+    manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
+    player_path = manifest_path.parent / "players/player.wasm"
+    player_path.parent.mkdir(parents=True)
+    player_path.write_bytes(b"fixture-player")
+    return manifest_path
 
 
 def _write_package_files_with_game_env(tmp_path: Path, game_env: dict[str, str]) -> Path:
