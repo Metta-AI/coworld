@@ -1,5 +1,10 @@
 # Coworld Starter Templates
 
+The game/player scaffolds use Observatory-hosted (`platform-hosted`) container players. New Coworlds may choose
+`game-hosted` files instead; read [the runtime decision guide](../docs/PLAYER_RUNTIMES.md) and implement the linked
+seats and output contracts. There is no generic game-hosted interpreter or sandbox in these templates.
+
+
 These templates are shipped inside the `coworld` Python package so a new Coworld can start from the same role shapes the
 package validates and documents.
 

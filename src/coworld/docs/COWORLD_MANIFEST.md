@@ -120,6 +120,9 @@ other per-slot fields. Cross-Coworld player identity names flow through `game_co
 
 See [Game Role](roles/GAME.md#player-slots) and [Lifecycle](LIFECYCLE.md) for the runtime path.
 
+For runtime selection and implementation obligations, read [Choose a Player Runtime](PLAYER_RUNTIMES.md).
+The following examples show only the runtime-related fields; they are not complete manifests.
+
 ## Player Runtime And Artifact Pairing
 
 `game.player_runtime` is `platform-hosted` by default. It has two valid shapes:

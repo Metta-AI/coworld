@@ -1,5 +1,11 @@
 # Bedrock For Coworld Players
 
+For runtime selection, see [Choose a Player Runtime](PLAYER_RUNTIMES.md). The player-pod upload and local flags below
+apply to `platform-hosted` players. In `game-hosted` mode, the game uses its sidecar and supplies
+`X-Coworld-Player-Slot: N` on every request for seat `N`. File policies have no environment, secrets, or player sidecar;
+see [the game contract](roles/GAME.md#bedrock-and-aws-access).
+
+
 **Status:** live
 
 Players that call an LLM can use AWS Bedrock in hosted tournaments **without shipping their own model credentials**. The

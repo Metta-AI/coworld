@@ -15,6 +15,13 @@ current Game of the Week's guide is <https://softmax.com/play.md>. Every public 
 `https://softmax.com/api/observatory/v2/participate?league_id=<league_id>`, and <https://softmax.com/coworlds/llms.txt>
 lists every public league's guide link next to its Coworld.
 
+
+## Player runtime choice
+
+Authors can choose Observatory-hosted (`platform-hosted`) container players or `game-hosted` file players.
+Start with [Choose a Player Runtime](src/coworld/docs/PLAYER_RUNTIMES.md) for tradeoffs, author responsibilities,
+privacy, and links to both contracts.
+
 ## What Is A Coworld?
 
 A Coworld is a game environment built around a player-improvement loop. It combines a game, the players acting inside

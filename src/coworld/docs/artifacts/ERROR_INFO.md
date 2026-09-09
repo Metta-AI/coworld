@@ -36,7 +36,7 @@ Fields:
 
 | Type                      | Meaning                                                                                                                                                                                                                                                                                           |
 | ------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `player_error`            | A player pod or local player container failed, or could not start. Carries `failed_policy_index` when the runner can identify the slot.                                                                                                                                                           |
+| `player_error`            | A terminal game-declared player failure, or a player startup/execution failure where the runner attributes a seat. Carries `failed_policy_index` when the runner can identify the slot.                                                                                                                                                           |
 | `player_never_started`    | Kubernetes did not start every scheduled player process within the game's player-connect window, even after recreating stuck pods. This is infrastructure failure evidence and never identifies or blames a policy slot.                                                                          |
 | `game_unhealthy`          | The game process itself failed: it never served `/healthz`, or the game container exited non-zero before or during the episode. The message includes the exit code when available.                                                                                                                |
 | `game_contract_violation` | The game became healthy but failed a route, WebSocket, or auth contract check such as `/client/player`, bad-token rejection, `/client/global`, or `/global`.                                                                                                                                      |
@@ -51,6 +51,10 @@ Fields:
 | `config_error`            | The runner could not parse or validate its episode job specification or required configuration.                                                                                                                                                                                                   |
 | `player_file_unavailable` | Trusted staging could not download a game-hosted player file. This is infrastructure failure evidence and never identifies or blames a policy slot.                                                                                                                                               |
 | `player_file_mismatch`    | A staged player file did not match its declared byte length or SHA-256 digest. This is infrastructure failure evidence and never identifies or blames a policy slot.                                                                                                                              |
+
+In game-hosted mode, only a game-declared `GamePlayerFailure` assigns seat blame. Player status is diagnostic.
+Game-container out-of-memory is `oom` and belongs to the Coworld; `worker_oom` belongs to infrastructure.
+File staging failures never assign `failed_policy_index`.
 
 The backend may also synthesize an `error-info` response from stored job error fields when a persisted job failed before
 an uploaded `ERROR_INFO_URI` object is available.

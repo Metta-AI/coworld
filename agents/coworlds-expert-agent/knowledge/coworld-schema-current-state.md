@@ -16,10 +16,11 @@
 
 `docs.readme` is required. `docs.pages[]` is optional.
 
-## Role spec shape (shared by all role arrays)
+## Runnable role spec shape (reporter entries have a separate reference shape)
 
-Required: `type`, `image`, `id`, `name`, `description`
-Optional: `run`, `env`, `source_url`, `repository_url`
+Required: `type`, `id`, `name`, `description`, and exactly one of `image` or `file`.
+Only player entries accept `file`; all players must match `game.player_runtime`.
+Optional: `run`, `env`, `resources`, `source_url`, `repository_url`. Player files do not use `run`, `env`, or `resources`.
 `additionalProperties: false` — no extra fields allowed.
 
 ## Role sections
@@ -29,6 +30,18 @@ Optional: `run`, `env`, `source_url`, `repository_url`
 - `grader[]` — optional
 - `diagnoser[]` — optional (intended to become required)
 - `optimizer[]` — optional (intended to become required)
+
+## Player runtime selection
+
+`game.player_runtime` defaults to `platform-hosted` (Observatory-hosted container players).
+`game-hosted` instead stages a file per seat for execution inside the game. Both use Kubernetes hosted episodes.
+Read the [runtime guide](https://github.com/Metta-AI/coworld/blob/main/src/coworld/docs/PLAYER_RUNTIMES.md) before choosing. Local Metta source:
+`packages/coworld/src/coworld/docs/PLAYER_RUNTIMES.md`.
+
+Game-hosted files use package-relative paths before upload and `sha256:` references afterward. Download restores
+bundled files. The game owns the file format, execution limits, isolation, and per-seat output; there is no supplied
+player sandbox, environment, or policy secret injection.
+Human seats, lobbies, hosted play, local `coworld play`, persistent player runtimes, and analysis routes are unsupported.
 
 ## Key contracts by role
 
@@ -44,9 +57,13 @@ Optional: `run`, `env`, `source_url`, `repository_url`
   slot count
 
 ### Player
-- Short-lived, connects to game's `/player` WS via `COWORLD_PLAYER_WS_URL`
-- stdout/stderr captured by runner as `logs/policy_agent_{slot}.log`
-- Player logs are included in the episode bundle
+- Platform-hosted: short-lived container, connects to `/player` through `COWORLD_PLAYER_WS_URL`; runner captures stdout/stderr.
+- Game-hosted: game reads `COGAME_PLAYER_SEATS_URI`, executes each `file_uri`, and writes every seat's `log_uri`.
+  `artifact_uri` and `player_status_uri` outputs are optional. Finish outputs and replay before writing results.
+- Logs and artifacts are policy-scoped. Never leak private seat output into public game logs.
+- Game-hosted certification requires a real log for every fixture slot. Every bundled player must be seated in both modes.
+- File policies upload with `coworld upload-policy --file PATH`; they cannot carry container flags or secrets.
+- Model calls for game-hosted seats originate in the game with `X-Coworld-Player-Slot: N` for correct attribution.
 
 ### Reporter
 - Not a container (spec 0061): the manifest `reporter[]` section holds references — `{"reporter": "owner/name@version"}`

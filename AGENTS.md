@@ -12,6 +12,13 @@ injected placeholder credentials. Standard SDKs (boto3, `AnthropicBedrock`, AWS 
 environment variable automatically; hand-rolled HTTP must read it. The sidecar supports InvokeModel and Converse,
 including both streaming forms. Full contract, examples, and troubleshooting: [`BEDROCK.md`](src/coworld/docs/BEDROCK.md).
 
+## Choose the player runtime first
+
+Read [PLAYER_RUNTIMES.md](src/coworld/docs/PLAYER_RUNTIMES.md) before designing a new game or player.
+`game.player_runtime` selects Observatory-hosted (`platform-hosted`, default) containers or `game-hosted` files.
+Both use hosted Kubernetes episodes. File execution, isolation, per-seat output, and model-call attribution belong to
+the game in game-hosted mode. Paint Arena is a platform-hosted example, not the only supported runtime.
+
 ## Coworlds Expert Agent
 
 A distributable Claude Code agent for coworld developers is available at
@@ -164,7 +171,7 @@ source of truth. They are generated docs and `$schema` targets; `test_types.py` 
 - Manifest role changes usually need matching updates to role docs, Paint Arena templates, generated schemas,
   certifier/runner tests, and any README links that name the role.
 - Do not describe `coworld hosted-game` as a supported player workflow unless product/runtime support is restored.
-  Current hosted execution means tournament jobs where the platform runs the game and every player container.
+  Hosted episodes run the game plus either platform-managed player containers or files executed by the game.
 
 ## Package Data Gotchas
 

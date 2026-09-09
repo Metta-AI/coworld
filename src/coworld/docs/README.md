@@ -143,7 +143,7 @@ For each scheduled bounded episode, the runner starts:
 
 - one **game** container, listening on `COGAME_HOST:COGAME_PORT` with `/healthz`, `/player`, `/global`, and `/client/*`
   routes;
-- one **player** container per slot, each receiving its own `COWORLD_PLAYER_WS_URL` pointing at the game's `/player`
+- for `platform-hosted` mode, one **player** container per slot, each receiving its own `COWORLD_PLAYER_WS_URL` pointing at the game's `/player`
   route with that slot's `slot` and `token` query params. `COGAMES_ENGINE_WS_URL` is also populated for compatibility
   with older players.
 
@@ -152,7 +152,7 @@ per-seat output paths from [`COGAME_PLAYER_SEATS_URI`](artifacts/PLAYER_SEATS.md
 the runner preserves logs and failure information. Per-seat artifacts remain optional in both modes. On the platform
 ladder, Temporal settles the frozen episode plan and updates rankings and memberships.
 
-Persistent leagues separate execution from accounting. Their scheduling response publishes a complete desired set of
+Persistent player runtimes support only `platform-hosted` players. Persistent leagues separate execution from accounting. Their scheduling response publishes a complete desired set of
 long-lived player runtimes. The platform reconciles at most one runtime per stable league player and replaces it when
 that player's selected policy changes. Sealed game windows become completed recorded episodes and round evidence without
 passing through the episode runner or spawning duplicate players.
@@ -206,6 +206,11 @@ These boundaries are useful when deciding where a new feature, artifact, or debu
   tool belt.
 - **The optimizer is a workbench, not a one-shot artifact writer.** Final candidate policies leave an optimizer through
   the standard `coworld upload-policy` path.
+
+## Choosing how players run
+
+For a new Coworld, start with [Choose a Player Runtime](PLAYER_RUNTIMES.md). Compare Observatory-hosted
+(`platform-hosted`) containers with `game-hosted` files before copying an example or implementing the player protocol.
 
 ## See Also
 

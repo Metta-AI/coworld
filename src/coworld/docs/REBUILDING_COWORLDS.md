@@ -13,6 +13,12 @@ Reporter entries are platform or wasm references, not container services.
 Omit `manifest.commissioner[]` and any commissioner compose service. Softmax leagues use the platform ladder —
 see [Commissioner role](roles/COMMISSIONER.md).
 
+## Player runtime inputs
+
+Choose [platform-hosted or game-hosted players](PLAYER_RUNTIMES.md) in the owning manifest.
+Game-hosted `player[].file` paths are relative to the project template; build copies them into the output package.
+They need no player Compose service. Upload replaces paths with content digests; download restores local bundled files.
+
 ## Build Workflow
 
 From the owning project root:

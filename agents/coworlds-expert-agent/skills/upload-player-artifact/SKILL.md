@@ -8,6 +8,13 @@ description: "Use when a Coworld player needs to checkpoint or upload a debug ar
 Help a Coworld player policy maintain one replaceable debug artifact object, separate from logs, for
 profiling and post-hoc analysis. The runner hands each player an upload destination; the player uploads itself.
 
+## Select the artifact path by runtime
+
+Check `game.player_runtime`; see the [runtime guide](https://github.com/Metta-AI/coworld/blob/main/src/coworld/docs/PLAYER_RUNTIMES.md).
+For `game-hosted` players, the game writes a non-empty zip to the seat's `artifact_uri` from `COGAME_PLAYER_SEATS_URI`
+before publishing results. It receives no player upload URL. Hosted collection skips files above 200 MiB.
+The environment, upload steps, and examples below apply to `platform-hosted` container players.
+
 ## Contract
 
 The runner injects one environment variable into the player container:
@@ -20,7 +27,7 @@ The runner injects one environment variable into the player container:
 Rules the player must follow:
 
 - Maintain exactly one object per player slot. Each successful upload replaces its previous contents.
-- Maximum size 200 MB. Larger uploads are rejected.
+- Maximum size 200 MiB. Larger uploads are rejected.
 - Use HTTP `PUT` with header `Content-Type: application/zip`. No auth header (the URL is presigned).
 - For `file://` URLs, just write the bytes to that path (create parent dirs).
 - Upload before the container is torn down. The player may upload any time, but once the game
@@ -45,7 +52,7 @@ Two profiling approaches this enables:
 - Tracing profiler: record only specific named events. Better for optimization once you know what
   to look for.
 
-Keep the zip well under 200 MB. If a sampling dump is too large, downsample, compress columns
+Keep the zip well under 200 MiB. If a sampling dump is too large, downsample, compress columns
 (parquet), or switch to tracing specific events.
 
 ## Steps
@@ -165,7 +172,7 @@ proc uploadPlayerArtifact(files: seq[(string, string)]) =
 ## Review checklist
 
 - The player reads `COWORLD_PLAYER_ARTIFACT_UPLOAD_URL` and skips cleanly when it is absent.
-- Every upload replaces the slot's one `.zip` object and stays well under 200 MB.
+- Every upload replaces the slot's one `.zip` object and stays well under 200 MiB.
 - The PUT sets `Content-Type: application/zip` and no auth header.
 - `file://` URLs are handled for local runs (write bytes, create parent dirs).
 - The upload completes before the player exits / the container is torn down.

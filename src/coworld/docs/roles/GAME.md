@@ -66,7 +66,8 @@ Results, replay, and `GamePlayerFailure` keep their existing contracts.
 In game-hosted mode, `results.json` is the completion marker. The game must finish writing every seat log, seat
 artifact, and `player_status.json` before writing `results.json`. Both the hosted worker and the local
 `coworld run-episode` runner begin collection as soon as results and the required replay exist; neither waits for a
-long-running game server to exit. A game that exits first is judged by its exit status.
+long-running game server to exit. A game-declared player failure takes precedence. Otherwise, a nonzero exit is a game
+failure, and a clean exit without results is `results_missing`.
 
 The runner validates the final results against `manifest.game.results_schema`. Replay bytes are game-defined. A game may
 declare `game.replay_viewer.bundle` as a package-relative static directory containing `index.html`; upload rewrites it
@@ -191,11 +192,12 @@ selects the endpoint, credentials, and region (`AWS_ENDPOINT_URL_BEDROCK_RUNTIME
 `AWS_BEARER_TOKEN_BEDROCK_FILE`) is **reserved**: setting any of it in `manifest.game.runnable.env` is silently dropped,
 because an override there would route around the sidecar. Region is a platform setting, not a manifest one.
 
-This is hosted-runtime only. Local `coworld play` / `coworld run-episode` do not provide AWS credentials; for local
-Bedrock testing pass host credentials with `--use-bedrock` (see
-[`PLAYER.md`](PLAYER.md#secrets-bedrock-and-llm-credentials)). For non-Bedrock LLM providers, supply the provider key
-through the player upload path rather than the game image, and keep provider selection in environment variables your
-game code reads.
+This is hosted-runtime only. Local `coworld play` / `coworld run-episode` do not provide AWS credentials.
+For platform-hosted player Bedrock testing, pass host credentials with `--use-bedrock`; see
+[`PLAYER.md`](PLAYER.md#secrets-bedrock-and-llm-credentials). For other providers, use the player upload path.
+For game-hosted execution, configure the game through its
+[game-secret contract](../COWORLD_MANIFEST.md#hosted-episode-game-secrets) and hosted provider configuration;
+file policies cannot inject credentials. Local game credentials must be configured separately from player flags.
 
 A game that makes an LLM request for player slot `N` must add `X-Coworld-Player-Slot: N`. The hosted sidecar then
 attributes telemetry, spend, and the request-rate bucket to that player. It preserves the game image digest because the
@@ -222,8 +224,9 @@ The game should put authoritative episode state in structured artifacts:
 
 ## How it fits with other roles
 
-The game produces the per-episode results, replay, and game-log artifacts. Players interact with the game in-flight
-through `/player`; reporters, graders, diagnosers, and optimizers consume completed artifacts after the episode. See
+The game produces the per-episode results, replay, and game-log artifacts. Platform-hosted players connect through
+`/player`; game-hosted players use the game-defined file interface. Reporters, graders, diagnosers, and optimizers
+consume completed artifacts after the episode. See
 [`README.md`](../README.md) for the full role and artifact flow.
 
 ## See Also

@@ -8,6 +8,12 @@ source is mirrored into this repository under
 Follow that guide from game design through local checks, certification, upload, and hosted verification. This page is
 kept as a stable entry point for older links; it no longer duplicates the guide.
 
+## Choose before building
+
+Start with [Choose a Player Runtime](PLAYER_RUNTIMES.md). Observatory-hosted (`platform-hosted`) players use
+containers and WebSockets; `game-hosted` players are files executed by the game. The guide covers tradeoffs,
+implementation obligations, unsupported workflows, and validation for each mode.
+
 ## Exact technical references
 
 - [Coworld manifest](COWORLD_MANIFEST.md) for fields, variants, certification fixtures, and generated schemas.

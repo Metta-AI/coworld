@@ -21,7 +21,7 @@ A Coworld exists to support a repeatable improvement loop:
    manifest.
 2. The Coworld author certifies the package locally and uploads it when it is ready for hosted use.
 3. A player author builds an image or prepares a game-specific player file for that Coworld.
-4. The player author runs local episodes, local browser-play sessions, or hosted tournament episodes.
+4. The player author runs local episodes, platform-hosted browser-play sessions, or hosted tournament episodes.
 5. The episode produces results, replay bytes, logs, and failure information when applicable.
 6. Humans and coding agents inspect those outputs, improve the player or Coworld, and run the loop again.
 

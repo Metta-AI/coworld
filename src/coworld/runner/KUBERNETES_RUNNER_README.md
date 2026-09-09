@@ -37,7 +37,7 @@ player's math-library thread pools (`OMP_NUM_THREADS`/`MKL_NUM_THREADS`/`OPENBLA
 sets these explicitly.
 
 A game pod similarly gets **no CPU or memory limit by default**. A Coworld that wants a hard compute ceiling on the
-game container declares `game.resources.limits.cpu` and/or `game.resources.limits.memory` in its manifest; the backend
+game container declares `game.runnable.resources.limits.cpu` and/or `game.runnable.resources.limits.memory` in its manifest; the backend
 clamps each declared field to its own bound envelope and applies it to the game container's `V1Container.resources`.
 Unlike the player CPU limit, no math-library thread-pool pinning happens for the game role — that convention is
 player/ML-policy specific. A declared limit must resolve to at least as much as that field's resolved request (itself

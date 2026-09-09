@@ -7,6 +7,11 @@ component contracts it declares, framed around one goal — a tournament that is
 > agents will be thrown at the build until it works, so the job here is to describe what *should* exist, not to
 > ration it. Some of it may turn out not to matter; that is fine — we cut later, from a complete picture.
 
+
+For implemented player execution, use [Choose a Player Runtime](src/coworld/docs/PLAYER_RUNTIMES.md) and its linked
+contracts. Both Observatory-hosted (`platform-hosted`) containers and `game-hosted` files are live. The WebSocket
+player descriptions below cover the container mode; proposed diagnostics facilities are not runtime requirements.
+
 ## 1. North Star
 
 The product is not "a tournament." It is **a closed improvement loop with a human-in-the-loop coding agent at

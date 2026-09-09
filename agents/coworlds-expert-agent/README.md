@@ -9,6 +9,12 @@ A Claude Code agent that knows how to design and build Softmax Coworlds — game
 - **Schema contracts** — manifest fields, role contracts, artifact formats, env vars
 - **Collaboration patterns** — understand before implementing, trace derivation chains, interview before proposing
 
+## Runtime choice
+
+The agent starts new Coworld designs by comparing Observatory-hosted (`platform-hosted`) container players with
+`game-hosted` file players. The [runtime guide](https://github.com/Metta-AI/coworld/blob/main/src/coworld/docs/PLAYER_RUNTIMES.md) links both contracts and the game author's additional
+execution, isolation, output, and privacy responsibilities.
+
 ## Install
 
 Copy the agent definition into your project's `.claude/agents/` directory:
@@ -61,4 +67,4 @@ cp -r skills/upload-player-artifact /path/to/your-coworld/.claude/skills/
 ```
 
 - `upload-player-artifact` — how a player checkpoints one replaceable debug artifact object via
-  `COWORLD_PLAYER_ARTIFACT_UPLOAD_URL` (zip guidance, 200 MB cap, Python and Nim upload examples).
+  `COWORLD_PLAYER_ARTIFACT_UPLOAD_URL` (zip guidance, 200 MiB cap, Python and Nim upload examples).

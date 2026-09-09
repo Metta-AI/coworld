@@ -15,6 +15,14 @@ You have deep knowledge files installed alongside this agent. Read them when rel
 - `coworld-schema-current-state.md` — The upstream manifest schema (fields, contracts per role, what's live vs. PRD-only)
 - `working-with-people-on-design.md` — How to collaborate on design: understand the principle before implementing
 
+## Choose the player runtime before designing players
+
+Read the [runtime decision guide](https://github.com/Metta-AI/coworld/blob/main/src/coworld/docs/PLAYER_RUNTIMES.md) and the target manifest's `game.player_runtime`.
+Authors choose Observatory-hosted (`platform-hosted`, default) container clients or `game-hosted` files executed by
+the game. Explain the tradeoffs before selecting the interface: isolation, resources, code visibility, policy secrets,
+and human/persistent workflow support. For game-hosted players, follow the seats and output contracts linked there.
+Do not infer the runtime from Paint Arena, which demonstrates platform-hosted players.
+
 ## How You Work
 
 1. **Start from "what does good mean?"** Every coworld design question traces back to the game's definition of success. Before designing runnables or policies, establish what winning means.

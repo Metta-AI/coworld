@@ -45,7 +45,7 @@ A player may also upload an optional artifact during the episode and at episode 
 
 - Read `COWORLD_PLAYER_ARTIFACT_UPLOAD_URL` from the environment. When present, it identifies one object for the player
   slot (an HTTP `PUT` endpoint hosted, a `file://` path locally). When absent, the player skips uploading.
-- Upload a `.zip` of at most 200 MB. Each successful upload replaces the slot's prior object, so players may retain
+- Upload a `.zip` of at most 200 MiB. Each successful upload replaces the slot's prior object, so players may retain
   newer checkpoints during the episode. The platform stores and serves the bytes as-is.
 - Upload before the container is torn down. The player may upload at any time, but once the game finishes the container
   stays alive only for a bounded teardown window; an upload that does not finish before teardown is lost. The platform
@@ -76,11 +76,14 @@ The game's resources cover all player work; the platform creates no per-player c
 
 ## Secrets, Bedrock, and LLM credentials
 
+The upload and local secret flags below apply to platform-hosted container players. For game-hosted players,
+[the game makes and attributes model calls](GAME.md#bedrock-and-aws-access); player files carry no policy secrets.
+
 If your player calls an LLM via Bedrock, read [`BEDROCK.md`](../BEDROCK.md) **before writing the call** — it is the
 authoritative runtime contract. The one rule: in a hosted episode, send every Bedrock call to the
 `AWS_ENDPOINT_URL_BEDROCK_RUNTIME` endpoint (the per-pod sidecar that signs with the runner identity) using
-`InvokeModel`, not `Converse`. Standard SDKs (boto3, `AnthropicBedrock`, `@cogweb/llm`) honor that env var
-automatically; hand-rolled HTTP must read it, or the call hits real AWS with placeholder creds and 403s into a silent
+InvokeModel, InvokeModelWithResponseStream, Converse, or ConverseStream.
+Standard SDKs (boto3, `AnthropicBedrock`, `@cogweb/llm`) honor that env var automatically; hand-rolled HTTP must read it, or the call hits real AWS with placeholder creds and 403s into a silent
 non-LLM baseline. `BEDROCK.md` also covers the upload contract and shared-capacity throttling. This section covers the
 underlying secret-env mechanics.
 
