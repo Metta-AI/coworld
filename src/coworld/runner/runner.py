@@ -1,11 +1,13 @@
 from __future__ import annotations
 
 import asyncio
+import hashlib
 import json
 import os
 import platform
 import re
 import secrets
+import shutil
 import socket
 import subprocess
 import sys
@@ -15,7 +17,7 @@ from contextlib import ExitStack
 from dataclasses import dataclass, field
 from json import JSONDecodeError
 from pathlib import Path
-from typing import Callable, Mapping
+from typing import Callable, Mapping, Sequence
 from urllib.parse import urlencode
 
 import httpx
@@ -25,9 +27,17 @@ from pydantic import BaseModel, ConfigDict, Field, TypeAdapter
 from websockets.asyncio.client import ClientConnection
 from websockets.exceptions import ConnectionClosed, InvalidHandshake, InvalidStatus
 
-from coworld.runner.io import GamePlayerFailure, RunnerEpisodeError, RunnerErrorType
+from coworld.player_files import player_file_bytes
+from coworld.runner.io import GamePlayerFailure, RunnerEpisodeError, RunnerErrorType, redact_uri
 from coworld.schema_validation import validate_json_schema
-from coworld.types import CoworldEpisodeJobSpec, CoworldHumanPlayerSpec, CoworldRunnableSpec
+from coworld.types import (
+    CoworldEpisodeJobSpec,
+    CoworldHumanPlayerSpec,
+    CoworldPlayerFileSpec,
+    CoworldPlayerSeat,
+    CoworldPlayerSeats,
+    CoworldRunnableSpec,
+)
 
 CONTAINER_WORKDIR = "/coworld"
 CONFIG_ENV_VAR = "COGAME_CONFIG_URI"
@@ -51,6 +61,7 @@ DEFAULT_PLAYER_EXIT_TIMEOUT_SECONDS = 30.0
 DEFAULT_RUNTIME_STARTUP_TIMEOUT_SECONDS = 10.0
 LOBBY_RUNTIME_STARTUP_TIMEOUT_SECONDS = 60.0
 CERTIFICATION_EPISODE_SOURCE = "coworld_certification"
+GAME_HOSTED_PLAYER_LOG_MISSING = "No player log was written by the game-hosted runtime.\n"
 
 # Hosted Coworld manifests store images as backend container-image ids: the "img_" prefix followed by a
 # UUID (see ContainerImageId / PrefixedId in metta-app-backend-client). The backend substitutes a pullable
@@ -94,6 +105,7 @@ class EpisodeArtifacts:
     replay_path: Path
     events_path: Path
     player_status_path: Path
+    player_seats_path: Path
     player_failure_path: Path
     logs_dir: Path
     game_stdout_path: Path
@@ -112,6 +124,7 @@ class EpisodeArtifacts:
             replay_path=workspace / "replay",
             events_path=workspace / "events.json",
             player_status_path=workspace / "player_status.json",
+            player_seats_path=workspace / "player_seats.json",
             player_failure_path=workspace / "player_failure.json",
             logs_dir=logs_dir,
             game_stdout_path=logs_dir / "game.stdout.log",
@@ -127,6 +140,12 @@ class EpisodeArtifacts:
         Lives in the workspace root (not logs/) since it is a separate artifact from logs.
         """
         return self.workspace / f"policy_artifact_{slot}.zip"
+
+    def player_file_path(self, slot: int) -> Path:
+        return self.workspace / "players" / str(slot) / "file"
+
+    def player_file_uri(self, slot: int) -> str:
+        return f"file://{CONTAINER_WORKDIR}/players/{slot}/file"
 
 
 @dataclass(frozen=True)
@@ -293,29 +312,45 @@ def run_coworld_episode(
     verify_replay: bool = False,
     container_prefix: str = LOCAL_EPISODE_CONTAINER_PREFIX,
     secret_env: Mapping[str, str] | None = None,
+    player_file_paths: Sequence[Path] | None = None,
+    require_websocket_pong: bool = False,
 ) -> None:
-    if job.manifest.game.player_runtime != "platform-hosted":
-        raise ValueError("game-hosted player execution requires local player-file staging")
     if any(isinstance(player, CoworldHumanPlayerSpec) for player in job.players):
         raise ValueError("Human player seats require the hosted Kubernetes episode runner")
     assert_episode_images_reachable(job)
     tokens = generate_tokens(len(job.players))
     write_coworld_game_config(job, artifacts, tokens)
 
-    run_spec = EpisodeRunSpec(
-        game=RunnableLaunchSpec.from_model(job.game_runnable),
-        players=[
-            PlayerLaunchSpec.from_model(player)
-            for player in job.players
-            if isinstance(player, CoworldRunnableSpec)
-        ],
-        tokens=tokens,
-        artifacts=artifacts,
-        timeout_seconds=timeout_seconds,
-        container_prefix=container_prefix,
-        secret_env=secret_env or {},
-    )
-    run_episode_containers(run_spec, verify_replay=verify_replay)
+    if job.manifest.game.player_runtime == "game-hosted":
+        player_files = [player for player in job.players if isinstance(player, CoworldPlayerFileSpec)]
+        if player_file_paths is None or len(player_file_paths) != len(player_files):
+            raise ValueError(f"game-hosted execution requires {len(player_files)} player file paths")
+        stage_player_files(player_files, lambda slot: player_file_bytes(player_file_paths[slot]), artifacts)
+        run_game_hosted_container(
+            RunnableLaunchSpec.from_model(job.game_runnable),
+            len(tokens),
+            artifacts,
+            timeout_seconds=timeout_seconds,
+            verify_replay=verify_replay,
+            require_websocket_pong=require_websocket_pong,
+            container_prefix=container_prefix,
+        )
+    else:
+        if player_file_paths is not None:
+            raise ValueError("player_file_paths are supported only for game-hosted execution")
+        run_spec = EpisodeRunSpec(
+            require_websocket_pong=require_websocket_pong,
+            game=RunnableLaunchSpec.from_model(job.game_runnable),
+            players=[
+                PlayerLaunchSpec.from_model(player) for player in job.players if isinstance(player, CoworldRunnableSpec)
+            ],
+            tokens=tokens,
+            artifacts=artifacts,
+            timeout_seconds=timeout_seconds,
+            container_prefix=container_prefix,
+            secret_env=secret_env or {},
+        )
+        run_episode_containers(run_spec, verify_replay=verify_replay)
 
     if not artifacts.results_path.exists():
         raise RunnerEpisodeError(
@@ -323,6 +358,55 @@ def run_coworld_episode(
             error_type="results_missing",
         )
     _validate_results_file(artifacts.results_path, job.results_schema)
+
+
+def stage_player_files(
+    player_files: Sequence[CoworldPlayerFileSpec],
+    read_player_file: Callable[[int], bytes],
+    artifacts: EpisodeArtifacts,
+) -> int:
+    """Stage one file per seat and write the seats document; returns the bytes fetched.
+
+    Seats that share a content hash are fetched and verified once and copied to the
+    other seat paths, so a roster of one policy costs one download.
+    """
+    seats = []
+    bytes_total = 0
+    staged_by_hash: dict[str, Path] = {}
+    for slot, player in enumerate(player_files):
+        player_path = artifacts.player_file_path(slot)
+        player_path.parent.mkdir(parents=True, exist_ok=True)
+        if player.content_hash in staged_by_hash:
+            shutil.copyfile(staged_by_hash[player.content_hash], player_path)
+        else:
+            data = read_player_file(slot)
+            if len(data) != player.size_bytes or hashlib.sha256(data).hexdigest() != player.content_hash:
+                raise RunnerEpisodeError(
+                    f"Player file for slot {slot} does not match its declared size and SHA-256 digest",
+                    error_type="player_file_mismatch",
+                )
+            player_path.write_bytes(data)
+            bytes_total += len(data)
+            staged_by_hash[player.content_hash] = player_path
+        seats.append(
+            CoworldPlayerSeat(
+                slot=slot,
+                file_uri=artifacts.player_file_uri(slot),
+                content_hash=f"sha256:{player.content_hash}",
+                size_bytes=player.size_bytes,
+                log_uri=f"file://{CONTAINER_WORKDIR}/logs/policy_agent_{slot}.log",
+                artifact_uri=f"file://{CONTAINER_WORKDIR}/policy_artifact_{slot}.zip",
+            )
+        )
+    artifacts.player_seats_path.write_text(
+        CoworldPlayerSeats(
+            schema="coworld-player-seats/1",
+            seats=seats,
+            player_status_uri=f"file://{CONTAINER_WORKDIR}/player_status.json",
+        ).model_dump_json(by_alias=True, indent=2),
+        encoding="utf-8",
+    )
+    return bytes_total
 
 
 def generate_tokens(player_count: int) -> list[str]:
@@ -386,10 +470,128 @@ def ensure_local_docker_network() -> None:
         raise RuntimeError(f"Failed to create Docker network {LOCAL_DOCKER_NETWORK}.\n{create_result.stderr[-2000:]}")
 
 
+def game_container_command(
+    game: RunnableLaunchSpec,
+    artifacts: EpisodeArtifacts,
+    *,
+    container_name: str,
+    network_alias: str,
+    port: int,
+    local_ports: list[ResolvedLocalPort],
+    include_player_seats: bool,
+) -> list[str]:
+    player_seats_args = (
+        ["-e", f"COGAME_PLAYER_SEATS_URI=file://{CONTAINER_WORKDIR}/player_seats.json"] if include_player_seats else []
+    )
+    return [
+        "docker",
+        "run",
+        "--rm",
+        "--name",
+        container_name,
+        "--network",
+        LOCAL_DOCKER_NETWORK,
+        "--network-alias",
+        network_alias,
+        "-p",
+        f"127.0.0.1:{port}:{GAME_PORT}",
+        *local_port_publish_args(local_ports),
+        *docker_env_args(game_env_with_resolved_local_ports(game.env, local_ports)),
+        "-e",
+        f"{GAME_HOST_ENV_VAR}={GAME_HOST}",
+        "-e",
+        f"{GAME_PORT_ENV_VAR}={GAME_PORT}",
+        "-e",
+        f"{CONFIG_ENV_VAR}=file://{CONTAINER_WORKDIR}/config.json",
+        "-e",
+        f"{RESULTS_ENV_VAR}=file://{CONTAINER_WORKDIR}/results.json",
+        "-e",
+        f"{REPLAY_SAVE_ENV_VAR}=file://{CONTAINER_WORKDIR}/replay",
+        "-e",
+        f"{PLAYER_FAILURE_ENV_VAR}=file://{CONTAINER_WORKDIR}/player_failure.json",
+        *player_seats_args,
+        "-v",
+        f"{artifacts.workspace}:{CONTAINER_WORKDIR}:rw",
+        *docker_image_command(game),
+    ]
+
+
+def run_game_hosted_container(
+    game: RunnableLaunchSpec,
+    player_count: int,
+    artifacts: EpisodeArtifacts,
+    *,
+    timeout_seconds: float,
+    verify_replay: bool,
+    container_prefix: str,
+    require_websocket_pong: bool = False,
+) -> None:
+    port = _free_local_port()
+    local_ports = resolve_local_extra_ports(game.env, reserved_host_ports={port})
+    run_id = secrets.token_hex(8)
+    game_network_alias = f"{LOCAL_GAME_NETWORK_ALIAS_PREFIX}{run_id}"
+    game_container = f"{container_prefix}-game-{run_id}"
+
+    ensure_local_docker_network()
+    try:
+        with ExitStack() as stack:
+            game_stdout = stack.enter_context(artifacts.game_stdout_path.open("w"))
+            game_stderr = stack.enter_context(artifacts.game_stderr_path.open("w"))
+            game_process = subprocess.Popen(
+                game_container_command(
+                    game,
+                    artifacts,
+                    container_name=game_container,
+                    network_alias=game_network_alias,
+                    port=port,
+                    local_ports=local_ports,
+                    include_player_seats=True,
+                ),
+                stdout=game_stdout,
+                stderr=game_stderr,
+                text=True,
+            )
+
+            _wait_for_health(port, game_process, artifacts.game_stderr_path, timeout_seconds=timeout_seconds)
+            _require_http_ok(f"http://127.0.0.1:{port}/client/global")
+            asyncio.run(
+                _require_global_message(
+                    f"ws://127.0.0.1:{port}/global",
+                    timeout_seconds=timeout_seconds,
+                    require_pong=require_websocket_pong,
+                )
+            )
+            required_artifacts = (
+                (artifacts.results_path, artifacts.replay_path) if verify_replay else (artifacts.results_path,)
+            )
+            _wait_for_game_results_or_exit(
+                game_process,
+                artifacts,
+                required_artifacts,
+                player_count=player_count,
+                timeout_seconds=timeout_seconds,
+            )
+
+            if verify_replay:
+                # The game may still be serving after writing results; the replay container
+                # reuses its published ports, so stop it first.
+                subprocess.run(
+                    ["docker", "rm", "-f", game_container], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL
+                )
+                verify_replay_loadable(
+                    game,
+                    artifacts,
+                    timeout_seconds=timeout_seconds,
+                    container_prefix=container_prefix,
+                    resolved_local_ports=local_ports,
+                )
+    finally:
+        subprocess.run(["docker", "rm", "-f", game_container], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+
+
 def run_episode_containers(spec: EpisodeRunSpec, *, verify_replay: bool = True) -> None:
     port = _free_local_port()
     local_ports = resolve_local_extra_ports(spec.game.env, reserved_host_ports={port})
-    game_env = game_env_with_resolved_local_ports(spec.game.env, local_ports)
     run_id = secrets.token_hex(8)
     game_network_alias = f"{LOCAL_GAME_NETWORK_ALIAS_PREFIX}{run_id}"
     game_container = f"{spec.container_prefix}-game-{run_id}"
@@ -402,36 +604,15 @@ def run_episode_containers(spec: EpisodeRunSpec, *, verify_replay: bool = True) 
             game_stdout = stack.enter_context(spec.artifacts.game_stdout_path.open("w"))
             game_stderr = stack.enter_context(spec.artifacts.game_stderr_path.open("w"))
             game_process = subprocess.Popen(
-                [
-                    "docker",
-                    "run",
-                    "--rm",
-                    "--name",
-                    game_container,
-                    "--network",
-                    LOCAL_DOCKER_NETWORK,
-                    "--network-alias",
-                    game_network_alias,
-                    "-p",
-                    f"127.0.0.1:{port}:{GAME_PORT}",
-                    *local_port_publish_args(local_ports),
-                    *docker_env_args(game_env),
-                    "-e",
-                    f"{GAME_HOST_ENV_VAR}={GAME_HOST}",
-                    "-e",
-                    f"{GAME_PORT_ENV_VAR}={GAME_PORT}",
-                    "-e",
-                    f"{CONFIG_ENV_VAR}=file://{CONTAINER_WORKDIR}/config.json",
-                    "-e",
-                    f"{RESULTS_ENV_VAR}=file://{CONTAINER_WORKDIR}/results.json",
-                    "-e",
-                    f"{REPLAY_SAVE_ENV_VAR}=file://{CONTAINER_WORKDIR}/replay",
-                    "-e",
-                    f"{PLAYER_FAILURE_ENV_VAR}=file://{CONTAINER_WORKDIR}/player_failure.json",
-                    "-v",
-                    f"{spec.artifacts.workspace}:{CONTAINER_WORKDIR}:rw",
-                    *docker_image_command(spec.game),
-                ],
+                game_container_command(
+                    spec.game,
+                    spec.artifacts,
+                    container_name=game_container,
+                    network_alias=game_network_alias,
+                    port=port,
+                    local_ports=local_ports,
+                    include_player_seats=False,
+                ),
                 stdout=game_stdout,
                 stderr=game_stderr,
                 text=True,
@@ -627,9 +808,14 @@ def docker_image_command(runnable: RunnableLaunchSpec) -> list[str]:
     return ["--entrypoint", runnable.run[0], runnable.image, *runnable.run[1:]]
 
 
-def _validate_results_file(path: Path, results_schema: dict[str, object]) -> None:
+def _validate_results_file(
+    path: Path,
+    results_schema: dict[str, object],
+    *,
+    contents: bytes | None = None,
+) -> None:
     try:
-        results = json.loads(path.read_text(encoding="utf-8"))
+        results = json.loads(path.read_text(encoding="utf-8") if contents is None else contents)
     except JSONDecodeError as exc:
         raise RunnerEpisodeError(f"results.json is not valid JSON: {exc}", error_type="results_malformed") from exc
     try:
@@ -653,7 +839,9 @@ def _require_http_ok(
             return
         response.raise_for_status()
     except httpx.HTTPError as exc:
-        raise RunnerEpisodeError(f"HTTP contract check failed for {url}: {exc}", error_type=error_type) from exc
+        raise RunnerEpisodeError(
+            f"HTTP contract check failed for {redact_uri(url)}: {exc}", error_type=error_type
+        ) from exc
 
 
 async def _require_bad_player_rejected(url: str) -> None:
@@ -670,18 +858,20 @@ async def _require_bad_player_rejected(url: str) -> None:
         rejected = exc.response.status_code in {401, 403}
         if not rejected:
             raise RunnerEpisodeError(
-                f"Bad player token returned unexpected status {exc.response.status_code}: {url}",
+                f"Bad player token returned unexpected status {exc.response.status_code}: {redact_uri(url)}",
                 error_type="game_contract_violation",
             ) from exc
     except (ConnectionClosed, InvalidHandshake):
         rejected = True
     except OSError as exc:
         raise RunnerEpisodeError(
-            f"Bad player token rejection check failed for {url}: {exc}",
+            f"Bad player token rejection check failed for {redact_uri(url)}: {exc}",
             error_type="game_contract_violation",
         ) from exc
     if not rejected:
-        raise RunnerEpisodeError(f"Bad player token was accepted: {url}", error_type="game_contract_violation")
+        raise RunnerEpisodeError(
+            f"Bad player token was accepted: {redact_uri(url)}", error_type="game_contract_violation"
+        )
 
 
 async def _require_global_message(
@@ -723,12 +913,12 @@ async def _require_global_message(
         if on_connect_failure is not None:
             on_connect_failure()
         raise RunnerEpisodeError(
-            f"Global viewer websocket did not produce a message from {url}: {exc}",
+            f"Global viewer websocket did not produce a message from {redact_uri(url)}: {exc}",
             error_type="game_contract_violation",
         ) from exc
     if not message:
         raise RunnerEpisodeError(
-            f"Global viewer received an empty message from {url}",
+            f"Global viewer received an empty message from {redact_uri(url)}",
             error_type="game_contract_violation",
         )
 
@@ -744,7 +934,7 @@ async def _require_websocket_pong(
         await asyncio.wait_for(pong_waiter, timeout=timeout_seconds)
     except (OSError, asyncio.TimeoutError, ConnectionClosed) as exc:
         raise RunnerEpisodeError(
-            f"Game websocket did not answer a WebSocket Ping with Pong: {url}: {exc}",
+            f"Game websocket did not answer a WebSocket Ping with Pong: {redact_uri(url)}: {exc}",
             error_type="game_contract_violation",
         ) from exc
 
@@ -755,11 +945,13 @@ async def _require_replay_message(url: str, *, timeout_seconds: float) -> None:
             message = await asyncio.wait_for(websocket.recv(), timeout=min(timeout_seconds, 10.0))
     except (OSError, asyncio.TimeoutError, ConnectionClosed, InvalidHandshake, InvalidStatus) as exc:
         raise RunnerEpisodeError(
-            f"Replay viewer websocket did not produce a message from {url}: {exc}",
+            f"Replay viewer websocket did not produce a message from {redact_uri(url)}: {exc}",
             error_type="replay_unloadable",
         ) from exc
     if not message:
-        raise RunnerEpisodeError(f"Replay viewer received an empty message from {url}", error_type="replay_unloadable")
+        raise RunnerEpisodeError(
+            f"Replay viewer received an empty message from {redact_uri(url)}", error_type="replay_unloadable"
+        )
 
 
 def _wait_for_health(
@@ -786,7 +978,7 @@ def _wait_for_health(
         except httpx.HTTPError:
             pass
         time.sleep(0.2)
-    raise RunnerEpisodeError(f"Timed out waiting for {url}.\n{_tail(stderr_path)}", error_type=error_type)
+    raise RunnerEpisodeError(f"Timed out waiting for {redact_uri(url)}.\n{_tail(stderr_path)}", error_type=error_type)
 
 
 def _wait_for_game_exit(
@@ -807,6 +999,51 @@ def _wait_for_game_exit(
             f"Game container exited with status {return_code}.\n{_tail(stderr_path)}",
             error_type="game_unhealthy",
         )
+
+
+def _wait_for_game_results_or_exit(
+    game_process: subprocess.Popen[str],
+    artifacts: EpisodeArtifacts,
+    required_artifacts: tuple[Path, ...],
+    *,
+    player_count: int,
+    timeout_seconds: float,
+) -> None:
+    """Return once the game has written every required artifact.
+
+    Mirrors the hosted worker: `results.json` is the completion marker, so a long-running
+    game server that keeps serving after the episode is collected rather than timed out.
+    A declared player failure (`player_failure.json`) is checked on every poll and again
+    after an exit is observed, so a game that declares a seat's failure and then exits
+    non-zero is reported as that seat's `player_error`, not as `game_unhealthy`.
+    """
+    deadline = time.monotonic() + timeout_seconds
+    while True:
+        if all(path.exists() for path in required_artifacts):
+            return
+        _raise_if_game_declared_player_failure(artifacts, required_artifacts, player_count=player_count)
+        return_code = game_process.poll()
+        if return_code is not None:
+            _raise_if_game_declared_player_failure(artifacts, required_artifacts, player_count=player_count)
+            if return_code != 0:
+                raise RunnerEpisodeError(
+                    f"Game container exited with status {return_code}.\n{_tail(artifacts.game_stderr_path)}",
+                    error_type="game_unhealthy",
+                )
+            missing = [path for path in required_artifacts if not path.exists()]
+            if not missing:
+                return
+            raise RunnerEpisodeError(
+                f"Game container exited before writing {', '.join(str(path) for path in missing)}.\n"
+                f"{_tail(artifacts.game_stderr_path)}",
+                error_type="results_missing" if artifacts.results_path in missing else "replay_missing",
+            )
+        if time.monotonic() >= deadline:
+            raise RunnerEpisodeError(
+                f"Timed out waiting for the game to write its results.\n{_tail(artifacts.game_stderr_path)}",
+                error_type="episode_timeout",
+            )
+        time.sleep(0.25)
 
 
 def _raise_if_game_declared_player_failure(

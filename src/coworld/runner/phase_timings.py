@@ -1,12 +1,18 @@
 from __future__ import annotations
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 PHASE_GAME_BOOT = "game_boot"
 PHASE_PLAYER_LAUNCH = "player_launch"
 PHASE_FIRST_STEP = "first_step"
 PHASE_GAMEPLAY = "gameplay"
 PHASE_ARTIFACT_UPLOAD = "artifact_upload"
+
+
+class PlayerFileStageTiming(BaseModel):
+    stage_s: float = Field(ge=0)
+    count: int = Field(ge=0)
+    bytes_total: int = Field(ge=0)
 
 
 class EpisodePhaseTimings(BaseModel):
@@ -26,6 +32,10 @@ class EpisodePhaseTimings(BaseModel):
     first_step_s: float | None = None
     gameplay_s: float | None = None
     artifact_upload_s: float | None = None
+    player_file_stage: PlayerFileStageTiming | None = None
+    slot_log_missing_count: int | None = Field(default=None, ge=0)
+    player_status_invalid_count: int | None = Field(default=None, ge=0)
+    player_artifact_oversize_count: int | None = Field(default=None, ge=0)
 
     def phase_seconds(self) -> dict[str, float]:
         phases = {

@@ -2,14 +2,17 @@ from __future__ import annotations
 
 import argparse
 import asyncio
+import fcntl
 import hmac
 import http.server
 import json
 import logging
 import os
+import shutil
 import socket
 import socketserver
 import ssl
+import stat
 import sys
 import tempfile
 import threading
@@ -20,7 +23,7 @@ from collections.abc import Callable
 from concurrent.futures import Future, ThreadPoolExecutor
 from io import BytesIO
 from pathlib import Path
-from typing import Any, Mapping, cast
+from typing import Any, BinaryIO, Mapping, cast
 from urllib.parse import urlsplit
 
 import httpx
@@ -28,6 +31,7 @@ import urllib3
 from kubernetes import client, config
 from kubernetes.client.rest import ApiException
 from kubernetes.utils import parse_quantity
+from pydantic import TypeAdapter, ValidationError
 from urllib3.exceptions import HTTPError
 from urllib3.util import Retry
 
@@ -48,15 +52,18 @@ from coworld.runner.io import (
     RunnerEpisodeError,
     RunnerError,
     RunnerErrorType,
+    exception_summary,
     read_data,
+    redact_uri,
     upload_data,
     upload_file,
 )
-from coworld.runner.phase_timings import EpisodePhaseTimings
+from coworld.runner.phase_timings import EpisodePhaseTimings, PlayerFileStageTiming
 from coworld.runner.runner import (
     CERTIFICATION_EPISODE_SOURCE,
     DEFAULT_PLAYER_EXIT_TIMEOUT_SECONDS,
     DEFAULT_RUNTIME_STARTUP_TIMEOUT_SECONDS,
+    GAME_HOSTED_PLAYER_LOG_MISSING,
     LOBBY_RUNTIME_STARTUP_TIMEOUT_SECONDS,
     EpisodeArtifacts,
     PlayerLaunchSpec,
@@ -67,11 +74,12 @@ from coworld.runner.runner import (
     _validate_results_file,
     coworld_game_config,
     episode_player_tokens,
+    stage_player_files,
 )
 from coworld.runner.runner import (
     _player_query as _episode_player_query,
 )
-from coworld.types import CoworldEpisodeJobSpec, CoworldHumanPlayerSpec, CoworldRunnableSpec
+from coworld.types import CoworldEpisodeJobSpec, CoworldPlayerFileSpec, CoworldRunnableSpec
 
 logger = logging.getLogger(__name__)
 
@@ -86,6 +94,9 @@ PLAYER_ARTIFACT_PORT = 9091
 # is latency-insensitive and cuts that steady read pressure.
 _HEALTH_POLL_SECONDS = 1.0
 _ARTIFACT_POLL_SECONDS = 1.0
+_PLAYER_LOG_MAX_BYTES = 10 * 1024 * 1024
+_PLAYER_LOG_TRUNCATION_MARKER = b"\n[truncated by the runner at 10 MiB]\n"
+_PLAYER_STATUS_MAX_BYTES = 1024 * 1024
 _PLAYER_ARTIFACT_MAX_BYTES = 200 * 1024 * 1024
 _PLAYER_ARTIFACT_HEADER_DEADLINE_SECONDS = 5.0
 _PLAYER_ARTIFACT_BODY_DEADLINE_SECONDS = 60.0
@@ -140,6 +151,39 @@ while time.monotonic() < deadline:
     time.sleep(0.5)
 raise SystemExit(f"Timed out waiting for {url}")
 """.strip()
+
+
+def _open_game_authored_file(path: Path) -> BinaryIO | None:
+    # O_NONBLOCK so a FIFO the game left at an output path cannot park the worker in
+    # open(); the flag is cleared again once the descriptor is known to be a regular file.
+    try:
+        descriptor = os.open(path, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK)
+    except FileNotFoundError:
+        return None
+    except OSError as exc:
+        logger.warning("Skipping unreadable game-authored file %s: %s", path, exc)
+        return None
+    if not stat.S_ISREG(os.fstat(descriptor).st_mode):
+        logger.warning("Skipping non-regular game-authored file %s", path)
+        os.close(descriptor)
+        return None
+    fcntl.fcntl(descriptor, fcntl.F_SETFL, fcntl.fcntl(descriptor, fcntl.F_GETFL) & ~os.O_NONBLOCK)
+    return cast(BinaryIO, os.fdopen(descriptor, "rb"))
+
+
+def _read_game_authored_file(path: Path, max_bytes: int | None) -> bytes | None:
+    file = _open_game_authored_file(path)
+    if file is None:
+        return None
+    with file:
+        return file.read() if max_bytes is None else file.read(max_bytes + 1)
+
+
+def _read_player_log(path: Path) -> bytes | None:
+    contents = _read_game_authored_file(path, _PLAYER_LOG_MAX_BYTES)
+    if contents is None or len(contents) <= _PLAYER_LOG_MAX_BYTES:
+        return contents
+    return contents[:_PLAYER_LOG_MAX_BYTES] + _PLAYER_LOG_TRUNCATION_MARKER
 
 
 def _player_thread_pool_env(cpu_limit: str) -> dict[str, str]:
@@ -309,14 +353,56 @@ def _start_player_artifact_upload_server(tokens: list[str]) -> _PlayerArtifactUp
 
 
 def init_config_from_env() -> None:
-    job = _read_job_spec()
-    tokens = episode_player_tokens(job)
-    upload_data(
-        os.environ["COGAME_CONFIG_URI"],
-        json.dumps(coworld_game_config(job, tokens), indent=2),
-        content_type="application/json",
-    )
-    STATE_PATH.write_text(json.dumps({"tokens": tokens}), encoding="utf-8")
+    try:
+        job = _read_job_spec()
+        if job.manifest.game.player_runtime == "game-hosted":
+            stage_start = time.monotonic()
+            player_files = [player for player in job.players if isinstance(player, CoworldPlayerFileSpec)]
+            raw_player_file_urls = os.environ.get("PLAYER_FILE_URLS")
+            if raw_player_file_urls is None:
+                raise RunnerEpisodeError(
+                    "PLAYER_FILE_URLS is required for a game-hosted episode",
+                    error_type="config_error",
+                )
+            player_file_urls = TypeAdapter(dict[int, str]).validate_json(raw_player_file_urls)
+            if set(player_file_urls) != set(range(len(player_files))):
+                raise RunnerEpisodeError(
+                    "PLAYER_FILE_URLS must contain exactly one URL for every player-file slot",
+                    error_type="config_error",
+                )
+
+            def read_player_file(slot: int) -> bytes:
+                try:
+                    return read_data(player_file_urls[slot])
+                except Exception as exc:
+                    raise RunnerEpisodeError(
+                        f"Player file for slot {slot} could not be downloaded: {exception_summary(exc)}",
+                        error_type="player_file_unavailable",
+                    ) from None
+
+            artifacts = EpisodeArtifacts.create(WORKDIR, prefix="coworld-job-")
+            bytes_total = stage_player_files(player_files, read_player_file, artifacts)
+            (WORKDIR / "player_file_stage.json").write_text(
+                PlayerFileStageTiming(
+                    stage_s=time.monotonic() - stage_start,
+                    count=len(player_files),
+                    bytes_total=bytes_total,
+                ).model_dump_json(),
+                encoding="utf-8",
+            )
+        tokens = episode_player_tokens(job)
+        upload_data(
+            os.environ["COGAME_CONFIG_URI"],
+            json.dumps(coworld_game_config(job, tokens), indent=2),
+            content_type="application/json",
+        )
+        STATE_PATH.write_text(json.dumps({"tokens": tokens}), encoding="utf-8")
+    except Exception as exc:
+        try:
+            _write_error_info(exc)
+        except Exception as cleanup_exc:
+            logger.warning("Failed to upload error info after episode failure: %s", exception_summary(cleanup_exc))
+        raise
 
 
 def run_from_env() -> None:
@@ -324,7 +410,6 @@ def run_from_env() -> None:
     # When this process exits for any reason (timeout, crash, OOM) the kernel closes the socket, the
     # game's probe fails, and the kubelet tears the game container down instead of leaving a hard zombie.
     _start_worker_health_server(HEALTH_PORT)
-    job = _read_job_spec()
     artifacts = EpisodeArtifacts.create(WORKDIR, prefix="coworld-job-")
     timings = EpisodePhaseTimings()
     timing_uploads: list[Future[None]] = []
@@ -334,6 +419,30 @@ def run_from_env() -> None:
             timing_uploads.append(timing_executor.submit(_upload_timings, current_timings.model_copy(deep=True)))
 
         try:
+            job = _read_job_spec()
+            player_file_stage_path = WORKDIR / "player_file_stage.json"
+            if player_file_stage_path.exists():
+                timings.player_file_stage = PlayerFileStageTiming.model_validate_json(
+                    player_file_stage_path.read_text(encoding="utf-8")
+                )
+        except Exception as exc:
+            try:
+                _write_error_info(exc)
+            except Exception as cleanup_exc:
+                logger.warning("Failed to upload error info after episode failure: %s", exception_summary(cleanup_exc))
+            try:
+                _upload_debug_logs(artifacts)
+            except Exception as cleanup_exc:
+                logger.warning("Failed to upload debug logs after episode failure: %s", exception_summary(cleanup_exc))
+            try:
+                queue_timings_upload(timings)
+            except Exception as cleanup_exc:
+                logger.warning("Failed to upload timings after episode failure: %s", exception_summary(cleanup_exc))
+            raise
+        # Prepared exactly once per episode: preparation deletes an invalid status file and
+        # writes missing-log placeholders, so a second pass would report clean diagnostics.
+        outputs_prepared = False
+        try:
             _run_kubernetes_episode(
                 job,
                 artifacts,
@@ -341,12 +450,46 @@ def run_from_env() -> None:
                 timings=timings,
                 upload_timings=queue_timings_upload,
             )
+            # Publishing is part of the episode: a failure here (a replay that is not a
+            # regular file, an upload error) must reach the backend as a typed runner error,
+            # not as an unexplained crash after results may already be visible.
+            upload_start = time.monotonic()
+            if job.manifest.game.player_runtime == "game-hosted":
+                _prepare_game_hosted_outputs(job, artifacts, timings)
+                outputs_prepared = True
+            _upload_outputs(artifacts)
         except Exception as exc:
-            _write_error_info(exc)
-            _upload_debug_logs(artifacts)
+            try:
+                _write_error_info(exc)
+            except Exception as cleanup_exc:
+                logger.warning("Failed to upload error info after episode failure: %s", exception_summary(cleanup_exc))
+            if job.manifest.game.player_runtime == "game-hosted" and not outputs_prepared:
+                try:
+                    _prepare_game_hosted_outputs(job, artifacts, timings)
+                except Exception as cleanup_exc:
+                    logger.warning(
+                        "Failed to prepare game-hosted diagnostics after episode failure: %s",
+                        exception_summary(cleanup_exc),
+                    )
+            try:
+                _upload_debug_logs(artifacts)
+            except Exception as cleanup_exc:
+                logger.warning("Failed to upload debug logs after episode failure: %s", exception_summary(cleanup_exc))
+            if job.manifest.game.player_runtime == "game-hosted":
+                try:
+                    timings.player_artifact_oversize_count = _upload_player_artifacts(artifacts)
+                except Exception as cleanup_exc:
+                    logger.warning(
+                        "Failed to upload player artifacts after episode failure: %s",
+                        exception_summary(cleanup_exc),
+                    )
+            try:
+                queue_timings_upload(timings)
+            except Exception as cleanup_exc:
+                logger.warning("Failed to upload timings after episode failure: %s", exception_summary(cleanup_exc))
             raise
-        upload_start = time.monotonic()
-        _upload_outputs(artifacts)
+        if job.manifest.game.player_runtime == "game-hosted":
+            timings.player_artifact_oversize_count = _upload_player_artifacts(artifacts)
         timings.artifact_upload_s = time.monotonic() - upload_start
         queue_timings_upload(timings)
         timing_uploads[-1].result()
@@ -366,6 +509,8 @@ def _write_error_info(exc: Exception) -> None:
             message=str(exc)[:2000],
             failed_policy_index=exc.failed_policy_index,
         )
+    elif isinstance(exc, ValidationError):
+        runner_error = RunnerError(error_type="config_error", message=str(exc)[:2000])
     else:
         runner_error = RunnerError(error_type="crash", message=str(exc)[:2000])
     upload_data(error_info_uri, runner_error.model_dump_json(), content_type="application/json")
@@ -382,8 +527,9 @@ def _upload_debug_logs(artifacts: EpisodeArtifacts) -> None:
     if policy_log_urls is not None:
         for slot, log_uri in json.loads(policy_log_urls).items():
             log_path = artifacts.policy_log_path(int(slot))
-            if log_path.exists():
-                upload_data(log_uri, log_path.read_bytes(), content_type="text/plain")
+            contents = _read_player_log(log_path)
+            if contents is not None:
+                upload_data(log_uri, contents, content_type="text/plain")
 
 
 def _upload_timings(timings: EpisodePhaseTimings) -> None:
@@ -394,31 +540,45 @@ def _upload_timings(timings: EpisodePhaseTimings) -> None:
 
 def _upload_player_status(artifacts: EpisodeArtifacts) -> None:
     player_status_uri = os.environ.get("PLAYER_STATUS_URI")
-    if player_status_uri is not None and artifacts.player_status_path.exists():
-        upload_data(player_status_uri, artifacts.player_status_path.read_bytes(), content_type="application/json")
+    if player_status_uri is not None:
+        contents = _read_game_authored_file(artifacts.player_status_path, _PLAYER_STATUS_MAX_BYTES)
+        if contents is not None:
+            upload_data(player_status_uri, contents, content_type="application/json")
 
 
 def _upload_outputs(artifacts: EpisodeArtifacts) -> None:
+    # Read the required replay BEFORE publishing anything: results.json is what the backend
+    # reconciles success from, so a missing or non-regular replay (the artifact wait only
+    # checks existence) must fail the episode before results reach S3.
+    replay_uri = os.environ.get("REPLAY_URI")
+    replay_contents = None
+    if replay_uri is not None:
+        replay_contents = _read_game_authored_file(artifacts.replay_path, None)
+        if replay_contents is None:
+            raise RunnerEpisodeError(
+                f"Required replay artifact is missing or is not a regular file: {artifacts.replay_path}",
+                error_type="replay_missing",
+            )
+
     _upload_player_status(artifacts)
 
     results_uri = os.environ.get("RESULTS_URI")
     if results_uri is not None:
-        upload_data(results_uri, artifacts.results_path.read_bytes(), content_type="application/json")
+        contents = _read_game_authored_file(artifacts.results_path, None)
+        if contents is not None:
+            upload_data(results_uri, contents, content_type="application/json")
 
-    replay_uri = os.environ.get("REPLAY_URI")
-    if replay_uri is not None:
-        upload_data(
-            replay_uri,
-            artifacts.replay_path.read_bytes(),
-            content_type="application/octet-stream",
-        )
+    if replay_uri is not None and replay_contents is not None:
+        upload_data(replay_uri, replay_contents, content_type="application/octet-stream")
 
     # Existence-gated, unlike results/replay: most coworlds emit no event stream
     # at all, and a coworld that emits one may still finish an episode without a
     # single event. Both are ordinary outcomes, not a failed upload.
     events_uri = os.environ.get("EVENTS_URI")
-    if events_uri is not None and artifacts.events_path.exists():
-        upload_data(events_uri, artifacts.events_path.read_bytes(), content_type="application/json")
+    if events_uri is not None:
+        contents = _read_game_authored_file(artifacts.events_path, None)
+        if contents is not None:
+            upload_data(events_uri, contents, content_type="application/json")
 
     debug_uri = os.environ.get("DEBUG_URI")
     if debug_uri is not None:
@@ -428,16 +588,91 @@ def _upload_outputs(artifacts: EpisodeArtifacts) -> None:
     if policy_log_urls is not None:
         for slot, log_uri in json.loads(policy_log_urls).items():
             log_path = artifacts.policy_log_path(int(slot))
-            if log_path.exists():
-                upload_data(log_uri, log_path.read_bytes(), content_type="text/plain")
+            contents = _read_player_log(log_path)
+            if contents is not None:
+                upload_data(log_uri, contents, content_type="text/plain")
+
+
+def _prepare_game_hosted_outputs(
+    job: CoworldEpisodeJobSpec,
+    artifacts: EpisodeArtifacts,
+    timings: EpisodePhaseTimings,
+) -> None:
+    timings.player_status_invalid_count = 0
+    player_status = _read_game_authored_file(artifacts.player_status_path, _PLAYER_STATUS_MAX_BYTES)
+    if player_status is not None:
+        if len(player_status) > _PLAYER_STATUS_MAX_BYTES:
+            logger.warning(
+                "Discarding invalid game-hosted player status: file exceeds the %d-byte limit",
+                _PLAYER_STATUS_MAX_BYTES,
+            )
+            artifacts.player_status_path.unlink()
+            timings.player_status_invalid_count = 1
+        else:
+            try:
+                PlayerRuntimeStatuses.model_validate_json(player_status)
+            except ValidationError as exc:
+                logger.warning("Discarding invalid game-hosted player status: %s", exc)
+                artifacts.player_status_path.unlink()
+                timings.player_status_invalid_count = 1
+
+    missing_count = 0
+    for slot in range(len(job.players)):
+        log_path = artifacts.policy_log_path(slot)
+        if not log_path.exists():
+            log_path.write_text(GAME_HOSTED_PLAYER_LOG_MISSING, encoding="utf-8")
+            missing_count += 1
+    timings.slot_log_missing_count = missing_count
+
+
+def _upload_player_artifacts(artifacts: EpisodeArtifacts) -> int:
+    oversize_count = 0
+    raw_urls = os.environ["PLAYER_ARTIFACT_UPLOAD_URLS"]
+    for slot, uri in TypeAdapter(dict[int, str]).validate_json(raw_urls).items():
+        artifact_path = artifacts.policy_artifact_path(slot)
+        artifact = _open_game_authored_file(artifact_path)
+        if artifact is None:
+            continue
+        with artifact:
+            size = os.fstat(artifact.fileno()).st_size
+            if size == 0:
+                continue
+            if size > _PLAYER_ARTIFACT_MAX_BYTES:
+                logger.warning(
+                    "Skipping oversized player artifact for slot %d: %d bytes exceeds the %d-byte limit",
+                    slot,
+                    size,
+                    _PLAYER_ARTIFACT_MAX_BYTES,
+                )
+                oversize_count += 1
+                continue
+            try:
+                upload_file(uri, artifact, size=size, content_type="application/zip", attempts=1)
+            except Exception as exc:
+                logger.warning(
+                    "Skipping failed player artifact upload for slot %d: %s",
+                    slot,
+                    exception_summary(exc),
+                )
+    return oversize_count
 
 
 def _zip_logs(logs_dir: Path) -> bytes:
     buf = BytesIO()
     with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as zf:
         for path in logs_dir.iterdir():
-            if path.is_file():
-                zf.write(path, path.name)
+            if path.name.startswith("policy_agent_"):
+                # Player logs are capped at _PLAYER_LOG_MAX_BYTES, so holding one is bounded.
+                contents = _read_player_log(path)
+                if contents is not None:
+                    zf.writestr(path.name, contents)
+                continue
+            file = _open_game_authored_file(path)
+            if file is None:
+                continue
+            # Game logs are unbounded: stream them into the archive instead of reading whole.
+            with file, zf.open(path.name, "w") as entry:
+                shutil.copyfileobj(file, entry)
     return buf.getvalue()
 
 
@@ -449,18 +684,30 @@ def _run_kubernetes_episode(
     timings: EpisodePhaseTimings,
     upload_timings: Callable[[EpisodePhaseTimings], None],
 ) -> None:
-    if job.manifest.game.player_runtime != "platform-hosted":
-        raise ValueError("game-hosted player execution requires Kubernetes player-file staging")
     worker_start = time.monotonic()
     egress_enforcement_enabled = os.environ.get("COWORLD_EGRESS_ENFORCEMENT_ENABLED") == "true"
     api_client = _load_incluster_config(egress_enforcement_enabled=egress_enforcement_enabled)
     core_v1 = client.CoreV1Api(api_client)
     namespace = os.environ["JOB_NAMESPACE"]
+    pod_name = os.environ["POD_NAME"]
+    tokens = json.loads(STATE_PATH.read_text(encoding="utf-8"))["tokens"]
+    if job.manifest.game.player_runtime == "game-hosted":
+        _run_game_hosted_episode(
+            job,
+            artifacts,
+            core_v1=core_v1,
+            namespace=namespace,
+            pod_name=pod_name,
+            worker_start=worker_start,
+            timeout_seconds=timeout_seconds,
+            timings=timings,
+            upload_timings=upload_timings,
+        )
+        return
+
     service_name = os.environ["COWORLD_SERVICE_NAME"]
     job_id = os.environ["JOB_ID"]
-    pod_name = os.environ["POD_NAME"]
     owner_references = _owner_references()
-    tokens = json.loads(STATE_PATH.read_text(encoding="utf-8"))["tokens"]
     policy_players = [
         (slot, PlayerLaunchSpec.from_model(player))
         for slot, player in enumerate(job.players)
@@ -624,7 +871,10 @@ def _run_kubernetes_episode(
         gameplay_done = time.monotonic()
         timings.gameplay_s = gameplay_done - gameplay_start
         upload_timings(timings)
-        _validate_results_file(artifacts.results_path, job.results_schema)
+        results = _read_game_authored_file(artifacts.results_path, None)
+        if results is None:
+            raise RunnerEpisodeError("results.json is not a regular file", error_type="results_malformed")
+        _validate_results_file(artifacts.results_path, job.results_schema, contents=results)
         if job.episode_tags.get("source") == CERTIFICATION_EPISODE_SOURCE:
             _wait_for_players_to_complete(
                 core_v1,
@@ -638,6 +888,61 @@ def _run_kubernetes_episode(
         if artifact_server is not None:
             artifact_server.shutdown()
             artifact_server.server_close()
+
+
+def _run_game_hosted_episode(
+    job: CoworldEpisodeJobSpec,
+    artifacts: EpisodeArtifacts,
+    *,
+    core_v1: Any,
+    namespace: str,
+    pod_name: str,
+    worker_start: float,
+    timeout_seconds: float,
+    timings: EpisodePhaseTimings,
+    upload_timings: Callable[[EpisodePhaseTimings], None],
+) -> None:
+    try:
+        _wait_for_health(core_v1, namespace, pod_name, timeout_seconds=timeout_seconds)
+        game_ready = time.monotonic()
+        timings.game_boot_s = game_ready - worker_start
+        upload_timings(timings)
+        timings.player_launch_s = 0.0
+        upload_timings(timings)
+        _require_http_ok(f"http://127.0.0.1:{GAME_PORT}/client/global")
+
+        first_step_start = time.monotonic()
+        asyncio.run(
+            _require_global_message(
+                f"ws://127.0.0.1:{GAME_PORT}/global",
+                timeout_seconds=timeout_seconds,
+                startup_timeout_seconds=DEFAULT_RUNTIME_STARTUP_TIMEOUT_SECONDS,
+                require_pong=job.episode_tags.get("source") == CERTIFICATION_EPISODE_SOURCE,
+            )
+        )
+        first_step = time.monotonic()
+        timings.first_step_s = first_step - first_step_start
+        upload_timings(timings)
+        gameplay_start = time.monotonic()
+        _wait_for_episode_artifacts(
+            artifacts,
+            core_v1,
+            namespace,
+            pod_name,
+            [],
+            player_count=len(job.players),
+            timeout_seconds=timeout_seconds,
+            require_replay=os.environ.get("REPLAY_URI") is not None,
+        )
+        gameplay_done = time.monotonic()
+        timings.gameplay_s = gameplay_done - gameplay_start
+        upload_timings(timings)
+        results = _read_game_authored_file(artifacts.results_path, None)
+        if results is None:
+            raise RunnerEpisodeError("results.json is not a regular file", error_type="results_malformed")
+        _validate_results_file(artifacts.results_path, job.results_schema, contents=results)
+    finally:
+        _collect_game_log(core_v1, namespace, pod_name, artifacts)
 
 
 def _load_incluster_config(*, egress_enforcement_enabled: bool) -> client.ApiClient:
@@ -1019,7 +1324,7 @@ def _wait_for_health(core_v1, namespace: str, pod_name: str, *, timeout_seconds:
         except httpx.HTTPError:
             pass
         time.sleep(_HEALTH_POLL_SECONDS)
-    raise RunnerEpisodeError(f"Timed out waiting for {url}", error_type="game_unhealthy")
+    raise RunnerEpisodeError(f"Timed out waiting for {redact_uri(url)}", error_type="game_unhealthy")
 
 
 def _wait_for_episode_artifacts(
@@ -1315,10 +1620,7 @@ def _collect_logs(
     # mid-episode: episodes now play on past a dead seat, so by teardown the crashed pod may have
     # been reaped and live status alone would report an uninformative "unavailable" for exactly
     # the seat whose exit code matters most.
-    game_log = _read_pod_log(core_v1, namespace, pod_name, "game")
-    if game_log is None:
-        game_log = _log_unavailable(pod_name, "game", "the pod was gone before log collection")
-    artifacts.game_stdout_path.write_text(game_log, encoding="utf-8")
+    _collect_game_log(core_v1, namespace, pod_name, artifacts)
     player_statuses: list[PlayerRuntimeStatus] = []
     for player_pod_name in player_pod_names:
         slot = _player_pod_slot(player_pod_name)
@@ -1389,6 +1691,13 @@ def _collect_logs(
         PlayerRuntimeStatuses(players=player_statuses).model_dump_json(),
         encoding="utf-8",
     )
+
+
+def _collect_game_log(core_v1: Any, namespace: str, pod_name: str, artifacts: EpisodeArtifacts) -> None:
+    game_log = _read_pod_log(core_v1, namespace, pod_name, "game")
+    if game_log is None:
+        game_log = _log_unavailable(pod_name, "game", "the pod was gone before log collection")
+    artifacts.game_stdout_path.write_text(game_log, encoding="utf-8")
 
 
 def _read_pod_log(core_v1, namespace: str, pod_name: str, container: str) -> str | None:

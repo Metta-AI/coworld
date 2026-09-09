@@ -1,4 +1,6 @@
 import asyncio
+import hashlib
+import io
 import json
 import logging
 import os
@@ -17,11 +19,14 @@ from typing import Any, cast
 from urllib.error import HTTPError
 from urllib.request import Request, urlopen
 
+import httpx
 import pytest
 from kubernetes.client import Configuration
 from kubernetes.client.rest import ApiException
+from pydantic import ValidationError
 from urllib3.exceptions import MaxRetryError, ResponseError
 
+from coworld.manifest import validate_upload_manifest
 from coworld.runner import io as runner_io
 from coworld.runner import kubernetes_runner
 from coworld.runner import runner as runner_module
@@ -40,7 +45,7 @@ from coworld.runner.kubernetes_runner import (
 )
 from coworld.runner.phase_timings import EpisodePhaseTimings
 from coworld.runner.runner import EpisodeArtifacts, EpisodeRunSpec, PlayerLaunchSpec, RunnableLaunchSpec
-from coworld.types import CoworldEpisodeJobSpec, CoworldHumanPlayerSpec, CoworldRunnableSpec
+from coworld.types import CoworldEpisodeJobSpec, CoworldHumanPlayerSpec, CoworldPlayerFileSpec, CoworldRunnableSpec
 
 
 def test_legacy_run_command_fails_closed(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -233,6 +238,203 @@ def _declare_game_player_failure(artifacts: EpisodeArtifacts, *, slot: int, mess
     )
 
 
+def _runtime_job(player_runtime: str = "platform-hosted", players: list[object] | None = None) -> CoworldEpisodeJobSpec:
+    return cast(
+        CoworldEpisodeJobSpec,
+        SimpleNamespace(
+            manifest=SimpleNamespace(game=SimpleNamespace(player_runtime=player_runtime)),
+            players=players or [],
+            episode_tags={},
+            results_schema={},
+            game_config={},
+        ),
+    )
+
+
+def _game_hosted_job(contents: list[bytes]) -> CoworldEpisodeJobSpec:
+    manifest_path = Path(__file__).parent / "manifest_versions/v1/game_hosted_players_manifest.json"
+    return CoworldEpisodeJobSpec(
+        manifest=validate_upload_manifest(json.loads(manifest_path.read_text(encoding="utf-8"))).runtime_manifest,
+        game_config={},
+        players=[
+            CoworldPlayerFileSpec(
+                type="player-file",
+                content_hash=hashlib.sha256(content).hexdigest(),
+                size_bytes=len(content),
+            )
+            for content in contents
+        ],
+    )
+
+
+def _configure_init_env(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    job: CoworldEpisodeJobSpec,
+    player_file_uris: dict[str, str],
+) -> Path:
+    job_spec_path = tmp_path / "spec.json"
+    job_spec_path.write_text(job.model_dump_json(by_alias=True), encoding="utf-8")
+    error_path = tmp_path / "error_info.json"
+    monkeypatch.setattr(kubernetes_runner, "WORKDIR", tmp_path)
+    monkeypatch.setattr(kubernetes_runner, "STATE_PATH", tmp_path / "state.json")
+    monkeypatch.setenv("JOB_SPEC_URI", job_spec_path.as_uri())
+    monkeypatch.setenv("COGAME_CONFIG_URI", (tmp_path / "config.json").as_uri())
+    monkeypatch.setenv("PLAYER_FILE_URLS", json.dumps(player_file_uris))
+    monkeypatch.setenv("ERROR_INFO_URI", error_path.as_uri())
+    return error_path
+
+
+def test_init_config_stages_verified_player_files_and_seats_document(monkeypatch, tmp_path):
+    contents = [b"alpha player", b"beta player"]
+    sources = []
+    for slot, content in enumerate(contents):
+        source = tmp_path / f"source-{slot}"
+        source.write_bytes(content)
+        sources.append(source)
+    job = _game_hosted_job(contents)
+    error_path = _configure_init_env(
+        monkeypatch,
+        tmp_path,
+        job,
+        {str(slot): source.as_uri() for slot, source in enumerate(sources)},
+    )
+
+    kubernetes_runner.init_config_from_env()
+
+    assert not error_path.exists()
+    assert [(tmp_path / "players" / str(slot) / "file").read_bytes() for slot in range(len(contents))] == contents
+    seats = json.loads((tmp_path / "player_seats.json").read_text(encoding="utf-8"))
+    assert seats == {
+        "schema": "coworld-player-seats/1",
+        "seats": [
+            {
+                "slot": slot,
+                "file_uri": f"file:///coworld/players/{slot}/file",
+                "content_hash": f"sha256:{hashlib.sha256(content).hexdigest()}",
+                "size_bytes": len(content),
+                "log_uri": f"file:///coworld/logs/policy_agent_{slot}.log",
+                "artifact_uri": f"file:///coworld/policy_artifact_{slot}.zip",
+            }
+            for slot, content in enumerate(contents)
+        ],
+        "player_status_uri": "file:///coworld/player_status.json",
+    }
+    assert all("source-" not in json.dumps(seat) for seat in seats["seats"])
+    timing = json.loads((tmp_path / "player_file_stage.json").read_text(encoding="utf-8"))
+    assert timing["count"] == 2
+    assert timing["bytes_total"] == sum(map(len, contents))
+    assert timing["stage_s"] >= 0
+
+
+def test_stage_player_files_writes_each_slot_before_reading_the_next(tmp_path):
+    contents = [b"alpha player", b"beta player", b"gamma player"]
+    job = _game_hosted_job(contents)
+    player_files = [player for player in job.players if isinstance(player, CoworldPlayerFileSpec)]
+    artifacts = EpisodeArtifacts.create(tmp_path)
+
+    def read_player_file(slot: int) -> bytes:
+        for previous_slot in range(slot):
+            assert artifacts.player_file_path(previous_slot).read_bytes() == contents[previous_slot]
+        assert not artifacts.player_seats_path.exists()
+        return contents[slot]
+
+    bytes_total = runner_module.stage_player_files(player_files, read_player_file, artifacts)
+
+    assert bytes_total == sum(map(len, contents))
+    assert artifacts.player_seats_path.exists()
+
+
+def test_stage_player_files_fetches_each_distinct_artifact_once(tmp_path):
+    contents = [b"shared player", b"shared player", b"other player"]
+    job = _game_hosted_job(contents)
+    player_files = [player for player in job.players if isinstance(player, CoworldPlayerFileSpec)]
+    artifacts = EpisodeArtifacts.create(tmp_path)
+    fetched_slots: list[int] = []
+
+    def read_player_file(slot: int) -> bytes:
+        fetched_slots.append(slot)
+        return contents[slot]
+
+    bytes_total = runner_module.stage_player_files(player_files, read_player_file, artifacts)
+
+    assert fetched_slots == [0, 2]
+    assert bytes_total == len(b"shared player") + len(b"other player")
+    assert [artifacts.player_file_path(slot).read_bytes() for slot in range(3)] == contents
+
+
+def test_init_config_maps_player_file_read_failure_to_structured_error(monkeypatch, tmp_path):
+    job = _game_hosted_job([b"player"])
+    error_path = _configure_init_env(
+        monkeypatch,
+        tmp_path,
+        job,
+        {"0": (tmp_path / "missing-player").as_uri()},
+    )
+
+    with pytest.raises(runner_io.RunnerEpisodeError, match="could not be downloaded") as exc_info:
+        kubernetes_runner.init_config_from_env()
+
+    assert exc_info.value.error_type == "player_file_unavailable"
+    assert json.loads(error_path.read_text(encoding="utf-8"))["error_type"] == "player_file_unavailable"
+
+
+def test_init_config_redacts_presigned_player_file_download_error(monkeypatch, tmp_path):
+    job = _game_hosted_job([b"player"])
+    signed_url = "https://example.test/player?X-Amz-Signature=secret&X-Amz-Credential=credential"
+    error_path = _configure_init_env(monkeypatch, tmp_path, job, {"0": signed_url})
+    request = httpx.Request("GET", signed_url)
+    response = httpx.Response(403, request=request)
+    download_error = httpx.HTTPStatusError("download failed", request=request, response=response)
+
+    def fail_download(_uri: str) -> bytes:
+        raise download_error
+
+    monkeypatch.setattr(kubernetes_runner, "_read_job_spec", lambda: job)
+    monkeypatch.setattr(kubernetes_runner, "read_data", fail_download)
+
+    with pytest.raises(runner_io.RunnerEpisodeError) as exc_info:
+        kubernetes_runner.init_config_from_env()
+
+    error_info = error_path.read_text(encoding="utf-8")
+    assert str(exc_info.value) == "Player file for slot 0 could not be downloaded: HTTPStatusError (HTTP status 403)"
+    assert exc_info.value.__suppress_context__
+    assert "X-Amz-" not in str(exc_info.value)
+    assert "X-Amz-" not in error_info
+
+
+@pytest.mark.parametrize("actual", [b"playeX", b"short"])
+def test_init_config_maps_player_file_digest_or_size_mismatch_to_structured_error(monkeypatch, tmp_path, actual):
+    source = tmp_path / "source"
+    source.write_bytes(actual)
+    job = _game_hosted_job([b"player"])
+    error_path = _configure_init_env(monkeypatch, tmp_path, job, {"0": source.as_uri()})
+
+    with pytest.raises(runner_io.RunnerEpisodeError, match="does not match") as exc_info:
+        kubernetes_runner.init_config_from_env()
+
+    assert exc_info.value.error_type == "player_file_mismatch"
+    assert json.loads(error_path.read_text(encoding="utf-8"))["error_type"] == "player_file_mismatch"
+
+
+def test_run_from_env_writes_config_error_when_job_spec_validation_fails(monkeypatch, tmp_path):
+    spec_path = tmp_path / "invalid-spec.json"
+    spec_path.write_text("{}", encoding="utf-8")
+    error_path = tmp_path / "error_info.json"
+    monkeypatch.setattr(kubernetes_runner, "WORKDIR", tmp_path)
+    monkeypatch.setattr(kubernetes_runner, "STATE_PATH", tmp_path / "state.json")
+    monkeypatch.setattr(kubernetes_runner, "_start_worker_health_server", lambda _port: None)
+    monkeypatch.setenv("JOB_SPEC_URI", spec_path.as_uri())
+    monkeypatch.setenv("ERROR_INFO_URI", error_path.as_uri())
+    for name in ("DEBUG_URI", "POLICY_LOG_URLS", "PLAYER_STATUS_URI", "WORKER_TIMINGS_URI"):
+        monkeypatch.delenv(name, raising=False)
+
+    with pytest.raises(ValidationError, match="validation errors?"):
+        kubernetes_runner.run_from_env()
+
+    assert json.loads(error_path.read_text(encoding="utf-8"))["error_type"] == "config_error"
+
+
 def test_upload_outputs_uploads_raw_replay_bytes(tmp_path, monkeypatch):
     artifacts = EpisodeArtifacts.create(tmp_path)
     artifacts.results_path.write_text("{}", encoding="utf-8")
@@ -258,6 +460,72 @@ def test_upload_outputs_uploads_raw_replay_bytes(tmp_path, monkeypatch):
     assert content_type == "application/octet-stream"
     assert replay_bytes == replay_payload
     assert not (artifacts.workspace / "replay.z").exists()
+
+
+def test_upload_outputs_truncates_oversized_player_log(monkeypatch, tmp_path):
+    artifacts = EpisodeArtifacts.create(tmp_path)
+    artifacts.policy_log_path(0).write_bytes(b"a" * (kubernetes_runner._PLAYER_LOG_MAX_BYTES + 1))
+    destination = tmp_path / "uploaded-player.log"
+    monkeypatch.setenv("POLICY_LOG_URLS", json.dumps({"0": destination.as_uri()}))
+    for name in ("RESULTS_URI", "REPLAY_URI", "EVENTS_URI", "PLAYER_STATUS_URI", "DEBUG_URI"):
+        monkeypatch.delenv(name, raising=False)
+
+    _upload_outputs(artifacts)
+
+    assert destination.read_bytes() == (
+        b"a" * kubernetes_runner._PLAYER_LOG_MAX_BYTES + kubernetes_runner._PLAYER_LOG_TRUNCATION_MARKER
+    )
+
+
+def test_zip_logs_streams_game_logs_and_caps_player_logs(monkeypatch, tmp_path):
+    logs_dir = tmp_path / "logs"
+    logs_dir.mkdir()
+    (logs_dir / "game.log").write_bytes(b"g" * (3 * 1024 * 1024))
+    (logs_dir / "policy_agent_0.log").write_bytes(b"p" * 40)
+    (logs_dir / "policy_agent_1.log").write_bytes(b"q" * 10)
+    monkeypatch.setattr(kubernetes_runner, "_PLAYER_LOG_MAX_BYTES", 16)
+    reads: list[int | None] = []
+    original_read = kubernetes_runner._read_game_authored_file
+
+    def counting_read(path, max_bytes):
+        reads.append(max_bytes)
+        return original_read(path, max_bytes)
+
+    monkeypatch.setattr(kubernetes_runner, "_read_game_authored_file", counting_read)
+
+    with zipfile.ZipFile(io.BytesIO(kubernetes_runner._zip_logs(logs_dir))) as zf:
+        assert zf.read("game.log") == b"g" * (3 * 1024 * 1024)
+        assert zf.read("policy_agent_0.log") == b"p" * 16 + kubernetes_runner._PLAYER_LOG_TRUNCATION_MARKER
+        assert zf.read("policy_agent_1.log") == b"q" * 10
+    # The unbounded game log never went through a whole-file read.
+    assert reads == [16, 16]
+
+
+def test_prepare_game_hosted_outputs_discards_oversized_player_status(monkeypatch, tmp_path, caplog):
+    artifacts = EpisodeArtifacts.create(tmp_path)
+    artifacts.player_status_path.write_bytes(b"a" * (kubernetes_runner._PLAYER_STATUS_MAX_BYTES + 1))
+    timings = EpisodePhaseTimings()
+
+    with caplog.at_level(logging.WARNING):
+        kubernetes_runner._prepare_game_hosted_outputs(_runtime_job("game-hosted"), artifacts, timings)
+
+    assert not artifacts.player_status_path.exists()
+    assert timings.player_status_invalid_count == 1
+    assert "Discarding invalid game-hosted player status" in caplog.text
+
+
+def test_upload_outputs_skips_symlinked_results(tmp_path, monkeypatch, caplog):
+    artifacts = EpisodeArtifacts.create(tmp_path / "work")
+    secret = tmp_path / "service-account-token"
+    secret.write_text("credential", encoding="utf-8")
+    artifacts.results_path.symlink_to(secret)
+    uploads = _upload_env(monkeypatch, RESULTS_URI="file:///tmp/results-out.json")
+
+    with caplog.at_level(logging.WARNING):
+        _upload_outputs(artifacts)
+
+    assert uploads == []
+    assert str(artifacts.results_path) in caplog.text
 
 
 def test_upload_timings_writes_model_json_to_env_uri(monkeypatch):
@@ -1741,6 +2009,75 @@ def test_policy_secrets_from_env_loads_and_removes_uri(monkeypatch, tmp_path):
     assert "POLICY_SECRETS_URI" not in os.environ
 
 
+def test_game_hosted_kubernetes_episode_skips_player_resources_and_records_zero_launch(monkeypatch, tmp_path):
+    artifacts = EpisodeArtifacts.create(tmp_path)
+    state_path = tmp_path / "state.json"
+    state_path.write_text(json.dumps({"tokens": ["token-0", "token-1"]}), encoding="utf-8")
+    clock = {"now": 100.0}
+    timing_snapshots: list[dict[str, float]] = []
+    http_urls: list[str] = []
+    collected_game_logs: list[str] = []
+
+    async def global_message(*_args, **_kwargs):
+        clock["now"] = 120.0
+
+    def wait_for_artifacts(*_args, **_kwargs):
+        artifacts.results_path.write_text("{}", encoding="utf-8")
+        clock["now"] = 150.0
+
+    def forbidden(*_args, **_kwargs):
+        pytest.fail("game-hosted execution entered platform-hosted player orchestration")
+
+    monkeypatch.setattr(kubernetes_runner, "STATE_PATH", state_path)
+    monkeypatch.setattr(kubernetes_runner.time, "monotonic", lambda: clock["now"])
+    monkeypatch.setattr(kubernetes_runner, "_load_incluster_config", lambda *, egress_enforcement_enabled: None)
+    monkeypatch.setattr(kubernetes_runner.client, "CoreV1Api", lambda _api_client: object())
+    monkeypatch.setattr(kubernetes_runner.client, "NetworkingV1Api", forbidden)
+    monkeypatch.setattr(kubernetes_runner, "_create_game_service", forbidden)
+    monkeypatch.setattr(kubernetes_runner, "_start_player_artifact_upload_server", forbidden)
+    monkeypatch.setattr(kubernetes_runner, "_create_player_pod", forbidden)
+    monkeypatch.setattr(kubernetes_runner, "_ensure_player_pods_started", forbidden)
+    monkeypatch.setattr(kubernetes_runner, "_collect_logs", forbidden)
+    monkeypatch.setattr(kubernetes_runner, "_delete_child_resources", forbidden)
+    monkeypatch.setattr(kubernetes_runner, "_policy_secrets_from_env", forbidden)
+    monkeypatch.setattr(
+        kubernetes_runner,
+        "_wait_for_health",
+        lambda *_args, **_kwargs: clock.__setitem__("now", 110.0),
+    )
+    monkeypatch.setattr(kubernetes_runner, "_require_http_ok", lambda url: http_urls.append(url))
+    monkeypatch.setattr(kubernetes_runner, "_require_global_message", global_message)
+    monkeypatch.setattr(kubernetes_runner, "_wait_for_episode_artifacts", wait_for_artifacts)
+    monkeypatch.setattr(kubernetes_runner, "_validate_results_file", lambda *_args, **_kwargs: None)
+    monkeypatch.setattr(
+        kubernetes_runner,
+        "_collect_game_log",
+        lambda _core_v1, _namespace, pod_name, _artifacts: collected_game_logs.append(pod_name),
+    )
+    monkeypatch.delenv("COWORLD_EGRESS_ENFORCEMENT_ENABLED", raising=False)
+    monkeypatch.setenv("JOB_NAMESPACE", "jobs")
+    monkeypatch.setenv("POD_NAME", "game-pod")
+    timings = EpisodePhaseTimings()
+
+    kubernetes_runner._run_kubernetes_episode(
+        _runtime_job("game-hosted", [object(), object()]),
+        artifacts,
+        timeout_seconds=600.0,
+        timings=timings,
+        upload_timings=lambda current: timing_snapshots.append(current.phase_seconds()),
+    )
+
+    assert http_urls == ["http://127.0.0.1:8080/client/global"]
+    assert collected_game_logs == ["game-pod"]
+    assert timings.player_launch_s == 0.0
+    assert timing_snapshots == [
+        {"game_boot": 10.0},
+        {"game_boot": 10.0, "player_launch": 0.0},
+        {"game_boot": 10.0, "player_launch": 0.0, "first_step": 10.0},
+        {"game_boot": 10.0, "player_launch": 0.0, "first_step": 10.0, "gameplay": 30.0},
+    ]
+
+
 @pytest.mark.parametrize(
     ("game_config", "expected_player_start_timeout", "episode_tags", "expected_completion_waits"),
     [
@@ -1814,7 +2151,7 @@ def test_run_kubernetes_episode_keeps_artifacts_authoritative_except_for_certifi
         "_wait_for_episode_artifacts",
         lambda *_args, **_kwargs: clock.__setitem__("now", 200.0),
     )
-    monkeypatch.setattr(kubernetes_runner, "_validate_results_file", lambda *_args: None)
+    monkeypatch.setattr(kubernetes_runner, "_validate_results_file", lambda *_args, **_kwargs: None)
     monkeypatch.setattr(
         kubernetes_runner,
         "_raise_if_player_pod_failed",
@@ -2747,12 +3084,288 @@ def test_kubernetes_runner_uses_direct_player_urls_without_address():
     )
 
 
+@pytest.mark.parametrize(
+    ("fails", "status_payload", "expected_invalid_count"),
+    [
+        (False, '{"schema_version":"1","players":[]}', 0),
+        (True, "{invalid", 1),
+    ],
+    ids=["success-valid-status", "timeout-invalid-status"],
+)
+def test_game_hosted_run_from_env_collects_private_outputs(
+    monkeypatch,
+    tmp_path,
+    fails,
+    status_payload,
+    expected_invalid_count,
+):
+    artifacts = EpisodeArtifacts.create(tmp_path / "work")
+    policy_log_paths = [tmp_path / f"uploaded-log-{slot}" for slot in range(2)]
+    artifact_dest = tmp_path / "uploaded-artifact"
+    status_dest = tmp_path / "uploaded-status"
+    error_dest = tmp_path / "error-info"
+    timing_snapshots: list[dict[str, object]] = []
+
+    def run_episode(*_args, **_kwargs):
+        artifacts.policy_log_path(0).write_text("seat zero log", encoding="utf-8")
+        artifacts.policy_artifact_path(0).write_bytes(b"artifact zip bytes")
+        artifacts.player_status_path.write_text(status_payload, encoding="utf-8")
+        if fails:
+            raise runner_io.RunnerEpisodeError("episode timed out", error_type="episode_timeout")
+
+    monkeypatch.setattr(kubernetes_runner, "WORKDIR", artifacts.workspace)
+    monkeypatch.setattr(kubernetes_runner, "STATE_PATH", artifacts.workspace / "state.json")
+    monkeypatch.setattr(kubernetes_runner, "_start_worker_health_server", lambda _port: None)
+    monkeypatch.setattr(kubernetes_runner, "_read_job_spec", lambda: _runtime_job("game-hosted", [object(), object()]))
+    monkeypatch.setattr(kubernetes_runner.EpisodeArtifacts, "create", lambda _workdir, prefix: artifacts)
+    monkeypatch.setattr(kubernetes_runner, "_run_kubernetes_episode", run_episode)
+    monkeypatch.setattr(
+        kubernetes_runner,
+        "_upload_timings",
+        lambda timings: timing_snapshots.append(timings.model_dump(exclude_none=True)),
+    )
+    monkeypatch.setenv(
+        "POLICY_LOG_URLS",
+        json.dumps({str(slot): path.as_uri() for slot, path in enumerate(policy_log_paths)}),
+    )
+    monkeypatch.setenv("PLAYER_ARTIFACT_UPLOAD_URLS", json.dumps({"0": artifact_dest.as_uri()}))
+    monkeypatch.setenv("PLAYER_STATUS_URI", status_dest.as_uri())
+    monkeypatch.setenv("ERROR_INFO_URI", error_dest.as_uri())
+    for name in ("RESULTS_URI", "REPLAY_URI", "EVENTS_URI", "DEBUG_URI", "WORKER_TIMINGS_URI"):
+        monkeypatch.delenv(name, raising=False)
+
+    if fails:
+        with pytest.raises(runner_io.RunnerEpisodeError, match="episode timed out"):
+            kubernetes_runner.run_from_env()
+    else:
+        kubernetes_runner.run_from_env()
+
+    assert policy_log_paths[0].read_text(encoding="utf-8") == "seat zero log"
+    assert policy_log_paths[1].read_text(encoding="utf-8") == runner_module.GAME_HOSTED_PLAYER_LOG_MISSING
+    assert artifact_dest.read_bytes() == b"artifact zip bytes"
+    assert status_dest.exists() is (expected_invalid_count == 0)
+    assert timing_snapshots[-1]["slot_log_missing_count"] == 1
+    assert timing_snapshots[-1]["player_status_invalid_count"] == expected_invalid_count
+    assert timing_snapshots[-1]["player_artifact_oversize_count"] == 0
+    assert error_dest.exists() is fails
+
+
+def test_game_hosted_player_artifact_skips_oversize_and_records_metadata(monkeypatch, tmp_path, caplog):
+    artifacts = EpisodeArtifacts.create(tmp_path)
+    with artifacts.policy_artifact_path(0).open("wb") as artifact:
+        artifact.truncate(kubernetes_runner._PLAYER_ARTIFACT_MAX_BYTES + 1)
+    uploads = []
+    monkeypatch.setenv("PLAYER_ARTIFACT_UPLOAD_URLS", '{"0":"https://example.test/artifact"}')
+    monkeypatch.setattr(kubernetes_runner, "upload_file", lambda *_args, **_kwargs: uploads.append(True))
+
+    oversize_count = kubernetes_runner._upload_player_artifacts(artifacts)
+
+    assert oversize_count == 1
+    assert uploads == []
+    assert f"slot 0: {kubernetes_runner._PLAYER_ARTIFACT_MAX_BYTES + 1} bytes" in caplog.text
+
+
+def test_game_hosted_player_artifact_skips_empty_and_missing_files(monkeypatch, tmp_path):
+    artifacts = EpisodeArtifacts.create(tmp_path)
+    artifacts.policy_artifact_path(0).touch()
+    uploads = []
+    monkeypatch.setenv(
+        "PLAYER_ARTIFACT_UPLOAD_URLS",
+        '{"0":"https://example.test/artifact-0","1":"https://example.test/artifact-1"}',
+    )
+    monkeypatch.setattr(kubernetes_runner, "upload_file", lambda *_args, **_kwargs: uploads.append(True))
+
+    oversize_count = kubernetes_runner._upload_player_artifacts(artifacts)
+
+    assert oversize_count == 0
+    assert uploads == []
+
+
+def test_game_hosted_player_artifact_skips_symlink(monkeypatch, tmp_path, caplog):
+    artifacts = EpisodeArtifacts.create(tmp_path / "work")
+    secret = tmp_path / "service-account-token"
+    secret.write_text("credential", encoding="utf-8")
+    artifacts.policy_artifact_path(0).symlink_to(secret)
+    uploads = []
+    monkeypatch.setenv("PLAYER_ARTIFACT_UPLOAD_URLS", '{"0":"https://example.test/artifact"}')
+    monkeypatch.setattr(kubernetes_runner, "upload_file", lambda *_args, **_kwargs: uploads.append(True))
+
+    with caplog.at_level(logging.WARNING):
+        oversize_count = kubernetes_runner._upload_player_artifacts(artifacts)
+
+    assert oversize_count == 0
+    assert uploads == []
+    assert str(artifacts.policy_artifact_path(0)) in caplog.text
+
+
+def test_game_hosted_player_artifact_streams_from_open_file(monkeypatch, tmp_path):
+    artifacts = EpisodeArtifacts.create(tmp_path)
+    contents = b"artifact zip bytes"
+    artifacts.policy_artifact_path(0).write_bytes(contents)
+    uploaded_files = []
+    monkeypatch.setenv("PLAYER_ARTIFACT_UPLOAD_URLS", '{"0":"https://example.test/artifact"}')
+
+    def upload_file(_uri, file, *, size, content_type, attempts):
+        assert not isinstance(file, BytesIO)
+        assert file.fileno() >= 0
+        assert size == len(contents)
+        assert content_type == "application/zip"
+        assert attempts == 1
+        assert file.read() == contents
+        uploaded_files.append(file)
+
+    monkeypatch.setattr(kubernetes_runner, "upload_file", upload_file)
+
+    assert kubernetes_runner._upload_player_artifacts(artifacts) == 0
+    assert len(uploaded_files) == 1
+    assert uploaded_files[0].closed
+
+
+def test_game_hosted_player_artifact_growth_is_skipped(monkeypatch, tmp_path, caplog):
+    artifacts = EpisodeArtifacts.create(tmp_path)
+    artifact_path = artifacts.policy_artifact_path(0)
+    original = b"artifact zip bytes"
+    artifact_path.write_bytes(original)
+    attempts_seen = []
+    monkeypatch.setenv("PLAYER_ARTIFACT_UPLOAD_URLS", '{"0":"https://example.test/artifact"}')
+
+    def upload_file(_uri, _file, *, size, content_type, attempts):
+        assert size == len(original)
+        assert content_type == "application/zip"
+        attempts_seen.append(attempts)
+        with artifact_path.open("ab") as growing_artifact:
+            growing_artifact.write(b"grew")
+        raise OSError("artifact exceeded declared Content-Length")
+
+    monkeypatch.setattr(kubernetes_runner, "upload_file", upload_file)
+
+    with caplog.at_level(logging.WARNING):
+        assert kubernetes_runner._upload_player_artifacts(artifacts) == 0
+
+    assert attempts_seen == [1]
+    assert "Skipping failed player artifact upload for slot 0" in caplog.text
+
+
+def test_game_hosted_artifact_upload_failure_preserves_success(monkeypatch, tmp_path, caplog):
+    artifacts = EpisodeArtifacts.create(tmp_path / "work")
+    results_dest = tmp_path / "results.json"
+
+    def run_episode(*_args, **_kwargs):
+        artifacts.results_path.write_text('{"scores":[1]}', encoding="utf-8")
+        artifacts.policy_artifact_path(0).write_bytes(b"optional artifact")
+
+    def fail_artifact_upload(uri, *_args, **_kwargs):
+        assert results_dest.exists()
+        request = httpx.Request("PUT", uri)
+        response = httpx.Response(403, request=request)
+        raise httpx.HTTPStatusError("artifact destination unavailable", request=request, response=response)
+
+    monkeypatch.setattr(kubernetes_runner, "WORKDIR", artifacts.workspace)
+    monkeypatch.setattr(kubernetes_runner, "STATE_PATH", artifacts.workspace / "state.json")
+    monkeypatch.setattr(kubernetes_runner, "_start_worker_health_server", lambda _port: None)
+    monkeypatch.setattr(kubernetes_runner, "_read_job_spec", lambda: _runtime_job("game-hosted"))
+    monkeypatch.setattr(kubernetes_runner.EpisodeArtifacts, "create", lambda _workdir, prefix: artifacts)
+    monkeypatch.setattr(kubernetes_runner, "_run_kubernetes_episode", run_episode)
+    monkeypatch.setattr(kubernetes_runner, "upload_file", fail_artifact_upload)
+    monkeypatch.setenv("RESULTS_URI", results_dest.as_uri())
+    monkeypatch.setenv(
+        "PLAYER_ARTIFACT_UPLOAD_URLS",
+        '{"0":"https://example.test/artifact?X-Amz-Signature=secret"}',
+    )
+    for name in ("REPLAY_URI", "EVENTS_URI", "PLAYER_STATUS_URI", "DEBUG_URI", "POLICY_LOG_URLS", "WORKER_TIMINGS_URI"):
+        monkeypatch.delenv(name, raising=False)
+
+    with caplog.at_level(logging.WARNING):
+        kubernetes_runner.run_from_env()
+
+    assert results_dest.read_text(encoding="utf-8") == '{"scores":[1]}'
+    assert "slot 0" in caplog.text
+    assert "HTTPStatusError (HTTP status 403)" in caplog.text
+    assert "X-Amz-" not in caplog.text
+
+
+def test_game_hosted_failure_uploads_debug_artifacts_but_not_results(monkeypatch, tmp_path):
+    artifacts = EpisodeArtifacts.create(tmp_path / "work")
+    error_dest = tmp_path / "error-info.json"
+    log_dest = tmp_path / "policy-0.log"
+    artifact_dest = tmp_path / "policy-0.zip"
+    debug_dest = tmp_path / "debug.zip"
+    results_dest = tmp_path / "results.json"
+    replay_dest = tmp_path / "replay.bin"
+
+    def run_episode(*_args, **_kwargs):
+        artifacts.game_stdout_path.write_text("game crashed", encoding="utf-8")
+        artifacts.policy_log_path(0).write_text("seat zero log", encoding="utf-8")
+        artifacts.policy_artifact_path(0).write_bytes(b"artifact zip bytes")
+        artifacts.results_path.write_text('{"partial":true}', encoding="utf-8")
+        artifacts.replay_path.write_bytes(b"partial replay")
+        raise runner_io.RunnerEpisodeError("game crashed", error_type="game_unhealthy")
+
+    monkeypatch.setattr(kubernetes_runner, "WORKDIR", artifacts.workspace)
+    monkeypatch.setattr(kubernetes_runner, "STATE_PATH", artifacts.workspace / "state.json")
+    monkeypatch.setattr(kubernetes_runner, "_start_worker_health_server", lambda _port: None)
+    monkeypatch.setattr(kubernetes_runner, "_read_job_spec", lambda: _runtime_job("game-hosted", [object()]))
+    monkeypatch.setattr(kubernetes_runner.EpisodeArtifacts, "create", lambda _workdir, prefix: artifacts)
+    monkeypatch.setattr(kubernetes_runner, "_run_kubernetes_episode", run_episode)
+    monkeypatch.setenv("ERROR_INFO_URI", error_dest.as_uri())
+    monkeypatch.setenv("POLICY_LOG_URLS", json.dumps({"0": log_dest.as_uri()}))
+    monkeypatch.setenv("PLAYER_ARTIFACT_UPLOAD_URLS", json.dumps({"0": artifact_dest.as_uri()}))
+    monkeypatch.setenv("DEBUG_URI", debug_dest.as_uri())
+    monkeypatch.setenv("RESULTS_URI", results_dest.as_uri())
+    monkeypatch.setenv("REPLAY_URI", replay_dest.as_uri())
+    for name in ("EVENTS_URI", "PLAYER_STATUS_URI", "WORKER_TIMINGS_URI"):
+        monkeypatch.delenv(name, raising=False)
+
+    with pytest.raises(runner_io.RunnerEpisodeError, match="game crashed"):
+        kubernetes_runner.run_from_env()
+
+    assert json.loads(error_dest.read_text(encoding="utf-8"))["error_type"] == "game_unhealthy"
+    assert log_dest.read_text(encoding="utf-8") == "seat zero log"
+    assert artifact_dest.read_bytes() == b"artifact zip bytes"
+    assert debug_dest.exists()
+    assert not results_dest.exists()
+    assert not replay_dest.exists()
+
+
+def test_game_hosted_failure_preserves_original_error_with_garbage_status(monkeypatch, tmp_path):
+    artifacts = EpisodeArtifacts.create(tmp_path / "work")
+    error_dest = tmp_path / "error-info.json"
+
+    def run_episode(*_args, **_kwargs):
+        artifacts.player_status_path.write_bytes(b"\xff\xfe")
+        raise runner_io.RunnerEpisodeError("original timeout", error_type="episode_timeout")
+
+    monkeypatch.setattr(kubernetes_runner, "WORKDIR", artifacts.workspace)
+    monkeypatch.setattr(kubernetes_runner, "STATE_PATH", artifacts.workspace / "state.json")
+    monkeypatch.setattr(kubernetes_runner, "_start_worker_health_server", lambda _port: None)
+    monkeypatch.setattr(kubernetes_runner, "_read_job_spec", lambda: _runtime_job("game-hosted"))
+    monkeypatch.setattr(kubernetes_runner.EpisodeArtifacts, "create", lambda _workdir, prefix: artifacts)
+    monkeypatch.setattr(kubernetes_runner, "_run_kubernetes_episode", run_episode)
+    monkeypatch.setenv("ERROR_INFO_URI", error_dest.as_uri())
+    monkeypatch.setenv("PLAYER_ARTIFACT_UPLOAD_URLS", "{}")
+    for name in (
+        "RESULTS_URI",
+        "REPLAY_URI",
+        "EVENTS_URI",
+        "PLAYER_STATUS_URI",
+        "DEBUG_URI",
+        "POLICY_LOG_URLS",
+        "WORKER_TIMINGS_URI",
+    ):
+        monkeypatch.delenv(name, raising=False)
+
+    with pytest.raises(runner_io.RunnerEpisodeError, match="original timeout"):
+        kubernetes_runner.run_from_env()
+
+    assert json.loads(error_dest.read_text(encoding="utf-8"))["error_type"] == "episode_timeout"
+
+
 def test_run_from_env_writes_error_info_on_failure(monkeypatch, tmp_path):
     events: list[str] = []
 
     monkeypatch.setenv("COWORLD_WORKDIR", str(tmp_path))
     monkeypatch.setattr(kubernetes_runner, "_start_worker_health_server", lambda port: None)
-    monkeypatch.setattr(kubernetes_runner, "_read_job_spec", lambda: object())
+    monkeypatch.setattr(kubernetes_runner, "_read_job_spec", _runtime_job)
     monkeypatch.setattr(kubernetes_runner.EpisodeArtifacts, "create", lambda workdir, prefix: object())
     monkeypatch.setattr(
         kubernetes_runner,
@@ -2771,12 +3384,91 @@ def test_run_from_env_writes_error_info_on_failure(monkeypatch, tmp_path):
     assert events == ["episode failed"]
 
 
+def test_run_from_env_preserves_episode_error_when_debug_upload_fails(monkeypatch, tmp_path):
+    artifacts = EpisodeArtifacts.create(tmp_path / "work")
+    error_dest = tmp_path / "error-info.json"
+    original_error = runner_io.RunnerEpisodeError("episode timed out", error_type="episode_timeout")
+
+    def fail_episode(*_args, **_kwargs):
+        raise original_error
+
+    def fail_debug_upload(_artifacts):
+        raise OSError("debug destination unavailable")
+
+    monkeypatch.setattr(kubernetes_runner, "WORKDIR", artifacts.workspace)
+    monkeypatch.setattr(kubernetes_runner, "STATE_PATH", artifacts.workspace / "state.json")
+    monkeypatch.setattr(kubernetes_runner, "_start_worker_health_server", lambda _port: None)
+    monkeypatch.setattr(kubernetes_runner, "_read_job_spec", _runtime_job)
+    monkeypatch.setattr(kubernetes_runner.EpisodeArtifacts, "create", lambda _workdir, prefix: artifacts)
+    monkeypatch.setattr(kubernetes_runner, "_run_kubernetes_episode", fail_episode)
+    monkeypatch.setattr(kubernetes_runner, "_upload_debug_logs", fail_debug_upload)
+    monkeypatch.setenv("ERROR_INFO_URI", error_dest.as_uri())
+    monkeypatch.delenv("WORKER_TIMINGS_URI", raising=False)
+
+    with pytest.raises(runner_io.RunnerEpisodeError) as exc_info:
+        kubernetes_runner.run_from_env()
+
+    assert exc_info.value is original_error
+    assert json.loads(error_dest.read_text(encoding="utf-8"))["error_type"] == "episode_timeout"
+
+
+def test_run_from_env_preserves_job_spec_error_when_error_info_upload_fails(monkeypatch, tmp_path, caplog):
+    original_error = RuntimeError("job spec failed")
+
+    def fail_job_spec():
+        raise original_error
+
+    def fail_upload(*_args, **_kwargs):
+        raise OSError("error-info upload failed")
+
+    monkeypatch.setattr(kubernetes_runner, "WORKDIR", tmp_path)
+    monkeypatch.setattr(kubernetes_runner, "_start_worker_health_server", lambda _port: None)
+    monkeypatch.setattr(kubernetes_runner, "_read_job_spec", fail_job_spec)
+    monkeypatch.setattr(kubernetes_runner, "upload_data", fail_upload)
+    monkeypatch.setenv("ERROR_INFO_URI", "https://example.test/error-info")
+    for name in ("DEBUG_URI", "POLICY_LOG_URLS", "PLAYER_STATUS_URI", "WORKER_TIMINGS_URI"):
+        monkeypatch.delenv(name, raising=False)
+
+    with caplog.at_level(logging.WARNING), pytest.raises(RuntimeError) as exc_info:
+        kubernetes_runner.run_from_env()
+
+    assert exc_info.value is original_error
+    assert "Failed to upload error info after episode failure: OSError (HTTP status unavailable)" in caplog.text
+
+
+def test_run_from_env_preserves_episode_error_when_error_info_upload_fails(monkeypatch, tmp_path, caplog):
+    artifacts = EpisodeArtifacts.create(tmp_path)
+    original_error = RuntimeError("episode failed")
+
+    def fail_episode(*_args, **_kwargs):
+        raise original_error
+
+    def fail_upload(*_args, **_kwargs):
+        raise OSError("error-info upload failed")
+
+    monkeypatch.setattr(kubernetes_runner, "WORKDIR", tmp_path)
+    monkeypatch.setattr(kubernetes_runner, "_start_worker_health_server", lambda _port: None)
+    monkeypatch.setattr(kubernetes_runner, "_read_job_spec", _runtime_job)
+    monkeypatch.setattr(kubernetes_runner.EpisodeArtifacts, "create", lambda _workdir, prefix: artifacts)
+    monkeypatch.setattr(kubernetes_runner, "_run_kubernetes_episode", fail_episode)
+    monkeypatch.setattr(kubernetes_runner, "upload_data", fail_upload)
+    monkeypatch.setenv("ERROR_INFO_URI", "https://example.test/error-info")
+    for name in ("DEBUG_URI", "POLICY_LOG_URLS", "PLAYER_STATUS_URI", "WORKER_TIMINGS_URI"):
+        monkeypatch.delenv(name, raising=False)
+
+    with caplog.at_level(logging.WARNING), pytest.raises(RuntimeError) as exc_info:
+        kubernetes_runner.run_from_env()
+
+    assert exc_info.value is original_error
+    assert "Failed to upload error info after episode failure: OSError (HTTP status unavailable)" in caplog.text
+
+
 def test_run_from_env_uploads_final_artifact_timing(monkeypatch):
     clock = {"now": 100.0}
     timing_snapshots: list[dict[str, float]] = []
 
     monkeypatch.setattr(kubernetes_runner, "_start_worker_health_server", lambda port: None)
-    monkeypatch.setattr(kubernetes_runner, "_read_job_spec", lambda: object())
+    monkeypatch.setattr(kubernetes_runner, "_read_job_spec", _runtime_job)
     monkeypatch.setattr(kubernetes_runner.EpisodeArtifacts, "create", lambda workdir, prefix: object())
     monkeypatch.setattr(kubernetes_runner.time, "monotonic", lambda: clock["now"])
 
@@ -2804,7 +3496,7 @@ def test_run_from_env_recovers_from_an_intermediate_timing_upload_failure(monkey
     outputs_uploaded: list[bool] = []
 
     monkeypatch.setattr(kubernetes_runner, "_start_worker_health_server", lambda port: None)
-    monkeypatch.setattr(kubernetes_runner, "_read_job_spec", lambda: object())
+    monkeypatch.setattr(kubernetes_runner, "_read_job_spec", _runtime_job)
     monkeypatch.setattr(kubernetes_runner.EpisodeArtifacts, "create", lambda workdir, prefix: object())
 
     def run_episode(*_args, timings, upload_timings, **_kwargs):
@@ -2925,7 +3617,7 @@ def test_run_from_env_uploads_debug_logs_on_failure(monkeypatch, tmp_path):
     )
 
     monkeypatch.setattr(kubernetes_runner, "_start_worker_health_server", lambda port: None)
-    monkeypatch.setattr(kubernetes_runner, "_read_job_spec", lambda: object())
+    monkeypatch.setattr(kubernetes_runner, "_read_job_spec", _runtime_job)
     monkeypatch.setattr(kubernetes_runner.EpisodeArtifacts, "create", lambda workdir, prefix: artifacts)
 
     def run_episode(*args, **kwargs):
@@ -3027,3 +3719,121 @@ def test_upload_outputs_uploads_player_status(tmp_path, monkeypatch):
     _upload_outputs(artifacts)
 
     assert uploads == [("file:///tmp/player-status-out.json", payload, "application/json")]
+
+
+def test_game_authored_file_read_does_not_block_on_a_fifo(tmp_path):
+    fifo = tmp_path / "policy_agent_0.log"
+    os.mkfifo(fifo)
+
+    assert kubernetes_runner._read_game_authored_file(fifo, None) is None
+
+
+def test_upload_outputs_fails_when_the_replay_is_not_a_regular_file(tmp_path, monkeypatch):
+    artifacts = EpisodeArtifacts.create(tmp_path / "work")
+    artifacts.results_path.write_text("{}", encoding="utf-8")
+    secret = tmp_path / "service-account-token"
+    secret.write_text("credential", encoding="utf-8")
+    artifacts.replay_path.symlink_to(secret)
+    uploads = _upload_env(monkeypatch, RESULTS_URI="file:///tmp/results-out.json", REPLAY_URI="file:///tmp/replay-out")
+
+    with pytest.raises(runner_io.RunnerEpisodeError) as exc_info:
+        _upload_outputs(artifacts)
+
+    assert exc_info.value.error_type == "replay_missing"
+    assert uploads == []  # results are not published either: the backend would reconcile success from them
+
+
+def test_game_hosted_run_from_env_keeps_diagnostic_counts_when_publishing_fails(monkeypatch, tmp_path):
+    artifacts = EpisodeArtifacts.create(tmp_path / "work")
+    policy_log_paths = [tmp_path / f"uploaded-log-{slot}" for slot in range(2)]
+    timing_snapshots: list[dict[str, object]] = []
+
+    def run_episode(*_args, **_kwargs):
+        artifacts.policy_log_path(0).write_text("seat zero log", encoding="utf-8")
+        artifacts.player_status_path.write_text("{invalid", encoding="utf-8")
+
+    def failing_upload(_artifacts):
+        raise runner_io.RunnerEpisodeError("results upload failed", error_type="upload_failed")
+
+    monkeypatch.setattr(kubernetes_runner, "WORKDIR", artifacts.workspace)
+    monkeypatch.setattr(kubernetes_runner, "STATE_PATH", artifacts.workspace / "state.json")
+    monkeypatch.setattr(kubernetes_runner, "_start_worker_health_server", lambda _port: None)
+    monkeypatch.setattr(kubernetes_runner, "_read_job_spec", lambda: _runtime_job("game-hosted", [object(), object()]))
+    monkeypatch.setattr(kubernetes_runner.EpisodeArtifacts, "create", lambda _workdir, prefix: artifacts)
+    monkeypatch.setattr(kubernetes_runner, "_run_kubernetes_episode", run_episode)
+    monkeypatch.setattr(kubernetes_runner, "_upload_outputs", failing_upload)
+    monkeypatch.setattr(
+        kubernetes_runner,
+        "_upload_timings",
+        lambda timings: timing_snapshots.append(timings.model_dump(exclude_none=True)),
+    )
+    monkeypatch.setenv(
+        "POLICY_LOG_URLS",
+        json.dumps({str(slot): path.as_uri() for slot, path in enumerate(policy_log_paths)}),
+    )
+    monkeypatch.setenv("ERROR_INFO_URI", (tmp_path / "error-info").as_uri())
+    for name in (
+        "RESULTS_URI",
+        "REPLAY_URI",
+        "EVENTS_URI",
+        "DEBUG_URI",
+        "WORKER_TIMINGS_URI",
+        "PLAYER_STATUS_URI",
+        "PLAYER_ARTIFACT_UPLOAD_URLS",
+    ):
+        monkeypatch.delenv(name, raising=False)
+
+    with pytest.raises(runner_io.RunnerEpisodeError, match="results upload failed"):
+        kubernetes_runner.run_from_env()
+
+    assert policy_log_paths[1].read_text(encoding="utf-8") == runner_module.GAME_HOSTED_PLAYER_LOG_MISSING
+    assert timing_snapshots[-1]["slot_log_missing_count"] == 1
+    assert timing_snapshots[-1]["player_status_invalid_count"] == 1
+
+
+def test_run_from_env_reports_a_bad_replay_as_a_runner_error_without_publishing_results(monkeypatch, tmp_path):
+    job = _game_hosted_job([b"alpha player", b"beta player"])
+    spec_path = tmp_path / "spec.json"
+    spec_path.write_text(job.model_dump_json(by_alias=True), encoding="utf-8")
+    error_path = tmp_path / "error_info.json"
+    results_out = tmp_path / "results-out.json"
+    secret = tmp_path / "service-account-token"
+    secret.write_text("credential", encoding="utf-8")
+
+    def fake_episode(job_spec, artifacts, **_kwargs):
+        artifacts.results_path.write_text("{}", encoding="utf-8")
+        artifacts.replay_path.symlink_to(secret)
+
+    monkeypatch.setattr(kubernetes_runner, "WORKDIR", tmp_path)
+    monkeypatch.setattr(kubernetes_runner, "STATE_PATH", tmp_path / "state.json")
+    monkeypatch.setattr(kubernetes_runner, "_start_worker_health_server", lambda _port: None)
+    monkeypatch.setattr(kubernetes_runner, "_run_kubernetes_episode", fake_episode)
+    monkeypatch.setenv("JOB_SPEC_URI", spec_path.as_uri())
+    monkeypatch.setenv("ERROR_INFO_URI", error_path.as_uri())
+    monkeypatch.setenv("RESULTS_URI", results_out.as_uri())
+    monkeypatch.setenv("REPLAY_URI", (tmp_path / "replay-out").as_uri())
+    for name in (
+        "DEBUG_URI",
+        "POLICY_LOG_URLS",
+        "PLAYER_STATUS_URI",
+        "WORKER_TIMINGS_URI",
+        "PLAYER_ARTIFACT_UPLOAD_URLS",
+    ):
+        monkeypatch.delenv(name, raising=False)
+
+    with pytest.raises(runner_io.RunnerEpisodeError, match="not a regular file"):
+        kubernetes_runner.run_from_env()
+
+    assert json.loads(error_path.read_text(encoding="utf-8"))["error_type"] == "replay_missing"
+    assert not results_out.exists()
+
+
+def test_init_config_classifies_a_missing_player_file_url_map_as_config_error(monkeypatch, tmp_path):
+    job = _game_hosted_job([b"alpha player", b"beta player"])
+    error_path = _configure_init_env(monkeypatch, tmp_path, job, {})
+    monkeypatch.delenv("PLAYER_FILE_URLS")
+
+    with pytest.raises(runner_io.RunnerEpisodeError, match="PLAYER_FILE_URLS is required"):
+        kubernetes_runner.init_config_from_env()
+
+    assert json.loads(error_path.read_text(encoding="utf-8"))["error_type"] == "config_error"

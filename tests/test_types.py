@@ -12,6 +12,8 @@ from pydantic import BaseModel, ValidationError
 import coworld.types
 from coworld.manifest.v0.model import V0Manifest
 from coworld.manifest.v1.model import V1Manifest
+from coworld.runner.io import RunnerError, RunnerErrorType
+from coworld.runner.phase_timings import EpisodePhaseTimings, PlayerFileStageTiming
 from coworld.schema_validation import validate_json_schema
 from coworld.types import (
     CoworldEpisodeJobSpec,
@@ -436,6 +438,30 @@ def test_player_seats_document_uses_versioned_wire_names() -> None:
     )
 
     assert document.model_dump(mode="json")["schema"] == "coworld-player-seats/1"
+
+
+def test_game_hosted_runner_metadata_preserves_phase_duration_meanings() -> None:
+    timings = EpisodePhaseTimings(
+        game_boot_s=1.0,
+        player_launch_s=0.0,
+        player_file_stage=PlayerFileStageTiming(stage_s=2.5, count=2, bytes_total=123),
+        slot_log_missing_count=1,
+        player_status_invalid_count=0,
+        player_artifact_oversize_count=2,
+    )
+
+    assert timings.phase_seconds() == {"game_boot": 1.0, "player_launch": 0.0}
+    assert timings.model_dump(exclude_none=True)["player_file_stage"] == {
+        "stage_s": 2.5,
+        "count": 2,
+        "bytes_total": 123,
+    }
+    assert timings.player_artifact_oversize_count == 2
+
+
+@pytest.mark.parametrize("error_type", ["player_file_unavailable", "player_file_mismatch"])
+def test_runner_error_accepts_player_file_infrastructure_failures(error_type: RunnerErrorType) -> None:
+    assert RunnerError(error_type=error_type, message="player file failed").error_type == error_type
 
 
 def test_episode_job_players_are_flat_runnable_payloads() -> None:

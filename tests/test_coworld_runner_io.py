@@ -151,7 +151,29 @@ def test_relay_routed_upload_data_retries_transient_transport_errors(
     assert calls[0][0] == "PUT"
     assert calls[0][2]["content"] == b"{}"
     assert sleeps == [0.5]
-    assert "Coworld relay request attempt 1/4 failed with ConnectError: relay connection failed" in caplog.messages
+    assert "Coworld relay request attempt 1/4 failed with ConnectError (HTTP status unavailable)" in caplog.messages
+
+
+def test_relay_retry_log_redacts_presigned_url(
+    monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+) -> None:
+    calls = 0
+    signed_url = "https://example.test/player?X-Amz-Signature=secret&X-Amz-Credential=credential"
+
+    def request(method: str, uri: str):
+        nonlocal calls
+        calls += 1
+        response = httpx.Response(503 if calls == 1 else 200, request=httpx.Request(method, uri), content=b"player")
+        return response
+
+    monkeypatch.setenv("COWORLD_EGRESS_RELAY_URL", "http://relay.test:3128")
+    monkeypatch.setattr(runner_io, "_relay_http_client", lambda relay_url: _RelayClient(request))
+    monkeypatch.setattr(runner_io.time, "sleep", lambda _delay: None)
+    caplog.set_level(logging.WARNING, logger=runner_io.__name__)
+
+    assert runner_io.read_data(signed_url) == b"player"
+    assert "https://example.test/player" in caplog.text
+    assert "X-Amz-" not in caplog.text
 
 
 def test_relay_routed_upload_data_reraises_after_transport_retries(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -198,6 +220,61 @@ def test_relay_routed_upload_file_rewinds_after_transport_error(monkeypatch: pyt
 
     assert uploaded_data == [b"replay bytes", b"replay bytes"]
     assert sleeps == [0.5]
+
+
+def test_direct_upload_file_streams_with_content_length_and_rewinds(monkeypatch: pytest.MonkeyPatch) -> None:
+    uploaded_data = []
+    content_lengths = []
+    sleeps: list[float] = []
+
+    def urlopen(request, *, timeout: int):
+        uploaded_data.append(request.data.read())
+        content_lengths.append(request.get_header("Content-length"))
+        if len(uploaded_data) == 1:
+            raise _http_error(request.full_url, 503)
+        return _Response()
+
+    monkeypatch.delenv("COWORLD_EGRESS_RELAY_URL", raising=False)
+    monkeypatch.setattr(runner_io, "urlopen", urlopen)
+    monkeypatch.setattr(runner_io.time, "sleep", sleeps.append)
+
+    runner_io.upload_file(
+        "https://example.test/player.zip",
+        BytesIO(b"artifact bytes"),
+        size=14,
+        content_type="application/zip",
+    )
+
+    assert uploaded_data == [b"artifact bytes", b"artifact bytes"]
+    assert content_lengths == ["14", "14"]
+    assert sleeps == [0.5]
+
+
+def test_upload_file_streams_to_file_uri(monkeypatch: pytest.MonkeyPatch, tmp_path) -> None:
+    destination = tmp_path / "nested" / "player.zip"
+    monkeypatch.delenv("COWORLD_EGRESS_RELAY_URL", raising=False)
+
+    runner_io.upload_file(
+        destination.as_uri(),
+        BytesIO(b"artifact bytes"),
+        size=14,
+        content_type="application/zip",
+    )
+
+    assert destination.read_bytes() == b"artifact bytes"
+
+
+def test_upload_file_rejects_source_growth_beyond_declared_size(tmp_path) -> None:
+    destination = tmp_path / "player.zip"
+
+    with pytest.raises(ValueError, match="grew beyond its declared Content-Length"):
+        runner_io.upload_file(
+            destination.as_uri(),
+            BytesIO(b"artifact bytes grew"),
+            size=len(b"artifact bytes"),
+            content_type="application/zip",
+            attempts=1,
+        )
 
 
 def test_relay_routed_upload_data_does_not_retry_client_errors(monkeypatch: pytest.MonkeyPatch) -> None:
