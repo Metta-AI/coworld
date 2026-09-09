@@ -17,6 +17,9 @@ from coworld.types import (
     CoworldEpisodeJobSpec,
     CoworldHumanPlayerSpec,
     CoworldManifest,
+    CoworldManifestRoleSpec,
+    CoworldPlayerFileSpec,
+    CoworldPlayerSeats,
     CoworldRunnableSpec,
     CoworldVariant,
     coworld_episode_request_schema,
@@ -290,6 +293,149 @@ def test_manifest_schema_allows_empty_optional_role_entries(section: str) -> Non
     manifest[section] = []
 
     validate_json_schema(manifest, coworld_manifest_schema())
+
+
+def test_manifest_defaults_to_platform_hosted_images() -> None:
+    manifest = _manifest()
+
+    assert manifest.game.player_runtime == "platform-hosted"
+    assert manifest.player[0].image == "player"
+    assert manifest.player[0].file is None
+
+
+@pytest.mark.parametrize(
+    "artifact",
+    [
+        {},
+        {"image": "player", "file": "players/player.py"},
+    ],
+)
+def test_manifest_role_requires_exactly_one_artifact(artifact: dict[str, str]) -> None:
+    role = {
+        "id": "player",
+        "name": "Player",
+        "description": "Player.",
+        "type": "player",
+        **artifact,
+    }
+
+    with pytest.raises(ValidationError, match="exactly one of image or file"):
+        CoworldManifestRoleSpec.model_validate(role)
+
+
+def test_manifest_role_as_runnable_spec_requires_image() -> None:
+    role = CoworldManifestRoleSpec(
+        id="player",
+        name="Player",
+        description="Player.",
+        type="player",
+        file="players/player.py",
+    )
+
+    with pytest.raises(AssertionError):
+        role.as_runnable_spec()
+
+
+def test_game_hosted_manifest_requires_every_player_file() -> None:
+    data = _game_hosted_manifest_data()
+    data["player"].append(
+        {
+            "id": "image-player",
+            "name": "Image Player",
+            "description": "Image-backed player.",
+            "type": "player",
+            "image": "player",
+        }
+    )
+
+    with pytest.raises(ValidationError, match=r"player\.1 must define file.*game-hosted"):
+        CoworldManifest.model_validate(data)
+
+
+@pytest.mark.parametrize("file", [".", "./", "players/../", "/abs/player.py"])
+def test_manifest_rejects_player_file_paths_that_leave_or_name_the_package_root(file: str) -> None:
+    data = _game_hosted_manifest_data()
+    data["player"][0]["file"] = file
+
+    with pytest.raises(ValidationError, match="package-relative path or sha256 digest"):
+        CoworldManifest.model_validate(data)
+
+
+def test_platform_hosted_manifest_requires_every_player_image() -> None:
+    data = _manifest_data()
+    data["player"][0].pop("image")
+    data["player"][0]["file"] = "players/player.py"
+
+    with pytest.raises(ValidationError, match=r"player\.0 must define image.*platform-hosted"):
+        CoworldManifest.model_validate(data)
+
+
+def test_episode_job_accepts_player_file_seats() -> None:
+    manifest = CoworldManifest.model_validate(_game_hosted_manifest_data())
+    player = CoworldPlayerFileSpec(
+        type="player-file",
+        content_hash="a" * 64,
+        size_bytes=123,
+    )
+
+    job = CoworldEpisodeJobSpec(manifest=manifest, game_config={}, players=[player])
+
+    assert job.model_dump(mode="json", exclude_defaults=True)["players"] == [
+        {
+            "type": "player-file",
+            "content_hash": "a" * 64,
+            "size_bytes": 123,
+        }
+    ]
+
+
+@pytest.mark.parametrize(
+    ("runtime", "seat_kind"),
+    [
+        ("game-hosted", "image"),
+        ("game-hosted", "human"),
+        ("platform-hosted", "file"),
+    ],
+)
+def test_episode_job_rejects_runtime_seat_kind_mismatch(runtime: str, seat_kind: str) -> None:
+    manifest_data = _game_hosted_manifest_data() if runtime == "game-hosted" else _manifest_data()
+    players = {
+        "image": CoworldRunnableSpec(type="player", image="player"),
+        "human": CoworldHumanPlayerSpec(type="human", token="private-browser-seat-token"),
+        "file": CoworldPlayerFileSpec(
+            type="player-file",
+            content_hash="a" * 64,
+            size_bytes=123,
+        ),
+    }
+
+    with pytest.raises(ValidationError, match=runtime):
+        CoworldEpisodeJobSpec(
+            manifest=CoworldManifest.model_validate(manifest_data),
+            game_config={},
+            players=[players[seat_kind]],
+        )
+
+
+def test_player_seats_document_uses_versioned_wire_names() -> None:
+    document = CoworldPlayerSeats.model_validate(
+        {
+            "schema": "coworld-player-seats/1",
+            "seats": [
+                {
+                    "slot": 0,
+                    "file_uri": "file:///coworld/players/0/file",
+                    "content_hash": f"sha256:{'a' * 64}",
+                    "size_bytes": 123,
+                    "log_uri": "file:///coworld/logs/policy_agent_0.log",
+                    "artifact_uri": "file:///coworld/policy_artifact_0.zip",
+                }
+            ],
+            "player_status_uri": "file:///coworld/player_status.json",
+        }
+    )
+
+    assert document.model_dump(mode="json")["schema"] == "coworld-player-seats/1"
 
 
 def test_episode_job_players_are_flat_runnable_payloads() -> None:
@@ -663,6 +809,14 @@ def _manifest_data(game_type: str = "game", player_type: str = "player") -> dict
         "variants": [{"id": "default", "name": "Default", "description": "Default.", "game_config": {}}],
         "certification": {"game_config": {}, "players": [{"player_id": "player"}]},
     }
+
+
+def _game_hosted_manifest_data() -> dict[str, Any]:
+    data = _manifest_data()
+    data["game"]["player_runtime"] = "game-hosted"
+    data["player"][0].pop("image")
+    data["player"][0]["file"] = "players/player.py"
+    return data
 
 
 def test_aliased_models_serialize_by_alias() -> None:

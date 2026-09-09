@@ -24,9 +24,11 @@ CoworldManifestRole = Literal["player", "commissioner", "grader", "diagnoser", "
 DEFAULT_EPISODE_TIMEOUT_MINUTES = 20
 MAX_EPISODE_TIMEOUT_MINUTES = 100
 CoworldEngineRuntime = Literal["mettagrid", "cogweb", "bitworld", "nimgrid"]
+CoworldPlayerRuntime = Literal["platform-hosted", "game-hosted"]
 MANIFEST_ROLE_SECTIONS = cast(tuple[CoworldManifestRole, ...], get_args(CoworldManifestRole))
 _FUTURE_REQUIRED_ROLE_COMMENT = "Optional in the current schema; intended to become required as this role stabilizes."
 REPLAY_VIEWER_BUNDLE_DIGEST_PATTERN = r"^sha256:[0-9a-f]{64}$"
+PLAYER_FILE_CONTENT_HASH_PATTERN = r"^[0-9a-f]{64}$"
 
 
 def _runnable_type_schema(runnable_type: str) -> JsonSchema:
@@ -152,6 +154,15 @@ class CoworldRunnableSpec(BaseModel):
 
 class CoworldManifestRoleSpec(CoworldRunnableSpec):
     type: CoworldManifestRole = Field(description="Manifest role section this runnable belongs to.")
+    image: str | None = Field(default=None, description="Docker image reference to run for this role.")
+    file: str | None = Field(
+        default=None,
+        min_length=1,
+        description=(
+            "Player file path within the Coworld package, or its sha256 digest after upload. "
+            "Supported only for game-hosted player roles."
+        ),
+    )
     id: str = Field(
         min_length=1,
         description="Stable runnable identifier within this manifest. Certification fixtures reference player ids.",
@@ -169,6 +180,62 @@ class CoworldManifestRoleSpec(CoworldRunnableSpec):
             "informational for other roles."
         ),
     )
+
+    @model_validator(mode="after")
+    def validate_artifact(self) -> "CoworldManifestRoleSpec":
+        if (self.image is None) == (self.file is None):
+            raise ValueError("manifest role must define exactly one of image or file")
+        if self.file is not None:
+            if self.type != "player":
+                raise ValueError("file is supported only for player roles")
+            if not re.fullmatch(REPLAY_VIEWER_BUNDLE_DIGEST_PATTERN, self.file):
+                if self.file.startswith("sha256:"):
+                    raise ValueError("player file sha256 digest is malformed")
+                path = PurePosixPath(self.file)
+                # "." normalizes to no parts and would name the package root itself.
+                if path.is_absolute() or not path.parts or any(part in {"", ".", ".."} for part in path.parts):
+                    raise ValueError("player file must be a package-relative path or sha256 digest")
+        return self
+
+    def as_runnable_spec(self) -> CoworldRunnableSpec:
+        assert self.image is not None
+        return super().as_runnable_spec()
+
+
+class CoworldPlayerFileSpec(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    type: Literal["player-file"] = Field(description="File-backed player seat discriminator.")
+    content_hash: str = Field(
+        pattern=PLAYER_FILE_CONTENT_HASH_PATTERN,
+        description="Lowercase SHA-256 digest of the player file bytes.",
+    )
+    size_bytes: int = Field(ge=0, description="Player file size in bytes.")
+
+
+class CoworldPlayerSeat(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    slot: int = Field(ge=0, description="Zero-based episode player slot.")
+    file_uri: str = Field(min_length=1, description="URI of the staged player file.")
+    content_hash: str = Field(
+        pattern=REPLAY_VIEWER_BUNDLE_DIGEST_PATTERN,
+        description="SHA-256 digest of the staged player file, prefixed with sha256.",
+    )
+    size_bytes: int = Field(ge=0, description="Player file size in bytes.")
+    log_uri: str = Field(min_length=1, description="URI where the game writes this slot's log.")
+    artifact_uri: str = Field(min_length=1, description="URI where the game writes this slot's optional artifact.")
+
+
+class CoworldPlayerSeats(BaseModel):
+    model_config = ConfigDict(extra="forbid", populate_by_name=True, serialize_by_alias=True)
+
+    schema_: Literal["coworld-player-seats/1"] = Field(
+        alias="schema",
+        description="Player seats document schema version.",
+    )
+    seats: list[CoworldPlayerSeat] = Field(min_length=1, description="Ordered game-hosted player seats.")
+    player_status_uri: str = Field(min_length=1, description="URI where the game writes player process statuses.")
 
 
 class CoworldReporterPlatformReference(BaseModel):
@@ -384,6 +451,10 @@ class CoworldGameManifest(BaseModel):
     )
     description: str = Field(min_length=1, description="Human-readable game description surfaced by product UIs.")
     owner: str = Field(min_length=1, description="Maintainer email or handle.")
+    player_runtime: CoworldPlayerRuntime = Field(
+        default="platform-hosted",
+        description="Owner of player execution: the platform or the game process.",
+    )
     config_schema: JsonSchema = Field(
         description=(
             "JSON Schema for runtime game configs. It must require a string-array `tokens` field for runner-injected "
@@ -558,6 +629,13 @@ class CoworldManifest(BaseModel):
             for index, runnable in enumerate(getattr(self, section)):
                 if runnable.type != section:
                     raise ValueError(f"{section}.{index}.type must be {section!r}")
+        expected_artifact = "file" if self.game.player_runtime == "game-hosted" else "image"
+        for index, player in enumerate(self.player):
+            if getattr(player, expected_artifact) is None:
+                raise ValueError(
+                    f"player.{index} must define {expected_artifact} for "
+                    f"game.player_runtime={self.game.player_runtime!r}"
+                )
         return self
 
 
@@ -571,7 +649,7 @@ class CoworldHumanPlayerSpec(BaseModel):
     )
 
 
-CoworldEpisodePlayerSpec = CoworldRunnableSpec | CoworldHumanPlayerSpec
+CoworldEpisodePlayerSpec = CoworldRunnableSpec | CoworldPlayerFileSpec | CoworldHumanPlayerSpec
 
 
 class CoworldEpisodeJobSpec(BaseModel):
@@ -601,6 +679,10 @@ class CoworldEpisodeJobSpec(BaseModel):
         for index, player in enumerate(self.players):
             if isinstance(player, CoworldRunnableSpec) and player.type != "player":
                 raise ValueError(f"players.{index}.type must be 'player'")
+            if self.manifest.game.player_runtime == "game-hosted" and not isinstance(player, CoworldPlayerFileSpec):
+                raise ValueError(f"players.{index} must be 'player-file' for game-hosted player runtime")
+            if self.manifest.game.player_runtime == "platform-hosted" and isinstance(player, CoworldPlayerFileSpec):
+                raise ValueError(f"players.{index} must be an image or human seat for platform-hosted player runtime")
         return self
 
     @property

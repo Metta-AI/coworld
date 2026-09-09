@@ -29,8 +29,10 @@ def _fixture(version: str, name: str = "minimal_manifest.json") -> dict[str, obj
     [
         ("v0", "minimal_manifest.json"),
         ("v0", "all_fields_manifest.json"),
+        ("v0", "game_hosted_players_manifest.json"),
         ("v1", "minimal_manifest.json"),
         ("v1", "all_fields_manifest.json"),
+        ("v1", "game_hosted_players_manifest.json"),
     ],
 )
 def test_version_fixtures_validate_and_convert(version: str, fixture_name: str) -> None:
@@ -40,7 +42,7 @@ def test_version_fixtures_validate_and_convert(version: str, fixture_name: str) 
 
     assert isinstance(validated.runtime_manifest, RuntimeManifest)
     assert validated.api_version == f"coworld.softmax.com/{version}"
-    assert validated.runtime_manifest.game.name in {"minimal-coworld", "golden-coworld"}
+    assert validated.runtime_manifest.game.name in {"minimal-coworld", "golden-coworld", "game-hosted-players"}
 
 
 def test_missing_api_version_selects_v0() -> None:
@@ -90,7 +92,9 @@ def test_v1_converter_does_not_leak_author_version_into_runtime() -> None:
     assert "apiVersion" not in runtime.model_dump(by_alias=True)
 
 
-@pytest.mark.parametrize("fixture_name", ["minimal_manifest.json", "all_fields_manifest.json"])
+@pytest.mark.parametrize(
+    "fixture_name", ["minimal_manifest.json", "all_fields_manifest.json", "game_hosted_players_manifest.json"]
+)
 def test_v0_and_v1_baselines_convert_to_the_same_runtime(fixture_name: str) -> None:
     v0_runtime = validate_upload_manifest(_fixture("v0", fixture_name)).runtime_manifest
     v1_runtime = validate_upload_manifest(_fixture("v1", fixture_name)).runtime_manifest

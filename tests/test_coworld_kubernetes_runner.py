@@ -40,7 +40,7 @@ from coworld.runner.kubernetes_runner import (
 )
 from coworld.runner.phase_timings import EpisodePhaseTimings
 from coworld.runner.runner import EpisodeArtifacts, EpisodeRunSpec, PlayerLaunchSpec, RunnableLaunchSpec
-from coworld.types import CoworldEpisodeJobSpec, CoworldHumanPlayerSpec
+from coworld.types import CoworldEpisodeJobSpec, CoworldHumanPlayerSpec, CoworldRunnableSpec
 
 
 def test_legacy_run_command_fails_closed(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -1873,9 +1873,10 @@ def test_run_kubernetes_episode_keeps_artifacts_authoritative_except_for_certifi
     job = cast(
         CoworldEpisodeJobSpec,
         SimpleNamespace(
+            manifest=SimpleNamespace(game=SimpleNamespace(player_runtime="platform-hosted")),
             players=[
                 CoworldHumanPlayerSpec(type="human", token="private-browser-seat-token"),
-                SimpleNamespace(image="paintbot:latest", run=[], env={}),
+                CoworldRunnableSpec(type="player", image="paintbot:latest"),
             ],
             game_config=game_config,
             results_schema={},

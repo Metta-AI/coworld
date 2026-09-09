@@ -7,6 +7,7 @@
     "version": "1.2.3",
     "description": "Exhaustive golden Coworld manifest for schema compatibility tests.",
     "owner": "coworld@example.com",
+    "player_runtime": "platform-hosted",
     "config_schema": {
       "type": "object",
       "properties": {
@@ -98,6 +99,7 @@
     {
       "type": "player",
       "image": "example.com/golden-player@sha256:2222222222222222222222222222222222222222222222222222222222222222",
+      "file": null,
       "run": ["python", "-m", "golden.player"],
       "env": {
         "PLAYER_MODE": "golden"

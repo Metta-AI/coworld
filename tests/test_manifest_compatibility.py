@@ -18,6 +18,9 @@ from coworld.types import (
     CoworldGameManifest,
     CoworldManifest,
     CoworldManifestRoleSpec,
+    CoworldPlayerFileSpec,
+    CoworldPlayerSeat,
+    CoworldPlayerSeats,
     CoworldPromo,
     CoworldProtocolDocs,
     CoworldReplayViewer,
@@ -72,6 +75,31 @@ def test_all_fields_fixture_covers_every_manifest_model_field() -> None:
     assert_covers_all_fields(manifest["variants"][0], CoworldVariant)
     assert_covers_all_fields(manifest["certification"], CoworldCertificationFixture)
     assert_covers_all_fields(manifest["certification"]["players"][0], CoworldCertificationPlayer)
+
+
+def test_game_hosted_contract_models_cover_every_field() -> None:
+    player_file = {
+        "type": "player-file",
+        "content_hash": "a" * 64,
+        "size_bytes": 123,
+    }
+    seat = {
+        "slot": 0,
+        "file_uri": "file:///coworld/players/0/file",
+        "content_hash": f"sha256:{'a' * 64}",
+        "size_bytes": 123,
+        "log_uri": "file:///coworld/logs/policy_agent_0.log",
+        "artifact_uri": "file:///coworld/policy_artifact_0.zip",
+    }
+    seats = {
+        "schema": "coworld-player-seats/1",
+        "seats": [seat],
+        "player_status_uri": "file:///coworld/player_status.json",
+    }
+
+    assert_covers_all_fields(player_file, CoworldPlayerFileSpec)
+    assert_covers_all_fields(seat, CoworldPlayerSeat)
+    assert_covers_all_fields(seats, CoworldPlayerSeats)
 
 
 @pytest.mark.parametrize("fixture_path", [ALL_FIELDS_MANIFEST, MINIMAL_MANIFEST], ids=lambda path: path.stem)

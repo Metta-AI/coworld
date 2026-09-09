@@ -56,6 +56,19 @@ def test_obvious_narrowings_detect_required_field() -> None:
     assert _obvious_narrowings(before, after) == ["$: newly required field 'name'"]
 
 
+def test_obvious_narrowings_allow_optional_player_runtime_fields() -> None:
+    before = {"type": "object", "properties": {"image": {"type": "string"}}}
+    after = {
+        "type": "object",
+        "properties": {
+            "image": {"anyOf": [{"type": "string"}, {"type": "null"}]},
+            "file": {"anyOf": [{"type": "string"}, {"type": "null"}]},
+        },
+    }
+
+    assert _obvious_narrowings(before, after) == []
+
+
 def test_missing_comparison_ref_is_actionable() -> None:
     failures = check_manifest_schema("definitely-not-a-git-ref")
 

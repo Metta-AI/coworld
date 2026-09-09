@@ -1,0 +1,43 @@
+{
+  "game": {
+    "name": "game-hosted-players",
+    "version": "1.0.0",
+    "description": "Coworld whose game process hosts file-backed players.",
+    "owner": "coworld@example.com",
+    "player_runtime": "game-hosted",
+    "config_schema": {},
+    "results_schema": {},
+    "runnable": {
+      "type": "game",
+      "image": "example.com/game-hosted-game:1"
+    },
+    "protocols": {
+      "player": { "type": "text", "value": "Player protocol" },
+      "global": { "type": "text", "value": "Global protocol" }
+    },
+    "docs": {
+      "readme": { "type": "text", "value": "Game-hosted players" }
+    }
+  },
+  "player": [
+    {
+      "type": "player",
+      "file": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "id": "file-player",
+      "name": "File Player",
+      "description": "Bundled file-backed player."
+    }
+  ],
+  "variants": [
+    {
+      "id": "default",
+      "name": "Default",
+      "game_config": {},
+      "description": "Default variant."
+    }
+  ],
+  "certification": {
+    "game_config": {},
+    "players": [{ "player_id": "file-player" }]
+  }
+}

@@ -15,3 +15,7 @@
   summary: Add optional resources.limits.memory alongside the existing resources.limits.cpu; the
     game role now honors both, the player role still honors only cpu.
   fixture: packages/coworld/tests/manifest_versions/v1/game_resource_limits_manifest.json
+- schema_hash: 0ee5288cc1a8d4816c05d189517bb97022446683a1ddc08dce214121753821fc
+  kind: compatible
+  summary: Add the game-hosted player runtime and file-backed player manifests.
+  fixture: packages/coworld/tests/manifest_versions/v1/game_hosted_players_manifest.json

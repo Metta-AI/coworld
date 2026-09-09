@@ -249,7 +249,7 @@ def assert_episode_images_reachable(job: CoworldEpisodeJobSpec, *, require_linux
         )
     ]
     for slot, player in enumerate(job.players):
-        if isinstance(player, CoworldHumanPlayerSpec):
+        if not isinstance(player, CoworldRunnableSpec):
             continue
         image_platforms.append(
             (
@@ -294,6 +294,8 @@ def run_coworld_episode(
     container_prefix: str = LOCAL_EPISODE_CONTAINER_PREFIX,
     secret_env: Mapping[str, str] | None = None,
 ) -> None:
+    if job.manifest.game.player_runtime != "platform-hosted":
+        raise ValueError("game-hosted player execution requires local player-file staging")
     if any(isinstance(player, CoworldHumanPlayerSpec) for player in job.players):
         raise ValueError("Human player seats require the hosted Kubernetes episode runner")
     assert_episode_images_reachable(job)
@@ -305,7 +307,7 @@ def run_coworld_episode(
         players=[
             PlayerLaunchSpec.from_model(player)
             for player in job.players
-            if not isinstance(player, CoworldHumanPlayerSpec)
+            if isinstance(player, CoworldRunnableSpec)
         ],
         tokens=tokens,
         artifacts=artifacts,

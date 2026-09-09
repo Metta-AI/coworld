@@ -172,6 +172,13 @@
           "title": "Owner",
           "type": "string"
         },
+        "player_runtime": {
+          "default": "platform-hosted",
+          "description": "Owner of player execution: the platform or the game process.",
+          "enum": ["platform-hosted", "game-hosted"],
+          "title": "Player Runtime",
+          "type": "string"
+        },
         "config_schema": {
           "additionalProperties": true,
           "description": "JSON Schema for runtime game configs. It must require a string-array `tokens` field for runner-injected player auth with minItems/maxItems validity bounds; variants and certification configs omit tokens because the runner injects them.",
@@ -266,9 +273,17 @@
           "type": "string"
         },
         "image": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
           "description": "Docker image reference to run for this role.",
-          "title": "Image",
-          "type": "string"
+          "title": "Image"
         },
         "run": {
           "description": "Optional process command overriding the image entrypoint or default command.",
@@ -311,6 +326,20 @@
           "default": null,
           "description": "Optional compute request profile for this runnable. Omit to inherit the role's default profile. Declared requests are clamped to per-role bounds by the backend."
         },
+        "file": {
+          "anyOf": [
+            {
+              "minLength": 1,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Player file path within the Coworld package, or its sha256 digest after upload. Supported only for game-hosted player roles.",
+          "title": "File"
+        },
         "id": {
           "description": "Stable runnable identifier within this manifest. Certification fixtures reference player ids.",
           "minLength": 1,
@@ -343,7 +372,7 @@
           "title": "Repository Url"
         }
       },
-      "required": ["type", "image", "id", "name", "description"],
+      "required": ["type", "id", "name", "description"],
       "title": "CoworldManifestRoleSpec",
       "type": "object"
     },

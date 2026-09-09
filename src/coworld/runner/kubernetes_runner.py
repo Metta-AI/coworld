@@ -71,7 +71,7 @@ from coworld.runner.runner import (
 from coworld.runner.runner import (
     _player_query as _episode_player_query,
 )
-from coworld.types import CoworldEpisodeJobSpec, CoworldHumanPlayerSpec
+from coworld.types import CoworldEpisodeJobSpec, CoworldHumanPlayerSpec, CoworldRunnableSpec
 
 logger = logging.getLogger(__name__)
 
@@ -449,6 +449,8 @@ def _run_kubernetes_episode(
     timings: EpisodePhaseTimings,
     upload_timings: Callable[[EpisodePhaseTimings], None],
 ) -> None:
+    if job.manifest.game.player_runtime != "platform-hosted":
+        raise ValueError("game-hosted player execution requires Kubernetes player-file staging")
     worker_start = time.monotonic()
     egress_enforcement_enabled = os.environ.get("COWORLD_EGRESS_ENFORCEMENT_ENABLED") == "true"
     api_client = _load_incluster_config(egress_enforcement_enabled=egress_enforcement_enabled)
@@ -462,7 +464,7 @@ def _run_kubernetes_episode(
     policy_players = [
         (slot, PlayerLaunchSpec.from_model(player))
         for slot, player in enumerate(job.players)
-        if not isinstance(player, CoworldHumanPlayerSpec)
+        if isinstance(player, CoworldRunnableSpec)
     ]
     is_lobby = len(policy_players) != len(job.players)
     startup_timeout_seconds = (
