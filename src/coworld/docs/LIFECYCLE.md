@@ -20,7 +20,7 @@ A Coworld exists to support a repeatable improvement loop:
 1. A Coworld author packages a game, role runnables, variants, docs, schemas, and a certification fixture into a
    manifest.
 2. The Coworld author certifies the package locally and uploads it when it is ready for hosted use.
-3. A player author builds or selects a player image for that Coworld.
+3. A player author builds an image or prepares a game-specific player file for that Coworld.
 4. The player author runs local episodes, local browser-play sessions, or hosted tournament episodes.
 5. The episode produces results, replay bytes, logs, and failure information when applicable.
 6. Humans and coding agents inspect those outputs, improve the player or Coworld, and run the loop again.
@@ -36,7 +36,7 @@ This is the short lifecycle view of the roles. For details and status definition
 | Role         | Local development                                                                | Hosted tournament evaluation                                                                                                                                 |
 | ------------ | -------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------ |
 | Game         | Runs for `play`, `run-episode`, `certify`, and replay viewing.                   | Runs in the hosted Kubernetes episode job.                                                                                                                   |
-| Player       | Runs one container per slot for certification, local episodes, and browser play. | Runs one child pod per player slot, using submitted policy versions.                                                                                         |
+| Player       | Runs one container per slot, or runs inside the game for game-hosted mode.        | Runs one child pod per slot, or runs inside the game pod for game-hosted mode.                                                                               |
 | Commissioner | `coworld certify` probes declared commissioners over `/healthz` and `/round`.    | Runs as a per-round container for leagues with `commissioner_key = "container"`.                                                                             |
 | Reporter     | `coworld certify` statically validates manifest reporter references (spec 0061). | Reporter v2: the platform runs submitted Wasm reporter versions in-process against a capability-scoped tool belt; runs produce typed output parts + a trace. |
 | Grader       | Not auto-run by the local runner.                                                | Contract defined, runtime pending; consumes bundles on demand when invoked.                                                                                  |
@@ -44,11 +44,11 @@ This is the short lifecycle view of the roles. For details and status definition
 | Optimizer    | Workbench role; not an episode container.                                        | Workbench role; pulls artifacts and submits candidate policies separately.                                                                                   |
 
 Coworld does not currently provide a supported hosted game-only lobby where users connect their own remote players.
-Hosted execution means tournament jobs in which the platform runs the game container and every player container.
+Hosted tournament jobs always run the game. `game.player_runtime` decides whether the platform also runs player pods.
 
 ## Package Lifecycle
 
-A Coworld package starts with a manifest and the container images it references.
+A Coworld package starts with a manifest, its container images, and any bundled game-hosted player files.
 
 1. The author writes a `coworld_manifest.json` or manifest template.
 2. The manifest declares the game, player runnables, supporting role sections, variants, game docs, protocol docs,
@@ -56,7 +56,7 @@ A Coworld package starts with a manifest and the container images it references.
 3. `coworld build` can hydrate a template and build local images.
 4. `coworld certify` runs the certification fixture locally as a package smoke test.
 5. `coworld upload-coworld` reuses the exact local certification when unchanged (or certifies before any image push),
-   uploads runnable images, and publishes the manifest plus image metadata.
+   uploads runnable images and player files, then publishes the manifest and artifact metadata.
 6. Hosted leagues and player developers can then refer to the uploaded Coworld release.
 
 The manifest is the package map. The actual route, WebSocket, result, replay, and browser-client behavior belongs to the
@@ -67,16 +67,15 @@ game container contract in [GAME.md](roles/GAME.md).
 Coworld certification turns the manifest's `certification` fixture into one local episode. It first validates the
 manifest, records GitHub `source_url` availability without gating, checks image reachability and the certification
 fixture itself, and then uses the
-same execution shape as a normal episode: the runner starts the game, starts the bundled player images from the fixture,
-waits for the game to finish, validates final results, checks that a replay was produced, and checks that the replay
-viewer can start. The hosted certification runner also waits for every fixture player process to terminate successfully,
-so a player that crashes after the game writes its artifacts cannot certify from logs alone.
+same execution shape as a normal episode. Platform-hosted fixtures start bundled player images. Game-hosted fixtures
+stage bundled files and let the game execute them. Both paths validate results, replay, and replay viewing. Hosted
+platform-hosted certification also waits for every fixture player process to terminate successfully.
 
 Certification is a package smoke test, not a gameplay benchmark. It should be short, deterministic enough to debug, and
 strong enough to prove that the manifest, game image, bundled players, HTTP routes, player-token rejection, results, and
 replay surface are wired correctly.
 
-Certification also verifies that each declared player runnable left a launch log. After the smoke episode, it resolves
+Certification also verifies that each fixture slot left a player log. After the smoke episode, it resolves
 every manifest reporter reference and runs the shared static validator against each (component parses, targets a
 supported `softmax:reporter` world, imports nothing outside it, exports `run`, declares well-formed outputs — spec
 0061). It probes declared commissioners with a single `schedule_rounds_request` over `/round`, proving protocol
@@ -97,19 +96,20 @@ default; use `--episodes N` for repeated local runs.
 The local runner sequence is:
 
 1. Load the manifest or episode request.
-2. Resolve the game runnable and one player runnable per slot.
+2. Resolve the game runnable and one player image or file per slot.
 3. Create a local artifact workspace.
 4. Generate one token per player slot.
 5. Write a concrete game config with runner-injected `tokens`.
 6. Create or reuse the `coworld-local` Docker network.
-7. Start the game container with `file://` config, results, and replay URIs mounted into the workspace.
-8. Wait for `GET /healthz` to return 200.
-9. Check the first player browser route and verify that an invalid player token is rejected.
-10. Start one player container per slot with `COWORLD_PLAYER_WS_URL=ws://coworld-game-<run-id>:8080/player?...`.
-11. Wait for player containers and the game container to exit.
-12. Validate `results.json` against `manifest.game.results_schema`.
-13. If replay verification is enabled, start the game image in replay mode and check the replay client and WebSocket.
-14. Remove local game, player, and replay containers.
+7. For game-hosted mode, stage files under `players/{slot}/file` and write `player_seats.json`.
+8. Start the game container with `file://` artifact URIs mounted into the workspace.
+9. Wait for `GET /healthz` to return 200.
+10. Platform-hosted mode checks the first player route, rejects a bad token, and starts one player container per slot.
+11. Game-hosted mode starts no player containers; the game reads and executes every staged file.
+12. Wait for the relevant containers and game to exit.
+13. Validate `results.json` against `manifest.game.results_schema`.
+14. If replay verification is enabled, start the game image in replay mode and check the replay client and WebSocket.
+15. Remove local game, player, and replay containers.
 
 The local artifact workspace contains:
 
@@ -117,7 +117,9 @@ The local artifact workspace contains:
 - [`results.json`](artifacts/RESULTS.md): game-written results, validated against `game.results_schema`.
 - [`replay`](artifacts/REPLAY.md): exact replay bytes written by the game container.
 - [`logs/game.stdout.log` and `logs/game.stderr.log`](artifacts/GAME_LOGS.md): game container stdout and stderr.
-- [`logs/policy_agent_{slot}.log`](artifacts/PLAYER_LOGS.md): combined stdout and stderr for each player container.
+- [`logs/policy_agent_{slot}.log`](artifacts/PLAYER_LOGS.md): per-seat output from a player container or the game.
+- [`player_seats.json`](artifacts/PLAYER_SEATS.md): game-hosted player inputs and output paths.
+- `policy_artifact_{slot}.zip`: optional per-seat artifact written by the player container or game.
 
 The local runner does not upload artifacts and does not assemble an episode bundle. Bundles are assembled later, when a
 consumer asks for one.
@@ -129,7 +131,7 @@ consumer asks for one.
 1. Resolve the Coworld package and episode request. If given an uploaded Coworld ID and no local cache exists, it
    downloads into `./coworld/<coworld-id>/`.
 2. Create a `coworld-play-*` artifact workspace.
-3. Start the game container and player containers on the local Docker network.
+3. Start the game container and, for platform-hosted mode, player containers on the local Docker network.
 4. Print browser URLs for player slots, the global viewer, and local admin/debug surfaces when available.
 5. Keep the local session alive until the episode ends.
 6. Write results, replay, and logs to the local workspace.
@@ -148,7 +150,7 @@ WebSocket streams the replay. This legacy mode starts only the game container.
 
 ## Hosted Tournament Lifecycle
 
-Hosted tournament evaluation is platform-orchestrated. Player authors upload policy images, submit them to a league, and
+Hosted tournament evaluation is platform-orchestrated. Player authors upload policy images or files, submit them, and
 the platform places policy versions into tournament divisions. Completed rounds and episodes then produce the
 results, logs, and replays that players inspect.
 
@@ -158,13 +160,13 @@ requests against a chosen Coworld or league roster. Experience-request episodes 
 asynchronously by the platform; from dispatch onward they run the same hosted episode job described below and produce
 the same artifacts. See [Cookbook: Request Experience Runs](../../../COOKBOOK.md#request-experience-runs).
 
-This is the only supported hosted game execution path: the game and all player containers run inside platform-managed
-Kubernetes jobs. For browser play while developing a Coworld or player, use local `coworld play`.
+This is the only supported hosted game execution path. The game and worker run inside a platform-managed Kubernetes
+Job. Platform-hosted mode adds child player pods; game-hosted mode runs player files inside the game container.
 
 The hosted lifecycle is:
 
 1. A Coworld release is uploaded and made available to a league.
-2. A player author uploads a policy image with its run command and hosted secrets, if any.
+2. A player author uploads the policy artifact required by the Coworld: an image or a file.
 3. The player author submits the policy to a league.
 4. The platform validates or processes the submission and creates an active membership when placement succeeds.
 5. The platform schedules league rounds and creates episode jobs for selected policy memberships. For container
@@ -172,20 +174,20 @@ The hosted lifecycle is:
    that round's episodes.
 6. Each episode job becomes a hosted Kubernetes Job.
 7. The parent Job mounts an `emptyDir` workdir shared by its init, game, and worker containers.
-8. The init container writes the concrete game config and generated player tokens.
+8. The init container writes the concrete game config and generated player tokens. In game-hosted mode, it downloads,
+   verifies, and stages every player file before writing `player_seats.json`.
 9. The game container and runner worker container start.
-10. The runner worker waits for the game to become healthy and creates a ClusterIP Service for player pods.
-11. The runner worker creates one child player pod per slot.
-12. Each player pod receives `COWORLD_PLAYER_WS_URL` and `COGAMES_ENGINE_WS_URL`, pointing at the game Service with its
-    slot and token.
-13. The game and players run the episode using the same game/player protocol as local execution.
+10. The runner worker waits for the game to become healthy.
+11. In platform-hosted mode, the worker creates a Service and one child player pod per slot.
+12. Each platform-hosted player pod receives its slot-scoped WebSocket URL.
+13. In game-hosted mode, no child pods exist. The game reads `COGAME_PLAYER_SEATS_URI` and owns player execution.
 14. The game writes results and replay bytes, or a terminal `GamePlayerFailure`, to the runner-supplied URIs.
-15. The worker validates the game output, collects logs, and uploads the configured hosted artifacts.
+15. The worker validates game output and uploads configured artifacts. In game-hosted mode, it validates optional
+    status, fills missing logs, and uploads non-empty per-seat artifacts within the size cap.
 16. The platform records episode status, results, logs, replay links, and round/leaderboard state. For container
     commissioner leagues, it streams completed or failed episode results back to the commissioner until
     `round_complete`, then persists commissioner rankings, membership changes, and state for the next round.
-17. The coordinator deletes child player pods and the game Service; the parent Job is later removed by Kubernetes TTL
-    cleanup.
+17. The coordinator deletes any child player pods and game Service; Kubernetes TTL later removes the parent Job.
 
 Hosted output artifacts are uploaded separately rather than as one bundle:
 
@@ -195,9 +197,9 @@ Hosted output artifacts are uploaded separately rather than as one bundle:
 - [`ERROR_INFO_URI`](artifacts/ERROR_INFO.md): runner failure JSON if the coordinator fails before the episode
   completes.
 - [`POLICY_LOG_URLS`](artifacts/PLAYER_LOGS.md): per-slot player log destinations.
-- [`PLAYER_ARTIFACT_UPLOAD_URLS`](artifacts/PLAYER_ARTIFACT.md): per-slot presigned `PUT` targets the worker exposes to
-  each player pod through a slot-scoped endpoint. The player may overwrite its `.zip` object (max 200 MB) with newer
-  checkpoints before its pod is torn down.
+- [`PLAYER_STATUS_URI`](artifacts/PLAYER_STATUS.md): optional per-slot process evidence from the runner or game.
+- [`PLAYER_ARTIFACT_UPLOAD_URLS`](artifacts/PLAYER_ARTIFACT.md): per-slot destinations. Player containers upload through
+  a slot-scoped endpoint; game-hosted workers upload final files written by the game. The cap is 200 MiB.
 
 Hosted tournament artifacts are access-controlled by the platform. CLI and API commands retrieve logs, results, stats,
 and replays from those stored episode records.
@@ -225,18 +227,18 @@ See [EPISODE_BUNDLE.md](artifacts/EPISODE_BUNDLE.md) for the bundle shape, hoste
 | Main use         | Fast player and Coworld debugging.                               | League evaluation and leaderboard updates.                                                                                                                                      |
 | Inputs           | Local manifest, downloaded Coworld, or explicit episode request. | Uploaded Coworld release, uploaded policy versions, league/division state.                                                                                                      |
 | Game runtime     | Docker container on `coworld-local`.                             | Game container in a parent Kubernetes Job.                                                                                                                                      |
-| Player runtime   | Docker containers on `coworld-local`.                            | One Kubernetes child pod per player slot.                                                                                                                                       |
+| Player runtime   | One Docker container per slot, or execution inside the game.      | One child pod per slot, or execution inside the game pod.                                                                                                                       |
 | Artifact storage | Local workspace files.                                           | Uploaded artifact URIs recorded by the platform.                                                                                                                                |
 | Replay storage   | Exact local replay bytes.                                        | Replay bytes compressed for hosted storage and replay serving.                                                                                                                  |
 | Episode deadline | CLI `--timeout-seconds` for local runner waits.                  | 20 minute Kubernetes Job active deadline; coordinator waits default to `COWORLD_TIMEOUT_SECONDS=3600`.                                                                          |
 | Supporting roles | Not auto-run.                                                    | Commissioner is run for container leagues; reporters run as Wasm programs via explicit bindings (on-demand, XP-attached, subscriptions); grader runtime integration is pending. |
-| Cleanup          | Local containers removed by the runner.                          | Child pods/service removed by coordinator; parent Job cleaned by TTL.                                                                                                           |
+| Cleanup          | Local containers removed by the runner.                          | Any child pods/service removed by coordinator; parent Job cleaned by TTL.                                                                                                       |
 
 ## See Also
 
 - [README.md](README.md) for the role model and artifact flow.
 - [GAME.md](roles/GAME.md) for the game container contract.
-- [PLAYER.md](roles/PLAYER.md) for the player container contract.
+- [PLAYER.md](roles/PLAYER.md) for the image-backed and file-backed player contracts.
 - [RUNNER_README.md](../runner/RUNNER_README.md) for the local Docker runner.
 - [KUBERNETES_RUNNER_README.md](../runner/KUBERNETES_RUNNER_README.md) for the hosted Kubernetes runner.
 - [Artifact reference](artifacts/README.md) for individual artifact contracts.

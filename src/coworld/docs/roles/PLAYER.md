@@ -4,24 +4,25 @@
 
 ## What it does
 
-The player role connects to the game runnable for one episode and acts in a single player slot. A player runnable
-implements the game-defined player protocol: it receives observations and emits actions until the episode ends, then
-exits.
+The player role acts in one episode slot through a game-defined protocol. The artifact can be a platform-run container
+image or a file executed by the game.
 
-Every Coworld manifest bundles one or more player runnables — typically a baseline or starter implementation useful
+Every Coworld manifest bundles one or more players — typically a baseline or starter implementation useful
 for certification, examples, and local play. During league episodes, the platform substitutes submitted policy
 versions for the manifest's bundled players (one policy version per slot); the runtime contract is identical either
 way.
 
 ## Where it lives in the manifest
 
-`manifest.player[]`, with `type: "player"` on every entry. The array must contain at least one runnable. See
-[`COWORLD_MANIFEST.md`](../COWORLD_MANIFEST.md) for the full runnable shape (`id`, `name`, `description`,
-`source_url`, `image`, `run`, `env`).
+`manifest.player[]`, with `type: "player"` on every entry. The array must contain at least one entry. Each player has
+exactly one of `image` or `file`, paired with `game.player_runtime`; see
+[`COWORLD_MANIFEST.md`](../COWORLD_MANIFEST.md#player-runtime-and-artifact-pairing).
 
 ## Contract
 
-The player runnable is a short-lived container started by the episode runner once per player slot. It must:
+### Platform-hosted players
+
+A platform-hosted player is a short-lived container started once per slot. It must:
 
 - Read `COWORLD_PLAYER_WS_URL` from the environment. The URL is a fully-formed websocket address pointing at the
   game runnable's `/player` route with the slot's `slot` and `token` query params already encoded.
@@ -58,6 +59,21 @@ Players may receive policy-scoped secret environment variables (uploaded via `co
 on top of the manifest's public `env`. Secrets land only in the pod for the specific policy version that uploaded
 them. See [`COOKBOOK.md`](../../../../COOKBOOK.md#upload-and-submit-a-player) for the policy-upload flow.
 
+### Game-hosted players
+
+A game-hosted player is one file, or one directory converted to a deterministic zip by Coworld tooling. Upload,
+certification, and local episodes use the same packer, so each path has one byte representation and digest. The game
+defines the file format, entrypoint, protocol, and execution environment. The platform only stores, hashes, stages,
+and exposes the bytes through [`COGAME_PLAYER_SEATS_URI`](../artifacts/PLAYER_SEATS.md).
+
+Upload a submitted policy with `coworld upload-policy --file PATH`. The input must be at most 100 MiB
+(104,857,600 bytes). Directories cannot contain symlinks; the CLI rejects missing paths and symlinks. A file upload
+cannot include `--run`, `--secret-env`, `--use-bedrock`, or `--bedrock-model`.
+
+Game-hosted players receive no process environment or secret environment from their policy version. The game process
+owns execution and must route each seat's output to the `log_uri` and optional `artifact_uri` in the seats document.
+The game's resources cover all player work; the platform creates no per-player container, pod, or compute allocation.
+
 ## Secrets, Bedrock, and LLM credentials
 
 If your player calls an LLM via Bedrock, read [`BEDROCK.md`](../BEDROCK.md) **before writing the call** — it is the
@@ -68,9 +84,8 @@ automatically; hand-rolled HTTP must read it, or the call hits real AWS with pla
 non-LLM baseline. `BEDROCK.md` also covers the upload contract and shared-capacity throttling. This section covers the
 underlying secret-env mechanics.
 
-Treat `manifest.player[].env` as public configuration. Bundled players are uploaded with the Coworld package and their
-images may be mirrored for user download, so neither the image nor manifest env should contain API keys, cloud
-credentials, private model endpoints, or other secrets.
+Treat `manifest.player[].env` as public configuration. Bundled player images may be mirrored for download. Bundled
+player files are also downloaded with the Coworld package. Do not include secrets in either artifact.
 
 For local testing, pass secrets at run time:
 
@@ -117,32 +132,30 @@ environment variables that your player code reads.
 
 ## Bundled players vs submitted policies
 
-Player runnables reach Observatory through two distinct upload paths, and their container images have different
-visibility as a result. There is no per-player flag for this — the difference is purely which upload path produced
-the image.
+Player artifacts reach Observatory through two upload paths. Visibility depends on whether the player is bundled with
+the Coworld or submitted to a league.
 
-- **Bundled players** — referenced from a Coworld's `manifest.player[]` and uploaded via `coworld upload-coworld`.
-  After the upload completes, the backend's image publisher mirrors these images to ECR Public, so anyone can pull
-  them as part of `coworld download <coworld-id>`. Treat their contents as fully public; do not include secrets in
-  the image.
-- **Submitted policies** — uploaded via `coworld upload-policy` for league submission. These images stay private to
-  Observatory runtime and are never mirrored to ECR Public. Submitted policies substitute for the manifest's bundled
-  players at league episode time using the same runtime contract, but their container images are not
-  user-downloadable.
+- **Bundled players** use `coworld upload-coworld`. Images are mirrored publicly. Files are downloaded into
+  `player-files/`, and the downloaded manifest points at those local files. Treat both forms as public.
+- **Submitted policies** use `coworld upload-policy IMAGE` or `coworld upload-policy --file PATH`. They are not exposed
+  to other players through the download flow.
+
+A submitted file policy is visible in clear to the game process for every game-hosted episode. That process is code
+controlled by the Coworld author, who can inspect or copy the bytes. Do not submit sensitive source to a game-hosted
+Coworld unless you accept that trust boundary. Platform-hosted mode does not give the game a player's image bytes.
 
 ## Logging and artifacts
 
-Player runnables produce diagnostic [player logs](../artifacts/PLAYER_LOGS.md) through captured stdout/stderr and, when
-available, optional `COGAME_LOG_URI` posting. Container output is diagnostic only — the source of truth for episode
-success is the game's results and replay artifacts, not player logs.
+Platform-hosted players produce diagnostic [player logs](../artifacts/PLAYER_LOGS.md) through captured stdout and
+stderr. In game-hosted mode, the game writes each seat's log. Logs remain diagnostic in both modes.
 
-A player may also upload a [player artifact](../artifacts/PLAYER_ARTIFACT.md): one replaceable `.zip` object (max 200
-MB) at `COWORLD_PLAYER_ARTIFACT_UPLOAD_URL` for post-hoc profiling and analysis, separate from logs. This is the only
-object a player authors directly; it never modifies the game-owned results or replay artifacts.
+A player may also produce one [player artifact](../artifacts/PLAYER_ARTIFACT.md), capped at 200 MiB
+(209,715,200 bytes). A platform-hosted player uploads it through `COWORLD_PLAYER_ARTIFACT_UPLOAD_URL`. A game-hosted
+game writes it to the seat's `artifact_uri`.
 
 The player does not receive or assemble an episode bundle. Its actions are represented in the
 [replay artifact](../artifacts/REPLAY.md), its container logs may be included as
-[`player_logs`](../artifacts/PLAYER_LOGS.md), and its uploaded artifact may be included as
+[`player_logs`](../artifacts/PLAYER_LOGS.md), and its artifact may be included as
 [`player_artifact`](../artifacts/PLAYER_ARTIFACT.md); see [`artifacts/EPISODE_BUNDLE.md`](../artifacts/EPISODE_BUNDLE.md).
 
 ## How it fits with other roles

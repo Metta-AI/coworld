@@ -40,7 +40,7 @@ organize episode artifacts after the episode ends.
 | Role             | Lifecycle                       | Status                            | Purpose                                                                                                                                           | Details                                    |
 | ---------------- | ------------------------------- | --------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------ |
 | **game**         | per episode, WebSocket server   | live                              | Runs the episode, serves browser clients, and writes result/replay artifacts.                                                                     | [Game role](roles/GAME.md)                 |
-| **player**       | per episode, WebSocket client   | live                              | Connects to the game and acts in one player slot.                                                                                                 | [Player role](roles/PLAYER.md)             |
+| **player**       | per episode, game client or file | live                             | Acts in one player slot through the runtime selected by the Coworld.                                                                               | [Player role](roles/PLAYER.md)             |
 | **commissioner** | per round, WebSocket server     | **deprecated** (container leagues only) | Legacy container league control loop. New leagues use the platform ladder and omit this role.                                                  | [Commissioner role](roles/COMMISSIONER.md) |
 | **reporter**     | per run, submitted Wasm program | live (reporter v2, spec 0061)     | Turns platform evidence into declared, typed output parts — narrative renders, event logs, machine documents — via a capability-scoped tool belt. | [Reporter role](roles/REPORTER.md)         |
 | **grader**       | post episode, on demand         | contract defined, runtime pending | Scores how useful or interesting an episode is.                                                                                                   | [Grader role](roles/GRADER.md)             |
@@ -84,12 +84,13 @@ The short version:
 
 1. A Coworld author packages a game, role runnables, variants, docs, schemas, and a certification fixture into a
    manifest.
-2. A player author builds or selects a player image for that Coworld.
-3. A runner starts one game container and one player container per slot for each bounded episode. Persistent leagues may
-   instead reconcile one commissioner-requested player runtime per stable player across many scoring windows.
-4. Players connect to the game's `/player` WebSocket and exchange game-defined observations and actions.
+2. A player author builds an image or prepares the file format required by that Coworld.
+3. A runner starts the game. It starts one player container per slot or lets a game-hosted game execute staged files.
+   Persistent leagues may instead reconcile one runtime per stable player across many scoring windows.
+4. Platform-hosted players connect through `/player`; game-hosted players use the game's documented file contract.
 5. The episode produces per-episode artifacts: [results](artifacts/RESULTS.md), [replay bytes](artifacts/REPLAY.md),
-   [logs](artifacts/GAME_LOGS.md), an optional per-player [artifact](artifacts/PLAYER_ARTIFACT.md), and
+   [logs](artifacts/GAME_LOGS.md), optional [player seats](artifacts/PLAYER_SEATS.md) and
+   [player artifacts](artifacts/PLAYER_ARTIFACT.md),
    [player process status](artifacts/PLAYER_STATUS.md), and [failure information](artifacts/ERROR_INFO.md) when
    applicable.
 6. Supporting roles consume episode evidence through bundles, tool-belt reads, or workbench tooling and produce
@@ -146,12 +147,10 @@ For each scheduled bounded episode, the runner starts:
   route with that slot's `slot` and `token` query params. `COGAMES_ENGINE_WS_URL` is also populated for compatibility
   with older players.
 
-Players connect to the game's `/player` WebSocket and speak the game-defined player protocol. Observations flow from the
-game, actions flow from the player, and the exchange continues until the episode ends. The game writes results and
-replay artifacts to the URIs provided by the runner; the runner captures logs and hosted failure information. A player
-may also upload an optional [artifact](artifacts/PLAYER_ARTIFACT.md) to `COWORLD_PLAYER_ARTIFACT_UPLOAD_URL` before its
-container is torn down. On the platform ladder, Temporal settles the frozen episode plan and updates rankings /
-memberships.
+Platform-hosted players connect through the game's `/player` WebSocket. Game-hosted games read verified files and
+per-seat output paths from [`COGAME_PLAYER_SEATS_URI`](artifacts/PLAYER_SEATS.md). The game writes results and replay;
+the runner preserves logs and failure information. Per-seat artifacts remain optional in both modes. On the platform
+ladder, Temporal settles the frozen episode plan and updates rankings and memberships.
 
 Persistent leagues separate execution from accounting. Their scheduling response publishes a complete desired set of
 long-lived player runtimes. The platform reconciles at most one runtime per stable league player and replaces it when
@@ -197,9 +196,8 @@ These boundaries are useful when deciding where a new feature, artifact, or debu
   Reporter, grader, diagnoser, and optimizer consume completed episode artifacts.
 - **The game owns episode truth.** The game exposes the per-episode WebSocket server, receives player actions, advances
   state, and writes the raw episode artifacts.
-- **Players are clients, not episode orchestrators.** A player connects to the game's `/player` WebSocket for one slot
-  and does not modify the game-owned episode artifacts. It may upload its own optional
-  [artifact](artifacts/PLAYER_ARTIFACT.md), but it does not own episode truth.
+- **Players are not episode orchestrators.** A platform-hosted player connects through `/player`. A game-hosted player
+  is executed by the game. Neither form owns results or replay.
 - **Bundle and reporter handoffs are consumption-time views.** Everything before handoff is game and runner output. User
   downloads, graders, and diagnosers use bundle zips; reporters read through their `episodes` tool with the same
   access-control rules (enforced under the run requester's permissions).
@@ -223,6 +221,7 @@ These boundaries are useful when deciding where a new feature, artifact, or debu
   `AWS_ENDPOINT_URL_BEDROCK_RUNTIME` sidecar): [BEDROCK.md](BEDROCK.md).
 - Lifecycle overview: [LIFECYCLE.md](LIFECYCLE.md).
 - Artifact reference: [artifacts/README.md](artifacts/README.md).
+- Game-hosted player seats: [artifacts/PLAYER_SEATS.md](artifacts/PLAYER_SEATS.md).
 - Game container contract: [GAME.md](roles/GAME.md).
 - Episode bundle contract: [artifacts/EPISODE_BUNDLE.md](artifacts/EPISODE_BUNDLE.md).
 - Local and hosted runners: [RUNNER_README.md](../runner/RUNNER_README.md) and

@@ -13,7 +13,8 @@ remains the sole producer of this final artifact. Games never infer or write `ER
 
 ## Contract
 
-The runner-side JSON follows the `RunnerError` shape:
+The runner-side JSON follows the `RunnerError` shape. Download and upload failures report the slot, exception type,
+and HTTP status without including presigned URL query parameters.
 
 ```json
 {
@@ -45,6 +46,11 @@ Fields:
 | `replay_unloadable`       | A replay load/check step could not relaunch the game from the replay or receive replay WebSocket data. The Kubernetes episode worker currently does not relaunch replay, so hosted episode jobs do not assign this type; certifier replay validation assigns it in its separate replay-load step. |
 | `episode_timeout`         | The overall episode wall-clock expired and the runner could not attribute the failure to a more specific game, player, results, or replay condition.                                                                                                                                              |
 | `crash`                   | An unexpected runner/coordinator failure outside the typed episode failure categories.                                                                                                                                                                                                            |
+| `worker_error`            | The coordinator container terminated with a non-zero exit code without more specific structured error information.                                                                                                                                                                                |
+| `worker_oom`              | Kubernetes terminated the coordinator or init-config container for exceeding its memory limit. This is infrastructure failure evidence and never identifies or blames a policy slot.                                                                                                             |
+| `config_error`            | The runner could not parse or validate its episode job specification or required configuration.                                                                                                                                                                                                   |
+| `player_file_unavailable` | Trusted staging could not download a game-hosted player file. This is infrastructure failure evidence and never identifies or blames a policy slot.                                                                                                                                               |
+| `player_file_mismatch`    | A staged player file did not match its declared byte length or SHA-256 digest. This is infrastructure failure evidence and never identifies or blames a policy slot.                                                                                                                              |
 
 The backend may also synthesize an `error-info` response from stored job error fields when a persisted job failed before
 an uploaded `ERROR_INFO_URI` object is available.

@@ -70,7 +70,7 @@ For a new Coworld, start from the Paint Arena manifest template and keep the gen
 1. Fill in `game` metadata, docs, protocols, config schema, results schema, and game runnable. If replays should run
    entirely in the browser, add `game.replay_viewer.bundle` using the
    [static replay-viewer guide](STATIC_REPLAY_VIEWERS.md).
-2. Add bundled players used for examples, certification, and local play.
+2. Choose `game.player_runtime`, then add matching bundled players for examples, certification, and local play.
 3. Add reporter references when the Coworld ships bespoke reporting (reporter v2, spec 0061). Reporter entries are
    references — a platform reporter version (`"reporter": "owner/name@version"`, owner-qualified because reporter
    names are only unique per owner) or a wasm component your build produces (at publish time the CLI registers a
@@ -119,6 +119,67 @@ Game-specific `slots` config objects remain game-owned and can carry mechanics s
 other per-slot fields. Cross-Coworld player identity names flow through `game_config.players[].name`.
 
 See [Game Role](roles/GAME.md#player-slots) and [Lifecycle](LIFECYCLE.md) for the runtime path.
+
+## Player Runtime And Artifact Pairing
+
+`game.player_runtime` is `platform-hosted` by default. It has two valid shapes:
+
+```json
+{
+  "game": {
+    "player_runtime": "platform-hosted",
+    "runnable": { "type": "game", "image": "example-game:latest" }
+  },
+  "player": [
+    {
+      "type": "player",
+      "id": "baseline",
+      "name": "Baseline",
+      "description": "Container baseline",
+      "image": "example-player:latest"
+    }
+  ]
+}
+```
+
+```json
+{
+  "game": {
+    "player_runtime": "game-hosted",
+    "runnable": { "type": "game", "image": "example-game:latest" }
+  },
+  "player": [
+    {
+      "type": "player",
+      "id": "baseline",
+      "name": "Baseline",
+      "description": "File baseline",
+      "file": "players/baseline.py"
+    }
+  ]
+}
+```
+
+Every manifest role entry defines exactly one of `image` or `file`. Only player entries may use `file`, and the value
+must be a package-relative path or an uploaded `sha256:<64 lowercase hex characters>` reference. Absolute paths,
+`.`/`..` path components, and malformed digests are rejected.
+
+Every player entry must match the game mode. Platform-hosted players use `image`; game-hosted players use `file`.
+`coworld upload-coworld` uploads package-relative files, rejects inputs over 100 MiB (104,857,600 bytes), and replaces
+each path with its content digest. A directory reference is converted to a deterministic zip before hashing.
+
+Game-hosted files do not use the player's `run`, `env`, `resources`, or secret environment. Their format and execution
+belong to the game. See [Player Seats](artifacts/PLAYER_SEATS.md) for the runtime handoff.
+
+Game-hosted mode is episode-only in this version. The platform rejects, with a clear error, anything that needs a
+player container or a human at a seat:
+
+- lobbies (`/v2/leagues/{league_id}/lobbies`), hosted play sessions (`/v2/coworlds/play/session`), and local
+  `coworld play`;
+- human player seats in episode requests, and persistent league player runtimes;
+- policy secret environments (`--secret-env`, `--use-bedrock`) on file policies;
+- `coworld certify` and `coworld run-episode` image or `--run` overrides for players;
+- baseline image analysis for file-backed bundled players.
 
 ## Hosted Episode Game Secrets
 
@@ -194,15 +255,19 @@ the file yourself on a public, embeddable URL; the manifest stores only the refe
 
 ## Images, Runnables, And Releases
 
-The manifest separates three concepts:
+The manifest separates four concepts:
 
 - **Container image:** uploaded Docker image bytes.
+- **Player file:** bytes interpreted and executed by a game-hosted game.
 - **Runnable:** a role-specific invocation of an image with `type`, optional command, and public env.
-- **Coworld release:** the manifest plus the images it references after upload.
+- **Coworld release:** the manifest plus the images and bundled player files it references after upload.
 
 One Docker image can implement multiple roles by appearing in multiple runnable entries with different `type` values or
 different commands. `coworld upload-coworld` deduplicates image uploads by image reference and backend content identity.
 At hosted execution time, image tags resolve to immutable digests.
+
+`coworld download` pulls public bundled images and game-hosted player files. It writes files under
+`player-files/{sha256}` and rewrites the downloaded manifest to those local package-relative paths.
 
 `manifest.game.runnable.env.COWORLD_LOCAL_EXTRA_PORTS` is a local-runner-only deployment hint for games that expose
 additional host TCP services beyond Coworld HTTP on container port 8080. Use comma-separated
@@ -251,8 +316,9 @@ manifest at that game-local source. Shared pieces point at `coworld-tools` only 
 remain shared across Coworlds. Game-local starter players, game-specific commissioners, and in-tree examples point at
 the game or package repo that owns them.
 
-The platform mirrors Coworld-bundled images publicly and keeps submitted-policy images private. The [player role](roles/PLAYER.md#bundled-players-vs-submitted-policies)
-describes that boundary.
+The platform makes Coworld-bundled images and player files downloadable. Submitted policy artifacts remain outside the
+download flow, although a game-hosted game process receives submitted file bytes during an episode. The
+[player role](roles/PLAYER.md#bundled-players-vs-submitted-policies) describes that boundary.
 
 ## Validation And Regeneration
 

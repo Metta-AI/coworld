@@ -20,8 +20,8 @@ Every recipe below has two paths:
   work.
 
 For remote recipes, prefer the public clients in `coworld.api_client` and `coworld.upload`. For local recipes, the
-non-CLI path is Docker-backed: it starts the same game and player containers the CLI starts, passes the same environment
-variables, and writes the same artifact files.
+non-CLI path is Docker-backed and follows the manifest's selected player runtime. It passes the same environment
+variables and writes the same artifact files as the CLI.
 
 All examples use Paint Arena as the canonical Coworld example. Replace `cow_...`, `league_...`, `div_...`, `round_...`,
 and `ereq_...` with the IDs returned by the commands in your environment.
@@ -75,7 +75,8 @@ Add `--json` for the typed API response.
 
 First run the policy locally with `coworld run-episode`. Then read the league's participation guide
 (`uv run coworld leagues league_...` prints its URL). It is the league-specific runbook and says which hosted Experience
-Request (XP) A/B check to run before you submit. Then upload the Docker image and submit the resulting policy version:
+Request (XP) A/B check to run before you submit. Then check the league's Coworld manifest: upload a Docker image for a
+`platform-hosted` Coworld or a player file for a `game-hosted` one, and submit the resulting policy version:
 
 ```bash
 uv run coworld upload-policy paintarena-player:local --name paintarena-player \
@@ -90,6 +91,17 @@ When using your user credential, select a nondefault player with `coworld submit
 session is active, use `coworld player use ply_...` to change players before submitting. A policy version already
 assigned to one player cannot be submitted as another player. A permission error explains the rejected action; logging
 in again does not change which resources that identity may access.
+
+For a game-hosted Coworld:
+
+```bash
+uv run coworld run-episode ./coworld/cow_.../coworld_manifest.json ./player.py
+uv run coworld upload-policy --file ./player.py --name game-hosted-player
+uv run coworld submit game-hosted-player --league league_...
+```
+
+The game defines the player-file format. Files and deterministic directory zips are capped at 100 MiB. `--file`
+cannot be combined with `--run`, `--secret-env`, `--use-bedrock`, or `--bedrock-model`.
 
 Add `--use-bedrock` (and `--bedrock-model MODEL`, which your player reads from `BEDROCK_MODEL`) during `upload-policy`
 when the hosted policy uses Bedrock; see [Bedrock for Coworld players](src/coworld/docs/BEDROCK.md). Add
@@ -130,9 +142,9 @@ front-door debugging surface for episodes you can access. If the runner crashes 
 
 ### How do I build an agent policy?
 
-Start from the downloaded Coworld package and the game's `AGENTS.md`/README. Build a Docker image that reads
-`COWORLD_PLAYER_WS_URL`, connects to the game server, and exits when the episode ends. Keep a local loop before upload:
-build the image, run `coworld run-episode`, inspect logs and replay, then upload and request hosted experience.
+Start from the downloaded Coworld package and the game's `AGENTS.md`/README. Check `game.player_runtime` first.
+Platform-hosted players build an image that reads `COWORLD_PLAYER_WS_URL`. Game-hosted players build the file format
+documented by that game. In both modes, run a local episode and inspect results, replay, logs, and optional artifacts.
 
 ## Set Up Auth
 
@@ -200,8 +212,8 @@ uv run python -m json.tool ./coworld/cow_.../coworld_manifest.json
 ```
 
 Downloaded packages live under `./coworld/<coworld-id>/` and include `coworld_manifest.json`, `coworld_images.json`, and
-an `AGENTS.md` for local policy work. The downloaded manifest rewrites uploaded image references to local Docker tags
-after pulling the public images.
+an `AGENTS.md` for local policy work. The command pulls public images and rewrites their manifest references to local
+Docker tags. Game-hosted packages also include `player-files/`; their manifest `file` references become local paths.
 
 ### Non-CLI API
 
@@ -662,12 +674,24 @@ uv run coworld run-episode tmp/paintarena/coworld_manifest.json paintarena-playe
   --run python --run -m --run coworld.examples.paintarena.player.player
 ```
 
-Upload the image as a policy version:
+For a platform-hosted Coworld, upload the image as a policy version:
 
 ```bash
 uv run coworld upload-policy paintarena-player:local --name paintarena-player \
   --run python --run -m --run coworld.examples.paintarena.player.player
 ```
+
+For a game-hosted Coworld, test and upload the game-specific file instead:
+
+```bash
+uv run coworld run-episode ./coworld/cow_.../coworld_manifest.json ./player-a.py
+uv run coworld upload-policy --file ./player-a.py --name player-a
+```
+
+`--file` accepts one regular file or directory. Directories become deterministic zip files. The CLI rejects symlinks,
+missing paths, inputs over 100 MiB (104,857,600 bytes), and combinations with `--run`, `--secret-env`,
+`--use-bedrock`, or `--bedrock-model`. The backend rechecks the size and SHA-256 digest before creating the policy.
+Uploading the same bytes again under the same policy name returns the existing version instead of creating a new one.
 
 Submit the uploaded policy to a league:
 
@@ -696,8 +720,8 @@ uv run coworld upload-policy paintarena-player:local --name paintarena-player \
   --use-bedrock
 ```
 
-`upload-policy` requires Docker because it hashes the local Docker image, obtains a scoped registry token from the
-backend, pushes the image, and registers the policy version. No AWS CLI or AWS credentials are needed locally.
+Image-based `upload-policy` requires Docker because it hashes and pushes the image before registration. File-based
+upload does not use Docker. Neither form needs local AWS credentials.
 `--use-bedrock` stores `USE_BEDROCK=true` with the policy version. Hosted Coworld tournaments run on AWS; when a policy
 opts into Bedrock, the player pod runs with the tournament Bedrock IAM role, so the player does not need to bring its
 own Bedrock API key. Add `--bedrock-model MODEL` to set `BEDROCK_MODEL`; your player must read its model from
@@ -708,6 +732,10 @@ A Bedrock player can pass local certification and still fail its first hosted ro
 `--use-bedrock` or reads its model from the wrong variable. See
 [Bedrock for Coworld players](src/coworld/docs/BEDROCK.md), which also covers staying robust when shared Bedrock
 capacity throttles (throttled episodes time out and score as a loss).
+
+Game-hosted policies cannot carry secret environment variables. The Coworld author's game receives the submitted file
+in clear and controls its execution. Do not submit sensitive source unless you accept that trust boundary. If a player
+needs Bedrock, the game makes the call and sends `X-Coworld-Player-Slot` for cost attribution.
 
 Game containers sometimes need hosted tournament/episode-only secrets, such as a signing key for a private worker.
 Upload those as Coworld secrets and reference them from the manifest with `secret://`:
@@ -757,6 +785,16 @@ The non-CLI flow is an API sequence with a Docker registry step:
    secret environment variables (uploaded via `POST /stats/policy-secret-envs` and referenced by ID).
 6. `POST /v2/league-submissions` with the returned policy version ID and target league.
 
+For a game-hosted Coworld the registry steps are replaced by a file upload:
+
+1. Hash the file (or the deterministic zip of a directory) and `POST /stats/policies/files/upload` with
+   `{"name": "...", "content_hash": "<sha256 hex>", "size_bytes": N}`. The response carries either
+   `existing_policy_version` (same name and bytes already uploaded; stop here) or a presigned `upload_url`.
+2. `PUT` the bytes to `upload_url` with `Content-Type: application/octet-stream` and the exact `Content-Length`.
+3. `POST /stats/policies/files/complete` with the same body. The backend verifies the staged size and digest, promotes
+   the object to its canonical content-addressed key, and returns the policy version.
+4. `POST /v2/league-submissions` as above. Secret environments are rejected for file policies.
+
 Use the Python upload client for the registry steps and the Coworld API client for league submission:
 
 ```python
@@ -779,6 +817,9 @@ with CoworldUploadClient.from_login(server_url=server) as client:
 with CoworldApiClient.from_login(server_url=server) as client:
     submission = client.submit_to_league("league_...", UUID(policy_version.id))
 ```
+
+The same client covers file policies (`request_player_file_upload`, then a `PUT` to the returned URL, then
+`complete_player_file_policy`); `coworld upload-policy --file` is the reference implementation of that sequence.
 
 That snippet assumes the container image has already been uploaded and completed. The CLI remains the shortest safe path
 when you are starting from a local Docker tag.
@@ -1123,6 +1164,22 @@ Coworld authors should build, certify, and upload the Coworld package. For Paint
 uv run coworld build --project packages/coworld/src/coworld/examples/paintarena --version 0.1.0
 uv run coworld certify packages/coworld/src/coworld/examples/paintarena/dist/coworld_manifest.json
 uv run coworld upload-coworld packages/coworld/src/coworld/examples/paintarena/dist/coworld_manifest.json
+```
+
+For game-hosted packages, set `game.player_runtime` to `game-hosted` and give every `player[]` entry a package-relative
+`file` instead of `image`. `upload-coworld` uploads those files, replaces paths with `sha256:` references, and creates
+hidden file-backed policies for certification. Each bundled input has the same 100 MiB cap as submitted file policies.
+
+Downloaded game-hosted packages are directly runnable because `coworld download` fetches the bundled files and rewrites
+the manifest. Run the bundled certification roster or replace it with explicit paths:
+
+```bash
+uv run coworld download cow_... --output-dir ./coworld
+uv run coworld run-episode ./coworld/cow_.../coworld_manifest.json
+uv run coworld run-episode ./coworld/cow_.../coworld_manifest.json ./player-a.py ./player-b.zip
+ls ./coworld/cow_.../results/logs
+ls ./coworld/cow_.../results/player_seats.json
+find ./coworld/cow_.../results -maxdepth 1 -name 'policy_artifact_*.zip' -print
 ```
 
 Metta monorepo contributors can test hosted execution against the local platform with:

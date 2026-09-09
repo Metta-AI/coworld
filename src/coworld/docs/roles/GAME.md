@@ -24,6 +24,13 @@ rules, strategy, setup, and context. Additional `game.docs.pages` entries are op
 Game-authored pages should stay game-specific; Softmax `play_*.md` pages, when present, own platform setup, upload, and
 league-submission steps.
 
+`game.player_runtime` selects who executes players:
+
+- `platform-hosted` is the default. Each player is an image-backed runnable in its own local container or hosted child
+  pod.
+- `game-hosted` gives the game one verified file per seat. The game reads, executes, and observes those files inside
+  its own container. No player containers or child pods exist.
+
 ## Contract
 
 The game runnable is a long-running container that listens on `COGAME_HOST:COGAME_PORT`, defaulting to `0.0.0.0:8080`.
@@ -45,6 +52,21 @@ It must:
 - When its own rules make a player failure terminal, write a typed `GamePlayerFailure` to `COGAME_PLAYER_FAILURE_URI`
   instead of results. The runner validates this signal and produces the platform-owned
   [`error_info.json`](../artifacts/ERROR_INFO.md); the game does not write that final artifact.
+
+In `game-hosted` mode the game must also read `COGAME_PLAYER_SEATS_URI`. The
+[`player seats`](../artifacts/PLAYER_SEATS.md) document gives each slot a verified player `file_uri`, required
+`log_uri`, optional `artifact_uri`, and the optional shared `player_status_uri`. The player-file format and execution
+protocol are game-specific. The platform does not execute or inspect the file.
+
+The game must create every seat's log, even when it is empty. A missing log becomes a diagnostic placeholder. It may
+write one non-empty artifact of at most 200 MiB (209,715,200 bytes) per seat. It may also write a
+[`player_status.json`](../artifacts/PLAYER_STATUS.md); invalid status JSON is discarded without failing the episode.
+Results, replay, and `GamePlayerFailure` keep their existing contracts.
+
+In game-hosted mode, `results.json` is the completion marker. The game must finish writing every seat log, seat
+artifact, and `player_status.json` before writing `results.json`. Both the hosted worker and the local
+`coworld run-episode` runner begin collection as soon as results and the required replay exist; neither waits for a
+long-running game server to exit. A game that exits first is judged by its exit status.
 
 The runner validates the final results against `manifest.game.results_schema`. Replay bytes are game-defined. A game may
 declare `game.replay_viewer.bundle` as a package-relative static directory containing `index.html`; upload rewrites it
@@ -104,7 +126,9 @@ Coworld-authored configs are token-free:
 - `variants[].game_config`
 - `certification.game_config`
 
-The runner starts one player runnable per scheduled roster slot with a fully formed `COWORLD_PLAYER_WS_URL`.
+In `platform-hosted` mode the runner starts one player runnable per slot with a fully formed
+`COWORLD_PLAYER_WS_URL`. In `game-hosted` mode the game owns player execution and receives the same ordered slots in
+`COGAME_PLAYER_SEATS_URI`; it decides how each file communicates with the game.
 
 Games start when all scheduled players connect or `player_connect_timeout_seconds` elapses (default 180 seconds). The
 Kubernetes runner uses the same deadline to reject infrastructure failures before they become competitive results.
@@ -135,9 +159,10 @@ families and token semantics are Coworld-wide.
 
 ## Hosted runtime resources
 
-Hosted tournament runs schedule the game as the parent pod and player runnables as child pods. The current hosted
-baseline is 1 CPU / 512Mi for the game container, 250m CPU / 256Mi for the runner worker, 250m CPU / 256Mi for each
-player container, and 2 CPU / 2Gi for replay containers; see
+Hosted tournament runs always schedule the game and worker in the parent pod. Platform-hosted runs add one child pod
+per player. Game-hosted runs add no player pods, so the game container's declared resources must cover the game and all
+player execution. The current baseline is 1 CPU / 512Mi for the game container, 250m CPU / 256Mi for the runner worker,
+250m CPU / 256Mi for each platform-hosted player container, and 2 CPU / 2Gi for replay containers; see
 [`KUBERNETES_RUNNER_README.md`](../../runner/KUBERNETES_RUNNER_README.md#hosted-resource-baseline). These are scheduling
 requests, not CPU or memory limits — a game gets no compute ceiling by default and may burst to the whole node.
 
@@ -148,6 +173,9 @@ contract, including the [player CPU limit](../../runner/KUBERNETES_RUNNER_README
 equivalent. A declared limit must resolve to at least as much as the resolved request for that field (declared or
 default) — registration rejects a manifest whose limit would undercut its request, since Kubernetes cannot schedule such
 a pod. Hosted episode Jobs have a 20 minute active deadline.
+
+`COWORLD_PLAYER_CPU_REQUEST`, `COWORLD_PLAYER_MEMORY_REQUEST`, and `COWORLD_PLAYER_CPU_LIMIT` apply only to
+platform-hosted child pods. They do not reserve or limit player work performed inside a game-hosted game container.
 
 ## Bedrock and AWS access
 
@@ -174,10 +202,17 @@ attributes telemetry, spend, and the request-rate bucket to that player. It pres
 game code made the physical call. Missing headers remain game-attributed and are not charged against a player's
 per-episode spend ceiling. Invalid, out-of-range, or conflicting slot headers return `HTTP 400`.
 
+Game-hosted player files cannot carry policy environment or secret environment values. If a game-hosted player needs
+an LLM, the game must make the call and add the slot header. Headerless calls remain attributed to the game.
+
 ## Logging
 
 Game stdout and stderr may be exposed to anyone with episode access through the [game logs](../artifacts/GAME_LOGS.md)
 artifact and episode bundles. Treat those streams as public diagnostic output.
+
+In game-hosted mode, write each player's output only to its seat-specific `log_uri`. The platform preserves the normal
+policy-scoped access gate for those files, but it cannot prevent the game from leaking player output through public game
+logs. This separation is part of the Coworld author's contract.
 
 The game should put authoritative episode state in structured artifacts:
 

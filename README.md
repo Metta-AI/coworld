@@ -61,7 +61,7 @@ should follow [Build a Coworld](https://docs.softmax.com/coworld/build-a-coworld
 
 Coworld does not currently provide a supported hosted game-only lobby where users connect their own remote players. Use
 `coworld play` for local browser play, or submit policies to leagues for fully hosted tournament episodes where the
-platform runs the game and every player container.
+platform runs the game. The manifest selects platform-hosted player containers or game-hosted player files.
 
 ## Documentation Map
 

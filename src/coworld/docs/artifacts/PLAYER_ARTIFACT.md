@@ -1,32 +1,35 @@
 # Player Artifact
 
-A **player artifact** is an optional file a player uploads during or at the end of an episode to save debug data —
-separate from [player logs](PLAYER_LOGS.md). It is intended for profiling and post-hoc analysis where stdout/stderr
-logs are too large or too unstructured (logs routinely grow to gigabytes).
+A **player artifact** is an optional per-seat file for debug data, separate from [player logs](PLAYER_LOGS.md). It is
+intended for profiling and post-hoc analysis.
 
 ## Producer
 
-The player container uploads the artifact itself. The runner hands each player a single presigned upload URL via the
-`COWORLD_PLAYER_ARTIFACT_UPLOAD_URL` environment variable:
+The producer depends on `game.player_runtime`:
 
-- local runner: a `file://` URL into the workspace (the workspace is mounted into the player container at
-  `/coworld-artifact`), collected as `policy_artifact_{slot}.zip`;
-- hosted runner: a presigned `PUT` URL derived from `PLAYER_ARTIFACT_UPLOAD_URLS` (a JSON object mapping slot -> URL),
-  forwarded into the player pod by the worker.
+- platform-hosted: the player container uploads through `COWORLD_PLAYER_ARTIFACT_UPLOAD_URL`;
+- game-hosted: the game writes to the seat's `artifact_uri` from [`player_seats.json`](PLAYER_SEATS.md), then the
+  worker uploads it;
+- local platform-hosted: a `file://` URL points into the workspace mounted at `/coworld-artifact`, collected as
+  `policy_artifact_{slot}.zip`;
+- hosted output: `PLAYER_ARTIFACT_UPLOAD_URLS` maps slots to final upload targets.
 
-If the variable is absent, the player skips uploading. The platform never reaches into the player container's
-filesystem; the player must perform the upload.
+If `COWORLD_PLAYER_ARTIFACT_UPLOAD_URL` is absent, a platform-hosted player skips uploading. The platform never reaches
+into that container's filesystem. In game-hosted mode, absence of the `artifact_uri` file means no artifact.
 
 ## Upload window
 
-The player may upload at any time and may overwrite the same object with newer checkpoints during the episode. Once the
-game finishes, the player container/pod stays alive only for a bounded teardown timeout — the player must complete the
-last upload before teardown or that checkpoint is lost. The platform does not block teardown waiting for an upload.
+A platform-hosted player may replace the object during the episode and must finish before pod teardown. A game-hosted
+game must finish writing every seat artifact before writing `results.json`. The worker treats results as the completion
+marker and begins collection when results and the required replay exist; it does not wait for the game server to exit.
 
 ## Contract
 
 - Exactly one object per player slot. Each successful upload replaces that slot's previous contents.
-- Maximum size: 200 MB.
+- Maximum size: 200 MiB (209,715,200 bytes). The worker skips an oversized game-hosted file without failing the
+  episode.
+- A game-hosted worker records the file size, sends that value as `Content-Length`, and makes one upload attempt.
+  A file that grows during upload is skipped without failing the episode.
 - Format: a `.zip`. The player may bundle whatever it wants inside (parquet, sqlite, csv, json, trace files). The
   platform stores and serves the bytes as-is and does not unzip them. The `.zip` extension is a storage convention,
   not an enforced format.
@@ -42,8 +45,8 @@ The two profiling approaches this enables:
 - **Tracing profiler** (records specific events): record only named events. Better for optimization once you know
   what to look for.
 
-Missing artifacts do not fail an otherwise successful episode. Results and replay upload remain the
-success-critical artifacts.
+Missing, empty, and failed artifact uploads do not fail an otherwise successful episode. Results and replay remain
+success-critical.
 
 ## Visibility
 
