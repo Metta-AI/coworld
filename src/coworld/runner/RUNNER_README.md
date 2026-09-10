@@ -45,10 +45,11 @@ contains:
 - `logs/policy_agent_{slot}.log` — combined stdout+stderr for each player container
 - `player_seats.json` — game-hosted player inputs and output locations; absent in platform-hosted mode
 - `players/{slot}/file` — verified game-hosted player bytes; absent in platform-hosted mode
-- `policy_artifact_{slot}.zip` — optional artifact each player uploads (max 200 MiB). The runner mounts the
-  workspace into each player container and sets `COWORLD_PLAYER_ARTIFACT_UPLOAD_URL` to a `file://` URL pointing here,
-  so a platform-hosted player writes straight to the workspace. A game-hosted game writes the same path from
-  `player_seats.json`. Absent if nothing is produced. See
+- `policy_artifact_{slot}.zip` — optional artifact each player uploads (max 200 MiB). The runner mounts
+  a private Docker-owned volume into each platform-hosted player container and sets `COWORLD_PLAYER_ARTIFACT_UPLOAD_URL`
+  to a `file://` URL there. After teardown, the latest regular file is collected here, even if the episode failed.
+  A game-hosted game writes the same output path from `player_seats.json`.
+  Absent if the player uploads nothing; symlinks and special files are not collected. See
   [artifacts/PLAYER_ARTIFACT.md](../docs/artifacts/PLAYER_ARTIFACT.md).
 
 The runner does not bundle these into a single archive — bundling is a consumption-time concern. For the canonical

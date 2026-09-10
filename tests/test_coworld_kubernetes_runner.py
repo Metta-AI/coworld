@@ -8,6 +8,7 @@ import socket
 import socketserver
 import subprocess
 import sys
+import tarfile
 import threading
 import time
 import zipfile
@@ -750,8 +751,11 @@ def test_run_episode_containers_uses_docker_dns_and_omits_policy_names_env(tmp_p
         commands.append(command)
         return FakeProcess()
 
-    def fake_run(command, **_kwargs):
+    def fake_run(command, **kwargs):
         run_commands.append(command)
+        if command[:2] == ["docker", "cp"] and command[-1] == "-":
+            with tarfile.open(fileobj=kwargs["stdout"], mode="w"):
+                pass
         return subprocess.CompletedProcess(command, 0)
 
     monkeypatch.setattr(runner_module.subprocess, "Popen", fake_popen)
@@ -769,7 +773,9 @@ def test_run_episode_containers_uses_docker_dns_and_omits_policy_names_env(tmp_p
         verify_replay=False,
     )
 
-    game_command, player_command = commands
+    game_command, start_command = commands
+    player_command = next(command for command in run_commands if command[:2] == ["docker", "create"])
+    assert start_command == ["docker", "start", "--attach", "coworld-run-player-session-1-0"]
     env_values = [value for index, value in enumerate(game_command) if index > 0 and game_command[index - 1] == "-e"]
     assert all(not value.startswith("COWORLD_POLICY_NAMES=") for value in env_values)
     assert f"{runner_module.PLAYER_FAILURE_ENV_VAR}=file:///coworld/player_failure.json" in env_values
@@ -785,9 +791,8 @@ def test_run_episode_containers_uses_docker_dns_and_omits_policy_names_env(tmp_p
     assert "--add-host" not in player_command
     assert "host.docker.internal:host-gateway" not in player_command
     assert "COWORLD_PLAYER_WS_URL=ws://coworld-game-session-1:8080/player?slot=0&token=token-0" in player_command
-    # The player container is given a workspace mount and a file:// artifact upload URL for local parity.
-    workspace = str(EpisodeArtifacts.create(tmp_path).workspace)
-    assert f"{workspace}:/coworld-artifact:rw" in player_command
+    assert player_command[player_command.index("-v") + 1] == "/coworld-artifact"
+    assert ["docker", "rm", "-f", "-v", "coworld-run-player-session-1-0"] in run_commands
     assert "COWORLD_PLAYER_ARTIFACT_UPLOAD_URL=file:///coworld-artifact/policy_artifact_0.zip" in player_command
 
 
@@ -927,15 +932,14 @@ def test_resolve_local_extra_ports_rejects_invalid_or_duplicate_mappings(value, 
         )
 
 
-def test_run_episode_containers_player_artifact_round_trips_to_workspace(tmp_path, monkeypatch):
-    """A player that uploads to COWORLD_PLAYER_ARTIFACT_UPLOAD_URL lands a file the runner can find.
-
-    Simulates the player by having the fake player process write to the file:// URL the runner
-    injected (the local mount maps /coworld-artifact -> workspace), then asserts the bytes appear
-    at the runner's policy_artifact_path(slot). This exercises the real io.write_data file:// path
-    and confirms the runner and player agree on the artifact location.
-    """
+@pytest.mark.parametrize("artifact_kind", ["regular", "missing", "symlink", "directory", "fifo"])
+@pytest.mark.parametrize("game_failed", [False, True])
+def test_run_episode_containers_player_artifact_round_trips_to_workspace(
+    tmp_path, monkeypatch, artifact_kind, game_failed
+):
     artifacts = EpisodeArtifacts.create(tmp_path)
+    secret = tmp_path / "config.json"
+    secret.write_bytes(b"game-owned secret")
 
     class FakeProcess:
         def poll(self):
@@ -950,41 +954,60 @@ def test_run_episode_containers_player_artifact_round_trips_to_workspace(tmp_pat
     monkeypatch.setattr(runner_module, "_require_http_ok", lambda *_args, **_kwargs: None)
     monkeypatch.setattr(runner_module, "_require_bad_player_rejected", noop_async)
     monkeypatch.setattr(runner_module, "_require_global_message", noop_async)
-    monkeypatch.setattr(runner_module, "_wait_for_game_exit", lambda *_args, **_kwargs: None)
+
+    def wait_for_game_exit(*_args, **_kwargs):
+        if game_failed:
+            raise runner_io.RunnerEpisodeError("game failed", error_type="game_unhealthy")
+
+    monkeypatch.setattr(runner_module, "_wait_for_game_exit", wait_for_game_exit)
     monkeypatch.setattr(runner_module, "_wait_for_player_exit", lambda *_args, **_kwargs: None)
 
     def fake_popen(command, **_kwargs):
-        # Act as the player: write to the artifact URL the runner injected. The local mount maps
-        # /coworld-artifact onto the workspace, so rewrite that container path to the host workspace.
-        for index, token in enumerate(command):
-            if token == "-e" and command[index + 1].startswith("COWORLD_PLAYER_ARTIFACT_UPLOAD_URL="):
-                url = command[index + 1].split("=", 1)[1]
-                host_url = url.replace("file:///coworld-artifact/", f"file://{artifacts.workspace}/")
-                runner_io.write_data(host_url, b"player-artifact-zip-bytes", content_type="application/zip")
         return FakeProcess()
 
-    monkeypatch.setattr(runner_module.subprocess, "Popen", fake_popen)
-    monkeypatch.setattr(
-        runner_module.subprocess,
-        "run",
-        lambda command, **_kwargs: subprocess.CompletedProcess(command, 0),
-    )
+    def fake_run(command, **kwargs):
+        if command[:2] == ["docker", "cp"] and command[-1] == "-":
+            with tarfile.open(fileobj=kwargs["stdout"], mode="w") as archive:
+                if artifact_kind != "missing":
+                    member = tarfile.TarInfo("coworld-artifact/policy_artifact_0.zip")
+                    if artifact_kind == "regular":
+                        payload = b"player-artifact-zip-bytes"
+                        member.size = len(payload)
+                        archive.addfile(member, io.BytesIO(payload))
+                    else:
+                        member.type = {
+                            "symlink": tarfile.SYMTYPE,
+                            "directory": tarfile.DIRTYPE,
+                            "fifo": tarfile.FIFOTYPE,
+                        }[artifact_kind]
+                        member.linkname = str(secret)
+                        archive.addfile(member)
+        return subprocess.CompletedProcess(command, 0)
 
-    runner_module.run_episode_containers(
-        EpisodeRunSpec(
-            game=RunnableLaunchSpec(image="game:latest"),
-            players=[PlayerLaunchSpec(image="player:latest")],
-            tokens=["token-0"],
-            artifacts=artifacts,
-            timeout_seconds=1,
-            container_prefix="coworld-run",
-        ),
-        verify_replay=False,
+    monkeypatch.setattr(runner_module.subprocess, "Popen", fake_popen)
+    monkeypatch.setattr(runner_module.subprocess, "run", fake_run)
+
+    spec = EpisodeRunSpec(
+        game=RunnableLaunchSpec(image="game:latest"),
+        players=[PlayerLaunchSpec(image="player:latest")],
+        tokens=["token-0"],
+        artifacts=artifacts,
+        timeout_seconds=1,
+        container_prefix="coworld-run",
     )
+    if game_failed:
+        with pytest.raises(runner_io.RunnerEpisodeError, match="game failed"):
+            runner_module.run_episode_containers(spec, verify_replay=False)
+    else:
+        runner_module.run_episode_containers(spec, verify_replay=False)
 
     artifact_path = artifacts.policy_artifact_path(0)
-    assert artifact_path.exists()
-    assert artifact_path.read_bytes() == b"player-artifact-zip-bytes"
+    if artifact_kind == "regular":
+        assert artifact_path.read_bytes() == b"player-artifact-zip-bytes"
+    else:
+        assert not artifact_path.exists()
+        assert not artifact_path.is_symlink()
+    assert secret.read_bytes() == b"game-owned secret"
 
 
 def test_run_episode_containers_verifies_raw_replay_uri(tmp_path, monkeypatch):

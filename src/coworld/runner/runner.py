@@ -11,6 +11,7 @@ import shutil
 import socket
 import subprocess
 import sys
+import tarfile
 import tempfile
 import time
 from contextlib import ExitStack
@@ -630,43 +631,51 @@ def run_episode_containers(spec: EpisodeRunSpec, *, verify_replay: bool = True) 
             for slot, player in enumerate(spec.players):
                 container_name = f"{spec.container_prefix}-player-{run_id}-{slot}"
                 engine_ws_url = _player_container_ws_url(game_network_alias, slot, spec.tokens[slot])
-                player_containers.append(container_name)
                 player_log_path = spec.artifacts.policy_log_path(slot)
                 player_log = stack.enter_context(player_log_path.open("w"))
-                # Local parity for the hosted per-player artifact upload: mount the workspace into the
-                # player container and hand it a file:// URL for its per-slot artifact .zip. io.write_data
-                # creates parent dirs, so the player writes straight to the workspace and the runner
-                # finds it at policy_artifact_path(slot). No upload server needed locally.
+                # Docker owns the private volume, including files written by arbitrary container UIDs.
                 artifact_filename = spec.artifacts.policy_artifact_path(slot).name
-                artifact_mount = f"{spec.artifacts.workspace}:/coworld-artifact:rw"
                 artifact_upload_url = f"file:///coworld-artifact/{artifact_filename}"
+                subprocess.run(
+                    [
+                        "docker",
+                        "create",
+                        "--name",
+                        container_name,
+                        "--network",
+                        LOCAL_DOCKER_NETWORK,
+                        "-v",
+                        "/coworld-artifact",
+                        *docker_env_args(player.env),
+                        *secret_env_key_args,
+                        "-e",
+                        f"COWORLD_PLAYER_WS_URL={engine_ws_url}",
+                        "-e",
+                        f"COGAMES_ENGINE_WS_URL={engine_ws_url}",
+                        "-e",
+                        f"COWORLD_PLAYER_ARTIFACT_UPLOAD_URL={artifact_upload_url}",
+                        *docker_image_command(player),
+                    ],
+                    check=True,
+                    stdout=subprocess.DEVNULL,
+                    env=player_subprocess_env,
+                )
+                player_containers.append(container_name)
+                with tempfile.TemporaryDirectory(prefix="coworld-artifact-init-") as staging:
+                    artifact_dir = Path(staging) / "coworld-artifact"
+                    artifact_dir.mkdir(mode=0o777)
+                    artifact_dir.chmod(0o777)
+                    subprocess.run(
+                        ["docker", "cp", str(artifact_dir), f"{container_name}:/"],
+                        check=True,
+                    )
                 player_processes.append(
                     (
                         subprocess.Popen(
-                            [
-                                "docker",
-                                "run",
-                                "--rm",
-                                "--name",
-                                container_name,
-                                "--network",
-                                LOCAL_DOCKER_NETWORK,
-                                "-v",
-                                artifact_mount,
-                                *docker_env_args(player.env),
-                                *secret_env_key_args,
-                                "-e",
-                                f"COWORLD_PLAYER_WS_URL={engine_ws_url}",
-                                "-e",
-                                f"COGAMES_ENGINE_WS_URL={engine_ws_url}",
-                                "-e",
-                                f"COWORLD_PLAYER_ARTIFACT_UPLOAD_URL={artifact_upload_url}",
-                                *docker_image_command(player),
-                            ],
+                            ["docker", "start", "--attach", container_name],
                             stdout=player_log,
                             stderr=subprocess.STDOUT,
                             text=True,
-                            env=player_subprocess_env,
                         ),
                         player_log_path,
                     )
@@ -702,9 +711,39 @@ def run_episode_containers(spec: EpisodeRunSpec, *, verify_replay: bool = True) 
                 resolved_local_ports=local_ports,
             )
     finally:
-        for container_name in player_containers:
-            subprocess.run(["docker", "rm", "-f", container_name], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-        subprocess.run(["docker", "rm", "-f", game_container], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        try:
+            for slot, container_name in enumerate(player_containers):
+                subprocess.run(
+                    ["docker", "stop", "--time", "0", container_name],
+                    stdout=subprocess.DEVNULL,
+                    stderr=subprocess.DEVNULL,
+                )
+                # Read through Docker so root-owned output never needs host cleanup privileges.
+                with tempfile.TemporaryFile() as archive_file:
+                    copied = subprocess.run(
+                        ["docker", "cp", f"{container_name}:/coworld-artifact", "-"],
+                        stdout=archive_file,
+                        stderr=subprocess.PIPE,
+                    )
+                    if copied.returncode:
+                        raise RuntimeError(copied.stderr.decode())
+                    archive_file.seek(0)
+                    with tarfile.open(fileobj=archive_file) as archive:
+                        artifact_name = f"coworld-artifact/{spec.artifacts.policy_artifact_path(slot).name}"
+                        for member in archive:
+                            if member.name == artifact_name and member.isfile():
+                                source = archive.extractfile(member)
+                                assert source is not None
+                                with source, spec.artifacts.policy_artifact_path(slot).open("wb") as destination:
+                                    shutil.copyfileobj(source, destination)
+        finally:
+            for container_name in player_containers:
+                subprocess.run(
+                    ["docker", "rm", "-f", "-v", container_name],
+                    stdout=subprocess.DEVNULL,
+                    stderr=subprocess.DEVNULL,
+                )
+            subprocess.run(["docker", "rm", "-f", game_container], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
 
 
 def verify_replay_loadable(

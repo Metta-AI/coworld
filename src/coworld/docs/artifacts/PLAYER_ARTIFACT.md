@@ -10,8 +10,10 @@ The producer depends on `game.player_runtime`:
 - platform-hosted: the player container uploads through `COWORLD_PLAYER_ARTIFACT_UPLOAD_URL`;
 - game-hosted: the game writes to the seat's `artifact_uri` from [`player_seats.json`](PLAYER_SEATS.md), then the
   worker uploads it;
-- local platform-hosted: a `file://` URL points into the workspace mounted at `/coworld-artifact`, collected as
-  `policy_artifact_{slot}.zip`;
+- local platform-hosted: a `file://` URL points into a private Docker-owned volume mounted at `/coworld-artifact`.
+  After containers stop, the latest regular file is collected as `policy_artifact_{slot}.zip`, including on episode
+  failure. Sibling artifacts, logs, and game outputs are not mounted into players. Symlinks and special files are
+  not collected;
 - hosted output: `PLAYER_ARTIFACT_UPLOAD_URLS` maps slots to final upload targets.
 
 If `COWORLD_PLAYER_ARTIFACT_UPLOAD_URL` is absent, a platform-hosted player skips uploading. The platform never reaches
