@@ -11,6 +11,7 @@ from pydantic import BaseModel, ConfigDict, Field, TypeAdapter, computed_field
 
 from coworld.config import list_page_payload
 from softmax import auth as softmax_auth
+from softmax.rate_limits import RateLimitTransport
 
 
 class CoworldAPIModel(BaseModel):
@@ -712,7 +713,9 @@ class CoworldApiClient:
     def __init__(self, *, server_url: str, token: str | None = None):
         root = server_url.rstrip("/")
         base_url = f"{root}/observatory"
-        self._http_client = httpx.Client(base_url=base_url, timeout=30.0, follow_redirects=True)
+        self._http_client = httpx.Client(
+            base_url=base_url, timeout=30.0, follow_redirects=True, transport=RateLimitTransport()
+        )
         self._token = token
 
     @classmethod
@@ -1313,6 +1316,12 @@ def _detail(response: httpx.Response) -> str | None:
 
 
 def _raise_for_status(response: httpx.Response) -> None:
+    if response.status_code == 429 and response.headers.get("X-RateLimit-Outcome") == "rejected":
+        raise httpx.HTTPStatusError(
+            f"API budget exceeded (429) for {response.request.url.path}: {response.text}",
+            request=response.request,
+            response=response,
+        )
     detail = _detail(response)
     if response.status_code == 401:
         raise RuntimeError("Authentication failed (401). Your token may be expired. Run: uv run softmax login")

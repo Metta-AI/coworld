@@ -31,6 +31,22 @@ def client(httpserver: HTTPServer) -> Iterator[CoworldApiClient]:
         yield c
 
 
+def test_shared_budget_rejection_preserves_retry_guidance(client, httpserver):
+    detail = {
+        "type": "api_rate_limit_exceeded",
+        "retry_after_seconds": 60,
+        "documentation_url": "https://docs.softmax.com/guides/rate-limits",
+    }
+    httpserver.expect_request("/observatory/whoami").respond_with_json(
+        {"detail": detail}, status=429, headers={"X-RateLimit-Outcome": "rejected", "Retry-After": "60"}
+    )
+    with pytest.raises(httpx.HTTPStatusError) as error:
+        client._get("/whoami", dict)
+    assert detail["documentation_url"] in str(error.value)
+    assert error.value.response.json()["detail"] == detail
+    assert error.value.response.headers["Retry-After"] == "60"
+
+
 @pytest.mark.parametrize(
     "body, response_type, expected",
     [
