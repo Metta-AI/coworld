@@ -40,6 +40,7 @@ from coworld.replay_viewer import source_replay_viewer_bundle
 from coworld.runner.runner import assert_docker_image_reachable
 from coworld.types import MANIFEST_ROLE_SECTIONS
 from softmax import auth as softmax_auth
+from softmax.rate_limits import RateLimitTransport
 
 _LOCAL_TAG_SEPARATOR_RE = re.compile(r"[^a-z0-9._-]+")
 _IMAGE_ID_RE = re.compile(r"^img_[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$")
@@ -389,7 +390,9 @@ class CoworldUploadClient:
 
     def __init__(self, server_url: str, token: str):
         self._server_url = server_url.rstrip("/")
-        self._http_client = httpx.Client(base_url=f"{self._server_url}/observatory", timeout=30.0)
+        self._http_client = httpx.Client(
+            base_url=f"{self._server_url}/observatory", timeout=30.0, transport=RateLimitTransport()
+        )
         self._token = token
 
     @classmethod
@@ -1522,6 +1525,12 @@ def _reject_mutable_registry_image_refs(manifest: dict[str, object]) -> None:
 
 
 def _raise_for_status(response: httpx.Response) -> None:
+    if response.status_code == 429 and response.headers.get("X-RateLimit-Outcome") == "rejected":
+        raise httpx.HTTPStatusError(
+            f"API budget exceeded (429) for {response.request.url.path}: {response.text}",
+            request=response.request,
+            response=response,
+        )
     if response.status_code == 401:
         raise RuntimeError("Authentication failed (401). Your token may be expired. Run: uv run softmax login")
     if response.status_code == 403:

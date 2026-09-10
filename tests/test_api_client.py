@@ -31,7 +31,8 @@ def client(httpserver: HTTPServer) -> Iterator[CoworldApiClient]:
         yield c
 
 
-def test_shared_budget_rejection_preserves_retry_guidance(client, httpserver):
+@pytest.mark.parametrize("upload", [False, True])
+def test_shared_budget_rejection_preserves_retry_guidance(client, httpserver, upload):
     detail = {
         "type": "api_rate_limit_exceeded",
         "retry_after_seconds": 60,
@@ -41,7 +42,11 @@ def test_shared_budget_rejection_preserves_retry_guidance(client, httpserver):
         {"detail": detail}, status=429, headers={"X-RateLimit-Outcome": "rejected", "Retry-After": "60"}
     )
     with pytest.raises(httpx.HTTPStatusError) as error:
-        client._get("/whoami", dict)
+        if upload:
+            with CoworldUploadClient(server_url=httpserver.url_for(""), token="token") as upload_client:
+                upload_client.whoami()
+        else:
+            client._get("/whoami", dict)
     assert detail["documentation_url"] in str(error.value)
     assert error.value.response.json()["detail"] == detail
     assert error.value.response.headers["Retry-After"] == "60"

@@ -89,6 +89,30 @@ class _FakeCoworldUploadClient:
         )
 
 
+def test_manifest_upload_retries_shared_rejection(httpserver: HTTPServer) -> None:
+    manifest = {"name": "unit-test-game", "version": "0.1.0"}
+    uploaded = CoworldUploadResponse(
+        id="cow_00000000-0000-0000-0000-000000000999",
+        name="unit-test-game",
+        version="0.1.0",
+        manifest=manifest,
+        manifest_hash="sha256:manifest-hash",
+        size_bytes=1234,
+        canonical=True,
+    )
+    for status, body in [(429, {"detail": "budget exceeded"}), (200, uploaded.model_dump())]:
+        httpserver.expect_ordered_request(
+            "/observatory/v2/coworlds/upload",
+            method="POST",
+            headers={"Authorization": "Bearer token"},
+            json={"manifest": manifest},
+        ).respond_with_json(body, status=status, headers={"X-RateLimit-Outcome": "rejected", "Retry-After": "0"})
+
+    with CoworldUploadClient(server_url=httpserver.url_for(""), token="token") as client:
+        assert client.upload_manifest(manifest) == uploaded
+    httpserver.check_assertions()
+
+
 def test_upload_client_token_lookup_uses_server_url(monkeypatch: pytest.MonkeyPatch) -> None:
     requested_servers: list[str] = []
 
