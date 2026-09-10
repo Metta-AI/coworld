@@ -15,6 +15,7 @@ import tempfile
 import time
 import zipfile
 from collections.abc import Iterator
+from contextlib import contextmanager
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
@@ -34,8 +35,8 @@ from coworld.config import DEFAULT_SUBMIT_SERVER, list_page_payload, participati
 from coworld.image_refs import is_digest_pinned_image_ref, is_mutable_registry_image_ref
 from coworld.manifest import validate_upload_manifest
 from coworld.manifest_validation import validate_coworld_manifest_game_configs
+from coworld.player_files import player_file_bytes, resolve_player_file
 from coworld.replay_viewer import source_replay_viewer_bundle
-from coworld.player_files import player_file_bytes
 from coworld.runner.runner import assert_docker_image_reachable
 from coworld.types import MANIFEST_ROLE_SECTIONS
 from softmax import auth as softmax_auth
@@ -1144,36 +1145,36 @@ def upload_coworld(
     hosted_smoke_timeout_seconds: float = 1800.0,
     hosted_smoke_poll_seconds: float = 5.0,
 ) -> CoworldUploadResult:
-    package = load_coworld_package(manifest_path)
-    manifest = package.manifest.model_dump(exclude_none=True)
-    _reject_mutable_registry_image_refs(manifest)
-    _replay_viewer_bundle_files(manifest, manifest_path.parent)
+    with _certification_snapshot(manifest_path) as manifest_path:
+        package = load_coworld_package(manifest_path)
+        manifest = package.manifest.model_dump(exclude_none=True)
+        _reject_mutable_registry_image_refs(manifest)
 
-    certification_key = _certification_cache_key(package.manifest_path, manifest=manifest)
-    certification_cache_path = _certified_manifest_cache_path()
-    certified_manifests = _load_string_cache(certification_cache_path)
-    if certification_key not in certified_manifests:
-        certify_coworld(package.manifest_path, timeout_seconds=timeout_seconds)
-        cache_certified_manifest(package.manifest_path, cache_key=certification_key)
+        certification_key = _certification_cache_key(package.manifest_path, manifest=manifest)
+        certified_manifests = _load_string_cache(_certified_manifest_cache_path())
+        if certification_key not in certified_manifests:
+            with tempfile.TemporaryDirectory(prefix="coworld-upload-episode-") as workspace:
+                certify_coworld(package.manifest_path, workspace=Path(workspace), timeout_seconds=timeout_seconds)
+            cache_certified_manifest(package.manifest_path, cache_key=certification_key)
 
-    with CoworldUploadClient.from_login(server_url=server) as client:
-        upload_manifest = _manifest_with_softmax_image_ids(client, manifest)
-        upload_manifest = _submit_player_files(client, upload_manifest, manifest_path.parent)
-        upload_manifest = _submit_wasm_reporters(client, upload_manifest, manifest_path.parent)
-        upload_manifest = _submit_replay_viewer_bundle(client, upload_manifest, manifest_path.parent)
-        response = client.upload_manifest(upload_manifest)
-        if wait_for_hosted_smoke:
-            status = get_coworld_status(
-                client,
-                coworld_id=response.id,
-                wait_for_hosted_smoke=True,
-                timeout_seconds=hosted_smoke_timeout_seconds,
-                poll_seconds=hosted_smoke_poll_seconds,
-            )
-            response = status.coworld
-            hosted_smoke_episode_ids = status.hosted_smoke_episode_ids
-        else:
-            hosted_smoke_episode_ids = ()
+        with CoworldUploadClient.from_login(server_url=server) as client:
+            upload_manifest = _manifest_with_softmax_image_ids(client, manifest)
+            upload_manifest = _submit_player_files(client, upload_manifest, manifest_path.parent)
+            upload_manifest = _submit_wasm_reporters(client, upload_manifest, manifest_path.parent)
+            upload_manifest = _submit_replay_viewer_bundle(client, upload_manifest, manifest_path.parent)
+            response = client.upload_manifest(upload_manifest)
+            if wait_for_hosted_smoke:
+                status = get_coworld_status(
+                    client,
+                    coworld_id=response.id,
+                    wait_for_hosted_smoke=True,
+                    timeout_seconds=hosted_smoke_timeout_seconds,
+                    poll_seconds=hosted_smoke_poll_seconds,
+                )
+                response = status.coworld
+                hosted_smoke_episode_ids = status.hosted_smoke_episode_ids
+            else:
+                hosted_smoke_episode_ids = ()
 
     return CoworldUploadResult(
         id=response.id,
@@ -2007,6 +2008,53 @@ def _coworld_cache_path(filename: str) -> Path:
     return base / "coworld" / filename
 
 
+def _certification_payload_files(manifest: dict[str, Any], package_root: Path) -> Iterator[tuple[str, Path]]:
+    root = package_root.resolve()
+    paths = [Path(reference["wasm"]) for reference in manifest.get("reporter", []) if "wasm" in reference]
+    source_bundle = _replay_viewer_bundle_files(manifest, root)
+    if source_bundle is not None:
+        bundle_dir, files = source_bundle
+        bundle_path = Path(manifest["game"]["replay_viewer"]["bundle"])
+        paths.extend(bundle_path / path.relative_to(bundle_dir) for path in files)
+    for path in paths:
+        relative = Path(os.path.normpath(path))
+        if relative.is_absolute() or ".." in relative.parts:
+            raise ValueError(f"Certification payload path must be package-relative: {path}")
+        source = (root / relative).resolve()
+        source.relative_to(root)
+        yield relative.as_posix(), source
+
+
+@contextmanager
+def _certification_snapshot(manifest_path: Path) -> Iterator[Path]:
+    # Certification and submission must read the same bytes even if the author
+    # rebuilds the package while an episode or an upload is running.
+    manifest_path = manifest_path.resolve()
+    content = manifest_path.read_bytes()
+    manifest = validate_upload_manifest(json.loads(content)).runtime_manifest.model_dump(exclude_none=True)
+    player_files = {
+        Path(player["file"]): resolve_player_file(Path(player["file"]), package_root=manifest_path.parent)
+        for player in manifest["player"]
+        if "file" in player and not player["file"].startswith("sha256:")
+    }
+    with tempfile.TemporaryDirectory(prefix="coworld-certification-") as directory:
+        root = Path(directory)
+        snapshot = root / manifest_path.name
+        snapshot.write_bytes(content)
+        for relative, source in _certification_payload_files(manifest, manifest_path.parent):
+            target = root / relative
+            target.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copyfile(source, target)
+        for relative, source in player_files.items():
+            target = root / relative
+            target.parent.mkdir(parents=True, exist_ok=True)
+            if source.is_dir():
+                shutil.copytree(source, target, symlinks=True, dirs_exist_ok=True)
+            else:
+                shutil.copyfile(source, target, follow_symlinks=False)
+        yield snapshot
+
+
 def _certification_cache_key(manifest_path: Path, *, manifest: dict[str, object] | None = None) -> str:
     manifest_data = manifest if manifest is not None else json.loads(manifest_path.read_text(encoding="utf-8"))
     player_file_digests = []
@@ -2030,6 +2078,10 @@ def _certification_cache_key(manifest_path: Path, *, manifest: dict[str, object]
         "transcript": _sha256_digest(EXECUTABLE_TRANSCRIPT_PATH.read_bytes()),
         "local_images": _certification_local_image_hashes(manifest_data),
         "player_files": player_file_digests,
+        "payload_files": {
+            path: _sha256_digest(source.read_bytes())
+            for path, source in _certification_payload_files(manifest_data, manifest_path.parent)
+        },
     }
     return _sha256_digest(json.dumps(key, sort_keys=True, separators=(",", ":")).encode())
 

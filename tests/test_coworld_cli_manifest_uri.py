@@ -15,6 +15,7 @@ from coworld.certifier import load_executable_transcript
 from coworld.cli import app
 from coworld.runner.runner import EpisodeArtifacts
 from coworld.types import CoworldEpisodeJobSpec, CoworldPlayerFileSpec, StepResult
+from coworld.upload import _certification_cache_key, _certified_manifest_cache_path
 
 COWORLD_ID = "cow_00000000-0000-0000-0000-000000000001"
 COWORLD_PATH = f"/v2/coworlds/{COWORLD_ID}"
@@ -138,8 +139,7 @@ def test_coworld_certify_prints_replay_liveness_and_inspection_command(
 ) -> None:
     opened_urls: list[str] = []
     cached_manifests: list[Path] = []
-    manifest_path = tmp_path / "coworld_manifest.json"
-    manifest_path.write_text('{"game": {"name": "unit"}}\n', encoding="utf-8")
+    manifest_path = _example_manifest(tmp_path)
     workspace = tmp_path / "workspace"
     artifacts = SimpleNamespace(
         workspace=workspace,
@@ -170,7 +170,9 @@ def test_coworld_certify_prints_replay_liveness_and_inspection_command(
     assert f"Inspect replay: uv run coworld replay {manifest_path} {workspace / 'replay.json'}" in result.output
     assert f"Inspect logs: ls {workspace / 'logs'}" in result.output
     assert f"Transcript report: {report_path.as_uri()}" in result.output
-    assert cached_manifests == [manifest_path.resolve()]
+    assert len(cached_manifests) == 1
+    assert cached_manifests[0] != manifest_path.resolve()
+    assert not cached_manifests[0].exists()
     assert opened_urls == [report_path.as_uri()]
     html = report_path.read_text(encoding="utf-8")
     assert "Coworld certification" in html
@@ -184,8 +186,7 @@ def test_coworld_certify_prints_static_replay_liveness_and_static_inspection_hin
 ) -> None:
     opened_urls: list[str] = []
     cached_manifests: list[Path] = []
-    manifest_path = tmp_path / "coworld_manifest.json"
-    manifest_path.write_text('{"game": {"name": "unit"}}\n', encoding="utf-8")
+    manifest_path = _example_manifest(tmp_path)
     workspace = tmp_path / "workspace"
     artifacts = SimpleNamespace(
         workspace=workspace,
@@ -223,15 +224,16 @@ def test_coworld_certify_prints_static_replay_liveness_and_static_inspection_hin
     assert "see STATIC_REPLAY_VIEWERS.md" in result.output
     assert f"Inspect logs: ls {workspace / 'logs'}" in result.output
     assert len(opened_urls) == 1
-    assert cached_manifests == [manifest_path.resolve()]
+    assert len(cached_manifests) == 1
+    assert cached_manifests[0] != manifest_path.resolve()
+    assert not cached_manifests[0].exists()
 
 
 def test_coworld_certify_failure_writes_report_and_suppresses_traceback(
     monkeypatch: MonkeyPatch, tmp_path: Path
 ) -> None:
     opened_urls: list[str] = []
-    manifest_path = tmp_path / "coworld_manifest.json"
-    manifest_path.write_text('{"game": {"name": "unit"}}\n', encoding="utf-8")
+    manifest_path = _example_manifest(tmp_path)
     transcript = load_executable_transcript()
     step_by_id = {step.id: step for step in transcript.steps}
 
@@ -280,8 +282,7 @@ def test_coworld_certify_error_without_failed_step_marks_report_failed(
     monkeypatch: MonkeyPatch, tmp_path: Path
 ) -> None:
     opened_urls: list[str] = []
-    manifest_path = tmp_path / "coworld_manifest.json"
-    manifest_path.write_text('{"game": {"name": "unit"}}\n', encoding="utf-8")
+    manifest_path = _example_manifest(tmp_path)
     transcript = load_executable_transcript()
     step_by_id = {step.id: step for step in transcript.steps}
 
@@ -397,7 +398,7 @@ def test_coworld_play_downloads_missing_coworld_id_cache(tmp_path: Path, monkeyp
 
 
 def test_coworld_certify_downloads_missing_coworld_id_cache(tmp_path: Path, monkeypatch: MonkeyPatch) -> None:
-    manifest = {"game": {"name": "downloaded-cache"}, "player": []}
+    manifest = json.loads(_example_manifest(tmp_path).read_text())
     captured: dict[str, object] = {}
     downloads: list[tuple[str, Path, str, bool]] = []
 
@@ -411,6 +412,9 @@ def test_coworld_certify_downloads_missing_coworld_id_cache(tmp_path: Path, monk
         downloads.append((coworld_ref, output_dir, server, refresh))
         manifest_path = output_dir / coworld_ref / "coworld_manifest.json"
         manifest_path.parent.mkdir(parents=True)
+        viewer = manifest_path.parent / manifest["game"]["replay_viewer"]["bundle"]
+        viewer.mkdir(parents=True)
+        (viewer / "index.html").write_text("<html></html>", encoding="utf-8")
         manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
         (output_dir / coworld_ref / "coworld_images.json").write_text("{}", encoding="utf-8")
 
@@ -432,6 +436,8 @@ def test_coworld_certify_downloads_missing_coworld_id_cache(tmp_path: Path, monk
             reporter_references=[],
         )
 
+    monkeypatch.setattr("coworld.upload._local_image_client_hash", lambda image: "sha256:runtime")
+    monkeypatch.setenv("XDG_CACHE_HOME", str(tmp_path / "cache"))
     monkeypatch.chdir(tmp_path)
     monkeypatch.setattr("coworld.cli.download_coworld_cmd", fake_download_coworld_cmd)
     monkeypatch.setattr("coworld.cli.certify_coworld", fake_certify_coworld)
@@ -443,7 +449,7 @@ def test_coworld_certify_downloads_missing_coworld_id_cache(tmp_path: Path, monk
 
     assert result.exit_code == 0, result.output
     assert downloads == [(COWORLD_ID, Path("./coworld"), "http://example.test", False)]
-    assert captured["manifest_path"] == (tmp_path / "coworld" / COWORLD_ID / "coworld_manifest.json").resolve()
+    assert captured["manifest_path"] != (tmp_path / "coworld" / COWORLD_ID / "coworld_manifest.json").resolve()
     assert captured["manifest"] == manifest
     assert "Transcript: coworld-executable (10 steps passed)" in result.output
     assert "Degree:" not in result.output
@@ -1157,6 +1163,9 @@ def _materialized_template(tmp_path: Path, template_path: Path) -> Path:
                     runnable["image"] = placeholders[image]
     manifest_path = tmp_path / template_path.parent.name / "coworld_manifest.json"
     manifest_path.parent.mkdir(parents=True, exist_ok=True)
+    viewer = manifest_path.parent / manifest["game"]["replay_viewer"]["bundle"]
+    viewer.mkdir(parents=True)
+    (viewer / "index.html").write_text("<html></html>", encoding="utf-8")
     manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
     return manifest_path
 
@@ -1241,3 +1250,66 @@ def test_run_episode_overrides_do_not_require_the_bundled_fixture(monkeypatch: M
         hashlib.sha256(b"second").hexdigest(),
     ]
     assert cast(dict[str, object], captured["kwargs"])["player_file_paths"] == overrides
+
+
+@pytest.mark.parametrize("payload", ["wasm", "viewer", "manifest"])
+@pytest.mark.parametrize("fails", [False, True])
+def test_certify_caches_exact_snapshot_during_source_mutation(
+    tmp_path: Path, monkeypatch: MonkeyPatch, payload: str, fails: bool
+) -> None:
+    manifest_path = _example_manifest(tmp_path)
+    manifest = json.loads(manifest_path.read_text())
+    manifest["reporter"] = [
+        {
+            "wasm": "reporter.wasm",
+            "id": "recap",
+            "attributes": {
+                "purpose": "Summary",
+                "world": "softmax:reporter@0.1.0",
+                "outputs": [{"name": "summary", "type": "text", "description": "Summary"}],
+            },
+        }
+    ]
+    manifest["game"]["replay_viewer"] = {"bundle": "viewer"}
+    manifest_path.write_text(json.dumps(manifest))
+    root = manifest_path.parent
+    (root / "reporter.wasm").write_bytes(b"certified-wasm")
+    (root / "viewer").mkdir()
+    (root / "viewer/index.html").write_bytes(b"certified-viewer")
+    relative = {"wasm": "reporter.wasm", "viewer": "viewer/index.html", "manifest": manifest_path.name}[payload]
+    original_bytes = (root / relative).read_bytes()
+    monkeypatch.setenv("XDG_CACHE_HOME", str(tmp_path / "cache"))
+    monkeypatch.setattr("coworld.upload._local_image_client_hash", lambda image: "sha256:runtime")
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr("coworld.runner.runner._repo_root", lambda: tmp_path)
+    before = _certification_cache_key(manifest_path)
+    observed: list[bytes] = []
+    certified_keys: list[str] = []
+    workspaces: list[Path] = []
+
+    def certify(path: Path, **kwargs: object) -> SimpleNamespace:
+        certified_keys.append(_certification_cache_key(path))
+        workspaces.append(cast(Path, kwargs["workspace"]))
+        changed = original_bytes + b"\n" if payload == "manifest" else b"rebuilt"
+        (root / relative).write_bytes(changed)
+        observed.append((path.parent / relative).read_bytes())
+        if fails:
+            raise RuntimeError("certification failed")
+        return SimpleNamespace(
+            transcript=load_executable_transcript(),
+            step_results=[],
+            reporter_references=[],
+            artifacts=EpisodeArtifacts.create(cast(Path, kwargs["workspace"])),
+        )
+
+    monkeypatch.setattr("coworld.cli.certify_coworld", certify)
+    result = CliRunner().invoke(app, ["certify", str(manifest_path), "--no-open-report"])
+    assert result.exit_code == int(fails), result.output
+    assert (workspaces[0] / "certification_report.html").is_file()
+    assert certified_keys == [before]
+    assert observed == [original_bytes]
+    assert _certification_cache_key(manifest_path) != before
+    if fails:
+        assert not _certified_manifest_cache_path().exists()
+    else:
+        assert json.loads(_certified_manifest_cache_path().read_text()) == {before: "certified"}

@@ -5,6 +5,7 @@ import os
 import re
 import subprocess
 import tarfile
+import tracemalloc
 import zipfile
 from datetime import UTC, datetime
 from pathlib import Path
@@ -15,11 +16,12 @@ import pytest
 from click import unstyle
 from pytest_httpserver import HTTPServer
 from typer.testing import CliRunner
-from werkzeug import Response
+from werkzeug import Request, Response
 
 from coworld.cli import _DEFAULT_POLICY_NAME_MAX_LENGTH, app
 from coworld.config import NEXT_CURSOR_HEADER
 from coworld.player_files import player_file_bytes
+from coworld.runner.runner import EpisodeArtifacts
 from coworld.upload import (
     _PACKAGE_ROOT,
     _REGISTRY_UPLOAD_TIMEOUT,
@@ -35,6 +37,7 @@ from coworld.upload import (
     WhoAmIResponse,
     _certification_cache_key,
     _certification_code_digest,
+    _certification_snapshot,
     _certified_manifest_cache_path,
     _humanize_reporter_id,
     _load_string_cache,
@@ -249,7 +252,7 @@ def test_upload_coworld_posts_standalone_manifest(
     pushed_images: list[tuple[str, str]] = []
     hashed_images: list[str] = []
 
-    def fake_certify(path: Path, *, timeout_seconds: float) -> None:
+    def fake_certify(path: Path, *, workspace: Path, timeout_seconds: float) -> None:
         certification_calls.append((path, timeout_seconds))
         manifest = json.loads(path.read_text(encoding="utf-8"))
         assert manifest["game"]["runnable"]["image"] == "unit-test-runtime:latest"
@@ -354,7 +357,7 @@ def test_upload_coworld_posts_standalone_manifest(
     assert result.id == "cow_00000000-0000-0000-0000-000000000001"
     assert result.manifest_hash == "sha256:manifest-hash"
     assert result.canonical is True
-    assert certification_calls[0][0] == manifest_path.resolve()
+    assert certification_calls[0][0] != manifest_path.resolve()
     assert certification_calls[0][1] == 60.0
     assert hashed_images == [
         "unit-test-runtime:latest",
@@ -395,7 +398,7 @@ def test_upload_coworld_command_certifies_before_uploading(
 
     monkeypatch.setattr(
         "coworld.upload.certify_coworld",
-        lambda manifest_path, *, timeout_seconds: certification_calls.append((manifest_path, timeout_seconds)),
+        lambda path, *, workspace, timeout_seconds: certification_calls.append((path, timeout_seconds)),
     )
     monkeypatch.setattr("coworld.upload.assert_docker_image_reachable", lambda *_args, **_kwargs: None)
     monkeypatch.setattr("coworld.upload._local_image_client_hash", lambda image: "sha256:client-hash")
@@ -463,7 +466,7 @@ def test_upload_coworld_command_certifies_before_uploading(
     assert "Manifest hash: sha256:manifest-hash" in result.output
     assert "Canonical: yes" in result.output
     assert "Hosted certification: queued" in result.output
-    assert certification_calls == [(manifest_path.resolve(), 60.0)]
+    assert [timeout for _, timeout in certification_calls] == [60.0]
 
 
 def test_upload_coworld_caches_successful_certification(
@@ -476,7 +479,7 @@ def test_upload_coworld_caches_successful_certification(
 
     monkeypatch.setattr(
         "coworld.upload.certify_coworld",
-        lambda manifest_path, *, timeout_seconds: certification_calls.append((manifest_path, timeout_seconds)),
+        lambda path, *, workspace, timeout_seconds: certification_calls.append((path, timeout_seconds)),
     )
     monkeypatch.setattr("coworld.upload._local_image_client_hash", lambda image: "sha256:runtime")
     monkeypatch.setattr("coworld.upload._manifest_with_softmax_image_ids", lambda _client, manifest: manifest)
@@ -489,7 +492,7 @@ def test_upload_coworld_caches_successful_certification(
     upload_coworld(manifest_path, server="https://example.com/api")
     upload_coworld(manifest_path, server="https://example.com/api")
 
-    assert certification_calls == [(manifest_path.resolve(), 60.0)]
+    assert [timeout for _, timeout in certification_calls] == [60.0]
     assert len(fake_client.uploads) == 2
     assert json.loads(_certified_manifest_cache_path().read_text(encoding="utf-8")) == {
         _certification_cache_key(manifest_path.resolve()): "certified"
@@ -629,7 +632,7 @@ def test_upload_coworld_certification_cache_includes_local_image_content(
 
     monkeypatch.setattr(
         "coworld.upload.certify_coworld",
-        lambda manifest_path, *, timeout_seconds: certification_calls.append((manifest_path, timeout_seconds)),
+        lambda path, *, workspace, timeout_seconds: certification_calls.append((path, timeout_seconds)),
     )
     monkeypatch.setattr("coworld.upload._local_image_client_hash", fake_hash)
     monkeypatch.setattr("coworld.upload._manifest_with_softmax_image_ids", lambda _client, manifest: manifest)
@@ -644,7 +647,7 @@ def test_upload_coworld_certification_cache_includes_local_image_content(
     current_hash = "sha256:runtime-b"
     upload_coworld(manifest_path, server="https://example.com/api")
 
-    assert certification_calls == [(manifest_path.resolve(), 60.0), (manifest_path.resolve(), 60.0)]
+    assert [timeout for _, timeout in certification_calls] == [60.0, 60.0]
     assert len(fake_client.uploads) == 3
 
 
@@ -654,7 +657,7 @@ def test_upload_coworld_does_not_cache_failed_certification(
 ) -> None:
     manifest_path = _write_manifest(tmp_path)
 
-    def fail_certification(_manifest_path: Path, *, timeout_seconds: float) -> None:
+    def fail_certification(_manifest_path: Path, *, workspace: Path, timeout_seconds: float) -> None:
         raise RuntimeError("certification failed")
 
     monkeypatch.setattr("coworld.upload.certify_coworld", fail_certification)
@@ -1326,7 +1329,7 @@ def test_manifest_with_softmax_image_ids_keeps_existing_image_ids() -> None:
     manifest = _manifest_with_image("img_00000000-0000-0000-0000-000000000099")
     uploaded = _manifest_with_softmax_image_ids(cast(CoworldUploadClient, object()), manifest)
 
-    assert uploaded["game"]["runnable"]["image"] == "img_00000000-0000-0000-0000-000000000099"
+    assert _manifest_image_fields(uploaded)[0]["image"] == "img_00000000-0000-0000-0000-000000000099"
 
 
 def test_manifest_with_softmax_image_ids_uploads_local_img_prefixed_tags(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -1347,7 +1350,7 @@ def test_manifest_with_softmax_image_ids_uploads_local_img_prefixed_tags(monkeyp
     uploaded = _manifest_with_softmax_image_ids(cast(CoworldUploadClient, object()), manifest)
 
     assert uploaded_ids == ["img_game:latest"]
-    assert uploaded["game"]["runnable"]["image"] == "img_00000000-0000-0000-0000-000000000099"
+    assert _manifest_image_fields(uploaded)[0]["image"] == "img_00000000-0000-0000-0000-000000000099"
 
 
 def test_upload_coworld_surfaces_server_error_detail(
@@ -1359,7 +1362,7 @@ def test_upload_coworld_surfaces_server_error_detail(
     image_id = "img_00000000-0000-0000-0000-000000000040"
     softmax_image_uri = "123456789012.dkr.ecr.us-east-1.amazonaws.com/coworld/user/unit-test-runtime@sha256:digest"
 
-    monkeypatch.setattr("coworld.upload.certify_coworld", lambda manifest_path, *, timeout_seconds: None)
+    monkeypatch.setattr("coworld.upload.certify_coworld", lambda manifest_path, *, workspace, timeout_seconds: None)
     monkeypatch.setattr("coworld.upload.assert_docker_image_reachable", lambda *_args, **_kwargs: None)
     monkeypatch.setattr("coworld.upload._local_image_client_hash", lambda image: "sha256:client-hash")
     monkeypatch.setattr("coworld.upload._push_container_image", lambda source_image, push_info: None)
@@ -2381,7 +2384,8 @@ def test_download_coworld_command_fetches_a_shared_player_file_once(
     contents = b"bundled-player"
     content_hash = hashlib.sha256(contents).hexdigest()
     manifest = _manifest_with_player_file("public.ecr.aws/softmax/coworld@sha256:public-digest", content_hash)
-    manifest["player"].append({**manifest["player"][0], "id": "twin", "name": "Twin"})
+    players = cast(list[dict[str, object]], manifest["player"])
+    players.append({**players[0], "id": "twin", "name": "Twin"})
     monkeypatch.setattr(
         "coworld.upload.subprocess.run",
         lambda command, **_kwargs: subprocess.CompletedProcess(command, 0),
@@ -3151,7 +3155,7 @@ def test_complete_replay_viewer_bundle_polls_until_ready(
     bundle = f"sha256:{content_hash}"
     polls = {"n": 0}
 
-    def status_handler(_request: object) -> Response:
+    def status_handler(_request: Request) -> Response:
         polls["n"] += 1
         status = "ready" if polls["n"] >= 2 else "expanding"
         return Response(
@@ -3209,7 +3213,7 @@ def test_complete_replay_viewer_bundle_reposts_complete_while_pending(
     bundle = f"sha256:{content_hash}"
     completes = {"n": 0}
 
-    def complete_handler(_request: object) -> Response:
+    def complete_handler(_request: Request) -> Response:
         completes["n"] += 1
         if completes["n"] == 1:
             return Response("softmax.com | 504: Gateway time-out", status=504)
@@ -3339,3 +3343,292 @@ def test_submit_replay_viewer_bundle_requires_index_html(tmp_path: Path) -> None
             {"game": {"replay_viewer": {"bundle": "replay-viewer"}}},
             tmp_path,
         )
+
+
+@pytest.mark.parametrize("mutation", ["wasm", "viewer", "add", "rename", "delete"])
+def test_certification_cache_key_tracks_payload_files(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, mutation: str
+) -> None:
+    manifest_path = _write_manifest(tmp_path)
+    manifest = json.loads(manifest_path.read_text())
+    manifest["reporter"] = [{"wasm": "reporter.wasm"}]
+    manifest["game"]["replay_viewer"] = {"bundle": "viewer"}
+    manifest_path.write_text(json.dumps(manifest))
+    (manifest_path.parent / "reporter.wasm").write_bytes(b"wasm-before")
+    viewer = manifest_path.parent / "viewer"
+    viewer.mkdir()
+    (viewer / "index.html").write_text("before")
+    (viewer / "asset.js").write_text("asset")
+    monkeypatch.setattr("coworld.upload._local_image_client_hash", lambda image: "sha256:runtime")
+    before = _certification_cache_key(manifest_path)
+    assert _certification_cache_key(manifest_path) == before
+
+    if mutation == "wasm":
+        (manifest_path.parent / "reporter.wasm").write_bytes(b"wasm-after")
+    elif mutation == "viewer":
+        (viewer / "index.html").write_text("after")
+    elif mutation == "add":
+        (viewer / "new.js").write_text("asset")
+    elif mutation == "rename":
+        (viewer / "asset.js").rename(viewer / "renamed.js")
+    else:
+        (viewer / "asset.js").unlink()
+
+    assert _certification_cache_key(manifest_path) != before
+
+
+@pytest.mark.parametrize("mutation_stage", ["certification", "submission", "cache-hit"])
+def test_upload_coworld_submits_certified_payload_snapshot(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, mutation_stage: str
+) -> None:
+    manifest_path = _write_manifest(tmp_path)
+    manifest = json.loads(manifest_path.read_text())
+    manifest["game"]["replay_viewer"] = {"bundle": "viewer"}
+    manifest_path.write_text(json.dumps(manifest))
+    viewer = manifest_path.parent / "viewer"
+    viewer.mkdir()
+    (viewer / "index.html").write_bytes(b"certified")
+    certification_bytes: list[bytes] = []
+    submitted_bytes: list[bytes] = []
+    client = _FakeCoworldUploadClient()
+
+    def certify(path: Path, *, workspace: Path, timeout_seconds: float) -> None:
+        certification_bytes.append((path.parent / "viewer/index.html").read_bytes())
+        if mutation_stage == "certification":
+            (viewer / "index.html").write_bytes(b"changed")
+
+    def submit_viewer(client: object, manifest: dict[str, object], package_root: Path) -> dict[str, object]:
+        submitted_bytes.append((package_root / "viewer/index.html").read_bytes())
+        return manifest
+
+    def image_upload(client: object, manifest: dict[str, object]) -> dict[str, object]:
+        if mutation_stage == "submission" or (mutation_stage == "cache-hit" and submitted_bytes):
+            (viewer / "index.html").write_bytes(b"changed")
+        return manifest
+
+    monkeypatch.setattr("coworld.upload.certify_coworld", certify)
+    monkeypatch.setattr("coworld.upload._local_image_client_hash", lambda image: "sha256:runtime")
+    monkeypatch.setattr("coworld.upload._manifest_with_softmax_image_ids", image_upload)
+    monkeypatch.setattr("coworld.upload._submit_replay_viewer_bundle", submit_viewer)
+    monkeypatch.setattr(CoworldUploadClient, "from_login", classmethod(lambda cls, *, server_url: client))
+    upload_coworld(manifest_path, server="http://localhost:3002/api")
+    if mutation_stage == "cache-hit":
+        upload_coworld(manifest_path, server="http://localhost:3002/api")
+    assert certification_bytes == [b"certified"]
+    assert submitted_bytes == [b"certified"] * (2 if mutation_stage == "cache-hit" else 1)
+    upload_coworld(manifest_path, server="http://localhost:3002/api")
+    assert certification_bytes == [b"certified", b"changed"]
+    assert submitted_bytes[-1] == b"changed"
+
+
+def test_upload_snapshot_payload_hashes_match_http_readback(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, httpserver: HTTPServer
+) -> None:
+    manifest_path = _write_manifest(tmp_path)
+    manifest = json.loads(manifest_path.read_text())
+    wasm_bytes = b"\x00asm-certified"
+    attributes = {
+        "purpose": "Summarize the episode",
+        "world": "softmax:reporter@0.1.0",
+        "outputs": [{"name": "summary", "type": "text", "description": "Episode summary"}],
+    }
+    manifest["reporter"] = [{"wasm": "reporter.wasm", "id": "recap", "attributes": attributes}]
+    manifest["game"]["replay_viewer"] = {"bundle": "viewer"}
+    manifest_path.write_text(json.dumps(manifest))
+    wasm_path = manifest_path.parent / "reporter.wasm"
+    wasm_path.write_bytes(wasm_bytes)
+    viewer = manifest_path.parent / "viewer"
+    viewer.mkdir()
+    (viewer / "index.html").write_bytes(b"certified-viewer")
+    certified: list[bytes] = []
+    received: dict[str, bytes] = {}
+
+    def certify(path: Path, *, workspace: Path, timeout_seconds: float) -> None:
+        certified.append((path.parent / "reporter.wasm").read_bytes())
+
+    def submit_images(client: object, data: dict[str, object]) -> dict[str, object]:
+        wasm_path.write_bytes(b"changed-wasm")
+        (viewer / "index.html").write_bytes(b"changed-viewer")
+        return data
+
+    def receive_wasm(request: Request) -> Response:
+        received["wasm"] = request.data
+        return Response(status=200)
+
+    def receive_viewer(request: Request) -> Response:
+        received["viewer"] = request.data
+        return Response(status=200)
+
+    def request_viewer(request: Request) -> Response:
+        data = json.loads(request.data)
+        received["viewer_hash"] = data["content_hash"].encode()
+        return Response(
+            json.dumps({"bundle": f"sha256:{data['content_hash']}", "upload_url": httpserver.url_for("/viewer")})
+        )
+
+    def complete_viewer(request: Request) -> Response:
+        data = json.loads(request.data)
+        assert data["content_hash"] == hashlib.sha256(received["viewer"]).hexdigest()
+        return Response(json.dumps({"bundle": f"sha256:{data['content_hash']}", "status": "ready"}))
+
+    monkeypatch.setattr("coworld.upload.certify_coworld", certify)
+    monkeypatch.setattr("coworld.upload._local_image_client_hash", lambda image: "sha256:runtime")
+    monkeypatch.setattr("coworld.upload._manifest_with_softmax_image_ids", submit_images)
+    prefix = "/observatory/v2"
+    httpserver.expect_request("/observatory/whoami").respond_with_json({"owner_user_id": "owner"})
+    httpserver.expect_request(f"{prefix}/reporters/register").respond_with_json(
+        {"id": "rptr_test", "name": "unit-test-game-recap", "user_id": "owner", "created": True}
+    )
+    wasm_hash = hashlib.sha256(wasm_bytes).hexdigest()
+    httpserver.expect_request(
+        f"{prefix}/reporters/upload",
+        json={
+            "name": "unit-test-game-recap",
+            "content_hash": wasm_hash,
+            "size_bytes": len(wasm_bytes),
+            "attributes": attributes,
+        },
+    ).respond_with_json({"upload_url": httpserver.url_for("/wasm")})
+    httpserver.expect_request("/wasm", method="PUT").respond_with_handler(receive_wasm)
+    httpserver.expect_request(f"{prefix}/reporters/upload/complete").respond_with_json(
+        {"version": {"id": "rptr_test", "name": "unit-test-game-recap", "version": 1, "content_hash": wasm_hash}}
+    )
+    httpserver.expect_request(f"{prefix}/coworlds/replay-viewer-bundles/upload").respond_with_handler(request_viewer)
+    httpserver.expect_request("/viewer", method="PUT").respond_with_handler(receive_viewer)
+    httpserver.expect_request(f"{prefix}/coworlds/replay-viewer-bundles/upload/complete").respond_with_handler(
+        complete_viewer
+    )
+    httpserver.expect_request(f"{prefix}/coworlds/upload").respond_with_json(
+        _FakeCoworldUploadClient().upload_manifest(manifest).model_dump()
+    )
+
+    upload_coworld(manifest_path, server=httpserver.url_for(""))
+
+    assert certified == [wasm_bytes]
+    assert received["wasm"] == wasm_bytes
+    assert received["viewer_hash"].decode() == hashlib.sha256(received["viewer"]).hexdigest()
+    with zipfile.ZipFile(io.BytesIO(received["viewer"])) as archive:
+        assert archive.read("index.html") == b"certified-viewer"
+    assert wasm_path.read_bytes() == b"changed-wasm"
+    assert (viewer / "index.html").read_bytes() == b"changed-viewer"
+
+
+def test_certification_snapshot_releases_payload_memory(tmp_path: Path) -> None:
+    manifest_path = _write_manifest(tmp_path)
+    manifest = json.loads(manifest_path.read_text())
+    manifest["game"]["replay_viewer"] = {"bundle": "viewer"}
+    manifest_path.write_text(json.dumps(manifest))
+    viewer = manifest_path.parent / "viewer"
+    viewer.mkdir()
+    (viewer / "index.html").write_bytes(b"x" * (8 * 1024 * 1024))
+    (viewer / "asset.bin").write_bytes(b"y" * (8 * 1024 * 1024))
+    tracemalloc.start()
+    try:
+        with _certification_snapshot(manifest_path) as snapshot:
+            retained, peak = tracemalloc.get_traced_memory()
+            assert (snapshot.parent / "viewer/index.html").stat().st_size == 8 * 1024 * 1024
+            assert retained < 2 * 1024 * 1024
+            assert peak < 8 * 1024 * 1024
+    finally:
+        tracemalloc.stop()
+
+
+@pytest.mark.parametrize("directory", [False, True])
+def test_certification_snapshot_uses_canonical_player_payload(tmp_path: Path, directory: bool) -> None:
+    manifest_path = _write_manifest(tmp_path)
+    manifest = _manifest_with_player_file("public.ecr.aws/softmax/coworld@sha256:public-digest", "unused")
+    cast(list[dict[str, object]], manifest["player"])[0]["file"] = "player"
+    manifest_path.write_text(json.dumps(manifest))
+    source = manifest_path.parent / "player"
+    if directory:
+        source.mkdir()
+        content = source / "policy.py"
+    else:
+        content = source
+    content.write_bytes(b"certified-player")
+    expected = player_file_bytes(source)
+    before = _certification_cache_key(manifest_path)
+    with _certification_snapshot(manifest_path) as snapshot:
+        content.write_bytes(b"rebuilt-player")
+        assert player_file_bytes(snapshot.parent / "player") == expected
+        assert _certification_cache_key(snapshot) == before
+    assert _certification_cache_key(manifest_path) != before
+
+
+def test_certification_snapshot_rejects_player_symlink(tmp_path: Path) -> None:
+    manifest_path = _write_manifest(tmp_path)
+    manifest = _manifest_with_player_file("public.ecr.aws/softmax/coworld@sha256:public-digest", "unused")
+    cast(list[dict[str, object]], manifest["player"])[0]["file"] = "player"
+    manifest_path.write_text(json.dumps(manifest))
+    target = manifest_path.parent / "policy.py"
+    target.write_bytes(b"player")
+    (manifest_path.parent / "player").symlink_to(target)
+    with pytest.raises(ValueError, match="symlink"):
+        with _certification_snapshot(manifest_path):
+            pass
+
+
+@pytest.mark.parametrize("outcome", ["success", "certification-error", "upload-error", "interrupt"])
+def test_upload_coworld_cleans_automatic_certification_artifacts(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, outcome: str
+) -> None:
+    manifest_path = _write_manifest(tmp_path)
+    client = _FakeCoworldUploadClient()
+    workspaces: list[Path] = []
+    snapshots: list[Path] = []
+
+    def certify(path: Path, *, workspace: Path, timeout_seconds: float) -> None:
+        artifacts = EpisodeArtifacts.create(workspace)
+        (artifacts.workspace / "episode.log").write_text("episode output")
+        workspaces.append(artifacts.workspace)
+        snapshots.append(path.parent)
+        if outcome == "certification-error":
+            raise RuntimeError("certification failed")
+        if outcome == "interrupt":
+            raise KeyboardInterrupt
+
+    def submit_images(client: object, manifest: dict[str, object]) -> dict[str, object]:
+        assert not workspaces[0].exists()
+        if outcome == "upload-error":
+            raise RuntimeError("upload failed")
+        return manifest
+
+    monkeypatch.setattr("coworld.upload.certify_coworld", certify)
+    monkeypatch.setattr("coworld.upload._local_image_client_hash", lambda image: "sha256:runtime")
+    monkeypatch.setattr("coworld.upload._manifest_with_softmax_image_ids", submit_images)
+    monkeypatch.setattr(CoworldUploadClient, "from_login", classmethod(lambda cls, *, server_url: client))
+    if outcome == "success":
+        upload_coworld(manifest_path)
+    else:
+        with pytest.raises(KeyboardInterrupt if outcome == "interrupt" else RuntimeError):
+            upload_coworld(manifest_path)
+    assert len(workspaces) == 1
+    assert not workspaces[0].exists()
+    assert not snapshots[0].exists()
+    assert manifest_path.exists()
+
+
+@pytest.mark.parametrize("directory", [False, True])
+def test_certification_snapshot_rejects_oversized_players_before_copying(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, directory: bool
+) -> None:
+    manifest = _manifest_with_player_file("public.ecr.aws/softmax/coworld@sha256:public-digest", "unused")
+    cast(list[dict[str, object]], manifest["player"])[0]["file"] = "player"
+    manifest_path = _write_manifest(tmp_path, manifest)
+    source = manifest_path.parent / "player"
+    if directory:
+        source.mkdir()
+        (source / "one.py").write_bytes(b"a" * 600)
+        (source / "two.py").write_bytes(b"a" * 600)
+    else:
+        source.write_bytes(b"a" * 1200)
+    monkeypatch.setattr("coworld.player_files.PLAYER_FILE_MAX_BYTES", 1000)
+    monkeypatch.setattr(
+        "coworld.upload.tempfile.TemporaryDirectory",
+        lambda **kwargs: pytest.fail("allocated snapshot before checking player size"),
+    )
+    with pytest.raises(ValueError, match="size limit"):
+        with _certification_snapshot(manifest_path):
+            pytest.fail("accepted oversized player")
+    with pytest.raises(ValueError, match="size limit"):
+        player_file_bytes(source)

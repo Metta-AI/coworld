@@ -168,8 +168,9 @@ must be a package-relative path or an uploaded `sha256:<64 lowercase hex charact
 `.`/`..` path components, and malformed digests are rejected.
 
 Every player entry must match the game mode. Platform-hosted players use `image`; game-hosted players use `file`.
-`coworld upload-coworld` uploads package-relative files, rejects inputs over 100 MiB (104,857,600 bytes), and replaces
-each path with its content digest. A directory reference is converted to a deterministic zip before hashing.
+`coworld upload-coworld` uploads package-relative files, rejects files, total directory contents, or packed ZIPs over
+100 MiB (104,857,600 bytes), and replaces each path with its content digest. A directory reference is converted to a
+deterministic zip before hashing.
 
 Game-hosted files do not use the player's `run`, `env`, `resources`, or secret environment. Their format and execution
 belong to the game. See [Player Seats](artifacts/PLAYER_SEATS.md) for the runtime handoff.

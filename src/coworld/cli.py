@@ -21,6 +21,7 @@ from coworld.bundle import build_coworld_manifest
 from coworld.campaign_cli import register_campaign_commands
 from coworld.certification_report import write_certification_report
 from coworld.certifier import (
+    _certification_failure_feedback,
     build_manifest_episode_job_spec,
     certification_player_file_paths,
     certify_coworld,
@@ -61,6 +62,7 @@ from coworld.upload import (
     CoworldStatusResult,
     CoworldUploadClient,
     CoworldUploadResponse,
+    _certification_snapshot,
     cache_certified_manifest,
     coworld_status,
     download_coworld_cmd,
@@ -561,14 +563,27 @@ def certify(
     with _materialized_manifest_path(manifest_uri, server=server) as manifest_path:
         typer.echo(f"Certifying {manifest_uri} against transcript coworld-executable")
         try:
-            result = certify_coworld(
-                manifest_path,
-                workspace=artifacts.workspace,
-                timeout_seconds=timeout_seconds,
-                on_step=on_step,
-            )
-            cache_certified_manifest(manifest_path)
+            with _certification_snapshot(manifest_path) as snapshot_path:
+                result = certify_coworld(
+                    snapshot_path,
+                    workspace=artifacts.workspace,
+                    timeout_seconds=timeout_seconds,
+                    on_step=on_step,
+                )
+                cache_certified_manifest(snapshot_path)
         except Exception as exc:
+            if not step_results:
+                step = next(step for step in transcript.steps if step.id == "matriculate")
+                on_step(
+                    StepResult(
+                        id=step.id,
+                        kind=step.kind,
+                        status="fail",
+                        failure_reason="manifest_invalid",
+                        feedback=_certification_failure_feedback(exc),
+                    ),
+                    step,
+                )
             report = write_certification_report(
                 manifest_uri=str(manifest_uri),
                 transcript=transcript,

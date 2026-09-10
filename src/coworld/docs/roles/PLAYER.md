@@ -66,9 +66,9 @@ certification, and local episodes use the same packer, so each path has one byte
 defines the file format, entrypoint, protocol, and execution environment. The platform only stores, hashes, stages,
 and exposes the bytes through [`COGAME_PLAYER_SEATS_URI`](../artifacts/PLAYER_SEATS.md).
 
-Upload a submitted policy with `coworld upload-policy --file PATH`. The input must be at most 100 MiB
-(104,857,600 bytes). Directories cannot contain symlinks; the CLI rejects missing paths and symlinks. A file upload
-cannot include `--run`, `--secret-env`, `--use-bedrock`, or `--bedrock-model`.
+Upload a submitted policy with `coworld upload-policy --file PATH`. Files, total directory contents, and packed ZIPs
+must each be at most 100 MiB (104,857,600 bytes). Directories cannot contain symlinks; the CLI rejects missing paths and
+symlinks. A file upload cannot include `--run`, `--secret-env`, `--use-bedrock`, or `--bedrock-model`.
 
 Game-hosted players receive no process environment or secret environment from their policy version. The game process
 owns execution and must route each seat's output to the `log_uri` and optional `artifact_uri` in the seats document.
