@@ -1,5 +1,13 @@
 from __future__ import annotations
 
+# Timestamp before heavy imports: import placement is part of the measurement.
+# ruff: noqa: E402
+import time
+
+_IMPORT_START_NS = time.monotonic_ns()
+_IMPORT_WALL_NS = time.time_ns()
+_IMPORT_ANCHOR_END_NS = time.monotonic_ns()
+
 import argparse
 import asyncio
 import fcntl
@@ -16,7 +24,6 @@ import stat
 import sys
 import tempfile
 import threading
-import time
 import zipfile
 from collections import Counter
 from collections.abc import Callable
@@ -58,7 +65,14 @@ from coworld.runner.io import (
     upload_data,
     upload_file,
 )
-from coworld.runner.phase_timings import EpisodePhaseTimings, PlayerFileStageTiming
+from coworld.runner.phase_timings import (
+    EpisodePhaseTimings,
+    PlayerFileStageTiming,
+    PlayerStartupTiming,
+    ProcessTimings,
+    TimingClock,
+    TimingInterval,
+)
 from coworld.runner.runner import (
     CERTIFICATION_EPISODE_SOURCE,
     DEFAULT_PLAYER_EXIT_TIMEOUT_SECONDS,
@@ -80,6 +94,8 @@ from coworld.runner.runner import (
     _player_query as _episode_player_query,
 )
 from coworld.types import CoworldEpisodeJobSpec, CoworldPlayerFileSpec, CoworldRunnableSpec
+
+_IMPORT_DONE_NS = time.monotonic_ns()
 
 logger = logging.getLogger(__name__)
 
@@ -352,11 +368,33 @@ def _start_player_artifact_upload_server(tokens: list[str]) -> _PlayerArtifactUp
     return server
 
 
+def _process_timings() -> ProcessTimings:
+    clock = TimingClock(
+        wall_ns=_IMPORT_WALL_NS,
+        monotonic_ns=(_IMPORT_START_NS + _IMPORT_ANCHOR_END_NS) // 2,
+        uncertainty_ns=_IMPORT_ANCHOR_END_NS - _IMPORT_START_NS,
+    )
+    timings = ProcessTimings(clock=clock)
+    timings.record("imports", _IMPORT_START_NS, _IMPORT_DONE_NS)
+    if sys.platform == "linux":
+        # /proc starttime is ticks since boot; align via CLOCK_BOOTTIME, not wall time.
+        ticks = os.sysconf("SC_CLK_TCK")
+        start_ticks = int(Path("/proc/self/stat").read_text().rsplit(") ", 1)[1].split()[19])
+        boot_ns = time.clock_gettime_ns(time.CLOCK_BOOTTIME)
+        monotonic_ns = time.monotonic_ns()
+        timings.process_birth_offset_ns = (
+            start_ticks * 1_000_000_000 // ticks - boot_ns + monotonic_ns - clock.monotonic_ns
+        )
+        timings.process_birth_resolution_ns = 1_000_000_000 // ticks
+    return timings
+
+
 def init_config_from_env() -> None:
     try:
-        job = _read_job_spec()
+        timings = _process_timings()
+        job = _read_job_spec(timings)
         if job.manifest.game.player_runtime == "game-hosted":
-            stage_start = time.monotonic()
+            stage_start = time.monotonic_ns()
             player_files = [player for player in job.players if isinstance(player, CoworldPlayerFileSpec)]
             raw_player_file_urls = os.environ.get("PLAYER_FILE_URLS")
             if raw_player_file_urls is None:
@@ -384,12 +422,13 @@ def init_config_from_env() -> None:
             bytes_total = stage_player_files(player_files, read_player_file, artifacts)
             (WORKDIR / "player_file_stage.json").write_text(
                 PlayerFileStageTiming(
-                    stage_s=time.monotonic() - stage_start,
+                    stage_s=timings.record("player_files", stage_start),
                     count=len(player_files),
                     bytes_total=bytes_total,
                 ).model_dump_json(),
                 encoding="utf-8",
             )
+        config_start = time.monotonic_ns()
         tokens = episode_player_tokens(job)
         upload_data(
             os.environ["COGAME_CONFIG_URI"],
@@ -397,6 +436,10 @@ def init_config_from_env() -> None:
             content_type="application/json",
         )
         STATE_PATH.write_text(json.dumps({"tokens": tokens}), encoding="utf-8")
+        timings.record("config_write", config_start)
+        timings.record("bootstrap", _IMPORT_START_NS)
+        timings.final_clock = TimingClock.capture()
+        (WORKDIR / "init_timings.json").write_text(timings.model_dump_json(exclude_none=True), encoding="utf-8")
     except Exception as exc:
         try:
             _write_error_info(exc)
@@ -419,7 +462,12 @@ def run_from_env() -> None:
             timing_uploads.append(timing_executor.submit(_upload_timings, current_timings.model_copy(deep=True)))
 
         try:
-            job = _read_job_spec()
+            worker_timings = _process_timings()
+            timings.worker = worker_timings
+            job = _read_job_spec(worker_timings)
+            init_timings_path = WORKDIR / "init_timings.json"
+            if init_timings_path.exists():
+                timings.init = ProcessTimings.model_validate_json(init_timings_path.read_bytes())
             player_file_stage_path = WORKDIR / "player_file_stage.json"
             if player_file_stage_path.exists():
                 timings.player_file_stage = PlayerFileStageTiming.model_validate_json(
@@ -453,7 +501,7 @@ def run_from_env() -> None:
             # Publishing is part of the episode: a failure here (a replay that is not a
             # regular file, an upload error) must reach the backend as a typed runner error,
             # not as an unexplained crash after results may already be visible.
-            upload_start = time.monotonic()
+            upload_start = time.monotonic_ns()
             if job.manifest.game.player_runtime == "game-hosted":
                 _prepare_game_hosted_outputs(job, artifacts, timings)
                 outputs_prepared = True
@@ -490,13 +538,22 @@ def run_from_env() -> None:
             raise
         if job.manifest.game.player_runtime == "game-hosted":
             timings.player_artifact_oversize_count = _upload_player_artifacts(artifacts)
-        timings.artifact_upload_s = time.monotonic() - upload_start
+        timings.artifact_upload_s = worker_timings.record("artifact_upload", upload_start)
+        worker_timings.final_clock = TimingClock.capture()
         queue_timings_upload(timings)
         timing_uploads[-1].result()
 
 
-def _read_job_spec() -> CoworldEpisodeJobSpec:
-    return CoworldEpisodeJobSpec.model_validate_json(read_data(os.environ["JOB_SPEC_URI"]))
+def _read_job_spec(timings: ProcessTimings) -> CoworldEpisodeJobSpec:
+    start = time.monotonic_ns()
+    raw = read_data(os.environ["JOB_SPEC_URI"])
+    fetched = time.monotonic_ns()
+    job = CoworldEpisodeJobSpec.model_validate_json(raw)
+    timings.record("spec_fetch", start, fetched)
+    timings.record("spec_validate", fetched)
+    timings.spec_bytes = len(raw)
+    timings.spec_scheme = urlsplit(os.environ["JOB_SPEC_URI"]).scheme
+    return job
 
 
 def _write_error_info(exc: Exception) -> None:
@@ -684,7 +741,9 @@ def _run_kubernetes_episode(
     timings: EpisodePhaseTimings,
     upload_timings: Callable[[EpisodePhaseTimings], None],
 ) -> None:
-    worker_start = time.monotonic()
+    assert timings.worker is not None
+    worker_start = time.monotonic_ns()
+    worker_timings = timings.worker
     egress_enforcement_enabled = os.environ.get("COWORLD_EGRESS_ENFORCEMENT_ENABLED") == "true"
     api_client = _load_incluster_config(egress_enforcement_enabled=egress_enforcement_enabled)
     core_v1 = client.CoreV1Api(api_client)
@@ -799,11 +858,15 @@ def _run_kubernetes_episode(
                     ),
                 ),
             )
-        _wait_for_health(core_v1, namespace, pod_name, timeout_seconds=timeout_seconds)
-        game_ready = time.monotonic()
-        timings.game_boot_s = game_ready - worker_start
+        health_start = time.monotonic_ns()
+        worker_timings.record("setup", worker_start, health_start)
+        worker_timings.record("bootstrap", worker_timings.clock.monotonic_ns, health_start)
+        _wait_for_health(core_v1, namespace, pod_name, timeout_seconds=timeout_seconds, timings=worker_timings)
+        game_ready = time.monotonic_ns()
+        worker_timings.record("health_wait", health_start, game_ready)
+        timings.game_boot_s = (game_ready - worker_start) / 1_000_000_000
         upload_timings(timings)
-        player_launch_start = time.monotonic()
+        player_launch_start = time.monotonic_ns()
         if job.players:
             _require_http_ok(_player_client_url(0, tokens[0]))
             asyncio.run(_require_bad_player_rejected(f"ws://127.0.0.1:{GAME_PORT}/player?slot=0&token=bad"))
@@ -827,12 +890,13 @@ def _run_kubernetes_episode(
                 player_cpu_limit,
                 owner_references,
                 game_pod_ip=game_pod_ip,
+                timings=worker_timings,
             )
-        players_launched = time.monotonic()
-        timings.player_launch_s = players_launched - player_launch_start
+        players_launched = time.monotonic_ns()
+        timings.player_launch_s = worker_timings.record("player_launch", player_launch_start, players_launched)
         upload_timings(timings)
         player_start_deadline = time.monotonic() + min(timeout_seconds, player_connect_timeout_seconds)
-        first_step_start = time.monotonic()
+        first_step_start = time.monotonic_ns()
 
         asyncio.run(
             _require_global_message(
@@ -849,15 +913,16 @@ def _run_kubernetes_episode(
                     timeout_seconds=max(0.0, player_start_deadline - time.monotonic()),
                     player_images={slot: player.image for slot, player in policy_players},
                     dead_seat_statuses=dead_seat_statuses,
+                    timings=worker_timings,
                 ),
                 on_connect_failure=lambda: _raise_if_player_pod_failed(core_v1, namespace, child_names),
                 require_pong=job.episode_tags.get("source") == CERTIFICATION_EPISODE_SOURCE,
             )
         )
-        first_step = time.monotonic()
-        timings.first_step_s = first_step - first_step_start
+        first_step = time.monotonic_ns()
+        timings.first_step_s = worker_timings.record("viewer_wait", first_step_start, first_step)
         upload_timings(timings)
-        gameplay_start = time.monotonic()
+        gameplay_start = time.monotonic_ns()
         _wait_for_episode_artifacts(
             artifacts,
             core_v1,
@@ -867,27 +932,38 @@ def _run_kubernetes_episode(
             player_count=len(job.players),
             timeout_seconds=timeout_seconds,
             require_replay=os.environ.get("REPLAY_URI") is not None,
+            timings=worker_timings,
         )
-        gameplay_done = time.monotonic()
-        timings.gameplay_s = gameplay_done - gameplay_start
+        gameplay_done = time.monotonic_ns()
+        timings.gameplay_s = worker_timings.record("artifact_wait", gameplay_start, gameplay_done)
         upload_timings(timings)
+        validation_start = time.monotonic_ns()
         results = _read_game_authored_file(artifacts.results_path, None)
         if results is None:
             raise RunnerEpisodeError("results.json is not a regular file", error_type="results_malformed")
         _validate_results_file(artifacts.results_path, job.results_schema, contents=results)
+        worker_timings.record("results_validate", validation_start)
         if job.episode_tags.get("source") == CERTIFICATION_EPISODE_SOURCE:
+            completion_start = time.monotonic_ns()
             _wait_for_players_to_complete(
                 core_v1,
                 namespace,
                 child_names,
                 timeout_seconds=DEFAULT_PLAYER_EXIT_TIMEOUT_SECONDS,
             )
+            worker_timings.record("players_complete", completion_start)
     finally:
+        logs_start = time.monotonic_ns()
         _collect_logs(core_v1, namespace, pod_name, child_names, artifacts, dead_seat_statuses=dead_seat_statuses)
+        worker_timings.record("logs_collect", logs_start)
+        delete_start = time.monotonic_ns()
         _delete_child_resources(core_v1, namespace, service_name, child_names)
+        worker_timings.record("children_delete", delete_start)
         if artifact_server is not None:
+            shutdown_start = time.monotonic_ns()
             artifact_server.shutdown()
             artifact_server.server_close()
+            worker_timings.record("artifact_server_shutdown", shutdown_start)
 
 
 def _run_game_hosted_episode(
@@ -897,21 +973,27 @@ def _run_game_hosted_episode(
     core_v1: Any,
     namespace: str,
     pod_name: str,
-    worker_start: float,
+    worker_start: int,
     timeout_seconds: float,
     timings: EpisodePhaseTimings,
     upload_timings: Callable[[EpisodePhaseTimings], None],
 ) -> None:
+    assert timings.worker is not None
+    worker_timings = timings.worker
     try:
-        _wait_for_health(core_v1, namespace, pod_name, timeout_seconds=timeout_seconds)
-        game_ready = time.monotonic()
-        timings.game_boot_s = game_ready - worker_start
+        health_start = time.monotonic_ns()
+        worker_timings.record("setup", worker_start, health_start)
+        worker_timings.record("bootstrap", worker_timings.clock.monotonic_ns, health_start)
+        _wait_for_health(core_v1, namespace, pod_name, timeout_seconds=timeout_seconds, timings=worker_timings)
+        game_ready = time.monotonic_ns()
+        worker_timings.record("health_wait", health_start, game_ready)
+        timings.game_boot_s = (game_ready - worker_start) / 1_000_000_000
         upload_timings(timings)
-        timings.player_launch_s = 0.0
+        timings.player_launch_s = worker_timings.record("player_launch", game_ready, game_ready)
         upload_timings(timings)
         _require_http_ok(f"http://127.0.0.1:{GAME_PORT}/client/global")
 
-        first_step_start = time.monotonic()
+        first_step_start = time.monotonic_ns()
         asyncio.run(
             _require_global_message(
                 f"ws://127.0.0.1:{GAME_PORT}/global",
@@ -920,10 +1002,10 @@ def _run_game_hosted_episode(
                 require_pong=job.episode_tags.get("source") == CERTIFICATION_EPISODE_SOURCE,
             )
         )
-        first_step = time.monotonic()
-        timings.first_step_s = first_step - first_step_start
+        first_step = time.monotonic_ns()
+        timings.first_step_s = worker_timings.record("viewer_wait", first_step_start, first_step)
         upload_timings(timings)
-        gameplay_start = time.monotonic()
+        gameplay_start = time.monotonic_ns()
         _wait_for_episode_artifacts(
             artifacts,
             core_v1,
@@ -933,16 +1015,21 @@ def _run_game_hosted_episode(
             player_count=len(job.players),
             timeout_seconds=timeout_seconds,
             require_replay=os.environ.get("REPLAY_URI") is not None,
+            timings=worker_timings,
         )
-        gameplay_done = time.monotonic()
-        timings.gameplay_s = gameplay_done - gameplay_start
+        gameplay_done = time.monotonic_ns()
+        timings.gameplay_s = worker_timings.record("artifact_wait", gameplay_start, gameplay_done)
         upload_timings(timings)
+        validation_start = time.monotonic_ns()
         results = _read_game_authored_file(artifacts.results_path, None)
         if results is None:
             raise RunnerEpisodeError("results.json is not a regular file", error_type="results_malformed")
         _validate_results_file(artifacts.results_path, job.results_schema, contents=results)
+        worker_timings.record("results_validate", validation_start)
     finally:
+        logs_start = time.monotonic_ns()
         _collect_game_log(core_v1, namespace, pod_name, artifacts)
+        worker_timings.record("logs_collect", logs_start)
 
 
 def _load_incluster_config(*, egress_enforcement_enabled: bool) -> client.ApiClient:
@@ -1047,6 +1134,7 @@ def _create_player_pod(
     owner_references: list[client.V1OwnerReference],
     *,
     game_pod_ip: str | None = None,
+    timings: ProcessTimings | None = None,
 ) -> None:
     command, args = _command_args(player.run)
     bedrock_enablement = resolve_player_bedrock(policy_secret_env)
@@ -1273,7 +1361,17 @@ def _create_player_pod(
             containers=containers,
         ),
     )
-    core_v1.create_namespaced_pod(namespace=namespace, body=pod)
+    create_start = time.monotonic_ns()
+    created = core_v1.create_namespaced_pod(namespace=namespace, body=pod)
+    create_end = time.monotonic_ns()
+    if timings is not None:
+        timings.players[slot] = PlayerStartupTiming(
+            pod_uid=created.metadata.uid,
+            create=TimingInterval(
+                start_ns=create_start - timings.clock.monotonic_ns,
+                end_ns=create_end - timings.clock.monotonic_ns,
+            ),
+        )
 
 
 def _player_image_pull_policy(image: str) -> str:
@@ -1312,11 +1410,13 @@ def _policy_secrets_from_env() -> dict[int, dict[str, str]]:
     return {int(position): secret_env for position, secret_env in bundle["policies"].items()}
 
 
-def _wait_for_health(core_v1, namespace: str, pod_name: str, *, timeout_seconds: float) -> None:
+def _wait_for_health(
+    core_v1, namespace: str, pod_name: str, *, timeout_seconds: float, timings: ProcessTimings | None = None
+) -> None:
     deadline = time.monotonic() + timeout_seconds
     url = f"http://127.0.0.1:{GAME_PORT}/healthz"
     while time.monotonic() < deadline:
-        _raise_if_game_terminated(core_v1, namespace, pod_name)
+        _raise_if_game_terminated(core_v1, namespace, pod_name, timings=timings)
         try:
             response = httpx.get(url, timeout=1.0)
             if response.status_code == 200:
@@ -1337,6 +1437,7 @@ def _wait_for_episode_artifacts(
     player_count: int,
     timeout_seconds: float,
     require_replay: bool,
+    timings: ProcessTimings | None = None,
 ) -> None:
     # The game owns whether a player failure ends an episode. Required output artifacts
     # win; otherwise a game may publish a typed terminal failure through player_failure.json.
@@ -1351,7 +1452,7 @@ def _wait_for_episode_artifacts(
 
         _raise_if_game_declared_player_failure(artifacts, expected, player_count=player_count)
 
-        exit_code = _game_container_exit_code(core_v1, namespace, pod_name)
+        exit_code = _game_container_exit_code(core_v1, namespace, pod_name, timings=timings)
 
         if exit_code is not None:
             # Re-check the declaration AFTER observing the exit: a game that
@@ -1407,6 +1508,7 @@ def _ensure_player_pods_started(
     timeout_seconds: float,
     player_images: Mapping[int, str] | None = None,
     dead_seat_statuses: dict[int, PlayerRuntimeStatus] | None = None,
+    timings: ProcessTimings | None = None,
 ) -> None:
     """Wait for every original player container to start or fail.
 
@@ -1424,6 +1526,7 @@ def _ensure_player_pods_started(
     healthy pod at all (never scheduled, status forever pending) stays fatal, because those
     pods got no chance to play and infrastructure should retry with a fresh episode.
     """
+    gate_start = time.monotonic_ns()
     deadline = time.monotonic() + timeout_seconds
     started: set[str] = set()
     dead: set[str] = set()
@@ -1443,6 +1546,21 @@ def _ensure_player_pods_started(
                 waiting_reasons.append(f"slot {slot}: pod {player_pod_name} not found")
                 continue
             failure = _player_container_failure(player_pod, player_pod_name, slot)
+            has_started = _container_has_started(player_pod, "player")
+            if timings is not None and player_pod_name not in started and (failure is not None or has_started):
+                if slot not in timings.players:
+                    timings.players[slot] = PlayerStartupTiming(pod_uid=player_pod.metadata.uid)
+                observation = timings.players[slot]
+                observation.observed_offset_ns = time.monotonic_ns() - timings.clock.monotonic_ns
+                observation.outcome = "dead" if failure is not None else "started"
+                for status in player_pod.status.container_statuses or []:
+                    if status.name != "player":
+                        continue
+                    state = status.state.running or status.state.terminated
+                    if state is None and status.last_state is not None:
+                        state = status.last_state.terminated
+                    if state is not None and state.started_at is not None:
+                        observation.container_started_wall_ns = int(state.started_at.timestamp() * 1_000_000_000)
             if failure is not None:
                 dead.add(player_pod_name)
                 failure_status, failure_message = failure
@@ -1456,13 +1574,15 @@ def _ensure_player_pods_started(
                 if dead_seat_statuses is not None:
                     dead_seat_statuses[slot] = failure_status
                 continue
-            if _container_has_started(player_pod, "player"):
+            if has_started:
                 started.add(player_pod_name)
             if player_pod_name in started:
                 continue
             reason = _player_waiting_reason(player_pod) or "never scheduled"
             waiting_reasons.append(f"slot {slot}: {reason}")
         if not waiting_reasons:
+            if timings is not None:
+                timings.record("player_startup_wait", gate_start)
             return
         if time.monotonic() >= deadline:
             raise RunnerEpisodeError(
@@ -1587,17 +1707,24 @@ def _wait_for_players_to_complete(
         time.sleep(_ARTIFACT_POLL_SECONDS)
 
 
-def _game_container_exit_code(core_v1, namespace: str, pod_name: str) -> int | None:
+def _game_container_exit_code(
+    core_v1, namespace: str, pod_name: str, *, timings: ProcessTimings | None = None
+) -> int | None:
     pod = core_v1.read_namespaced_pod(name=pod_name, namespace=namespace)
     for status in pod.status.container_statuses or []:
-        if status.name != "game" or status.state.terminated is None:
+        if status.name != "game":
             continue
-        return status.state.terminated.exit_code
+        if timings is not None and timings.game_container_started_wall_ns is None:
+            state = status.state.running or status.state.terminated
+            if state is not None and state.started_at is not None:
+                timings.game_container_started_wall_ns = int(state.started_at.timestamp() * 1_000_000_000)
+        if status.state.terminated is not None:
+            return status.state.terminated.exit_code
     return None
 
 
-def _raise_if_game_terminated(core_v1, namespace: str, pod_name: str) -> None:
-    exit_code = _game_container_exit_code(core_v1, namespace, pod_name)
+def _raise_if_game_terminated(core_v1, namespace: str, pod_name: str, *, timings: ProcessTimings | None = None) -> None:
+    exit_code = _game_container_exit_code(core_v1, namespace, pod_name, timings=timings)
     if exit_code is not None and exit_code != 0:
         raise RunnerEpisodeError(f"Game container exited with code {exit_code}", error_type="game_unhealthy")
 
