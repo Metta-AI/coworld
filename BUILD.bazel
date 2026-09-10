@@ -53,15 +53,15 @@ echo "coworld-paintarena@$$iid" > $@
 #
 #   coworld.types, coworld.certifier, coworld.manifest_validation,
 #   coworld.schema_validation, coworld.commissioner.protocol,
-#   coworld.runner.io, coworld.runner.runner — plus the transitive
-#   imports of `coworld.__init__`'s eager facade (certifier, play,
+#   coworld.runner.bootstrap, coworld.runner.io, coworld.runner.runner
+#   — plus the transitive imports of `coworld.__init__`'s eager facade (certifier, play,
 #   runner.runner, types).
 #
 # Everything else — the CLI (`cli.py`, `tournament_cli.py`,
 # `bundle.py`, `submit.py`, `upload.py`,
 # `manifest_uri.py`, `__main__.py`), the example servers under
 # `examples/**`, and the
-# kubernetes runner that only the CLI and tests load — stays in
+# production init and Kubernetes runner entrypoints — stays in
 # `:coworld`. Action keys for downstream tests that only hit the
 # library surface no longer flip when CLI / example files
 # change.
@@ -93,6 +93,7 @@ _CORE_SRCS = [
     "src/coworld/report.py",
     "src/coworld/runner/__init__.py",
     "src/coworld/runner/bedrock_metadata.py",
+    "src/coworld/runner/bootstrap.py",
     "src/coworld/runner/io.py",
     "src/coworld/runner/phase_timings.py",
     "src/coworld/runner/runner.py",

@@ -14,7 +14,9 @@ remains the sole producer of this final artifact. Games never infer or write `ER
 ## Contract
 
 The runner-side JSON follows the `RunnerError` shape. Download and upload failures report the slot, exception type,
-and HTTP status without including presigned URL query parameters.
+and HTTP status without including presigned URL query parameters. Generic exception reports contain the exception class
+and HTTP status. Pydantic validation reports contain an error list with its input and exception-context fields omitted.
+The original exception still propagates into captured Pod logs; this message formatting applies only to `error_info.json`.
 
 ```json
 {
@@ -48,7 +50,7 @@ Fields:
 | `crash`                   | An unexpected runner/coordinator failure outside the typed episode failure categories.                                                                                                                                                                                                            |
 | `worker_error`            | The coordinator container terminated with a non-zero exit code without more specific structured error information.                                                                                                                                                                                |
 | `worker_oom`              | Kubernetes terminated the coordinator or init-config container for exceeding its memory limit. This is infrastructure failure evidence and never identifies or blames a policy slot.                                                                                                             |
-| `config_error`            | The runner could not parse or validate its episode job specification or required configuration.                                                                                                                                                                                                   |
+| `config_error`            | The runner could not fetch, parse, validate, or prepare its episode specification or required configuration, including the private coordinator mount. This is an infrastructure failure; it does not count against a player.                                                                                                                                                                                                   |
 | `player_file_unavailable` | Trusted staging could not download a game-hosted player file. This is infrastructure failure evidence and never identifies or blames a policy slot.                                                                                                                                               |
 | `player_file_mismatch`    | A staged player file did not match its declared byte length or SHA-256 digest. This is infrastructure failure evidence and never identifies or blames a policy slot.                                                                                                                              |
 

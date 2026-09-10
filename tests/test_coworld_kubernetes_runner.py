@@ -34,8 +34,8 @@ from urllib3 import HTTPConnectionPool
 from urllib3.exceptions import MaxRetryError, ResponseError
 
 from coworld.manifest import validate_upload_manifest
+from coworld.runner import bootstrap, init_config, kubernetes_runner
 from coworld.runner import io as runner_io
-from coworld.runner import kubernetes_runner
 from coworld.runner import runner as runner_module
 from coworld.runner.bedrock_sidecar_wiring import (
     BEDROCK_PROMPT_PREFIX_CONTROL_CONFIG_MAP_NAME,
@@ -283,11 +283,14 @@ def _configure_init_env(
     job: CoworldEpisodeJobSpec,
     player_file_uris: dict[str, str],
 ) -> Path:
-    job_spec_path = tmp_path / "spec.json"
+    private_dir = tmp_path.with_name(tmp_path.name + "-private")
+    private_dir.mkdir()
+    monkeypatch.setattr(init_config, "COORDINATOR_SPEC_PATH", private_dir / "worker_spec.json")
+    job_spec_path = private_dir / "source_spec.json"
     job_spec_path.write_text(job.model_dump_json(by_alias=True), encoding="utf-8")
     error_path = tmp_path / "error_info.json"
-    monkeypatch.setattr(kubernetes_runner, "WORKDIR", tmp_path)
-    monkeypatch.setattr(kubernetes_runner, "STATE_PATH", tmp_path / "state.json")
+    monkeypatch.setattr(init_config, "WORKDIR", tmp_path)
+    monkeypatch.setattr(init_config, "STATE_PATH", tmp_path / "state.json")
     monkeypatch.setenv("JOB_SPEC_URI", job_spec_path.as_uri())
     monkeypatch.setenv("COGAME_CONFIG_URI", (tmp_path / "config.json").as_uri())
     monkeypatch.setenv("PLAYER_FILE_URLS", json.dumps(player_file_uris))
@@ -310,8 +313,20 @@ def test_init_config_stages_verified_player_files_and_seats_document(monkeypatch
         {str(slot): source.as_uri() for slot, source in enumerate(sources)},
     )
 
-    kubernetes_runner.init_config_from_env()
+    init_config.init_config_from_env()
 
+    assert CoworldEpisodeJobSpec.model_validate_json(init_config.COORDINATOR_SPEC_PATH.read_bytes()) == job
+    monkeypatch.setenv("JOB_SPEC_URI", init_config.COORDINATOR_SPEC_PATH.as_uri())
+    worker_timings = ProcessTimings(clock=TimingClock.capture())
+    assert bootstrap.read_job_spec(worker_timings) == (job, init_config.COORDINATOR_SPEC_PATH.read_bytes())
+    assert worker_timings.spec_scheme == "file"
+    assert not (tmp_path / "worker_spec.json").exists()
+    assert not (tmp_path / "spec.json").exists()
+    assert not init_config.COORDINATOR_SPEC_PATH.is_relative_to(tmp_path)
+    assert (
+        init_config.COORDINATOR_SPEC_PATH.read_bytes()
+        == (init_config.COORDINATOR_SPEC_PATH.parent / "source_spec.json").read_bytes()
+    )
     init_timings = ProcessTimings.model_validate_json((tmp_path / "init_timings.json").read_text())
     assert {
         "imports",
@@ -319,6 +334,7 @@ def test_init_config_stages_verified_player_files_and_seats_document(monkeypatch
         "spec_validate",
         "player_files",
         "config_write",
+        "setup",
         "bootstrap",
     } <= init_timings.intervals.keys()
     assert init_timings.final_clock is not None
@@ -393,10 +409,34 @@ def test_init_config_maps_player_file_read_failure_to_structured_error(monkeypat
     )
 
     with pytest.raises(runner_io.RunnerEpisodeError, match="could not be downloaded") as exc_info:
-        kubernetes_runner.init_config_from_env()
+        init_config.init_config_from_env()
 
     assert exc_info.value.error_type == "player_file_unavailable"
     assert json.loads(error_path.read_text(encoding="utf-8"))["error_type"] == "player_file_unavailable"
+
+
+def test_init_config_redacts_presigned_spec_download_error(monkeypatch, tmp_path):
+    job = _game_hosted_job([b"player"])
+    error_path = _configure_init_env(monkeypatch, tmp_path, job, {})
+    signed_url = "https://example.test/spec?X-Amz-Signature=secret&X-Amz-Credential=credential"
+    monkeypatch.setenv("JOB_SPEC_URI", signed_url)
+    request = httpx.Request("GET", signed_url)
+    response = httpx.Response(403, request=request)
+    download_error = httpx.HTTPStatusError(f"download failed: {signed_url}", request=request, response=response)
+
+    def fail_download(_uri: str) -> bytes:
+        raise download_error
+
+    monkeypatch.setattr(bootstrap, "read_data", fail_download)
+
+    with pytest.raises(httpx.HTTPStatusError) as exc_info:
+        init_config.init_config_from_env()
+
+    assert exc_info.value is download_error
+    error_info = json.loads(error_path.read_text(encoding="utf-8"))
+    assert error_info["error_type"] == "config_error"
+    assert error_info["message"] == "HTTPStatusError (HTTP status 403)"
+    assert "X-Amz-" not in error_path.read_text(encoding="utf-8")
 
 
 def test_init_config_redacts_presigned_player_file_download_error(monkeypatch, tmp_path):
@@ -410,11 +450,11 @@ def test_init_config_redacts_presigned_player_file_download_error(monkeypatch, t
     def fail_download(_uri: str) -> bytes:
         raise download_error
 
-    monkeypatch.setattr(kubernetes_runner, "_read_job_spec", lambda _timings: job)
-    monkeypatch.setattr(kubernetes_runner, "read_data", fail_download)
+    monkeypatch.setattr(init_config, "_read_job_spec", lambda _timings: (job, b"{}"))
+    monkeypatch.setattr(init_config, "read_data", fail_download)
 
     with pytest.raises(runner_io.RunnerEpisodeError) as exc_info:
-        kubernetes_runner.init_config_from_env()
+        init_config.init_config_from_env()
 
     error_info = error_path.read_text(encoding="utf-8")
     assert str(exc_info.value) == "Player file for slot 0 could not be downloaded: HTTPStatusError (HTTP status 403)"
@@ -431,7 +471,7 @@ def test_init_config_maps_player_file_digest_or_size_mismatch_to_structured_erro
     error_path = _configure_init_env(monkeypatch, tmp_path, job, {"0": source.as_uri()})
 
     with pytest.raises(runner_io.RunnerEpisodeError, match="does not match") as exc_info:
-        kubernetes_runner.init_config_from_env()
+        init_config.init_config_from_env()
 
     assert exc_info.value.error_type == "player_file_mismatch"
     assert json.loads(error_path.read_text(encoding="utf-8"))["error_type"] == "player_file_mismatch"
@@ -439,7 +479,9 @@ def test_init_config_maps_player_file_digest_or_size_mismatch_to_structured_erro
 
 def test_run_from_env_writes_config_error_when_job_spec_validation_fails(monkeypatch, tmp_path):
     spec_path = tmp_path / "invalid-spec.json"
-    spec_path.write_text("{}", encoding="utf-8")
+    spec_path.write_text(
+        json.dumps({"unexpected": "https://example.test/spec?X-Amz-Signature=secret"}), encoding="utf-8"
+    )
     error_path = tmp_path / "error_info.json"
     monkeypatch.setattr(kubernetes_runner, "WORKDIR", tmp_path)
     monkeypatch.setattr(kubernetes_runner, "STATE_PATH", tmp_path / "state.json")
@@ -452,7 +494,10 @@ def test_run_from_env_writes_config_error_when_job_spec_validation_fails(monkeyp
     with pytest.raises(ValidationError, match="validation errors?"):
         kubernetes_runner.run_from_env()
 
-    assert json.loads(error_path.read_text(encoding="utf-8"))["error_type"] == "config_error"
+    error_info = json.loads(error_path.read_text(encoding="utf-8"))
+    assert error_info["error_type"] == "config_error"
+    assert "X-Amz-" not in error_info["message"]
+    assert "missing" in error_info["message"]
 
 
 def test_upload_outputs_uploads_raw_replay_bytes(tmp_path, monkeypatch):
@@ -3165,7 +3210,7 @@ def test_game_hosted_run_from_env_collects_private_outputs(
     monkeypatch.setattr(kubernetes_runner, "STATE_PATH", artifacts.workspace / "state.json")
     monkeypatch.setattr(kubernetes_runner, "_start_worker_health_server", lambda _port: None)
     monkeypatch.setattr(
-        kubernetes_runner, "_read_job_spec", lambda _timings: _runtime_job("game-hosted", [object(), object()])
+        kubernetes_runner, "_read_job_spec", lambda _timings: (_runtime_job("game-hosted", [object(), object()]), b"{}")
     )
     monkeypatch.setattr(kubernetes_runner.EpisodeArtifacts, "create", lambda _workdir, prefix: artifacts)
     monkeypatch.setattr(kubernetes_runner, "_run_kubernetes_episode", run_episode)
@@ -3313,7 +3358,7 @@ def test_game_hosted_artifact_upload_failure_preserves_success(monkeypatch, tmp_
     monkeypatch.setattr(kubernetes_runner, "WORKDIR", artifacts.workspace)
     monkeypatch.setattr(kubernetes_runner, "STATE_PATH", artifacts.workspace / "state.json")
     monkeypatch.setattr(kubernetes_runner, "_start_worker_health_server", lambda _port: None)
-    monkeypatch.setattr(kubernetes_runner, "_read_job_spec", lambda _timings: _runtime_job("game-hosted"))
+    monkeypatch.setattr(kubernetes_runner, "_read_job_spec", lambda _timings: (_runtime_job("game-hosted"), b"{}"))
     monkeypatch.setattr(kubernetes_runner.EpisodeArtifacts, "create", lambda _workdir, prefix: artifacts)
     monkeypatch.setattr(kubernetes_runner, "_run_kubernetes_episode", run_episode)
     monkeypatch.setattr(kubernetes_runner, "upload_file", fail_artifact_upload)
@@ -3354,7 +3399,9 @@ def test_game_hosted_failure_uploads_debug_artifacts_but_not_results(monkeypatch
     monkeypatch.setattr(kubernetes_runner, "WORKDIR", artifacts.workspace)
     monkeypatch.setattr(kubernetes_runner, "STATE_PATH", artifacts.workspace / "state.json")
     monkeypatch.setattr(kubernetes_runner, "_start_worker_health_server", lambda _port: None)
-    monkeypatch.setattr(kubernetes_runner, "_read_job_spec", lambda _timings: _runtime_job("game-hosted", [object()]))
+    monkeypatch.setattr(
+        kubernetes_runner, "_read_job_spec", lambda _timings: (_runtime_job("game-hosted", [object()]), b"{}")
+    )
     monkeypatch.setattr(kubernetes_runner.EpisodeArtifacts, "create", lambda _workdir, prefix: artifacts)
     monkeypatch.setattr(kubernetes_runner, "_run_kubernetes_episode", run_episode)
     monkeypatch.setenv("ERROR_INFO_URI", error_dest.as_uri())
@@ -3388,7 +3435,7 @@ def test_game_hosted_failure_preserves_original_error_with_garbage_status(monkey
     monkeypatch.setattr(kubernetes_runner, "WORKDIR", artifacts.workspace)
     monkeypatch.setattr(kubernetes_runner, "STATE_PATH", artifacts.workspace / "state.json")
     monkeypatch.setattr(kubernetes_runner, "_start_worker_health_server", lambda _port: None)
-    monkeypatch.setattr(kubernetes_runner, "_read_job_spec", lambda _timings: _runtime_job("game-hosted"))
+    monkeypatch.setattr(kubernetes_runner, "_read_job_spec", lambda _timings: (_runtime_job("game-hosted"), b"{}"))
     monkeypatch.setattr(kubernetes_runner.EpisodeArtifacts, "create", lambda _workdir, prefix: artifacts)
     monkeypatch.setattr(kubernetes_runner, "_run_kubernetes_episode", run_episode)
     monkeypatch.setenv("ERROR_INFO_URI", error_dest.as_uri())
@@ -3415,7 +3462,7 @@ def test_run_from_env_writes_error_info_on_failure(monkeypatch, tmp_path):
 
     monkeypatch.setenv("COWORLD_WORKDIR", str(tmp_path))
     monkeypatch.setattr(kubernetes_runner, "_start_worker_health_server", lambda port: None)
-    monkeypatch.setattr(kubernetes_runner, "_read_job_spec", lambda _timings: _runtime_job())
+    monkeypatch.setattr(kubernetes_runner, "_read_job_spec", lambda _timings: (_runtime_job(), b"{}"))
     monkeypatch.setattr(kubernetes_runner.EpisodeArtifacts, "create", lambda workdir, prefix: object())
     monkeypatch.setattr(
         kubernetes_runner,
@@ -3448,7 +3495,7 @@ def test_run_from_env_preserves_episode_error_when_debug_upload_fails(monkeypatc
     monkeypatch.setattr(kubernetes_runner, "WORKDIR", artifacts.workspace)
     monkeypatch.setattr(kubernetes_runner, "STATE_PATH", artifacts.workspace / "state.json")
     monkeypatch.setattr(kubernetes_runner, "_start_worker_health_server", lambda _port: None)
-    monkeypatch.setattr(kubernetes_runner, "_read_job_spec", lambda _timings: _runtime_job())
+    monkeypatch.setattr(kubernetes_runner, "_read_job_spec", lambda _timings: (_runtime_job(), b"{}"))
     monkeypatch.setattr(kubernetes_runner.EpisodeArtifacts, "create", lambda _workdir, prefix: artifacts)
     monkeypatch.setattr(kubernetes_runner, "_run_kubernetes_episode", fail_episode)
     monkeypatch.setattr(kubernetes_runner, "_upload_debug_logs", fail_debug_upload)
@@ -3474,7 +3521,7 @@ def test_run_from_env_preserves_job_spec_error_when_error_info_upload_fails(monk
     monkeypatch.setattr(kubernetes_runner, "WORKDIR", tmp_path)
     monkeypatch.setattr(kubernetes_runner, "_start_worker_health_server", lambda _port: None)
     monkeypatch.setattr(kubernetes_runner, "_read_job_spec", fail_job_spec)
-    monkeypatch.setattr(kubernetes_runner, "upload_data", fail_upload)
+    monkeypatch.setattr(bootstrap, "upload_data", fail_upload)
     monkeypatch.setenv("ERROR_INFO_URI", "https://example.test/error-info")
     for name in ("DEBUG_URI", "POLICY_LOG_URLS", "PLAYER_STATUS_URI", "WORKER_TIMINGS_URI"):
         monkeypatch.delenv(name, raising=False)
@@ -3498,10 +3545,10 @@ def test_run_from_env_preserves_episode_error_when_error_info_upload_fails(monke
 
     monkeypatch.setattr(kubernetes_runner, "WORKDIR", tmp_path)
     monkeypatch.setattr(kubernetes_runner, "_start_worker_health_server", lambda _port: None)
-    monkeypatch.setattr(kubernetes_runner, "_read_job_spec", lambda _timings: _runtime_job())
+    monkeypatch.setattr(kubernetes_runner, "_read_job_spec", lambda _timings: (_runtime_job(), b"{}"))
     monkeypatch.setattr(kubernetes_runner.EpisodeArtifacts, "create", lambda _workdir, prefix: artifacts)
     monkeypatch.setattr(kubernetes_runner, "_run_kubernetes_episode", fail_episode)
-    monkeypatch.setattr(kubernetes_runner, "upload_data", fail_upload)
+    monkeypatch.setattr(bootstrap, "upload_data", fail_upload)
     monkeypatch.setenv("ERROR_INFO_URI", "https://example.test/error-info")
     for name in ("DEBUG_URI", "POLICY_LOG_URLS", "PLAYER_STATUS_URI", "WORKER_TIMINGS_URI"):
         monkeypatch.delenv(name, raising=False)
@@ -3518,7 +3565,7 @@ def test_run_from_env_uploads_final_artifact_timing(monkeypatch):
     timing_snapshots: list[dict[str, float]] = []
 
     monkeypatch.setattr(kubernetes_runner, "_start_worker_health_server", lambda port: None)
-    monkeypatch.setattr(kubernetes_runner, "_read_job_spec", lambda _timings: _runtime_job())
+    monkeypatch.setattr(kubernetes_runner, "_read_job_spec", lambda _timings: (_runtime_job(), b"{}"))
     monkeypatch.setattr(kubernetes_runner.EpisodeArtifacts, "create", lambda workdir, prefix: object())
     monkeypatch.setattr(kubernetes_runner.time, "monotonic", lambda: clock["now"])
     monkeypatch.setattr(kubernetes_runner.time, "monotonic_ns", lambda: int(clock["now"] * 1_000_000_000))
@@ -3547,7 +3594,7 @@ def test_run_from_env_recovers_from_an_intermediate_timing_upload_failure(monkey
     outputs_uploaded: list[bool] = []
 
     monkeypatch.setattr(kubernetes_runner, "_start_worker_health_server", lambda port: None)
-    monkeypatch.setattr(kubernetes_runner, "_read_job_spec", lambda _timings: _runtime_job())
+    monkeypatch.setattr(kubernetes_runner, "_read_job_spec", lambda _timings: (_runtime_job(), b"{}"))
     monkeypatch.setattr(kubernetes_runner.EpisodeArtifacts, "create", lambda workdir, prefix: object())
 
     def run_episode(*_args, timings, upload_timings, **_kwargs):
@@ -3579,7 +3626,7 @@ def test_write_error_info_marks_failure_as_crash(monkeypatch, tmp_path):
     error_info = json.loads(error_dest.read_text(encoding="utf-8"))
     assert error_info["error_type"] == "crash"
     assert error_info["failed_policy_index"] is None
-    assert "Game container exited with code 1" in error_info["message"]
+    assert error_info["message"] == "RuntimeError (HTTP status unavailable)"
 
 
 def test_write_error_info_marks_player_pod_failure_as_player_error(monkeypatch, tmp_path):
@@ -3668,7 +3715,7 @@ def test_run_from_env_uploads_debug_logs_on_failure(monkeypatch, tmp_path):
     )
 
     monkeypatch.setattr(kubernetes_runner, "_start_worker_health_server", lambda port: None)
-    monkeypatch.setattr(kubernetes_runner, "_read_job_spec", lambda _timings: _runtime_job())
+    monkeypatch.setattr(kubernetes_runner, "_read_job_spec", lambda _timings: (_runtime_job(), b"{}"))
     monkeypatch.setattr(kubernetes_runner.EpisodeArtifacts, "create", lambda workdir, prefix: artifacts)
 
     def run_episode(*args, **kwargs):
@@ -3810,7 +3857,7 @@ def test_game_hosted_run_from_env_keeps_diagnostic_counts_when_publishing_fails(
     monkeypatch.setattr(kubernetes_runner, "STATE_PATH", artifacts.workspace / "state.json")
     monkeypatch.setattr(kubernetes_runner, "_start_worker_health_server", lambda _port: None)
     monkeypatch.setattr(
-        kubernetes_runner, "_read_job_spec", lambda _timings: _runtime_job("game-hosted", [object(), object()])
+        kubernetes_runner, "_read_job_spec", lambda _timings: (_runtime_job("game-hosted", [object(), object()]), b"{}")
     )
     monkeypatch.setattr(kubernetes_runner.EpisodeArtifacts, "create", lambda _workdir, prefix: artifacts)
     monkeypatch.setattr(kubernetes_runner, "_run_kubernetes_episode", run_episode)
@@ -3887,7 +3934,7 @@ def test_init_config_classifies_a_missing_player_file_url_map_as_config_error(mo
     monkeypatch.delenv("PLAYER_FILE_URLS")
 
     with pytest.raises(runner_io.RunnerEpisodeError, match="PLAYER_FILE_URLS is required"):
-        kubernetes_runner.init_config_from_env()
+        init_config.init_config_from_env()
 
     assert json.loads(error_path.read_text(encoding="utf-8"))["error_type"] == "config_error"
 
@@ -3977,18 +4024,16 @@ def test_artifact_wait_retains_late_game_start_without_extra_status_read(tmp_pat
 
 
 def test_process_birth_uses_linux_ticks_and_bracketed_import_clock(monkeypatch):
-    monkeypatch.setattr(kubernetes_runner, "_IMPORT_START_NS", 100)
-    monkeypatch.setattr(kubernetes_runner, "_IMPORT_ANCHOR_END_NS", 104)
-    monkeypatch.setattr(kubernetes_runner, "_IMPORT_DONE_NS", 120)
-    monkeypatch.setattr(kubernetes_runner, "_IMPORT_WALL_NS", 1_000_000_000)
-    monkeypatch.setattr(kubernetes_runner.sys, "platform", "linux")
+    monkeypatch.setattr(bootstrap.sys, "platform", "linux")
     stat = "1 (worker ) with spaces) " + " ".join(["S"] + ["0"] * 18 + ["10"])
-    monkeypatch.setattr(kubernetes_runner, "Path", lambda _: SimpleNamespace(read_text=lambda: stat))
-    monkeypatch.setattr(kubernetes_runner.os, "sysconf", lambda _: 100)
-    monkeypatch.setattr(kubernetes_runner.time, "CLOCK_BOOTTIME", 7, raising=False)
-    monkeypatch.setattr(kubernetes_runner.time, "clock_gettime_ns", lambda _: 2_000_000_000)
-    monkeypatch.setattr(kubernetes_runner.time, "monotonic_ns", lambda: 300)
-    timings = kubernetes_runner._process_timings()
+    monkeypatch.setattr(bootstrap, "Path", lambda _: SimpleNamespace(read_text=lambda: stat))
+    monkeypatch.setattr(bootstrap.os, "sysconf", lambda _: 100)
+    monkeypatch.setattr(bootstrap.time, "CLOCK_BOOTTIME", 7, raising=False)
+    monkeypatch.setattr(bootstrap.time, "clock_gettime_ns", lambda _: 2_000_000_000)
+    monkeypatch.setattr(bootstrap.time, "monotonic_ns", lambda: 300)
+    timings = bootstrap.process_timings(
+        import_start_ns=100, import_anchor_end_ns=104, import_done_ns=120, import_wall_ns=1_000_000_000
+    )
     assert timings.clock.monotonic_ns == 102
     assert timings.clock.uncertainty_ns == 4
     assert timings.intervals["imports"].start_ns == -2
@@ -4004,3 +4049,27 @@ def test_game_status_preserves_first_observed_start():
     core_v1.read_namespaced_pod.return_value.status.container_statuses = [SimpleNamespace(name="game", state=state)]
     assert kubernetes_runner._game_container_exit_code(core_v1, "ns", "game-pod", timings=timings) is None
     assert timings.game_container_started_wall_ns == 100
+
+
+def test_init_config_requires_private_mount(monkeypatch, tmp_path):
+    job = _game_hosted_job([b"player"])
+    error_path = _configure_init_env(monkeypatch, tmp_path, job, {})
+    monkeypatch.setattr(
+        init_config,
+        "COORDINATOR_SPEC_PATH",
+        init_config.COORDINATOR_SPEC_PATH.parent / "missing-mount" / "job_spec.json",
+    )
+    with pytest.raises(FileNotFoundError):
+        init_config.init_config_from_env()
+    assert not init_config.COORDINATOR_SPEC_PATH.parent.exists()
+    assert json.loads(error_path.read_text())["error_type"] == "config_error"
+
+
+def test_init_entrypoint_does_not_import_kubernetes_client():
+    subprocess.run(
+        [sys.executable, "-c", "import sys; import coworld.runner.init_config; assert 'kubernetes' not in sys.modules"],
+        env={**os.environ, "PYTHONPATH": os.pathsep.join(sys.path)},
+        check=True,
+        capture_output=True,
+        text=True,
+    )

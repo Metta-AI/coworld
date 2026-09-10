@@ -1,7 +1,7 @@
 # Coworld Kubernetes Runner
 
-`coworld.runner.kubernetes_runner` is the Kubernetes entrypoint for one Coworld episode. It replaces Docker-in-Docker
-by running the game as an ordinary container and selecting one of two player execution paths.
+`coworld.runner.init_config` prepares one Coworld episode; `coworld.runner.kubernetes_runner` runs its coordinator.
+The runner uses an ordinary game container and selects one of two player execution paths.
 
 The parent Kubernetes `Job` owns the game and coordinator containers. In `platform-hosted` mode, the coordinator creates
 one child pod per player. In `game-hosted` mode, the trusted init container stages player files and the game executes
@@ -59,11 +59,14 @@ The parent Job has:
 
 - `coworld-init-config`: writes the concrete game config and tokens. For game-hosted mode, it downloads, verifies, and
   writes one player file at a time. It writes `player_seats.json` after every slot is staged.
+  It also writes the validated job specification to the private coordinator volume.
 - `game`: regular non-restarting container that runs `manifest.game.runnable.image`, listens on port `8080`, and has a
   TCP liveness probe against the worker's health port (`9090`) so the kubelet stops it when the worker exits.
 - `worker`: regular Job container that runs the Kubernetes coordinator and holds a TCP health port (`9090`) open for its
   whole lifetime.
 - `coworld-workdir`: an `emptyDir` volume mounted into all parent containers.
+- `coordinator-spec`: a separate `emptyDir` mounted at `/var/run/coworld-coordinator` only by initialization and the worker.
+  The worker mount is read-only. Game, player, and sidecar containers cannot read the full specification through this volume.
 
 The game receives URI-based artifact environment variables. Today the app backend supplies `file://` URIs inside
 `COWORLD_WORKDIR` so the worker can validate results and upload hosted artifacts, but the game contract is URI-based
@@ -79,12 +82,14 @@ through a shared process namespace.
 ## Commands
 
 ```bash
-python -m coworld.runner.kubernetes_runner init-config
+python -m coworld.runner.init_config
 python -m coworld.runner.kubernetes_runner run-core-sidecars-v1
 ```
 
-`init-config` and `run-core-sidecars-v1` are separate commands because Kubernetes init containers must finish before
-the game and worker containers start. The versioned run command makes mixed coordinator/backend deployments fail
+Separate modules keep Kubernetes client and coordinator server imports out of initialization.
+Kubernetes init containers finish before the game and worker containers start.
+`init.spec_write` maps the init process's `setup` interval to the private spec copy, separate from game configuration writes.
+The versioned run command makes mixed coordinator/backend deployments fail
 closed instead of silently bypassing the core sidecars.
 
 ## Required Inputs
@@ -111,7 +116,14 @@ For a game-hosted init container, `PLAYER_FILE_URLS` is required. It is a JSON o
 a trusted download URL. Its key set must equal `0..len(players)-1`; an absent variable, missing slots, or extra slots
 are `config_error`.
 
-`JOB_SPEC_URI` points to a JSON `CoworldEpisodeJobSpec`:
+Initialization receives a remote `JOB_SPEC_URI` pointing to a JSON `CoworldEpisodeJobSpec`.
+It validates the downloaded specification and writes `/var/run/coworld-coordinator/job_spec.json` before succeeding.
+The worker receives that file URI and validates the same specification without downloading it again.
+Kubernetes starts the worker only after initialization succeeds, so it cannot read a partial write.
+Direct invocations of initialization must provide the private directory as well as `COWORLD_WORKDIR`.
+The full specification must never be written to the game-readable `/coworld` volume.
+
+The specification has this shape:
 
 ```json
 {
@@ -353,6 +365,38 @@ early.
 
 The parent Job has `ttlSecondsAfterFinished`, so completed and failed parent pods are cleaned up by the Kubernetes TTL
 controller.
+
+The private coordinator volume uses memory-backed `emptyDir`. Init copies the
+exact validated spec bytes there; the worker reads the same document. It counts
+against the Pod's memory rather than writing credentials to the node filesystem.
+
+The backend and coordinator image form one deployment bundle.
+`.github/workflows/deploy-observatory.yml` waits for the same source revision's
+coordinator digest, then passes it with the backend image to both deployment
+actions. Deploy or roll back that bundle together; mixing revisions can break
+the init command and private spec path. Local changes require rebuilding the
+coordinator and running the matching backend checkout.
+
+The `imports` interval excludes the eager `coworld` package imports. Complete process startup includes those imports
+through the Linux process-birth anchor; compare full process startup when measuring this optimization.
+
+Staging currently runs only the API and migrations, with dispatch and workers disabled
+(`devops/app-manifests/values.yaml`, `staging-observatory-backend`). Its backend-only
+deploy does not exercise this runner. Enabling dispatch there requires a matching
+coordinator image alongside the backend, as production deployment already supplies.
+
+A Docker build using `COWORLD_VERSION` must select a published release containing
+`coworld.runner.init_config`. The build import check rejects older releases.
+
+The deployment values intentionally contain no coordinator image fallback. A fresh deployment must receive its matching
+immutable image through the deployment bundle before dispatch. Generic initialization failures and bare init-container
+exits use `config_error`, an infrastructure-only category that cannot count against policies. The commissioner aborts
+the affected round or wave without changing membership status; recovery needs a new attempt. This includes a game-authored
+configuration that violates its declared schema. Structured runner errors retain their specific type.
+
+Generic exception reports in `error_info.json` include only the exception class and HTTP status. Validation reports omit
+Pydantic input and exception-context fields. The original exception still propagates into captured Pod logs.
+Initialization runs no game or policy code; a missing mount or import failure is a platform preparation failure.
 
 ## Coordinator image pull policy
 

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
-# Timestamp before heavy imports: import placement is part of the measurement.
+# Timestamp before module imports. Python has already imported the coworld package;
+# that earlier cost is covered by process birth, not this imports interval.
 # ruff: noqa: E402
 import time
 
@@ -53,12 +54,13 @@ from coworld.runner.bedrock_sidecar_wiring import (
     build_bedrock_sidecar,
     resolve_image_attribution_key,
 )
+from coworld.runner.bootstrap import STATE_PATH, WORKDIR, process_timings
+from coworld.runner.bootstrap import read_job_spec as _read_job_spec
+from coworld.runner.bootstrap import write_error_info as _write_error_info
 from coworld.runner.io import (
     PlayerRuntimeStatus,
     PlayerRuntimeStatuses,
     RunnerEpisodeError,
-    RunnerError,
-    RunnerErrorType,
     exception_summary,
     read_data,
     redact_uri,
@@ -86,21 +88,16 @@ from coworld.runner.runner import (
     _require_global_message,
     _require_http_ok,
     _validate_results_file,
-    coworld_game_config,
-    episode_player_tokens,
-    stage_player_files,
 )
 from coworld.runner.runner import (
     _player_query as _episode_player_query,
 )
-from coworld.types import CoworldEpisodeJobSpec, CoworldPlayerFileSpec, CoworldRunnableSpec
+from coworld.types import CoworldEpisodeJobSpec, CoworldRunnableSpec
 
 _IMPORT_DONE_NS = time.monotonic_ns()
 
 logger = logging.getLogger(__name__)
 
-WORKDIR = Path(os.environ.get("COWORLD_WORKDIR", "/coworld"))
-STATE_PATH = WORKDIR / "state.json"
 GAME_PORT = int(os.environ.get("COGAME_PORT", "8080"))
 HEALTH_PORT = int(os.environ.get("COWORLD_WORKER_HEALTH_PORT", "9090"))
 PLAYER_ARTIFACT_PORT = 9091
@@ -368,86 +365,6 @@ def _start_player_artifact_upload_server(tokens: list[str]) -> _PlayerArtifactUp
     return server
 
 
-def _process_timings() -> ProcessTimings:
-    clock = TimingClock(
-        wall_ns=_IMPORT_WALL_NS,
-        monotonic_ns=(_IMPORT_START_NS + _IMPORT_ANCHOR_END_NS) // 2,
-        uncertainty_ns=_IMPORT_ANCHOR_END_NS - _IMPORT_START_NS,
-    )
-    timings = ProcessTimings(clock=clock)
-    timings.record("imports", _IMPORT_START_NS, _IMPORT_DONE_NS)
-    if sys.platform == "linux":
-        # /proc starttime is ticks since boot; align via CLOCK_BOOTTIME, not wall time.
-        ticks = os.sysconf("SC_CLK_TCK")
-        start_ticks = int(Path("/proc/self/stat").read_text().rsplit(") ", 1)[1].split()[19])
-        boot_ns = time.clock_gettime_ns(time.CLOCK_BOOTTIME)
-        monotonic_ns = time.monotonic_ns()
-        timings.process_birth_offset_ns = (
-            start_ticks * 1_000_000_000 // ticks - boot_ns + monotonic_ns - clock.monotonic_ns
-        )
-        timings.process_birth_resolution_ns = 1_000_000_000 // ticks
-    return timings
-
-
-def init_config_from_env() -> None:
-    try:
-        timings = _process_timings()
-        job = _read_job_spec(timings)
-        if job.manifest.game.player_runtime == "game-hosted":
-            stage_start = time.monotonic_ns()
-            player_files = [player for player in job.players if isinstance(player, CoworldPlayerFileSpec)]
-            raw_player_file_urls = os.environ.get("PLAYER_FILE_URLS")
-            if raw_player_file_urls is None:
-                raise RunnerEpisodeError(
-                    "PLAYER_FILE_URLS is required for a game-hosted episode",
-                    error_type="config_error",
-                )
-            player_file_urls = TypeAdapter(dict[int, str]).validate_json(raw_player_file_urls)
-            if set(player_file_urls) != set(range(len(player_files))):
-                raise RunnerEpisodeError(
-                    "PLAYER_FILE_URLS must contain exactly one URL for every player-file slot",
-                    error_type="config_error",
-                )
-
-            def read_player_file(slot: int) -> bytes:
-                try:
-                    return read_data(player_file_urls[slot])
-                except Exception as exc:
-                    raise RunnerEpisodeError(
-                        f"Player file for slot {slot} could not be downloaded: {exception_summary(exc)}",
-                        error_type="player_file_unavailable",
-                    ) from None
-
-            artifacts = EpisodeArtifacts.create(WORKDIR, prefix="coworld-job-")
-            bytes_total = stage_player_files(player_files, read_player_file, artifacts)
-            (WORKDIR / "player_file_stage.json").write_text(
-                PlayerFileStageTiming(
-                    stage_s=timings.record("player_files", stage_start),
-                    count=len(player_files),
-                    bytes_total=bytes_total,
-                ).model_dump_json(),
-                encoding="utf-8",
-            )
-        config_start = time.monotonic_ns()
-        tokens = episode_player_tokens(job)
-        upload_data(
-            os.environ["COGAME_CONFIG_URI"],
-            json.dumps(coworld_game_config(job, tokens), indent=2),
-            content_type="application/json",
-        )
-        STATE_PATH.write_text(json.dumps({"tokens": tokens}), encoding="utf-8")
-        timings.record("config_write", config_start)
-        timings.record("bootstrap", _IMPORT_START_NS)
-        timings.final_clock = TimingClock.capture()
-        (WORKDIR / "init_timings.json").write_text(timings.model_dump_json(exclude_none=True), encoding="utf-8")
-    except Exception as exc:
-        try:
-            _write_error_info(exc)
-        except Exception as cleanup_exc:
-            logger.warning("Failed to upload error info after episode failure: %s", exception_summary(cleanup_exc))
-        raise
-
-
 def run_from_env() -> None:
     # Hold a TCP port open for the worker's entire lifetime so the game container can liveness-probe it.
     # When this process exits for any reason (timeout, crash, OOM) the kernel closes the socket, the
@@ -462,9 +379,14 @@ def run_from_env() -> None:
             timing_uploads.append(timing_executor.submit(_upload_timings, current_timings.model_copy(deep=True)))
 
         try:
-            worker_timings = _process_timings()
+            worker_timings = process_timings(
+                import_start_ns=_IMPORT_START_NS,
+                import_wall_ns=_IMPORT_WALL_NS,
+                import_anchor_end_ns=_IMPORT_ANCHOR_END_NS,
+                import_done_ns=_IMPORT_DONE_NS,
+            )
             timings.worker = worker_timings
-            job = _read_job_spec(worker_timings)
+            job, _ = _read_job_spec(worker_timings)
             init_timings_path = WORKDIR / "init_timings.json"
             if init_timings_path.exists():
                 timings.init = ProcessTimings.model_validate_json(init_timings_path.read_bytes())
@@ -542,35 +464,6 @@ def run_from_env() -> None:
         worker_timings.final_clock = TimingClock.capture()
         queue_timings_upload(timings)
         timing_uploads[-1].result()
-
-
-def _read_job_spec(timings: ProcessTimings) -> CoworldEpisodeJobSpec:
-    start = time.monotonic_ns()
-    raw = read_data(os.environ["JOB_SPEC_URI"])
-    fetched = time.monotonic_ns()
-    job = CoworldEpisodeJobSpec.model_validate_json(raw)
-    timings.record("spec_fetch", start, fetched)
-    timings.record("spec_validate", fetched)
-    timings.spec_bytes = len(raw)
-    timings.spec_scheme = urlsplit(os.environ["JOB_SPEC_URI"]).scheme
-    return job
-
-
-def _write_error_info(exc: Exception) -> None:
-    error_info_uri = os.environ.get("ERROR_INFO_URI")
-    if error_info_uri is None:
-        return
-    if isinstance(exc, RunnerEpisodeError):
-        runner_error = RunnerError(
-            error_type=cast(RunnerErrorType, exc.error_type),
-            message=str(exc)[:2000],
-            failed_policy_index=exc.failed_policy_index,
-        )
-    elif isinstance(exc, ValidationError):
-        runner_error = RunnerError(error_type="config_error", message=str(exc)[:2000])
-    else:
-        runner_error = RunnerError(error_type="crash", message=str(exc)[:2000])
-    upload_data(error_info_uri, runner_error.model_dump_json(), content_type="application/json")
 
 
 def _upload_debug_logs(artifacts: EpisodeArtifacts) -> None:
@@ -1925,12 +1818,9 @@ def _workload_tolerations() -> list[client.V1Toleration] | None:
 
 def main() -> None:
     parser = argparse.ArgumentParser()
-    parser.add_argument("command", choices=("init-config", "run-core-sidecars-v1"))
-    args = parser.parse_args()
-    if args.command == "init-config":
-        init_config_from_env()
-    else:
-        run_from_env()
+    parser.add_argument("command", choices=("run-core-sidecars-v1",))
+    parser.parse_args()
+    run_from_env()
 
 
 if __name__ == "__main__":
