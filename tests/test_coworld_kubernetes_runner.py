@@ -64,6 +64,7 @@ def test_legacy_run_command_fails_closed(monkeypatch: pytest.MonkeyPatch) -> Non
 
 @pytest.fixture(autouse=True)
 def _player_service_wait_env(monkeypatch):
+    monkeypatch.delenv("COWORLD_PLAYER_IMAGE_PULL_POLICY", raising=False)
     monkeypatch.setenv("COWORLD_COORDINATOR_IMAGE", "coworld-coordinator:latest")
     monkeypatch.setenv("COWORLD_TIMEOUT_SECONDS", "60")
     monkeypatch.setenv(
@@ -2531,6 +2532,7 @@ def test_create_player_pod_injects_policy_secret_env(monkeypatch):
     wait_for_game = pod.spec.init_containers[0]
     assert wait_for_game.name == "wait-for-game-service"
     assert wait_for_game.image == "coworld-coordinator:latest"
+    assert wait_for_game.image_pull_policy == "Always"
     wait_env = {env_var.name: env_var.value for env_var in wait_for_game.env}
     assert wait_env == {
         "COWORLD_GAME_HOST": "game-service",

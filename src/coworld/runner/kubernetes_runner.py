@@ -1223,7 +1223,7 @@ def _create_player_pod(
         client.V1Container(
             name="wait-for-game-service",
             image=os.environ["COWORLD_COORDINATOR_IMAGE"],
-            image_pull_policy="IfNotPresent",
+            image_pull_policy=_player_image_pull_policy(os.environ["COWORLD_COORDINATOR_IMAGE"]),
             command=["python", "-c", _WAIT_FOR_GAME_SERVICE_SCRIPT],
             env=[
                 client.V1EnvVar(
@@ -1375,7 +1375,7 @@ def _create_player_pod(
 
 
 def _player_image_pull_policy(image: str) -> str:
-    """Digest-pinned (@sha256:) player images are immutable, so IfNotPresent skips the
+    """Digest-pinned (@sha256:) images in player Pods are immutable, so IfNotPresent skips the
     registry round-trip on warm nodes. The dispatcher sets the env override for local dev,
     where images are bare tags that only exist on the node."""
     override = os.environ.get("COWORLD_PLAYER_IMAGE_PULL_POLICY")

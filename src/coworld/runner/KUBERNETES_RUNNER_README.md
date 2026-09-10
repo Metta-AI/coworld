@@ -353,3 +353,13 @@ early.
 
 The parent Job has `ttlSecondsAfterFinished`, so completed and failed parent pods are cleaned up by the Kubernetes TTL
 controller.
+
+## Coordinator image pull policy
+
+Coordinator init, worker, and player wait-for-service containers use `IfNotPresent` for immutable digest references and
+`Always` for mutable tags, matching the episode game image policy. Local development uses `IfNotPresent` for locally built tags.
+Release deployment resolves the coordinator image to a digest before configuring the backend and orchestrator. A changed
+digest selects new content; an already cached digest avoids a registry check.
+
+The dispatcher sets `COWORLD_PLAYER_IMAGE_PULL_POLICY=IfNotPresent` for local development.
+This override covers player images and their coordinator wait-for-service container.
