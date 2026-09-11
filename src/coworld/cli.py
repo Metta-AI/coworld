@@ -859,7 +859,8 @@ def show_coworld(
     json_output: Annotated[bool, typer.Option("--json", help="Print raw JSON.")] = False,
 ) -> None:
     with CoworldUploadClient.from_login(server_url=server) as client:
-        coworld = client.find_coworld(coworld_id)
+        summary = client.find_coworld(coworld_id)
+        coworld = client.get_coworld(summary.id) if summary is not None else None
     if coworld is None:
         console.print("[red]Coworld not found[/red]")
         raise typer.Exit(1)

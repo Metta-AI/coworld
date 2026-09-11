@@ -140,7 +140,7 @@ def test_next_version_command_bumps_canonical_patch(httpserver: HTTPServer) -> N
     coworld_id = "cow_00000000-0000-0000-0000-000000000010"
     manifest = _manifest()
     httpserver.expect_request(
-        "/observatory/v2/coworlds",
+        "/observatory/v2/coworlds/summaries",
         method="GET",
         query_string="limit=200",
     ).respond_with_json(
@@ -165,7 +165,7 @@ def test_next_version_command_bumps_canonical_patch(httpserver: HTTPServer) -> N
 def test_next_version_command_bumps_past_noncanonical_versions(httpserver: HTTPServer) -> None:
     manifest = _manifest()
     httpserver.expect_request(
-        "/observatory/v2/coworlds",
+        "/observatory/v2/coworlds/summaries",
         method="GET",
         query_string="limit=200",
     ).respond_with_json(
@@ -195,7 +195,7 @@ def test_next_version_command_bumps_past_noncanonical_versions(httpserver: HTTPS
 
 def test_next_version_command_fails_without_existing_coworld(httpserver: HTTPServer) -> None:
     httpserver.expect_request(
-        "/observatory/v2/coworlds",
+        "/observatory/v2/coworlds/summaries",
         method="GET",
         query_string="limit=200",
     ).respond_with_json([])
@@ -209,7 +209,7 @@ def test_next_version_command_fails_without_existing_coworld(httpserver: HTTPSer
 def test_list_command_json_outputs_page_envelope(httpserver: HTTPServer) -> None:
     manifest = _manifest()
     httpserver.expect_request(
-        "/observatory/v2/coworlds",
+        "/observatory/v2/coworlds/summaries",
         method="GET",
         query_string="limit=200",
     ).respond_with_json(
@@ -710,11 +710,9 @@ def test_upload_coworld_command_waits_for_hosted_smoke_success(httpserver: HTTPS
     image_id = "img_00000000-0000-0000-0000-000000000099"
     manifest = _manifest_with_image(image_id)
 
-    httpserver.expect_request(
-        "/observatory/v2/coworlds",
-        method="GET",
-        query_string="limit=200",
-    ).respond_with_json([_coworld_entry(old_coworld_id, manifest, version="0.1.0", canonical=True)])
+    httpserver.expect_request(f"/observatory/v2/coworlds/{old_coworld_id}", method="GET").respond_with_json(
+        _coworld_entry(old_coworld_id, manifest, version="0.1.0", canonical=True)
+    )
     httpserver.expect_request("/observatory/v2/coworlds/upload", method="POST").respond_with_json(
         _coworld_entry(new_coworld_id, manifest, version="0.2.0", canonical=False)
     )
@@ -763,11 +761,9 @@ def test_upload_coworld_command_fails_on_hosted_smoke_failure(httpserver: HTTPSe
     image_id = "img_00000000-0000-0000-0000-000000000099"
     manifest = _manifest_with_image(image_id)
 
-    httpserver.expect_request(
-        "/observatory/v2/coworlds",
-        method="GET",
-        query_string="limit=200",
-    ).respond_with_json([_coworld_entry(old_coworld_id, manifest, version="0.1.0", canonical=True)])
+    httpserver.expect_request(f"/observatory/v2/coworlds/{old_coworld_id}", method="GET").respond_with_json(
+        _coworld_entry(old_coworld_id, manifest, version="0.1.0", canonical=True)
+    )
     httpserver.expect_request("/observatory/v2/coworlds/upload", method="POST").respond_with_json(
         _coworld_entry(new_coworld_id, manifest, version="0.2.0", canonical=False)
     )
@@ -825,11 +821,9 @@ def test_upload_coworld_command_waits_for_certification_success(httpserver: HTTP
     image_id = "img_00000000-0000-0000-0000-000000000099"
     manifest = _manifest_with_image(image_id)
 
-    httpserver.expect_request(
-        "/observatory/v2/coworlds",
-        method="GET",
-        query_string="limit=200",
-    ).respond_with_json([_coworld_entry(old_coworld_id, manifest, version="0.1.0", canonical=True)])
+    httpserver.expect_request(f"/observatory/v2/coworlds/{old_coworld_id}", method="GET").respond_with_json(
+        _coworld_entry(old_coworld_id, manifest, version="0.1.0", canonical=True)
+    )
     httpserver.expect_request("/observatory/v2/coworlds/upload", method="POST").respond_with_json(
         _coworld_entry(new_coworld_id, manifest, version="0.2.0", canonical=True)
     )
@@ -872,11 +866,9 @@ def test_upload_coworld_command_wait_certification_fails_with_remediation(httpse
     image_id = "img_00000000-0000-0000-0000-000000000099"
     manifest = _manifest_with_image(image_id)
 
-    httpserver.expect_request(
-        "/observatory/v2/coworlds",
-        method="GET",
-        query_string="limit=200",
-    ).respond_with_json([_coworld_entry(old_coworld_id, manifest, version="0.1.0", canonical=True)])
+    httpserver.expect_request(f"/observatory/v2/coworlds/{old_coworld_id}", method="GET").respond_with_json(
+        _coworld_entry(old_coworld_id, manifest, version="0.1.0", canonical=True)
+    )
     httpserver.expect_request("/observatory/v2/coworlds/upload", method="POST").respond_with_json(
         _coworld_entry(new_coworld_id, manifest, version="0.2.0", canonical=True)
     )
@@ -928,11 +920,9 @@ def test_upload_coworld_command_wait_certification_timeout_exits_3(httpserver: H
     image_id = "img_00000000-0000-0000-0000-000000000099"
     manifest = _manifest_with_image(image_id)
 
-    httpserver.expect_request(
-        "/observatory/v2/coworlds",
-        method="GET",
-        query_string="limit=200",
-    ).respond_with_json([_coworld_entry(old_coworld_id, manifest, version="0.1.0", canonical=True)])
+    httpserver.expect_request(f"/observatory/v2/coworlds/{old_coworld_id}", method="GET").respond_with_json(
+        _coworld_entry(old_coworld_id, manifest, version="0.1.0", canonical=True)
+    )
     httpserver.expect_request("/observatory/v2/coworlds/upload", method="POST").respond_with_json(
         _coworld_entry(new_coworld_id, manifest, version="0.2.0", canonical=True)
     )
@@ -1106,23 +1096,16 @@ def test_upload_coworld_from_existing_manifest_applies_patch_without_images(
         "coworld.upload._local_image_client_hash",
         lambda image: pytest.fail(f"hashed unchanged image {image}"),
     )
-    httpserver.expect_request(
-        "/observatory/v2/coworlds",
-        method="GET",
-        query_string="limit=200",
-    ).respond_with_json(
-        [
-            {
-                "id": coworld_id,
-                "name": "unit-test-game",
-                "version": "0.1.0",
-                "manifest": manifest,
-                "manifest_hash": "sha256:old-manifest-hash",
-                "size_bytes": 1234,
-                "created_at": "2026-05-08T21:00:00Z",
-                "canonical": True,
-            }
-        ]
+    httpserver.expect_request(f"/observatory/v2/coworlds/{coworld_id}", method="GET").respond_with_json(
+        {
+            "id": coworld_id,
+            "name": "unit-test-game",
+            "version": "0.1.0",
+            "manifest": manifest,
+            "manifest_hash": "sha256:old-manifest-hash",
+            "size_bytes": 1234,
+            "canonical": True,
+        }
     )
     httpserver.expect_request("/observatory/v2/coworlds/upload", method="POST").respond_with_json(
         {
@@ -1190,23 +1173,16 @@ def test_upload_coworld_from_existing_manifest_updates_one_role_image(
     monkeypatch.setattr("coworld.upload.assert_docker_image_reachable", lambda *_args, **_kwargs: None)
     monkeypatch.setattr("coworld.upload._local_image_client_hash", fake_hash)
     monkeypatch.setattr("coworld.upload._push_container_image", lambda source_image, push_info: None)
-    httpserver.expect_request(
-        "/observatory/v2/coworlds",
-        method="GET",
-        query_string="limit=200",
-    ).respond_with_json(
-        [
-            {
-                "id": coworld_id,
-                "name": "unit-test-game",
-                "version": "0.1.0",
-                "manifest": manifest,
-                "manifest_hash": "sha256:old-manifest-hash",
-                "size_bytes": 1234,
-                "created_at": "2026-05-08T21:00:00Z",
-                "canonical": True,
-            }
-        ]
+    httpserver.expect_request(f"/observatory/v2/coworlds/{coworld_id}", method="GET").respond_with_json(
+        {
+            "id": coworld_id,
+            "name": "unit-test-game",
+            "version": "0.1.0",
+            "manifest": manifest,
+            "manifest_hash": "sha256:old-manifest-hash",
+            "size_bytes": 1234,
+            "canonical": True,
+        }
     )
     httpserver.expect_request(
         "/observatory/v2/container_images/upload",
@@ -1956,22 +1932,18 @@ def test_upload_policy_command_rejects_run_as_single_quoted_string() -> None:
 
 def test_coworld_list_command_prints_json(httpserver: HTTPServer, monkeypatch: pytest.MonkeyPatch) -> None:
     httpserver.expect_request(
-        "/observatory/v2/coworlds",
+        "/observatory/v2/coworlds/summaries",
         method="GET",
         headers={"Authorization": "Bearer token"},
         query_string="limit=50",
     ).respond_with_json(
         [
-            {
-                "id": "cow_00000000-0000-0000-0000-000000000001",
-                "name": "unit-test-game",
-                "version": "0.1.0",
-                "manifest": _manifest_with_image("img_00000000-0000-0000-0000-000000000010"),
-                "manifest_hash": "sha256:manifest-hash",
-                "size_bytes": 1234,
-                "created_at": "2026-05-08T21:00:00Z",
-                "canonical": True,
-            }
+            _coworld_entry(
+                "cow_00000000-0000-0000-0000-000000000001",
+                _manifest_with_image("img_00000000-0000-0000-0000-000000000010"),
+                version="0.1.0",
+                canonical=True,
+            )
         ]
     )
     result = CliRunner().invoke(
@@ -2069,24 +2041,15 @@ def test_hosted_game_join_posts_join_session(httpserver: HTTPServer, monkeypatch
 
 def test_coworld_show_command_prints_json(httpserver: HTTPServer, monkeypatch: pytest.MonkeyPatch) -> None:
     coworld_id = "cow_00000000-0000-0000-0000-000000000001"
+    manifest = _manifest_with_image("img_00000000-0000-0000-0000-000000000010")
     httpserver.expect_request(
-        "/observatory/v2/coworlds",
+        "/observatory/v2/coworlds/summaries",
         method="GET",
         headers={"Authorization": "Bearer token"},
         query_string="limit=200",
-    ).respond_with_json(
-        [
-            {
-                "id": coworld_id,
-                "name": "unit-test-game",
-                "version": "0.1.0",
-                "manifest": _manifest_with_image("img_00000000-0000-0000-0000-000000000010"),
-                "manifest_hash": "sha256:manifest-hash",
-                "size_bytes": 1234,
-                "created_at": "2026-05-08T21:00:00Z",
-                "canonical": True,
-            }
-        ]
+    ).respond_with_json([_coworld_entry(coworld_id, manifest, version="0.1.0", canonical=True)])
+    httpserver.expect_request(f"/observatory/v2/coworlds/{coworld_id}", method="GET").respond_with_json(
+        _coworld_entry(coworld_id, manifest, version="0.1.0", canonical=True)
     )
     result = CliRunner().invoke(
         app,
@@ -2107,45 +2070,33 @@ def test_coworld_show_command_pages_until_uploaded_world(
     httpserver: HTTPServer, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     coworld_id = "cow_00000000-0000-0000-0000-000000000001"
+    manifest = _manifest_with_image("img_00000000-0000-0000-0000-000000000010")
     httpserver.expect_request(
-        "/observatory/v2/coworlds",
+        "/observatory/v2/coworlds/summaries",
         method="GET",
         headers={"Authorization": "Bearer token"},
         query_string="limit=200",
     ).respond_with_json(
         [
-            {
-                "id": f"cow_10000000-0000-0000-0000-00000000{i:04d}",
-                "name": f"other-game-{i}",
-                "version": "0.1.0",
-                "manifest": _manifest_with_image("img_00000000-0000-0000-0000-000000000010"),
-                "manifest_hash": f"sha256:manifest-hash-{i}",
-                "size_bytes": 1234,
-                "created_at": "2026-05-08T21:00:00Z",
-                "canonical": False,
-            }
+            _coworld_entry(
+                f"cow_10000000-0000-0000-0000-00000000{i:04d}",
+                manifest,
+                version="0.1.0",
+                canonical=False,
+                name=f"other-game-{i}",
+            )
             for i in range(200)
         ],
         headers={NEXT_CURSOR_HEADER: "page-2"},
     )
     httpserver.expect_request(
-        "/observatory/v2/coworlds",
+        "/observatory/v2/coworlds/summaries",
         method="GET",
         headers={"Authorization": "Bearer token"},
         query_string="limit=200&cursor=page-2",
-    ).respond_with_json(
-        [
-            {
-                "id": coworld_id,
-                "name": "unit-test-game",
-                "version": "0.1.0",
-                "manifest": _manifest_with_image("img_00000000-0000-0000-0000-000000000010"),
-                "manifest_hash": "sha256:manifest-hash",
-                "size_bytes": 1234,
-                "created_at": "2026-05-08T21:00:00Z",
-                "canonical": True,
-            }
-        ]
+    ).respond_with_json([_coworld_entry(coworld_id, manifest, version="0.1.0", canonical=True)])
+    httpserver.expect_request(f"/observatory/v2/coworlds/{coworld_id}", method="GET").respond_with_json(
+        _coworld_entry(coworld_id, manifest, version="0.1.0", canonical=True)
     )
     result = CliRunner().invoke(
         app,
@@ -2490,22 +2441,18 @@ def test_download_coworld_command_resolves_canonical_name(
 
     monkeypatch.setattr("coworld.upload.subprocess.run", fake_run)
     httpserver.expect_request(
-        "/observatory/v2/coworlds",
+        "/observatory/v2/coworlds/summaries",
         method="GET",
         headers={"Authorization": "Bearer token"},
         query_string="limit=200",
     ).respond_with_json(
         [
-            {
-                "id": coworld_id,
-                "name": "unit-test-game",
-                "version": "0.1.0",
-                "manifest": _manifest_with_image(public_image_uri),
-                "manifest_hash": "sha256:manifest-hash",
-                "size_bytes": 1234,
-                "created_at": "2026-05-12T00:00:00Z",
-                "canonical": True,
-            }
+            _coworld_entry(
+                coworld_id,
+                _manifest_with_image(public_image_uri),
+                version="0.1.0",
+                canonical=True,
+            )
         ]
     )
     httpserver.expect_request(
@@ -2902,10 +2849,25 @@ def _coworld_entry(
         "name": name,
         "version": version,
         "manifest": manifest,
+        "manifest_summary": _manifest_summary(manifest),
         "manifest_hash": "sha256:manifest-hash",
         "size_bytes": 1234,
         "created_at": "2026-05-08T21:00:00Z",
         "canonical": canonical,
+    }
+
+
+def _manifest_summary(manifest: dict[str, object]) -> dict[str, object]:
+    game = cast(dict[str, object], manifest["game"])
+    variants = cast(list[dict[str, object]], manifest["variants"])
+    return {
+        "description": game["description"],
+        "owner": game["owner"],
+        "variants": [{"id": variant["id"], "name": variant["name"]} for variant in variants],
+        "role_counts": {
+            role: len(cast(list[object], manifest.get(role, [])))
+            for role in ("player", "commissioner", "grader", "diagnoser", "optimizer")
+        },
     }
 
 

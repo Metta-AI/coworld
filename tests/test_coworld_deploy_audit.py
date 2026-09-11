@@ -16,7 +16,7 @@ from coworld.deploy_audit import (
     load_coworld_registry,
     summarize_coworld_registry,
 )
-from coworld.upload import CoworldListEntry, CoworldListPage
+from coworld.upload import CoworldListEntry, CoworldListPage, CoworldManifestSummary
 
 
 def test_classify_manual_upload_workflow_is_dry_run_gated() -> None:
@@ -190,7 +190,20 @@ def _coworld(
         id=coworld_id,
         name=name,
         version=version,
-        manifest={"game": {"name": name}},
+        manifest_summary=CoworldManifestSummary.model_validate(
+            {
+                "description": name,
+                "owner": "coworld@example.com",
+                "variants": [],
+                "role_counts": {
+                    "player": 1,
+                    "commissioner": 0,
+                    "grader": 0,
+                    "diagnoser": 0,
+                    "optimizer": 0,
+                },
+            }
+        ),
         manifest_hash=f"sha256:{coworld_id}",
         size_bytes=123,
         created_at=datetime.fromisoformat(created_at.replace("Z", "+00:00")),

@@ -174,11 +174,31 @@ class ContainerImageResponse(BaseModel):
     public_image_uri: str | None = None
 
 
+class CoworldVariantSummary(BaseModel):
+    id: str
+    name: str
+
+
+class CoworldRoleCounts(BaseModel):
+    player: int
+    commissioner: int
+    grader: int
+    diagnoser: int
+    optimizer: int
+
+
+class CoworldManifestSummary(BaseModel):
+    description: str
+    owner: str
+    variants: list[CoworldVariantSummary]
+    role_counts: CoworldRoleCounts
+
+
 class CoworldListEntry(BaseModel):
     id: str
     name: str
     version: str
-    manifest: dict[str, Any]
+    manifest_summary: CoworldManifestSummary
     manifest_hash: str
     size_bytes: int
     created_at: datetime
@@ -639,7 +659,7 @@ class CoworldUploadClient:
         if cursor is not None:
             params["cursor"] = cursor
         response = self._http_client.get(
-            "/v2/coworlds",
+            "/v2/coworlds/summaries",
             headers=self._headers(),
             params=params,
             timeout=60.0,
@@ -1396,16 +1416,13 @@ def _hosted_smoke_timeout_message(coworld_id: str, rows: Any) -> str:
     return f"Timed out waiting for hosted smoke certification for Coworld {coworld_id}:\n- " + "\n- ".join(details)
 
 
-def _resolve_stored_coworld(client: CoworldUploadClient, coworld_ref: str) -> CoworldListEntry:
+def _resolve_stored_coworld(client: CoworldUploadClient, coworld_ref: str) -> CoworldUploadResponse:
     if coworld_ref.startswith("cow_"):
-        coworld = client.find_coworld(coworld_ref)
-        if coworld is None:
-            raise RuntimeError(f"Coworld not found: {coworld_ref}")
-        return coworld
-    coworld = client.find_canonical_coworld(coworld_ref)
-    if coworld is None:
+        return client.get_coworld(coworld_ref)
+    summary = client.find_canonical_coworld(coworld_ref)
+    if summary is None:
         raise RuntimeError(f"Canonical Coworld not found: {coworld_ref}")
-    return coworld
+    return client.get_coworld(summary.id)
 
 
 def _validate_manifest_document(manifest: dict[str, object]) -> None:

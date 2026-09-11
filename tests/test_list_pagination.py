@@ -23,7 +23,18 @@ def _coworld_entry(index: int, *, name: str | None = None) -> dict[str, Any]:
         "id": f"cow_{index}",
         "name": name or f"coworld-{index}",
         "version": "1.0.0",
-        "manifest": {},
+        "manifest_summary": {
+            "description": "A compact summary",
+            "owner": "coworld@example.com",
+            "variants": [{"id": "default", "name": "Default"}],
+            "role_counts": {
+                "player": 1,
+                "commissioner": 0,
+                "grader": 0,
+                "diagnoser": 0,
+                "optimizer": 0,
+            },
+        },
         "manifest_hash": f"hash-{index}",
         "size_bytes": 1,
         "created_at": "2026-08-20T12:00:00Z",
@@ -99,7 +110,7 @@ def _submission() -> dict[str, Any]:
 
 
 def test_list_coworlds_page_carries_next_cursor(httpserver: HTTPServer) -> None:
-    httpserver.expect_request("/observatory/v2/coworlds", query_string={"limit": "5"}).respond_with_json(
+    httpserver.expect_request("/observatory/v2/coworlds/summaries", query_string={"limit": "5"}).respond_with_json(
         [_coworld_entry(0)], headers={NEXT_CURSOR_HEADER: "tok-1"}
     )
     with CoworldUploadClient(server_url=httpserver.url_for(""), token="usr_test") as client:
@@ -109,11 +120,11 @@ def test_list_coworlds_page_carries_next_cursor(httpserver: HTTPServer) -> None:
 
 
 def test_find_coworld_walks_pages_by_cursor(httpserver: HTTPServer) -> None:
-    httpserver.expect_request("/observatory/v2/coworlds", query_string={"limit": "200"}).respond_with_json(
+    httpserver.expect_request("/observatory/v2/coworlds/summaries", query_string={"limit": "200"}).respond_with_json(
         [_coworld_entry(0)], headers={NEXT_CURSOR_HEADER: "page-2"}
     )
     httpserver.expect_request(
-        "/observatory/v2/coworlds", query_string={"limit": "200", "cursor": "page-2"}
+        "/observatory/v2/coworlds/summaries", query_string={"limit": "200", "cursor": "page-2"}
     ).respond_with_json([_coworld_entry(1)])
     with CoworldUploadClient(server_url=httpserver.url_for(""), token="usr_test") as client:
         found = client.find_coworld("cow_1")
@@ -124,7 +135,7 @@ def test_find_coworld_walks_pages_by_cursor(httpserver: HTTPServer) -> None:
 def test_find_coworld_stops_when_header_absent(httpserver: HTTPServer) -> None:
     # A missing continuation header is the end of the listing, even when the
     # page came back full.
-    httpserver.expect_request("/observatory/v2/coworlds", query_string={"limit": "200"}).respond_with_json(
+    httpserver.expect_request("/observatory/v2/coworlds/summaries", query_string={"limit": "200"}).respond_with_json(
         [_coworld_entry(0)]
     )
     with CoworldUploadClient(server_url=httpserver.url_for(""), token="usr_test") as client:
@@ -132,12 +143,12 @@ def test_find_coworld_stops_when_header_absent(httpserver: HTTPServer) -> None:
 
 
 def test_iter_coworlds_by_name_collects_matches_across_pages(httpserver: HTTPServer) -> None:
-    httpserver.expect_request("/observatory/v2/coworlds", query_string={"limit": "200"}).respond_with_json(
+    httpserver.expect_request("/observatory/v2/coworlds/summaries", query_string={"limit": "200"}).respond_with_json(
         [_coworld_entry(0, name="paint-arena"), _coworld_entry(1)],
         headers={NEXT_CURSOR_HEADER: "page-2"},
     )
     httpserver.expect_request(
-        "/observatory/v2/coworlds", query_string={"limit": "200", "cursor": "page-2"}
+        "/observatory/v2/coworlds/summaries", query_string={"limit": "200", "cursor": "page-2"}
     ).respond_with_json([_coworld_entry(2, name="paint_arena")])
     with CoworldUploadClient(server_url=httpserver.url_for(""), token="usr_test") as client:
         matches = list(client.iter_coworlds_by_name("paint-arena"))
