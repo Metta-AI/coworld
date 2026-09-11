@@ -405,6 +405,8 @@ def run_from_env() -> None:
             except Exception as cleanup_exc:
                 logger.warning("Failed to upload debug logs after episode failure: %s", exception_summary(cleanup_exc))
             try:
+                if timings.worker is not None:
+                    timings.worker.final_clock = TimingClock.capture()
                 queue_timings_upload(timings)
             except Exception as cleanup_exc:
                 logger.warning("Failed to upload timings after episode failure: %s", exception_summary(cleanup_exc))
@@ -454,6 +456,7 @@ def run_from_env() -> None:
                         exception_summary(cleanup_exc),
                     )
             try:
+                worker_timings.final_clock = TimingClock.capture()
                 queue_timings_upload(timings)
             except Exception as cleanup_exc:
                 logger.warning("Failed to upload timings after episode failure: %s", exception_summary(cleanup_exc))

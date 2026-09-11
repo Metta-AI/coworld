@@ -491,6 +491,9 @@ def test_run_from_env_writes_config_error_when_job_spec_validation_fails(monkeyp
     for name in ("DEBUG_URI", "POLICY_LOG_URLS", "PLAYER_STATUS_URI", "WORKER_TIMINGS_URI"):
         monkeypatch.delenv(name, raising=False)
 
+    timing_path = tmp_path / "worker_timings.json"
+    monkeypatch.setenv("WORKER_TIMINGS_URI", timing_path.as_uri())
+
     with pytest.raises(ValidationError, match="validation errors?"):
         kubernetes_runner.run_from_env()
 
@@ -498,6 +501,10 @@ def test_run_from_env_writes_config_error_when_job_spec_validation_fails(monkeyp
     assert error_info["error_type"] == "config_error"
     assert "X-Amz-" not in error_info["message"]
     assert "missing" in error_info["message"]
+
+    timings = EpisodePhaseTimings.model_validate_json(timing_path.read_bytes())
+    assert timings.worker is not None and timings.worker.final_clock is not None
+    assert timings.worker.final_clock.monotonic_ns >= timings.worker.clock.monotonic_ns
 
 
 def test_upload_outputs_uploads_raw_replay_bytes(tmp_path, monkeypatch):
@@ -3889,6 +3896,10 @@ def test_game_hosted_run_from_env_keeps_diagnostic_counts_when_publishing_fails(
     assert policy_log_paths[1].read_text(encoding="utf-8") == runner_module.GAME_HOSTED_PLAYER_LOG_MISSING
     assert timing_snapshots[-1]["slot_log_missing_count"] == 1
     assert timing_snapshots[-1]["player_status_invalid_count"] == 1
+    final_worker = timing_snapshots[-1]["worker"]
+    assert final_worker["final_clock"]["monotonic_ns"] >= final_worker["clock"]["monotonic_ns"] + max(
+        interval["end_ns"] for interval in final_worker["intervals"].values()
+    )
 
 
 def test_run_from_env_reports_a_bad_replay_as_a_runner_error_without_publishing_results(monkeypatch, tmp_path):
