@@ -1091,24 +1091,40 @@ def _raise_if_game_declared_player_failure(
     *,
     player_count: int,
 ) -> None:
+    failure = _read_game_declared_player_failure(
+        artifacts,
+        required_artifacts,
+        player_count=player_count,
+    )
+    if failure is None:
+        return
+    raise RunnerEpisodeError(
+        failure.message,
+        error_type="player_error",
+        failed_policy_index=failure.failed_policy_index,
+    )
+
+
+def _read_game_declared_player_failure(
+    artifacts: EpisodeArtifacts,
+    required_artifacts: tuple[Path, ...],
+    *,
+    player_count: int,
+) -> GamePlayerFailure | None:
     if all(path.exists() for path in required_artifacts):
-        return
+        return None
     if not artifacts.player_failure_path.exists():
-        return
+        return None
     payload = artifacts.player_failure_path.read_text(encoding="utf-8")
     if all(path.exists() for path in required_artifacts):
-        return
+        return None
     failure = GamePlayerFailure.model_validate_json(payload)
     if failure.failed_policy_index >= player_count:
         raise RunnerEpisodeError(
             f"Game declared player slot {failure.failed_policy_index}, but the episode has {player_count} players",
             error_type="game_contract_violation",
         )
-    raise RunnerEpisodeError(
-        failure.message,
-        error_type="player_error",
-        failed_policy_index=failure.failed_policy_index,
-    )
+    return failure
 
 
 def _raise_if_local_player_exited(

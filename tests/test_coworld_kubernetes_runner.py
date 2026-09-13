@@ -209,6 +209,17 @@ def _container_status(
     )
 
 
+def _player_pod(*, phase="Running", reason=None, container_status=None):
+    return SimpleNamespace(
+        status=SimpleNamespace(
+            phase=phase,
+            reason=reason,
+            conditions=[],
+            container_statuses=[container_status or _container_status("player", running=True)],
+        )
+    )
+
+
 class _FakeLogCoreV1:
     def __init__(
         self,
@@ -1297,6 +1308,11 @@ def test_wait_for_episode_artifacts_sees_failure_written_during_clean_game_exit(
 
     class DeclaringCoreV1:
         def read_namespaced_pod(self, *, name: str, namespace: str):
+            if name == "job-player-0":
+                return _player_pod(
+                    phase="Failed",
+                    container_status=_container_status("player", exit_code=1, reason="Error"),
+                )
             _declare_game_player_failure(artifacts, slot=0, message="player failed during shutdown")
             return SimpleNamespace(
                 status=SimpleNamespace(
@@ -1323,6 +1339,81 @@ def test_wait_for_episode_artifacts_sees_failure_written_during_clean_game_exit(
 
     assert exc_info.value.error_type == "player_error"
     assert exc_info.value.failed_policy_index == 0
+
+
+@pytest.mark.parametrize(
+    ("phase", "reason", "exit_code", "expected_error"),
+    [
+        ("Failed", None, None, "node_disruption"),
+        (None, None, None, "node_disruption"),
+        ("Failed", "Evicted", 1, "node_disruption"),
+        ("Failed", "NodeLost", 1, "node_disruption"),
+        ("Running", None, 75, "player_never_started"),
+    ],
+)
+def test_game_declared_player_failure_uses_kubernetes_evidence(tmp_path, phase, reason, exit_code, expected_error):
+    artifacts = EpisodeArtifacts.create(tmp_path)
+    _declare_game_player_failure(artifacts, slot=0, message="player websocket disconnected")
+
+    class CoreV1:
+        def read_namespaced_pod(self, *, name: str, namespace: str):
+            if phase is None:
+                raise ApiException(status=404)
+            container_status = (
+                _container_status("player", exit_code=exit_code, reason="Error") if exit_code is not None else None
+            )
+            return _player_pod(phase=phase, reason=reason, container_status=container_status)
+
+    with pytest.raises(runner_io.RunnerEpisodeError) as exc_info:
+        kubernetes_runner._raise_if_game_declared_kubernetes_player_failure(
+            artifacts,
+            (artifacts.results_path,),
+            CoreV1(),
+            "default",
+            ["job-player-0"],
+            player_count=1,
+        )
+
+    assert exc_info.value.error_type == expected_error
+    assert exc_info.value.failed_policy_index is None
+
+
+@pytest.mark.parametrize(
+    ("pods", "expected_error", "expected_seconds"),
+    [
+        ([_player_pod(), _player_pod(phase="Failed")], "node_disruption", 1.0),
+        ([_player_pod()], "player_error", 30.0),
+    ],
+)
+def test_game_declared_player_failure_has_bounded_kubernetes_wait(
+    tmp_path, monkeypatch, pods, expected_error, expected_seconds
+):
+    artifacts = EpisodeArtifacts.create(tmp_path)
+    _declare_game_player_failure(artifacts, slot=0, message="player websocket disconnected")
+    clock = {"now": 0.0}
+    monkeypatch.setattr(kubernetes_runner.time, "monotonic", lambda: clock["now"])
+    monkeypatch.setattr(
+        kubernetes_runner.time,
+        "sleep",
+        lambda seconds: clock.__setitem__("now", clock["now"] + seconds),
+    )
+
+    class CoreV1:
+        def read_namespaced_pod(self, *, name: str, namespace: str):
+            return pods.pop(0) if len(pods) > 1 else pods[0]
+
+    with pytest.raises(runner_io.RunnerEpisodeError) as exc_info:
+        kubernetes_runner._raise_if_game_declared_kubernetes_player_failure(
+            artifacts,
+            (artifacts.results_path,),
+            CoreV1(),
+            "default",
+            ["job-player-0"],
+            player_count=1,
+        )
+
+    assert exc_info.value.error_type == expected_error
+    assert clock["now"] == expected_seconds
 
 
 def test_wait_for_episode_artifacts_reports_game_unhealthy_when_game_exits_nonzero(tmp_path):

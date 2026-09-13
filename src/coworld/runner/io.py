@@ -23,6 +23,7 @@ logger = logging.getLogger(__name__)
 RunnerErrorType = Literal[
     "player_error",
     "player_never_started",
+    "node_disruption",
     "game_unhealthy",
     "game_contract_violation",
     "results_missing",

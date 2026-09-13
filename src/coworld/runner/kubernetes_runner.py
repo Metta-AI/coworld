@@ -84,6 +84,7 @@ from coworld.runner.runner import (
     EpisodeArtifacts,
     PlayerLaunchSpec,
     _raise_if_game_declared_player_failure,
+    _read_game_declared_player_failure,
     _require_bad_player_rejected,
     _require_global_message,
     _require_http_ok,
@@ -107,6 +108,20 @@ PLAYER_ARTIFACT_PORT = 9091
 # is latency-insensitive and cuts that steady read pressure.
 _HEALTH_POLL_SECONDS = 1.0
 _ARTIFACT_POLL_SECONDS = 1.0
+_PLAYER_FAILURE_CLASSIFICATION_TIMEOUT_SECONDS = 30.0
+_PLAYER_TEMPORARY_FAILURE_EXIT_CODE = 75
+_PLAYER_POD_DISRUPTION_REASONS = frozenset(
+    {
+        "deletionbypodgc",
+        "evicted",
+        "evictionbyevictionapi",
+        "nodelost",
+        "nodeshutdown",
+        "preemptionbyscheduler",
+        "shutdown",
+        "terminationbykubelet",
+    }
+)
 _PLAYER_LOG_MAX_BYTES = 10 * 1024 * 1024
 _PLAYER_LOG_TRUNCATION_MARKER = b"\n[truncated by the runner at 10 MiB]\n"
 _PLAYER_STATUS_MAX_BYTES = 1024 * 1024
@@ -1337,16 +1352,31 @@ def _wait_for_episode_artifacts(
 ) -> None:
     # The game owns whether a player failure ends an episode. Required output artifacts
     # win; otherwise a game may publish a typed terminal failure through player_failure.json.
-    # Player pod state remains a timeout fallback for games that do not make that choice.
+    # A declared failure gets a short grace period for Kubernetes to report whether the
+    # player process exited or its pod was lost with the node.
     deadline = time.monotonic() + timeout_seconds
     expected = (artifacts.results_path, artifacts.replay_path) if require_replay else (artifacts.results_path,)
+
+    def raise_if_declared() -> None:
+        if not player_pod_names:
+            _raise_if_game_declared_player_failure(artifacts, expected, player_count=player_count)
+            return
+        _raise_if_game_declared_kubernetes_player_failure(
+            artifacts,
+            expected,
+            core_v1,
+            namespace,
+            player_pod_names,
+            player_count=player_count,
+        )
+
     while time.monotonic() < deadline:
         missing = [path for path in expected if not path.exists()]
 
         if not missing:
             return
 
-        _raise_if_game_declared_player_failure(artifacts, expected, player_count=player_count)
+        raise_if_declared()
 
         exit_code = _game_container_exit_code(core_v1, namespace, pod_name, timings=timings)
 
@@ -1358,13 +1388,13 @@ def _wait_for_episode_artifacts(
             # exit first would convert an attributed player_error into an
             # unattributed game_unhealthy — exactly the everyone-punished /
             # no-DQ-strikes outcome the declaration protocol exists to avoid.
-            _raise_if_game_declared_player_failure(artifacts, expected, player_count=player_count)
+            raise_if_declared()
             if exit_code != 0:
                 raise RunnerEpisodeError(f"Game container exited with code {exit_code}", error_type="game_unhealthy")
             missing = [path for path in expected if not path.exists()]
             if not missing:
                 return
-            _raise_if_game_declared_player_failure(artifacts, expected, player_count=player_count)
+            raise_if_declared()
             missing_list = ", ".join(str(path) for path in missing)
             if artifacts.results_path in missing:
                 raise RunnerEpisodeError(
@@ -1380,13 +1410,87 @@ def _wait_for_episode_artifacts(
     missing = [path for path in expected if not path.exists()]
     if not missing:
         return
-    _raise_if_game_declared_player_failure(artifacts, expected, player_count=player_count)
+    raise_if_declared()
     _raise_if_player_pod_failed(core_v1, namespace, player_pod_names or ())
     expected_list = ", ".join(str(path) for path in expected)
     raise RunnerEpisodeError(
         f"Timed out waiting for game container to finish writing episode artifact(s): {expected_list}",
         error_type="episode_timeout",
     )
+
+
+def _raise_if_game_declared_kubernetes_player_failure(
+    artifacts: EpisodeArtifacts,
+    required_artifacts: tuple[Path, ...],
+    core_v1,
+    namespace: str,
+    player_pod_names: tuple[str, ...] | list[str],
+    *,
+    player_count: int,
+) -> None:
+    failure = _read_game_declared_player_failure(
+        artifacts,
+        required_artifacts,
+        player_count=player_count,
+    )
+    if failure is None:
+        return
+
+    player_pod_name = next(name for name in player_pod_names if _player_pod_slot(name) == failure.failed_policy_index)
+
+    deadline = time.monotonic() + _PLAYER_FAILURE_CLASSIFICATION_TIMEOUT_SECONDS
+    while time.monotonic() < deadline:
+        if all(path.exists() for path in required_artifacts):
+            return
+        try:
+            player_pod = core_v1.read_namespaced_pod(name=player_pod_name, namespace=namespace)
+        except ApiException as exc:
+            if exc.status != 404:
+                raise
+            raise RunnerEpisodeError(
+                f"{failure.message}; Kubernetes no longer reports player pod {player_pod_name}",
+                error_type="node_disruption",
+            ) from None
+        container_failure = _player_container_failure(
+            player_pod,
+            player_pod_name,
+            failure.failed_policy_index,
+        )
+        disruption = _player_pod_disruption(player_pod, has_player_failure=container_failure is not None)
+        if disruption is not None:
+            raise RunnerEpisodeError(
+                f"{failure.message}; Kubernetes reported {disruption} for player pod {player_pod_name}",
+                error_type="node_disruption",
+            )
+        if container_failure is not None:
+            if container_failure[0].exit_code == _PLAYER_TEMPORARY_FAILURE_EXIT_CODE:
+                raise RunnerEpisodeError(container_failure[1], error_type="player_never_started")
+            break
+        time.sleep(_ARTIFACT_POLL_SECONDS)
+
+    if all(path.exists() for path in required_artifacts):
+        return
+    raise RunnerEpisodeError(
+        failure.message,
+        error_type="player_error",
+        failed_policy_index=failure.failed_policy_index,
+    )
+
+
+def _player_pod_disruption(player_pod, *, has_player_failure: bool) -> str | None:
+    status = player_pod.status
+    reason = (getattr(status, "reason", None) or "").strip()
+    if reason.lower() in _PLAYER_POD_DISRUPTION_REASONS:
+        return f"pod reason {reason}"
+    phase = (getattr(status, "phase", None) or "").strip()
+    if phase == "Unknown":
+        return "an unknown pod phase"
+    for condition in getattr(status, "conditions", None) or []:
+        if condition.type == "DisruptionTarget" and condition.status == "True":
+            return condition.reason or "a disruption target condition"
+    if phase == "Failed" and not has_player_failure:
+        return "a failed pod without a player-container exit"
+    return None
 
 
 def _player_pod_slot(player_pod_name: str) -> int:
@@ -1517,6 +1621,11 @@ def _raise_if_player_pod_failed(core_v1, namespace: str, player_pod_names: tuple
             raise
         failure = _player_container_failure(player_pod, player_pod_name, slot)
         if failure is not None:
+            if failure[0].exit_code == _PLAYER_TEMPORARY_FAILURE_EXIT_CODE:
+                raise RunnerEpisodeError(
+                    failure[1],
+                    error_type="player_never_started",
+                )
             raise PlayerPodFailure(slot, failure[1])
 
 
