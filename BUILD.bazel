@@ -95,6 +95,7 @@ _CORE_SRCS = [
     "src/coworld/runner/bedrock_metadata.py",
     "src/coworld/runner/bootstrap.py",
     "src/coworld/runner/io.py",
+    "src/coworld/runner/player_artifacts.py",
     "src/coworld/runner/phase_timings.py",
     "src/coworld/runner/runner.py",
     "src/coworld/schema_validation.py",

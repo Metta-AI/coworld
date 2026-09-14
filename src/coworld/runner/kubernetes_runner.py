@@ -29,6 +29,7 @@ import zipfile
 from collections import Counter
 from collections.abc import Callable
 from concurrent.futures import Future, ThreadPoolExecutor
+from datetime import UTC, datetime
 from io import BytesIO
 from pathlib import Path
 from typing import Any, BinaryIO, Mapping, cast
@@ -75,6 +76,7 @@ from coworld.runner.phase_timings import (
     TimingClock,
     TimingInterval,
 )
+from coworld.runner.player_artifacts import PersistentDiagnosticTargets
 from coworld.runner.runner import (
     CERTIFICATION_EPISODE_SOURCE,
     DEFAULT_PLAYER_EXIT_TIMEOUT_SECONDS,
@@ -256,6 +258,15 @@ class _PlayerArtifactUploadServer(socketserver.ThreadingMixIn, http.server.HTTPS
         self.active_connections = 0
         self.state_lock = threading.Lock()
 
+    def upload_target(self, slot: int) -> str:
+        raw = os.environ.get("PLAYER_ARTIFACT_UPLOAD_URLS", "")
+        if raw.startswith("file://"):
+            targets = PersistentDiagnosticTargets.model_validate_json(Path(raw[7:]).read_bytes())
+            if targets.expires_at <= datetime.now(UTC):
+                raise RuntimeError("Persistent diagnostic upload credentials expired; reconciliation must refresh them")
+            return targets.targets[str(slot)]
+        return self.targets[slot]
+
     def process_request(self, request: Any, client_address: tuple[str, int]) -> None:
         source = client_address[0]
         with self.state_lock:
@@ -352,10 +363,15 @@ class _PlayerArtifactUploadHandler(http.server.BaseHTTPRequestHandler):
                     artifact.write(chunk)
                     remaining -= len(chunk)
                 upload_file(
-                    self.server.targets[slot],
+                    self.server.upload_target(slot),
                     artifact,
                     size=size,
                     content_type=self.headers.get("Content-Type", "application/zip"),
+                    **(
+                        {"attempts": 1}
+                        if os.environ.get("PLAYER_ARTIFACT_UPLOAD_URLS", "").startswith("file://")
+                        else {}
+                    ),
                 )
             self.send_response(201)
             self.end_headers()
@@ -370,10 +386,15 @@ class _PlayerArtifactUploadHandler(http.server.BaseHTTPRequestHandler):
 
 def _start_player_artifact_upload_server(tokens: list[str]) -> _PlayerArtifactUploadServer | None:
     raw_targets = os.environ.get("PLAYER_ARTIFACT_UPLOAD_URLS")
-    if raw_targets is None or "COWORLD_EGRESS_RELAY_URL" not in os.environ:
+    if raw_targets is None or (not raw_targets.startswith("file://") and "COWORLD_EGRESS_RELAY_URL" not in os.environ):
         return None
+    targets = (
+        PersistentDiagnosticTargets.model_validate_json(Path(raw_targets[7:]).read_bytes()).targets
+        if raw_targets.startswith("file://")
+        else TypeAdapter(dict[str, str]).validate_json(raw_targets)
+    )
     server = _PlayerArtifactUploadServer(
-        targets={int(slot): url for slot, url in json.loads(raw_targets).items()},
+        targets={int(slot): url for slot, url in targets.items()},
         tokens=tokens,
     )
     threading.Thread(target=server.serve_forever, daemon=True).start()
@@ -1011,7 +1032,8 @@ def _create_game_service(
     if human_player_proxy_port is not None:
         proxy_port = int(human_player_proxy_port)
         ports.append(client.V1ServicePort(name="human-player", port=proxy_port, target_port=proxy_port))
-    if os.environ.get("PLAYER_ARTIFACT_UPLOAD_URLS") is not None and os.environ.get("COWORLD_EGRESS_RELAY_URL"):
+    artifact_targets = os.environ.get("PLAYER_ARTIFACT_UPLOAD_URLS", "")
+    if artifact_targets and (artifact_targets.startswith("file://") or os.environ.get("COWORLD_EGRESS_RELAY_URL")):
         ports.append(
             client.V1ServicePort(name="player-artifact", port=PLAYER_ARTIFACT_PORT, target_port=PLAYER_ARTIFACT_PORT)
         )
@@ -1083,6 +1105,10 @@ def _create_player_pod(
         if player_artifact_upload_url is not None
         else []
     )
+    if "COWORLD_RUNTIME_SESSION_ID" in os.environ:
+        artifact_env_vars.append(
+            client.V1EnvVar(name="COWORLD_RUNTIME_SESSION_ID", value=os.environ["COWORLD_RUNTIME_SESSION_ID"])
+        )
     player_bedrock_metadata = CoworldEpisodeBedrockMetadata.model_validate_json(
         os.environ["BEDROCK_REQUEST_METADATA"]
     ).model_copy(
@@ -1299,6 +1325,8 @@ def _player_artifact_upload_url(slot: int, service_name: str, token: str) -> str
     raw = os.environ.get("PLAYER_ARTIFACT_UPLOAD_URLS")
     if raw is None:
         return None
+    if raw.startswith("file://"):
+        return f"http://{service_name}:{PLAYER_ARTIFACT_PORT}/player-artifact/{slot}/{token}"
     target = json.loads(raw).get(str(slot))
     if target is None:
         return None
