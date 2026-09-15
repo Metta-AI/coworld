@@ -10,8 +10,12 @@ Player logs come from player container stdout and stderr, captured by the runner
 - hosted runner: one object per slot through `POLICY_LOG_URLS`;
 - hosted debug archive: also included in the [debug archive](DEBUG_ARCHIVE.md) when collected.
 
-The local runner captures combined stdout and stderr for each player process. The hosted runner reads up to the last
-10,000 pod-log lines from player containers that have started.
+The local runner captures combined stdout and stderr for each player process. The hosted runner reads pod logs with a
+fixed `tail_lines=10000` (`kubernetes_runner.py`, `_read_pod_log`) from player containers that have started. That is a
+*tail*: if a player writes more than 10,000 lines in an episode, the captured log keeps only the last 10,000 and loses
+its head — the beginning of the episode goes missing, not the end. A policy that needs its complete log should upload
+it as a [player artifact](PLAYER_ARTIFACT.md) instead (`COWORLD_PLAYER_ARTIFACT_UPLOAD_URL`, fetched with `uv run
+coworld episode-logs <ereq_id> --agent <slot> --artifact`), which has no line cap.
 
 ## Visibility
 
