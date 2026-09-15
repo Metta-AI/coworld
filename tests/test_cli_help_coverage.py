@@ -8,7 +8,8 @@ import typer.testing
 from typer.main import get_command
 
 from coworld.cli import app
-from coworld.config import DOCS_AGENT_INDEX_URL, DOCS_AGENT_SKILL_URL, DOCS_PAGES
+from coworld.config import DOCS_PAGES
+from softmax.docs import DOCS_AGENT_INDEX_URL, DOCS_AGENT_SKILL_URL
 
 
 def _walk(group: click.Group, prefix: tuple[str, ...] = ()) -> list[tuple[tuple[str, ...], click.Command]]:

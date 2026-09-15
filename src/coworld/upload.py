@@ -1549,13 +1549,19 @@ def _raise_for_status(response: httpx.Response) -> None:
             response=response,
         )
     if response.status_code == 401:
-        raise RuntimeError("Authentication failed (401). Your token may be expired. Run: uv run softmax login")
+        raise httpx.HTTPStatusError(
+            "Authentication failed (401). Your token may be expired. Run: uv run softmax login",
+            request=response.request,
+            response=response,
+        )
     if response.status_code == 403:
         detail = _detail(response) or response.text.strip()
-        raise RuntimeError(
+        raise httpx.HTTPStatusError(
             f"Access denied (403) for {response.request.url.path}: {detail or 'Permission denied'}. "
             "Softmax team members can request team access by rerunning as "
-            "`coworld --elevated <command> ...`."
+            "`coworld --elevated <command> ...`.",
+            request=response.request,
+            response=response,
         )
     if response.is_error:
         # httpx's raise_for_status() drops the response body, but the server puts the
@@ -1565,7 +1571,9 @@ def _raise_for_status(response: httpx.Response) -> None:
         message = (
             f"Request to {response.request.method} {response.request.url.path} failed with HTTP {response.status_code}"
         )
-        raise RuntimeError(f"{message}: {body}" if body else message)
+        raise httpx.HTTPStatusError(
+            f"{message}: {body}" if body else message, request=response.request, response=response
+        )
 
 
 def upload_coworld_cmd(

@@ -320,3 +320,33 @@ def _submission(
         "league_policy_membership_id": membership_id,
         "created_at": "2026-05-11T12:00:00Z",
     }
+
+
+def test_http_failures_print_an_actionable_error_instead_of_a_traceback(httpserver: HTTPServer) -> None:
+    httpserver.expect_request("/observatory/v2/coworlds/cow_missing", method="GET").respond_with_json(
+        {"detail": "Coworld not found"}, status=422, headers={"X-Request-Id": "req-download-1"}
+    )
+
+    result = CliRunner().invoke(app, ["download", "cow_missing", "--server", httpserver.url_for("")])
+
+    assert result.exit_code == 1, result.output
+    assert "Traceback" not in result.output
+    assert "returned HTTP 422" in result.output
+    assert "Detail: Coworld not found" in result.output
+    assert "Request id: req-download-1" in result.output
+    assert "Docs: https://docs.softmax.com/api-reference/error-handling" in result.output
+
+
+def test_api_client_failures_render_their_hint_without_a_traceback(httpserver: HTTPServer) -> None:
+    httpserver.expect_request(f"/observatory/v2/leagues/{LEAGUE_ID}", method="GET").respond_with_json(
+        {"detail": "Failed to authenticate"}, status=401, headers={"X-Request-Id": "req-league-1"}
+    )
+
+    result = CliRunner().invoke(app, ["leagues", LEAGUE_ID, "--server", httpserver.url_for("")])
+
+    assert result.exit_code == 1, result.output
+    assert "Traceback" not in result.output
+    assert "Authentication failed (401)" in result.output
+    assert "uv run softmax login" in result.output
+    assert "Request id: req-league-1" in result.output
+    assert "Docs: https://docs.softmax.com/guides/authentication" in result.output

@@ -235,7 +235,7 @@ def test_403_errors_suggest_elevated_team_access(raise_for_status: Any, response
         **kwargs,
     )
 
-    with pytest.raises(RuntimeError) as error:
+    with pytest.raises(httpx.HTTPStatusError) as error:
         raise_for_status(response)
 
     assert "coworld --elevated <command>" in str(error.value)
@@ -252,5 +252,5 @@ def test_403_errors_preserve_non_json_reason(raise_for_status: Any) -> None:
         text="This credential cannot read the catalog",
         request=httpx.Request("GET", "https://softmax.com/api/observatory/v2/coworlds"),
     )
-    with pytest.raises(RuntimeError, match="This credential cannot read the catalog"):
+    with pytest.raises(httpx.HTTPStatusError, match="This credential cannot read the catalog"):
         raise_for_status(response)

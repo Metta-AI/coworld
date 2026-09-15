@@ -38,13 +38,7 @@ from coworld.cli_support import (
     resolve_league_id,
     validate_run_argv,
 )
-from coworld.config import (
-    DEFAULT_OPTIMIZER_PORT,
-    DEFAULT_SUBMIT_SERVER,
-    DOCS_AGENT_INDEX_URL,
-    DOCS_AGENT_SKILL_URL,
-    docs_epilog,
-)
+from coworld.config import DEFAULT_OPTIMIZER_PORT, DEFAULT_SUBMIT_SERVER, docs_epilog
 from coworld.deploy_audit import (
     DEFAULT_GITHUB_OWNER,
     DEFAULT_REPO_PREFIX,
@@ -78,11 +72,14 @@ from coworld.upload import (
     upload_policy_cmd,
 )
 from softmax import auth as softmax_auth
+from softmax.docs import DOCS_AGENT_INDEX_URL, DOCS_AGENT_SKILL_URL
+from softmax.http_errors import AgentFriendlyGroup
 from softmax.players import list_players, player_app
 
 _DEFAULT_POLICY_NAME_MAX_LENGTH = 64
 
 app = typer.Typer(
+    cls=AgentFriendlyGroup,
     no_args_is_help=True,
     pretty_exceptions_enable=False,
     epilog=(

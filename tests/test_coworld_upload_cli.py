@@ -1386,7 +1386,7 @@ def test_upload_coworld_surfaces_server_error_detail(
         status=422,
     )
 
-    with pytest.raises(RuntimeError) as excinfo:
+    with pytest.raises(httpx.HTTPStatusError) as excinfo:
         upload_coworld(manifest_path, server=httpserver.url_for(""))
 
     message = str(excinfo.value)

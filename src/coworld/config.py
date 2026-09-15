@@ -2,6 +2,8 @@ from typing import Any
 
 import httpx
 
+from softmax.docs import DOCS_URL
+
 DEFAULT_SUBMIT_SERVER = "https://softmax.com/api"
 
 
@@ -28,9 +30,6 @@ DEFAULT_OPTIMIZER_PORT = 3000
 
 # Public documentation for the workflows the CLI drives. Command help points at the page
 # for its workflow so an agent that only ever runs `--help` still finds the docs site.
-DOCS_URL = "https://docs.softmax.com"
-DOCS_AGENT_INDEX_URL = f"{DOCS_URL}/llms.txt"
-DOCS_AGENT_SKILL_URL = f"{DOCS_URL}/skill.md"
 DOCS_PAGES = {
     "choose-a-coworld": f"{DOCS_URL}/coworld/build-a-player/choose-a-coworld",
     "package-and-verify": f"{DOCS_URL}/coworld/build-a-player/package-and-verify",
