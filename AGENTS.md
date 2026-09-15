@@ -123,6 +123,9 @@ source of truth. They are generated docs and `$schema` targets; `test_types.py` 
 - `src/coworld/cli.py`, `tournament_cli.py` - Typer command surface for local episodes, uploads, leagues, and hosted
   tournament inspection.
 - `src/coworld/cli_support.py`, `api_client.py` - shared CLI helpers and the Softmax/Coworld API client.
+- `src/coworld/config.py` - server default and `DOCS_PAGES` + `docs_epilog()` (the docs page each command's help names).
+  The docs index/skill URLs, error rendering, agent detection, and the `coworld/<version> (<agent>)` User-Agent come
+  from `softmax-cli` (`softmax.docs`, `softmax.http_errors.AgentFriendlyGroup`, `softmax.agent`).
 - `src/coworld/certifier.py` - `coworld certify` smoke-test pipeline (episode + declared-reporter certification).
 - `src/coworld/manifest_validation.py`, `schema_validation.py`, `manifest_uri.py` - manifest and schema validation.
 - `src/coworld/report.py` - the safe-render-profile checker `coworld certify` enforces on commissioner round reports.
