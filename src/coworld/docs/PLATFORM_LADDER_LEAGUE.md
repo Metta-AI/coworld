@@ -190,6 +190,11 @@ Notes:
   A row inserted by hand in SQL is not stamped, and a stored row that does not name its commissioner fails to parse, so
   always include the key there.
 - Seed create runs reconcile immediately. Expect `leagues.commissioner_key = platform` and `commissioner_config = null`.
+- The league pool is funded automatically. Positive and zero-credit overrides remain authoritative. Without an
+  override, the platform converts the league's daily budget at 10 credits per dollar. Unused default funding carries
+  forward up to ten days of the current budget.
+- Softmax team members can override this with `PUT /v2/leagues/{league_id}/reward-pool/drip`. A positive value sets a
+  fixed allocation, zero disables funding, and `null` restores the league-budget default.
 - Platform seeds do **not** auto-create Qualifiers / Competition divisions. You declare topology next. Until you do —
   and until `ladder.enabled` is true — the league schedules **nothing**; reconcile logs a warning saying exactly that
   when it creates the league.
