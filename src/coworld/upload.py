@@ -31,7 +31,12 @@ from coworld.api_client import CoworldApiClient, LeaguePublic, _detail
 from coworld.bundle import resolve_registry_image_ref
 from coworld.certifier import EXECUTABLE_TRANSCRIPT_PATH, certify_coworld, load_coworld_package
 from coworld.cli_support import validate_run_argv
-from coworld.config import DEFAULT_SUBMIT_SERVER, DOCS_PAGES, list_page_payload, participation_guide_url
+from coworld.config import (
+    DEFAULT_SUBMIT_SERVER,
+    DOCS_PAGES,
+    list_page_payload,
+    participation_guide_url,
+)
 from coworld.image_refs import is_digest_pinned_image_ref, is_mutable_registry_image_ref
 from coworld.manifest import validate_upload_manifest
 from coworld.manifest_validation import validate_coworld_manifest_game_configs
@@ -40,6 +45,7 @@ from coworld.replay_viewer import source_replay_viewer_bundle
 from coworld.runner.runner import assert_docker_image_reachable
 from coworld.types import MANIFEST_ROLE_SECTIONS
 from softmax import auth as softmax_auth
+from softmax.agent import user_agent
 from softmax.rate_limits import RateLimitTransport
 
 _LOCAL_TAG_SEPARATOR_RE = re.compile(r"[^a-z0-9._-]+")
@@ -411,7 +417,10 @@ class CoworldUploadClient:
     def __init__(self, server_url: str, token: str):
         self._server_url = server_url.rstrip("/")
         self._http_client = httpx.Client(
-            base_url=f"{self._server_url}/observatory", timeout=30.0, transport=RateLimitTransport()
+            base_url=f"{self._server_url}/observatory",
+            headers={"User-Agent": user_agent("coworld")},
+            timeout=30.0,
+            transport=RateLimitTransport(),
         )
         self._token = token
 
@@ -1767,7 +1776,11 @@ def download_coworld(
 ) -> CoworldUploadResponse:
     coworld_id = resolve_coworld_download_id(coworld_ref, server=server)
 
-    with httpx.Client(base_url=f"{server.rstrip('/')}/observatory", timeout=30.0) as http_client:
+    with httpx.Client(
+        base_url=f"{server.rstrip('/')}/observatory",
+        headers={"User-Agent": user_agent("coworld")},
+        timeout=30.0,
+    ) as http_client:
         response = http_client.get(f"/v2/coworlds/{coworld_id}", timeout=120.0)
     response.raise_for_status()
     return CoworldUploadResponse.model_validate(response.json())
@@ -1821,7 +1834,11 @@ def _download_coworld_player_files(
     manifest = copy.deepcopy(coworld.manifest)
     files_dir = downloaded_coworld_player_files_path(output_dir, coworld.id)
     downloaded: dict[str, str] = {}
-    with httpx.Client(base_url=f"{server.rstrip('/')}/observatory", timeout=120.0) as http_client:
+    with httpx.Client(
+        base_url=f"{server.rstrip('/')}/observatory",
+        headers={"User-Agent": user_agent("coworld")},
+        timeout=120.0,
+    ) as http_client:
         for player in manifest.get("player") or []:
             reference = player.get("file")
             if reference is None:

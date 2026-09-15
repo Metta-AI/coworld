@@ -254,3 +254,15 @@ def test_403_errors_preserve_non_json_reason(raise_for_status: Any) -> None:
     )
     with pytest.raises(httpx.HTTPStatusError, match="This credential cannot read the catalog"):
         raise_for_status(response)
+
+
+def test_client_requests_carry_the_coworld_user_agent(httpserver: HTTPServer, monkeypatch) -> None:
+    monkeypatch.setenv("CLAUDECODE", "1")
+    httpserver.expect_request("/observatory/whoami", method="GET").respond_with_json(
+        {"user_email": "a@b.c", "subject_type": "user", "subject_id": "u1", "scopes": []}
+    )
+    with CoworldApiClient(server_url=httpserver.url_for(""), token="token") as api:
+        api._http_client.get("/whoami", headers=api._headers())
+    (request, _response) = httpserver.log[-1]
+    assert request.headers["User-Agent"].startswith("coworld/")
+    assert request.headers["User-Agent"].endswith("(claude-code)")

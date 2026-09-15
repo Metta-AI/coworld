@@ -2283,6 +2283,7 @@ def test_download_coworld_command_writes_local_package(
     )
 
     assert result.exit_code == 0, result.output
+    assert all(request.headers["User-Agent"].startswith("coworld/") for request, _response in httpserver.log)
     local_image = "coworld/cow_00000000-0000-0000-0000-000000000040/unit-test-game-0.1.0-0:downloaded"
     assert docker_calls == [
         ["docker", "pull", public_image_uri],

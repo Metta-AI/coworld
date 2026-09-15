@@ -11,6 +11,7 @@ from pydantic import BaseModel, ConfigDict, Field, TypeAdapter, computed_field
 
 from coworld.config import list_page_payload
 from softmax import auth as softmax_auth
+from softmax.agent import user_agent
 from softmax.rate_limits import RateLimitTransport
 
 
@@ -720,7 +721,11 @@ class CoworldApiClient:
         root = server_url.rstrip("/")
         base_url = f"{root}/observatory"
         self._http_client = httpx.Client(
-            base_url=base_url, timeout=30.0, follow_redirects=True, transport=RateLimitTransport()
+            base_url=base_url,
+            headers={"User-Agent": user_agent("coworld")},
+            timeout=30.0,
+            follow_redirects=True,
+            transport=RateLimitTransport(),
         )
         self._token = token
 

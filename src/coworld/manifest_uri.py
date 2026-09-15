@@ -13,6 +13,7 @@ import httpx
 from pydantic import BaseModel, ConfigDict, Field
 
 from coworld.schema_validation import JsonObject
+from softmax.agent import user_agent
 
 
 class RemoteCoworldManifestResponse(BaseModel):
@@ -86,7 +87,7 @@ def _observatory_manifest_server(server: str) -> str:
 
 
 def _download_bytes(uri: str) -> bytes:
-    response = httpx.get(uri, follow_redirects=True, timeout=60.0)
+    response = httpx.get(uri, headers={"User-Agent": user_agent("coworld")}, follow_redirects=True, timeout=60.0)
     response.raise_for_status()
     return response.content
 
@@ -132,7 +133,7 @@ def _materialized_local_replay_path(replay_path: Path) -> Iterator[Path]:
 
 
 def _download_manifest(manifest_uri: str) -> JsonObject:
-    response = httpx.get(manifest_uri, timeout=60.0)
+    response = httpx.get(manifest_uri, headers={"User-Agent": user_agent("coworld")}, timeout=60.0)
     response.raise_for_status()
     value = response.json()
     if not isinstance(value, dict):

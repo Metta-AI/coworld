@@ -33,12 +33,16 @@ def test_materialized_manifest_path_accepts_local_cow_prefixed_paths(
         assert resolved == manifest_path.resolve()
 
 
-def test_materialized_manifest_path_downloads_raw_manifest(httpserver: HTTPServer) -> None:
+def test_materialized_manifest_path_downloads_raw_manifest(httpserver: HTTPServer, monkeypatch: MonkeyPatch) -> None:
+    monkeypatch.setenv("CLAUDECODE", "1")
     manifest = {"game": {"name": "downloaded"}}
     httpserver.expect_request("/manifest.json").respond_with_json(manifest)
 
     with materialized_manifest_path(httpserver.url_for("/manifest.json")) as resolved:
         assert json.loads(resolved.read_text()) == manifest
+    (request, _response) = httpserver.log[-1]
+    assert request.headers["User-Agent"].startswith("coworld/")
+    assert request.headers["User-Agent"].endswith("(claude-code)")
 
 
 def test_materialized_manifest_path_downloads_coworld_response(httpserver: HTTPServer) -> None:
