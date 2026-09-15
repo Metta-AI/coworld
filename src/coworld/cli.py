@@ -38,7 +38,13 @@ from coworld.cli_support import (
     resolve_league_id,
     validate_run_argv,
 )
-from coworld.config import DEFAULT_OPTIMIZER_PORT, DEFAULT_SUBMIT_SERVER
+from coworld.config import (
+    DEFAULT_OPTIMIZER_PORT,
+    DEFAULT_SUBMIT_SERVER,
+    DOCS_AGENT_INDEX_URL,
+    DOCS_AGENT_SKILL_URL,
+    docs_epilog,
+)
 from coworld.deploy_audit import (
     DEFAULT_GITHUB_OWNER,
     DEFAULT_REPO_PREFIX,
@@ -81,7 +87,8 @@ app = typer.Typer(
     pretty_exceptions_enable=False,
     epilog=(
         "New agent? Start at https://softmax.com/llms.txt (the agent hub) and https://softmax.com/play.md "
-        "(the Game of the Week guide). `coworld leagues` shows where each public league's participation guide lives."
+        "(the Game of the Week guide). `coworld leagues` shows where each public league's participation guide lives. "
+        f"Documentation index: {DOCS_AGENT_INDEX_URL}. Agent skill: {DOCS_AGENT_SKILL_URL}."
     ),
 )
 register_tournament_commands(app)
@@ -92,7 +99,7 @@ manifest_schema_app = typer.Typer(no_args_is_help=True, help="Check versioned Co
 app.add_typer(manifest_schema_app, name="manifest-schema")
 
 
-@manifest_schema_app.command("check")
+@manifest_schema_app.command("check", help="Check the manifest schema declarations against a base git ref.")
 def manifest_schema_check(
     against: Annotated[str, typer.Option(help="Git ref containing the base schema.")] = "origin/main",
 ) -> None:
@@ -221,7 +228,7 @@ def counterfactual_create(
     console.print(f"[dim]UI[/dim]        {detail_url}", soft_wrap=True)
 
 
-@counterfactual_app.command("get")
+@counterfactual_app.command("get", help="Show one counterfactual eval.")
 def counterfactual_get(
     counterfactual_eval_id: Annotated[str, typer.Argument(help="cfeval_… id")],
     server: Annotated[str, typer.Option("--server", help="Observatory API server URL.")] = DEFAULT_SUBMIT_SERVER,
@@ -244,7 +251,7 @@ def counterfactual_get(
     console.print(f"[dim]UI[/dim] {detail_url}", soft_wrap=True)
 
 
-@league_app.command("create")
+@league_app.command("create", help="Create a league seed for a Coworld.")
 def league_create(
     coworld_name: Annotated[str, typer.Argument(help="Canonical coworld name to promote into a league.")],
     league_key: Annotated[str, typer.Argument(help="Stable key for this league within the Coworld.")],
@@ -307,7 +314,7 @@ def league_create(
         )
 
 
-@league_app.command("list")
+@league_app.command("list", help="List league seeds.")
 def league_list(
     server: Annotated[str, typer.Option("--server", help="Observatory API server URL.")] = DEFAULT_SUBMIT_SERVER,
     json_output: Annotated[bool, typer.Option("--json", help="Print raw JSON.")] = False,
@@ -342,7 +349,7 @@ def league_list(
             console.print(f"{seed.id}  {seed.coworld_name}/{seed.league_key}")
 
 
-@league_app.command("rebind")
+@league_app.command("rebind", help="Apply a JSON plan of league seed rebinding changes.")
 def league_rebind(
     plan_path: Annotated[
         Path,
@@ -403,7 +410,7 @@ def league_game_of_week(
     console.print(f"[green]Game of the week[/green] is now [bold]{seed.league_name}[/bold]")
 
 
-@league_app.command("update")
+@league_app.command("update", help="Update a league seed's overrides or default variant.")
 def league_update(
     seed_id: Annotated[str, typer.Argument(help="League seed ID (lseed_…).")],
     overrides: Annotated[
@@ -444,7 +451,7 @@ def league_update(
         console.print(f"[dim]League:[/dim] {seed.league_id}")
 
 
-@secret_app.command("put")
+@secret_app.command("put", help="Store a hosted Coworld secret from a file.")
 def secret_put(
     coworld_name: Annotated[str, typer.Argument(help="Coworld game name or cow_... id.")],
     secret_name: Annotated[str, typer.Argument(help="Secret name referenced as secret://coworld/<coworld>/<secret>.")],
@@ -465,7 +472,7 @@ def secret_put(
     )
 
 
-@secret_app.command("list")
+@secret_app.command("list", help="List a Coworld's hosted secrets.")
 def secret_list(
     coworld_name: Annotated[str, typer.Argument(help="Coworld game name or cow_... id.")],
     server: Annotated[str, typer.Option("--server", help="Observatory API server URL.")] = DEFAULT_SUBMIT_SERVER,
@@ -487,7 +494,7 @@ def secret_list(
     console.print(table)
 
 
-@secret_app.command("delete")
+@secret_app.command("delete", help="Delete a hosted Coworld secret.")
 def secret_delete(
     coworld_name: Annotated[str, typer.Argument(help="Coworld game name or cow_... id.")],
     secret_name: Annotated[str, typer.Argument(help="Secret name to delete.")],
@@ -537,7 +544,12 @@ def main(
     CoworldUploadClient.set_elevated(elevated)
 
 
-@app.command("certify", cls=_DockerCommand)
+@app.command(
+    "certify",
+    cls=_DockerCommand,
+    help="Run the certifier's smoke checks on a Coworld manifest and open the transcript report.",
+    epilog=docs_epilog("build-certify-upload"),
+)
 def certify(
     manifest_uri: Annotated[str, typer.Argument(help="Path, URI, or Coworld ID for coworld_manifest.json.")],
     server: Annotated[str, typer.Option("--server", help="Observatory API server URL.")] = DEFAULT_SUBMIT_SERVER,
@@ -636,7 +648,12 @@ def certify(
         webbrowser.open(transcript_report.uri)
 
 
-@app.command("build", cls=_DockerCommand)
+@app.command(
+    "build",
+    cls=_DockerCommand,
+    help="Hydrate compose.yaml and the manifest template into dist/coworld_manifest.json for one version.",
+    epilog=docs_epilog("build-certify-upload"),
+)
 def build(
     version: Annotated[str, typer.Option("--version", help="Version to write into the hydrated manifest.")],
     project_dir: Annotated[
@@ -669,7 +686,12 @@ def build(
     typer.echo(f"Built Coworld manifest: {manifest_path}")
 
 
-@app.command("play", cls=_DockerCommand)
+@app.command(
+    "play",
+    cls=_DockerCommand,
+    help="Play a Coworld locally in the browser, optionally against a player image.",
+    epilog=docs_epilog("package-and-verify"),
+)
 def play(
     manifest_uri: Annotated[str, typer.Argument(help="Path, URI, or Coworld ID for coworld_manifest.json.")],
     episode_request_or_player_images: Annotated[
@@ -778,7 +800,7 @@ def play(
     )
 
 
-@app.command("list")
+@app.command("list", help="List Coworlds uploaded to the Observatory.")
 def list_coworlds(
     server: Annotated[str, typer.Option("--server", help="Observatory API server URL.")] = DEFAULT_SUBMIT_SERVER,
     limit: Annotated[int, typer.Option("--limit", min=1, max=500, help="Maximum rows to return.")] = 200,
@@ -795,7 +817,7 @@ def list_coworlds(
         typer.echo(f"More rows available. Pass --cursor {page.next_cursor} to continue.")
 
 
-@app.command("deploy-audit")
+@app.command("deploy-audit", help="Audit Coworld repositories on GitHub against their uploaded versions.")
 def deploy_audit(
     owner: Annotated[
         str, typer.Option("--owner", help="GitHub organization or owner to inspect.")
@@ -835,7 +857,7 @@ def deploy_audit(
         raise typer.Exit(1)
 
 
-@app.command("next-version")
+@app.command("next-version", help="Print the next version after the newest uploaded version of a Coworld.")
 def next_version(
     coworld_name: Annotated[str, typer.Argument(help="Coworld name.")],
     server: Annotated[str, typer.Option("--server", help="Observatory API server URL.")] = DEFAULT_SUBMIT_SERVER,
@@ -852,7 +874,7 @@ def next_version(
     typer.echo(".".join(str(part) for part in (*release[:-1], release[-1] + 1)))
 
 
-@app.command("show")
+@app.command("show", help="Show one uploaded Coworld; --json includes its manifest and docs.")
 def show_coworld(
     coworld_id: Annotated[str, typer.Argument(help="Coworld ID to inspect.")],
     server: Annotated[str, typer.Option("--server", help="Observatory API server URL.")] = DEFAULT_SUBMIT_SERVER,
@@ -870,7 +892,11 @@ def show_coworld(
     _print_coworld_detail(coworld)
 
 
-@app.command("status")
+@app.command(
+    "status",
+    help="Show a Coworld's hosted smoke and certification status.",
+    epilog=docs_epilog("hosted-verification"),
+)
 def status_coworld(
     coworld_id: Annotated[str, typer.Argument(help="Coworld ID to inspect.")],
     server: Annotated[str, typer.Option("--server", help="Observatory API server URL.")] = DEFAULT_SUBMIT_SERVER,
@@ -905,7 +931,11 @@ def status_coworld(
     _print_coworld_status(result)
 
 
-@app.command("retry-certification")
+@app.command(
+    "retry-certification",
+    help="Queue hosted certification again for an uploaded Coworld.",
+    epilog=docs_epilog("build-certify-upload"),
+)
 def retry_coworld_certification(
     coworld_id: Annotated[str, typer.Argument(help="Coworld ID to certify again.")],
     server: Annotated[str, typer.Option("--server", help="Observatory API server URL.")] = DEFAULT_SUBMIT_SERVER,
@@ -921,7 +951,7 @@ def retry_coworld_certification(
     typer.echo(f"Status: uv run coworld status {coworld_id}")
 
 
-@app.command("images")
+@app.command("images", help="List the visible container image catalog, or inspect one image.")
 def images(
     image_id: Annotated[str | None, typer.Argument(help="Image ID to inspect. Lists images when omitted.")] = None,
     server: Annotated[str, typer.Option("--server", help="Observatory API server URL.")] = DEFAULT_SUBMIT_SERVER,
@@ -946,7 +976,12 @@ def images(
     _print_image_detail(image)
 
 
-@app.command("upload-coworld", cls=_DockerCommand)
+@app.command(
+    "upload-coworld",
+    cls=_DockerCommand,
+    help="Upload a Coworld manifest and start its hosted certification.",
+    epilog=docs_epilog("build-certify-upload"),
+)
 def upload_coworld(
     manifest_path: Annotated[Path | None, typer.Argument(help="Path to coworld_manifest.json.")] = None,
     base_coworld: Annotated[
@@ -1018,7 +1053,7 @@ def upload_coworld(
     )
 
 
-@app.command("patch-commissioner", cls=_DockerCommand)
+@app.command("patch-commissioner", cls=_DockerCommand, help="Replace the commissioner image of an uploaded Coworld.")
 def patch_commissioner(
     coworld_name: Annotated[str, typer.Argument(help="Canonical Coworld name to patch.")],
     image: Annotated[str, typer.Argument(help="Commissioner image to upload.")],
@@ -1041,7 +1076,12 @@ def patch_commissioner(
     )
 
 
-@app.command("download", cls=_DockerCommand)
+@app.command(
+    "download",
+    cls=_DockerCommand,
+    help="Download a Coworld package (manifest, image list, AGENTS.md) for local runs.",
+    epilog=docs_epilog("choose-a-coworld"),
+)
 def download(
     coworld_ref: Annotated[
         str,
@@ -1064,7 +1104,12 @@ def download(
     )
 
 
-@app.command("upload-policy", cls=_DockerCommand)
+@app.command(
+    "upload-policy",
+    cls=_DockerCommand,
+    help="Upload a policy version (a player image or game-hosted file) under your identity.",
+    epilog=docs_epilog("upload-and-evaluate"),
+)
 def upload_policy(
     image: Annotated[
         str | None,
@@ -1169,7 +1214,11 @@ def upload_policy(
     )
 
 
-@app.command("submit")
+@app.command(
+    "submit",
+    help="Submit an uploaded policy version to a league.",
+    epilog=docs_epilog("submit-to-a-league"),
+)
 def submit(
     policy: Annotated[str, typer.Argument(help="Policy name, optionally with version suffix NAME:vN.")],
     league: Annotated[
@@ -1222,7 +1271,12 @@ def submit(
     )
 
 
-@app.command("run-episode", cls=_DockerCommand, help="Run one or more headless local episodes.")
+@app.command(
+    "run-episode",
+    cls=_DockerCommand,
+    help="Run one or more headless local episodes.",
+    epilog=docs_epilog("package-and-verify"),
+)
 def run_episode(
     manifest_uri: Annotated[str, typer.Argument(help="Path, URI, or Coworld ID for coworld_manifest.json.")],
     episode_request_or_player_images: Annotated[
@@ -1403,7 +1457,12 @@ def run_episode(
         typer.echo(f"Artifacts root: {artifacts_root}")
 
 
-@app.command("scrimmage", cls=_DockerCommand, help="Run one local episode against a target policy container.")
+@app.command(
+    "scrimmage",
+    cls=_DockerCommand,
+    help="Run one local episode against a target policy container.",
+    epilog=docs_epilog("package-and-verify"),
+)
 def scrimmage(
     manifest_uri: Annotated[str, typer.Argument(help="Path, URI, or Coworld ID for coworld_manifest.json.")],
     target_player_image: Annotated[
@@ -1490,7 +1549,7 @@ def _split_episode_request_and_player_images(values: list[str] | None) -> tuple[
     return None, values
 
 
-@app.command("replay")
+@app.command("replay", help="Open a local replay artifact in the browser.", epilog=docs_epilog("replays"))
 def replay(
     manifest_uri: Annotated[str, typer.Argument(help="Path, URI, or Coworld ID for coworld_manifest.json.")],
     replay_uri: Annotated[str, typer.Argument(help="Path or URI to a replay artifact JSON file.")],
@@ -1517,7 +1576,7 @@ def replay(
     typer.echo(f"Logs: {session.artifacts.logs_dir}")
 
 
-@app.command("optimize", cls=_DockerCommand)
+@app.command("optimize", cls=_DockerCommand, epilog=docs_epilog("improve-a-policy"))
 def optimize(
     manifest_uri: Annotated[
         str | None,
@@ -1582,7 +1641,7 @@ def optimize(
         raise typer.Exit(1) from error
 
 
-@hosted_game_app.command("create")
+@hosted_game_app.command("create", help="Create a hosted Coworld game session.")
 def hosted_game_create(
     coworld_id: Annotated[str, typer.Argument(help="Uploaded Coworld ID to host.")],
     server: Annotated[str, typer.Option("--server", help="Observatory API server URL.")] = DEFAULT_SUBMIT_SERVER,
@@ -1609,7 +1668,7 @@ def hosted_game_create(
         typer.echo("Spectators: disabled")
 
 
-@hosted_game_app.command("join")
+@hosted_game_app.command("join", help="Join a hosted Coworld game session.")
 def hosted_game_join(
     session_id: Annotated[str, typer.Argument(help="Hosted play session ID.")],
     server: Annotated[str, typer.Option("--server", help="Observatory API server URL.")] = DEFAULT_SUBMIT_SERVER,

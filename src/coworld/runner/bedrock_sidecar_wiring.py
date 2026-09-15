@@ -254,6 +254,7 @@ def build_bedrock_sidecar(
         ],
     )
 
+
 def _healthz_probe_command(listen_port: int) -> list[str]:
     # Runs inside the sidecar container, so 127.0.0.1 reaches the loopback-bound listener.
     return [

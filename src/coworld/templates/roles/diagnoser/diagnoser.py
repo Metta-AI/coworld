@@ -78,9 +78,7 @@ def build_diagnosis(bundle_uri: str, target_policy_uri: str) -> bytes:
     )
     manifest = DiagnosisManifest(diagnoser_id=findings.diagnoser_id, render="diagnosis.md")
     markdown = (
-        "# Coworld Diagnosis\n\n"
-        f"- target_policy_uri: `{findings.target_policy_uri}`\n"
-        f"- summary: {findings.summary}\n"
+        f"# Coworld Diagnosis\n\n- target_policy_uri: `{findings.target_policy_uri}`\n- summary: {findings.summary}\n"
     )
     return deterministic_zip(
         [

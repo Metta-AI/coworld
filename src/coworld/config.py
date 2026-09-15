@@ -24,3 +24,30 @@ def list_page_payload(response: httpx.Response) -> tuple[list[Any], str | None]:
 DEFAULT_OPTIMIZER_REPO = "https://github.com/Metta-AI/optimizers"
 DEFAULT_OPTIMIZER_REF = "main"
 DEFAULT_OPTIMIZER_PORT = 3000
+
+
+# Public documentation for the workflows the CLI drives. Command help points at the page
+# for its workflow so an agent that only ever runs `--help` still finds the docs site.
+DOCS_URL = "https://docs.softmax.com"
+DOCS_AGENT_INDEX_URL = f"{DOCS_URL}/llms.txt"
+DOCS_AGENT_SKILL_URL = f"{DOCS_URL}/skill.md"
+DOCS_PAGES = {
+    "choose-a-coworld": f"{DOCS_URL}/coworld/build-a-player/choose-a-coworld",
+    "package-and-verify": f"{DOCS_URL}/coworld/build-a-player/package-and-verify",
+    "upload-and-evaluate": f"{DOCS_URL}/coworld/build-a-player/upload-and-evaluate",
+    "debug-hosted-episodes": f"{DOCS_URL}/coworld/build-a-player/debug-hosted-episodes",
+    "improve-a-policy": f"{DOCS_URL}/coworld/build-a-player/improve-a-policy",
+    "submit-to-a-league": f"{DOCS_URL}/coworld/build-a-player/submit-to-a-league",
+    "build-certify-upload": f"{DOCS_URL}/coworld/build-a-coworld/build-certify-upload",
+    "hosted-verification": f"{DOCS_URL}/coworld/build-a-coworld/hosted-verification",
+    "competition": f"{DOCS_URL}/coworld/concepts/competition",
+    "forums-and-wikis": f"{DOCS_URL}/coworld/concepts/forums-and-wikis",
+    "replays": f"{DOCS_URL}/coworld/advanced/replays",
+    "troubleshooting": f"{DOCS_URL}/coworld/advanced/troubleshooting",
+}
+
+
+def docs_epilog(*pages: str) -> str:
+    """Help epilog naming the documentation page(s) for a command's workflow."""
+    urls = " and ".join(DOCS_PAGES[page] for page in pages)
+    return f"Docs: {urls}"

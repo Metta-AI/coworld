@@ -39,7 +39,7 @@ from coworld.api_client import (
     V2EpisodeRequestSummary,
 )
 from coworld.cli_support import console, emit_json, print_replay_session
-from coworld.config import DEFAULT_SUBMIT_SERVER, participation_guide_url
+from coworld.config import DEFAULT_SUBMIT_SERVER, docs_epilog, participation_guide_url
 from coworld.manifest import read_downloaded_manifest
 from coworld.manifest_uri import materialized_replay_path
 from coworld.play import ReplaySession, replay_coworld
@@ -133,7 +133,11 @@ def register_tournament_commands(app: typer.Typer) -> None:
     )
     app.add_typer(xp_request_app, name="xp-request")
 
-    @app.command("power-analysis")
+    @app.command(
+        "power-analysis",
+        help="Estimate the episodes needed to detect an Elo difference in a division or league.",
+        epilog=docs_epilog("improve-a-policy"),
+    )
     def power_analysis(
         target: Annotated[str, typer.Argument(help="Division or league ID.")],
         policy: Annotated[
@@ -176,7 +180,7 @@ def register_tournament_commands(app: typer.Typer) -> None:
             return
         _print_power_analysis(report)
 
-    @xp_request_app.command("create")
+    @xp_request_app.command("create", help="Create a hosted Experience Request from a JSON body.")
     def xp_request_create(
         body: Annotated[
             str,
@@ -194,7 +198,7 @@ def register_tournament_commands(app: typer.Typer) -> None:
             return
         _print_experience_request_detail(detail)
 
-    @xp_request_app.command("list")
+    @xp_request_app.command("list", help="List visible Experience Requests (--mine for only yours).")
     def xp_request_list(
         mine: Annotated[bool, typer.Option("--mine", help="Show only my Experience Requests.")] = False,
         limit: Annotated[int, typer.Option("--limit", min=1, max=1000, help="Maximum rows to return.")] = 50,
@@ -211,7 +215,7 @@ def register_tournament_commands(app: typer.Typer) -> None:
         if page.next_cursor is not None:
             console.print(f"[dim]Next cursor: {page.next_cursor}[/dim]")
 
-    @xp_request_app.command("get")
+    @xp_request_app.command("get", help="Show one Experience Request.")
     def xp_request_get(
         experience_request_id: Annotated[str, typer.Argument(help="Experience Request ID (prefix xreq_).")],
         server: Annotated[str, typer.Option("--server", help="Observatory API server URL.")] = DEFAULT_SUBMIT_SERVER,
@@ -224,7 +228,7 @@ def register_tournament_commands(app: typer.Typer) -> None:
             return
         _print_experience_request_detail(detail)
 
-    @xp_request_app.command("episodes")
+    @xp_request_app.command("episodes", help="List the episodes of an Experience Request.")
     def xp_request_episodes(
         experience_request_id: Annotated[str, typer.Argument(help="Experience Request ID (prefix xreq_).")],
         server: Annotated[str, typer.Option("--server", help="Observatory API server URL.")] = DEFAULT_SUBMIT_SERVER,
@@ -243,7 +247,7 @@ def register_tournament_commands(app: typer.Typer) -> None:
     )
     app.add_typer(reporters_app, name="reporters")
 
-    @reporters_app.command("list")
+    @reporters_app.command("list", help="List reporters, filtered by query, type, or mode.")
     def reporters_list(
         query: Annotated[
             str | None,
@@ -289,7 +293,7 @@ def register_tournament_commands(app: typer.Typer) -> None:
         if page.next_cursor is not None:
             typer.echo(f"More rows available. Use `reporters list --query` with --cursor {page.next_cursor}.")
 
-    @reporters_app.command("show")
+    @reporters_app.command("show", help="Show one reporter and what it produces.")
     def reporters_show(
         reporter_id: Annotated[str, typer.Argument(help="Reporter ID (prefix rptr_).")],
         server: Annotated[str, typer.Option("--server", help="Observatory API server URL.")] = DEFAULT_SUBMIT_SERVER,
@@ -302,7 +306,11 @@ def register_tournament_commands(app: typer.Typer) -> None:
             return
         _print_reporter_detail(detail)
 
-    @app.command("leagues")
+    @app.command(
+        "leagues",
+        help="List leagues, or show one league and its participation guide.",
+        epilog=docs_epilog("competition", "choose-a-coworld"),
+    )
     def leagues(
         league_id: Annotated[
             str | None, typer.Argument(help="League ID to inspect. Lists leagues when omitted.")
@@ -326,7 +334,7 @@ def register_tournament_commands(app: typer.Typer) -> None:
             return
         _print_league_detail(league, server=server)
 
-    @app.command("divisions")
+    @app.command("divisions", help="List divisions, or show one.", epilog=docs_epilog("competition"))
     def divisions(
         division_id: Annotated[
             str | None,
@@ -353,7 +361,7 @@ def register_tournament_commands(app: typer.Typer) -> None:
             return
         _print_division_detail(division)
 
-    @app.command("results")
+    @app.command("results", help="Show standings for a league, division, or round.", epilog=docs_epilog("competition"))
     def results(
         target_id: Annotated[str, typer.Argument(help="League, division, or round ID.")],
         server: Annotated[str, typer.Option("--server", help="Observatory API server URL.")] = DEFAULT_SUBMIT_SERVER,
@@ -383,7 +391,7 @@ def register_tournament_commands(app: typer.Typer) -> None:
                 return
         raise typer.BadParameter("target_id must start with league_, div_, or round_")
 
-    @app.command("rounds")
+    @app.command("rounds", help="List rounds, or show one.", epilog=docs_epilog("competition"))
     def rounds(
         round_id: Annotated[str | None, typer.Argument(help="Round ID to inspect. Lists rounds when omitted.")] = None,
         league_id: Annotated[str | None, typer.Option("--league", "-l", help="Filter by league ID.")] = None,
@@ -416,7 +424,7 @@ def register_tournament_commands(app: typer.Typer) -> None:
             return
         _print_round_detail(round_detail)
 
-    @app.command("memberships")
+    @app.command("memberships", help="List league policy memberships.", epilog=docs_epilog("competition"))
     def memberships(
         league_id: Annotated[str | None, typer.Option("--league", "-l", help="Filter by league ID.")] = None,
         division_id: Annotated[str | None, typer.Option("--division", "-d", help="Filter by division ID.")] = None,
@@ -455,7 +463,7 @@ def register_tournament_commands(app: typer.Typer) -> None:
         if rows.next_cursor is not None:
             console.print(f"[dim]Next cursor: {rows.next_cursor}[/dim]")
 
-    @app.command("retire-membership")
+    @app.command("retire-membership", help="Retire a league policy membership.")
     def retire_membership(
         membership_id: Annotated[str, typer.Argument(help="League policy membership ID to retire.")],
         reason: Annotated[
@@ -472,7 +480,7 @@ def register_tournament_commands(app: typer.Typer) -> None:
             return
         _print_memberships([membership])
 
-    @app.command("submissions")
+    @app.command("submissions", help="List league submissions.", epilog=docs_epilog("submit-to-a-league"))
     def submissions(
         league_id: Annotated[str | None, typer.Option("--league", "-l", help="Filter by league ID.")] = None,
         policy: Annotated[
@@ -503,7 +511,7 @@ def register_tournament_commands(app: typer.Typer) -> None:
         if rows.next_cursor is not None:
             console.print(f"[dim]Next cursor: {rows.next_cursor}[/dim]")
 
-    @app.command("events")
+    @app.command("events", help="List competition events.")
     def events(
         league_id: Annotated[str | None, typer.Option("--league", "-l", help="Filter by league ID.")] = None,
         division_id: Annotated[str | None, typer.Option("--division", "-d", help="Filter by division ID.")] = None,
@@ -540,7 +548,11 @@ def register_tournament_commands(app: typer.Typer) -> None:
         if page.next_cursor is not None:
             console.print(f"[dim]Next cursor: {page.next_cursor}[/dim]")
 
-    @app.command("episodes")
+    @app.command(
+        "episodes",
+        help="List hosted episode requests, or show one.",
+        epilog=docs_epilog("debug-hosted-episodes"),
+    )
     def episodes(
         episode_request_id: Annotated[
             str | None,
@@ -583,7 +595,11 @@ def register_tournament_commands(app: typer.Typer) -> None:
         if page.next_cursor is not None:
             console.print(f"[dim]Next cursor: {page.next_cursor}[/dim]")
 
-    @app.command("episode-stats")
+    @app.command(
+        "episode-stats",
+        help="Show per-agent stats for an episode request.",
+        epilog=docs_epilog("debug-hosted-episodes"),
+    )
     def episode_stats(
         episode_request_id: Annotated[str, typer.Argument(help="Episode request ID.")],
         server: Annotated[str, typer.Option("--server", help="Observatory API server URL.")] = DEFAULT_SUBMIT_SERVER,
@@ -596,7 +612,11 @@ def register_tournament_commands(app: typer.Typer) -> None:
             return
         _print_episode_stats(episode_request_id, stats)
 
-    @app.command("episode-results")
+    @app.command(
+        "episode-results",
+        help="Show or save the results JSON of an episode request.",
+        epilog=docs_epilog("debug-hosted-episodes"),
+    )
     def episode_results(
         episode_request_id: Annotated[str, typer.Argument(help="Episode request ID.")],
         output: Annotated[Path | None, typer.Option("--output", "-o", help="Write results JSON to a file.")] = None,
@@ -611,7 +631,11 @@ def register_tournament_commands(app: typer.Typer) -> None:
         output.write_bytes(content)
         console.print(f"[green]Results saved to {output}[/green]")
 
-    @app.command("episode-logs")
+    @app.command(
+        "episode-logs",
+        help="Show or download the game and policy logs of an episode request.",
+        epilog=docs_epilog("debug-hosted-episodes"),
+    )
     def episode_logs(
         episode_request_id: Annotated[str, typer.Argument(help="Episode request ID.")],
         list_logs: Annotated[bool, typer.Option("--list", help="List available policy log files.")] = False,
@@ -739,7 +763,7 @@ def register_tournament_commands(app: typer.Typer) -> None:
             if artifact_indices:
                 _print_artifact_hint(episode_request_id, artifact_indices)
 
-    @app.command("replays")
+    @app.command("replays", help="List or download replay files.", epilog=docs_epilog("replays"))
     def replays(
         round_id: Annotated[str | None, typer.Option("--round", "-r", help="Filter by round ID.")] = None,
         policy: Annotated[
@@ -779,7 +803,7 @@ def register_tournament_commands(app: typer.Typer) -> None:
         if page.next_cursor is not None:
             console.print(f"[dim]Next cursor: {page.next_cursor}[/dim]")
 
-    @app.command("replay-open")
+    @app.command("replay-open", help="Open an episode replay in the browser.", epilog=docs_epilog("replays"))
     def replay_open(
         episode_request_id: Annotated[str, typer.Argument(help="Episode request ID.")],
         hosted: Annotated[bool, typer.Option("--hosted", help="Create a hosted Observatory replay session.")] = False,
