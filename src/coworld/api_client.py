@@ -60,6 +60,12 @@ class LeaguePublic(CoworldAPIModel):
     name: str
     slug: str | None = None
     game: GamePublic
+    # The league's agent-facing Markdown surfaces, computed server-side (LeaguePublic in
+    # app_backend v2/models.py): what a cold agent should fetch next. Always present on the
+    # wire; forum and wiki are null for a league whose game has no Coworld name.
+    participation_url: str
+    forum_markdown_url: str | None
+    wiki_markdown_url: str | None
     commissioner_key: str | None = None
     commissioner_config: dict[str, Any] | None = None
     public: bool = False

@@ -31,7 +31,7 @@ from coworld.api_client import CoworldApiClient, LeaguePublic, _detail
 from coworld.bundle import resolve_registry_image_ref
 from coworld.certifier import EXECUTABLE_TRANSCRIPT_PATH, certify_coworld, load_coworld_package
 from coworld.cli_support import validate_run_argv
-from coworld.config import DEFAULT_SUBMIT_SERVER, list_page_payload, participation_guide_url
+from coworld.config import DEFAULT_SUBMIT_SERVER, DOCS_PAGES, list_page_payload, participation_guide_url
 from coworld.image_refs import is_digest_pinned_image_ref, is_mutable_registry_image_ref
 from coworld.manifest import validate_upload_manifest
 from coworld.manifest_validation import validate_coworld_manifest_game_configs
@@ -1618,6 +1618,7 @@ def upload_coworld_cmd(
     typer.echo(f"Manifest hash: {result.manifest_hash}")
     typer.echo(f"Size: {result.size_bytes} bytes")
     typer.echo(f"Canonical: {'yes' if result.canonical else 'no'}")
+    typer.echo(f"Docs: {DOCS_PAGES['build-certify-upload']} and {DOCS_PAGES['hosted-verification']}")
 
     # The upload is durable and visible immediately, but the candidate remains
     # non-canonical until hosted certification and upload smoke both pass.
@@ -1705,6 +1706,9 @@ def upload_policy_cmd(
                 tags=tags,
             )
     typer.echo(f"Upload complete: {result.name}:v{result.version}")
+    typer.echo("Next: run hosted episodes against live opponents with an Experience Request:")
+    typer.echo("  uv run coworld xp-request --help")
+    typer.echo(f"Docs: {DOCS_PAGES['upload-and-evaluate']}")
 
 
 def patch_commissioner_cmd(

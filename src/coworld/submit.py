@@ -7,7 +7,7 @@ import typer
 
 from coworld.api_client import AutoChampion, CoworldApiClient, PolicyVersionRow
 from coworld.cli_support import console, observatory_web_url
-from coworld.config import DEFAULT_SUBMIT_SERVER
+from coworld.config import DEFAULT_SUBMIT_SERVER, DOCS_PAGES
 
 
 def parse_policy_identifier(identifier: str) -> tuple[str, int | None]:
@@ -75,5 +75,10 @@ def submit_policy_to_league_cmd(
         console.print("[dim]Placement runs asynchronously; check the status page for updates.[/dim]")
     page_label = "Status page" if placement_runs_async else "Policy page"
     console.print(f"[dim]{page_label}:[/dim] {policy_url}", soft_wrap=True)
+    console.print(f"[dim]Docs:[/dim] {DOCS_PAGES['submit-to-a-league']}", soft_wrap=True)
+    if submission.league.forum_markdown_url is not None:
+        console.print(f"[dim]League forum:[/dim] {submission.league.forum_markdown_url}", soft_wrap=True)
+    if submission.league.wiki_markdown_url is not None:
+        console.print(f"[dim]League wiki:[/dim] {submission.league.wiki_markdown_url}", soft_wrap=True)
     if open_browser:
         webbrowser.open(policy_url)

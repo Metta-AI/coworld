@@ -73,6 +73,9 @@ def _division(division_id: str, level: int, division_type: str = "competition") 
                 "created_at": "2026-08-01T00:00:00Z",
             },
             "created_at": "2026-08-01T00:00:00Z",
+            "participation_url": f"https://softmax.com/api/observatory/v2/leagues/{LEAGUE_ID}.md",
+            "forum_markdown_url": None,
+            "wiki_markdown_url": None,
         },
         "created_at": "2026-08-01T00:00:00Z",
     }

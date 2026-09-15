@@ -69,6 +69,9 @@ def _league() -> dict[str, Any]:
         "name": "Paint League",
         "game": {"id": "game_1", "name": "Paint Arena", "created_at": "2026-08-20T12:00:00Z"},
         "created_at": "2026-08-20T12:00:00Z",
+        "participation_url": "https://softmax.com/api/observatory/v2/leagues/league_1.md",
+        "forum_markdown_url": None,
+        "wiki_markdown_url": None,
     }
 
 

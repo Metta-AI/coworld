@@ -68,6 +68,9 @@ def test_submit_policy_to_league_posts_v2_submission(
     assert "lpm_00000000-0000-0000-0000-000000000061" in result.output
     policy_path = f"/observatory/policies/versions/{POLICY_VERSION_ID}"
     assert policy_path in result.output
+    assert "https://docs.softmax.com/coworld/build-a-player/submit-to-a-league" in result.output
+    assert "League forum: https://softmax.com/api/observatory/v2/forums/Paint Arena.md" in result.output
+    assert "League wiki: https://softmax.com/api/observatory/v2/wikis/Paint Arena/pages.md" in result.output
     assert opened == [policy_path]
     policy_query = next(
         request for request, _ in httpserver.log if request.path == "/observatory/stats/policy-versions"
@@ -305,6 +308,9 @@ def _submission(
                 "created_at": "2026-05-11T10:00:00Z",
             },
             "created_at": "2026-05-11T10:00:00Z",
+            "participation_url": f"https://softmax.com/api/observatory/v2/leagues/{LEAGUE_ID}.md",
+            "forum_markdown_url": "https://softmax.com/api/observatory/v2/forums/Paint Arena.md",
+            "wiki_markdown_url": "https://softmax.com/api/observatory/v2/wikis/Paint Arena/pages.md",
         },
         "policy_version": {
             "id": POLICY_VERSION_ID,

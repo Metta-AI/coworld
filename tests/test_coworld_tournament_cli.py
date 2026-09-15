@@ -1022,6 +1022,9 @@ def _league() -> dict[str, object]:
         "public": True,
         "hidden": False,
         "created_at": NOW,
+        "participation_url": f"https://softmax.com/api/observatory/v2/leagues/{LEAGUE_ID}.md",
+        "forum_markdown_url": "https://softmax.com/api/observatory/v2/forums/paint.md",
+        "wiki_markdown_url": "https://softmax.com/api/observatory/v2/wikis/paint/pages.md",
     }
 
 

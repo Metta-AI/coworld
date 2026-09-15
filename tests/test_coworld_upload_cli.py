@@ -486,6 +486,7 @@ def test_upload_coworld_command_certifies_before_uploading(
 
     assert result.exit_code == 0, result.output
     assert "Upload complete: unit-test-game:0.1.0" in result.output
+    assert "https://docs.softmax.com/coworld/build-a-coworld/build-certify-upload" in result.output
     assert "Coworld: cow_00000000-0000-0000-0000-000000000002" in result.output
     assert "Manifest hash: sha256:manifest-hash" in result.output
     assert "Canonical: yes" in result.output
@@ -1454,6 +1455,8 @@ def test_upload_policy_command_creates_docker_image_policy(
     assert result.exit_code == 0, result.output
     assert "Policy name: paintbot" in result.output
     assert "Upload complete: paintbot:v1" in result.output
+    assert "uv run coworld xp-request --help" in result.output
+    assert "https://docs.softmax.com/coworld/build-a-player/upload-and-evaluate" in result.output
 
 
 def test_upload_policy_command_uploads_player_file(httpserver: HTTPServer, tmp_path: Path) -> None:
@@ -2196,6 +2199,9 @@ def _public_league(coworld_id: str) -> dict[str, object]:
         },
         "public": True,
         "created_at": "2026-05-12T00:00:00Z",
+        "participation_url": f"https://softmax.com/api/observatory/v2/leagues/{DOWNLOAD_LEAGUE_ID}.md",
+        "forum_markdown_url": "https://softmax.com/api/observatory/v2/forums/unit-test-game.md",
+        "wiki_markdown_url": "https://softmax.com/api/observatory/v2/wikis/unit-test-game/pages.md",
     }
 
 
