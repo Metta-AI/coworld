@@ -10,20 +10,21 @@ The one rule: in a hosted episode, **send every Bedrock call to the `AWS_ENDPOIN
 per-pod sidecar that signs with the runner identity). Hitting the real AWS host instead returns HTTP 403 with the
 injected placeholder credentials. Standard SDKs (boto3, `AnthropicBedrock`, AWS SDK for JS, `@cogweb/llm`) honor that
 environment variable automatically; hand-rolled HTTP must read it. The sidecar supports InvokeModel and Converse,
-including both streaming forms. Full contract, examples, and troubleshooting: [`BEDROCK.md`](src/coworld/docs/BEDROCK.md).
+including both streaming forms. Full contract, examples, and troubleshooting:
+[`BEDROCK.md`](src/coworld/docs/BEDROCK.md).
 
 ## Choose the player runtime first
 
 Read [PLAYER_RUNTIMES.md](src/coworld/docs/PLAYER_RUNTIMES.md) before designing a new game or player.
-`game.player_runtime` selects Observatory-hosted (`platform-hosted`, default) containers or `game-hosted` files.
-Both use hosted Kubernetes episodes. File execution, isolation, per-seat output, and model-call attribution belong to
-the game in game-hosted mode. Paint Arena is a platform-hosted example, not the only supported runtime.
+`game.player_runtime` selects Observatory-hosted (`platform-hosted`, default) containers or `game-hosted` files. Both
+use hosted Kubernetes episodes. File execution, isolation, per-seat output, and model-call attribution belong to the
+game in game-hosted mode. Paint Arena is a platform-hosted example, not the only supported runtime.
 
 ## Coworlds Expert Agent
 
 A distributable Claude Code agent for coworld developers is available at
-[`agents/coworlds-expert-agent/`](agents/coworlds-expert-agent/). It knows coworld design principles (the derivation chain,
-grader philosophy, player policy design, schema contracts) and can be installed into any coworld project's
+[`agents/coworlds-expert-agent/`](agents/coworlds-expert-agent/). It knows coworld design principles (the derivation
+chain, grader philosophy, player policy design, schema contracts) and can be installed into any coworld project's
 `.claude/agents/` directory. See its [README](agents/coworlds-expert-agent/README.md) for install instructions.
 
 ## Before Editing
@@ -33,6 +34,9 @@ grader philosophy, player policy design, schema contracts) and can be installed 
 - Keep package docs public-package-facing. Avoid private Metta backend paths unless the document is intentionally
   explaining a platform integration boundary.
 - Treat Paint Arena under `src/coworld/examples/paintarena/` as the canonical in-tree example.
+- This file is monorepo contributor guidance and never reaches the public `Metta-AI/coworld` repo. The sync
+  (`devops/git/push_child_repo.py`) replaces it with [`AGENTS.external.md`](AGENTS.external.md), written for coding
+  agents outside Softmax. Keep that twin free of monorepo commands and private paths.
 
 ## CLI
 
@@ -137,8 +141,8 @@ source of truth. They are generated docs and `$schema` targets; `test_types.py` 
 - [docs/](docs/) - public Mintlify guides. This path symlinks to the canonical sources under `web/docs/coworld/`.
 - [src/coworld/docs/README.md](src/coworld/docs/README.md) - Coworld concept map, role statuses, artifact flow, and
   cross-links.
-- [src/coworld/docs/AUTHORING.md](src/coworld/docs/AUTHORING.md) - stable pointer from older links to the public
-  Coworld authoring track and its exact technical references.
+- [src/coworld/docs/AUTHORING.md](src/coworld/docs/AUTHORING.md) - stable pointer from older links to the public Coworld
+  authoring track and its exact technical references.
 - [src/coworld/docs/STATIC_REPLAY_VIEWERS.md](src/coworld/docs/STATIC_REPLAY_VIEWERS.md) - static replay bundle,
   manifest, Coworld build-hook, source-sharing, and browser-verification contract.
 - [src/coworld/docs/COWORLD_MANIFEST.md](src/coworld/docs/COWORLD_MANIFEST.md) - manifest semantics and schema source of
@@ -152,11 +156,11 @@ source of truth. They are generated docs and `$schema` targets; `test_types.py` 
   waves, bracket matches) and how to read their episodes via the v2 API.
 - [src/coworld/docs/PLATFORM_LADDER_LEAGUE.md](src/coworld/docs/PLATFORM_LADDER_LEAGUE.md) - create/maintain platform
   ladder leagues (public; syncs to `Metta-AI/coworld`).
-- [src/coworld/docs/LADDER_SEATING.md](src/coworld/docs/LADDER_SEATING.md) - how the platform ladder deals entrants
-  onto game seats: per-strategy slot→entrant formulas, `team_layout` geometry, and filler marking. Check it against a
-  game's slot→team map before requesting a seed.
-- [src/coworld/docs/MIGRATE_TO_PLATFORM_COMMISSIONER.md](src/coworld/docs/MIGRATE_TO_PLATFORM_COMMISSIONER.md) - cut over
-  from a container commissioner (public; syncs to `Metta-AI/coworld`).
+- [src/coworld/docs/LADDER_SEATING.md](src/coworld/docs/LADDER_SEATING.md) - how the platform ladder deals entrants onto
+  game seats: per-strategy slot→entrant formulas, `team_layout` geometry, and filler marking. Check it against a game's
+  slot→team map before requesting a seed.
+- [src/coworld/docs/MIGRATE_TO_PLATFORM_COMMISSIONER.md](src/coworld/docs/MIGRATE_TO_PLATFORM_COMMISSIONER.md) - cut
+  over from a container commissioner (public; syncs to `Metta-AI/coworld`).
 - `src/coworld/docs/roles/*.md` - per-role contracts.
 - `src/coworld/docs/artifacts/*.md` - artifact contracts.
 - `src/coworld/runner/RUNNER_README.md` and `src/coworld/runner/KUBERNETES_RUNNER_README.md` - runner-specific behavior.
