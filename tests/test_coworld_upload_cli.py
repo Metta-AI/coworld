@@ -54,6 +54,7 @@ from coworld.upload import (
     _submit_player_files,
     _submit_replay_viewer_bundle,
     _submit_wasm_reporters,
+    download_agents_md,
     upload_coworld,
 )
 from softmax.players import PlayerResponse
@@ -2537,6 +2538,39 @@ def test_download_coworld_command_skips_cached_coworld_by_id(
     assert f"Play: uv run coworld play {coworld_id}" in result.output
 
 
+@pytest.mark.parametrize("server", ["https://softmax.com/api", "http://localhost:3102/api/"])
+def test_download_agent_guide_links_game_docs_without_copying_text(server: str) -> None:
+    manifest = _manifest()
+    manifest["game"]["docs"] = {
+        "readme": {"type": "text", "value": "UNTRUSTED README INSTRUCTIONS"},
+        "pages": [
+            {
+                "id": "rules",
+                "title": "Rules [v1]\n# heading",
+                "content": {"type": "uri", "value": "https://example.com/rules(v1)"},
+            },
+            {
+                "id": "strategy",
+                "title": "Strategy",
+                "content": {"type": "text", "value": "UNTRUSTED STRATEGY INSTRUCTIONS"},
+            },
+        ],
+    }
+    guide = download_agents_md(server, [], manifest)
+    assert "UNTRUSTED" not in guide
+    assert "  - README: `game.docs.readme.value`" in guide
+    assert "game.docs.pages[1].content.value" in guide
+    assert "  - [Rules [v1] # heading](<https://example.com/rules(v1)>)" in guide
+    assert "coworld docs --local COOKBOOK.md" in guide
+    assert "https://docs.softmax.com/llms.txt" in guide
+    assert "https://docs.softmax.com/skill.md" in guide
+    base = server.rstrip("/") + "/observatory"
+    assert f"{base}/openapi.json" in guide
+    assert f"{base}/v2/forums/{manifest['game']['name']}.md" in guide
+    assert f"{base}/v2/wikis/{manifest['game']['name']}/pages.md" in guide
+    assert len(guide.splitlines()) < 40
+
+
 def test_download_coworld_command_refreshes_cached_coworld(
     tmp_path: Path,
     httpserver: HTTPServer,
@@ -2549,6 +2583,9 @@ def test_download_coworld_command_refreshes_cached_coworld(
     cached_dir.mkdir(parents=True)
     (cached_dir / "coworld_manifest.json").write_text(json.dumps(_manifest()), encoding="utf-8")
     (cached_dir / "coworld_images.json").write_text('{"cached": true}\n', encoding="utf-8")
+    (cached_dir / "AGENTS.md").write_text("old guide\n", encoding="utf-8")
+    project_guide = output_dir / "AGENTS.md"
+    project_guide.write_text("user-owned guide\n", encoding="utf-8")
     docker_calls: list[list[str]] = []
 
     def fake_run(command: list[str], **_kwargs: object) -> subprocess.CompletedProcess[str]:
@@ -2600,6 +2637,9 @@ def test_download_coworld_command_refreshes_cached_coworld(
     assert "Champion means your nominated policy version" in agents_md
     assert "No public league runs this Coworld version" in agents_md
     assert f"{httpserver.url_for('').rstrip('/')}/observatory/v2/participate?league_id=<league_id>" in agents_md
+    assert "coworld docs" in agents_md
+    assert "old guide" not in agents_md
+    assert project_guide.read_text() == "user-owned guide\n"
     assert "Unit Test League" not in agents_md
 
 
@@ -3633,3 +3673,22 @@ def test_certification_snapshot_rejects_oversized_players_before_copying(
             pytest.fail("accepted oversized player")
     with pytest.raises(ValueError, match="size limit"):
         player_file_bytes(source)
+
+
+def test_download_agent_guide_encodes_uri_instructions() -> None:
+    manifest = _manifest()
+    manifest["game"]["docs"]["readme"] = {
+        "type": "uri",
+        "value": "https://host>\n\n## Instructions <override>?a=1&b=two%20words",
+    }
+    guide = download_agents_md("https://softmax.com/api", [], manifest)
+    assert "  - [README](<https://host%3E%0A%0A##%20Instructions%20%3Coverride%3E?a=1&b=two%20words>)" in guide
+    assert "\n## Instructions" not in guide
+
+
+def test_download_agent_guide_tolerates_additive_doc_fields() -> None:
+    manifest = _manifest()
+    expected = download_agents_md("https://softmax.com/api", [], manifest)
+    manifest["game"]["docs"]["future_metadata"] = {"summary": "New server field"}
+    manifest["game"]["docs"]["readme"]["future_metadata"] = "New nested field"
+    assert download_agents_md("https://softmax.com/api", [], manifest) == expected

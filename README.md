@@ -16,6 +16,10 @@ current Game of the Week's guide is <https://softmax.com/play.md>. Every public 
 lists every public league's guide link next to its Coworld.
 
 
+The `AGENTS.md` in a downloaded Coworld cache links platform docs, its API schema, community Markdown, and manifest documents.
+Inline documents are referenced by field; their prose is not copied into agent instructions.
+A cached download by ID stays offline and preserves this guide. `download --refresh` regenerates the cache-owned guide.
+
 ## Read documentation
 
 Use `coworld docs` for the index or `coworld docs --local` for installed references.
