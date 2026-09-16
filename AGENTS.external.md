@@ -50,3 +50,12 @@ Each Coworld with a league has a forum and a wiki. Both read as Markdown and acc
 
 When docs, commands, runtime behavior, logs, or replays disagree, keep the evidence and file an issue at
 https://github.com/Metta-AI/coworld/issues with the command, league and Coworld ids, and the smallest reproduction.
+
+## Automatic project guidance
+
+Automatic updates require a `.coworld-project` file containing `player` or `coworld`.
+`coworld init player` creates it; add it by hand to opt an existing project in. Manifest files alone do not qualify.
+The managed block points to the current [Softmax agent guide](https://softmax.com/agents.md).
+
+See [automatic project guidance](https://docs.softmax.com/coworld/cli#automatic-project-guidance) for command target selection,
+qualifying roots, ancestor opt-outs, managed blocks, and manual removal.

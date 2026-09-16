@@ -17,6 +17,7 @@ from rich import box
 from rich.table import Table
 from typer.core import TyperCommand
 
+from coworld.agent_guidance import update_agent_guidance
 from coworld.api_client import AutoChampion, CoworldApiClient
 from coworld.bundle import build_coworld_manifest
 from coworld.campaign_cli import register_campaign_commands
@@ -589,6 +590,7 @@ def certify(
         ),
     ] = True,
 ) -> None:
+    update_agent_guidance(Path(manifest_uri).parent if Path(manifest_uri).is_file() else Path.cwd())
     transcript = load_executable_transcript()
     step_results: list[StepResult] = []
     artifacts = EpisodeArtifacts.create()
@@ -704,6 +706,7 @@ def build(
     ] = Path("dist/coworld_manifest.json"),
 ) -> None:
     project_dir = project_dir.resolve()
+    update_agent_guidance(project_dir)
     manifest_path = build_coworld_manifest(
         project_dir / compose_file,
         project_dir / template_path,
@@ -799,6 +802,7 @@ def play(
         if open_browser:
             webbrowser.open(session.links.global_)
 
+    update_agent_guidance(Path(manifest_uri).parent if Path(manifest_uri).is_file() else Path.cwd())
     with _materialized_manifest_path(manifest_uri, server=server) as manifest_path:
         result = play_coworld(
             manifest_path,
@@ -1123,6 +1127,7 @@ def download(
         typer.Option("--refresh", help="Re-fetch the Coworld and re-pull images even when it is already cached."),
     ] = False,
 ) -> None:
+    update_agent_guidance(Path.cwd())
     download_coworld_cmd(
         coworld_ref,
         output_dir,
@@ -1211,6 +1216,8 @@ def upload_policy(
             key, val = _parse_secret_env(kv)
             parsed_tags[key] = val
 
+    validate_run_argv(run)
+    update_agent_guidance(Path.cwd())
     if name is None:
         user_token = softmax_auth.load_user_token(server=server)
         if user_token is None:
@@ -1383,6 +1390,7 @@ def run_episode(
         for kv in secret_env:
             key, val = _parse_secret_env(kv)
             parsed_secret_env[key] = val
+    update_agent_guidance(Path(manifest_uri).parent if Path(manifest_uri).is_file() else Path.cwd())
     player_file_paths: list[Path] | None = None
     with _materialized_manifest_path(manifest_uri, server=server) as manifest_path:
         package = load_coworld_package(manifest_path, tolerate_newer_fields=True)

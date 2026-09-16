@@ -27,10 +27,10 @@ import httpx
 import typer
 from pydantic import BaseModel, Field
 
+from coworld.agent_guidance import update_agent_guidance
 from coworld.api_client import CoworldApiClient, LeaguePublic, _detail
 from coworld.bundle import resolve_registry_image_ref
 from coworld.certifier import EXECUTABLE_TRANSCRIPT_PATH, certify_coworld, load_coworld_package
-from coworld.cli_support import validate_run_argv
 from coworld.config import (
     DEFAULT_SUBMIT_SERVER,
     DOCS_PAGES,
@@ -1263,6 +1263,7 @@ def upload_coworld_update(
     if version is None and patch_update is None and not image_updates:
         raise ValueError("--from-coworld requires --version, --patch, or --image")
 
+    update_agent_guidance(Path.cwd())
     with CoworldUploadClient.from_login(server_url=server) as client:
         coworld = _resolve_stored_coworld(client, coworld_ref)
         manifest = copy.deepcopy(coworld.manifest)
@@ -1648,6 +1649,7 @@ def upload_coworld_cmd(
             raise typer.BadParameter("MANIFEST_PATH is required unless --from-coworld is set")
         if version is not None or patch_update is not None or image_updates:
             raise typer.BadParameter("--version, --patch, and --image require --from-coworld")
+        update_agent_guidance(manifest_path.parent)
         result = upload_coworld(
             manifest_path,
             server=server,
@@ -1716,7 +1718,6 @@ def upload_policy_cmd(
 ) -> None:
     if (image is None) == (player_file is None):
         raise ValueError("Exactly one of image or player_file is required")
-    validate_run_argv(run)
     with CoworldUploadClient.from_login(server_url=server) as client:
         if player_file is not None:
             if run or secret_env:

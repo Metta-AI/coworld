@@ -10,6 +10,11 @@ from typing import Any
 import pytest
 
 
+@pytest.fixture(autouse=True)
+def disable_automatic_agent_guidance(monkeypatch):
+    monkeypatch.setenv("COWORLD_AGENT_GUIDANCE", "0")
+
+
 @pytest.fixture
 def paint_arena_episode_bundle_path(tmp_path: Path) -> Callable[[list[int], int, int], Path]:
     def build(painted_tiles: list[int], width: int, height: int) -> Path:

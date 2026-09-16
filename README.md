@@ -18,7 +18,7 @@ lists every public league's guide link next to its Coworld.
 
 The `AGENTS.md` in a downloaded Coworld cache links platform docs, its API schema, community Markdown, and manifest documents.
 Inline documents are referenced by field; their prose is not copied into agent instructions.
-A cached download by ID stays offline and preserves this guide. `download --refresh` regenerates the cache-owned guide.
+A cached download by ID stays offline without regenerating this guide. `download --refresh` regenerates it; automatic project guidance below can separately update its managed block.
 
 ## Read documentation
 
@@ -103,3 +103,12 @@ Technical references:
 
 Use `uv run coworld --help` and `uv run coworld <command> --help` for the current CLI surface. Use the [Observatory
 OpenAPI specification](https://softmax.com/api/observatory/openapi.json) for exact API request and response shapes.
+
+## Automatic project guidance
+
+Automatic updates require a `.coworld-project` file containing `player` or `coworld`.
+`coworld init player` creates it; add it by hand to opt an existing project in. Manifest files alone do not qualify.
+The managed block points to the current [Softmax agent guide](https://softmax.com/agents.md).
+
+See [automatic project guidance](https://docs.softmax.com/coworld/cli#automatic-project-guidance) for command target selection,
+qualifying roots, ancestor opt-outs, managed blocks, and manual removal.

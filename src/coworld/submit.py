@@ -1,10 +1,12 @@
 from __future__ import annotations
 
 import webbrowser
+from pathlib import Path
 from typing import Any
 
 import typer
 
+from coworld.agent_guidance import update_agent_guidance
 from coworld.api_client import AutoChampion, CoworldApiClient, PolicyVersionRow
 from coworld.cli_support import console, observatory_web_url
 from coworld.config import DEFAULT_SUBMIT_SERVER, DOCS_PAGES
@@ -23,8 +25,7 @@ def parse_policy_identifier(identifier: str) -> tuple[str, int | None]:
     return name, version
 
 
-def _resolve_policy_version(client: CoworldApiClient, policy_identifier: str) -> PolicyVersionRow:
-    name, version = parse_policy_identifier(policy_identifier)
+def _resolve_policy_version(client: CoworldApiClient, name: str, version: int | None) -> PolicyVersionRow:
     policy_version = client.lookup_policy_version(name=name, version=version)
     if policy_version is None:
         version_hint = f":v{version}" if version is not None else ""
@@ -44,8 +45,10 @@ def submit_policy_to_league_cmd(
     preferences: dict[str, Any] | None = None,
     player_id: str | None = None,
 ) -> None:
+    name, version = parse_policy_identifier(policy_identifier)
+    update_agent_guidance(Path.cwd())
     with CoworldApiClient.from_login(server_url=server) as client:
-        policy_version = _resolve_policy_version(client, policy_identifier)
+        policy_version = _resolve_policy_version(client, name, version)
 
         version_label = f":v{policy_version.version}"
         console.print(f"[bold]Submitting {policy_version.name}{version_label} to league {league_id}[/bold]")

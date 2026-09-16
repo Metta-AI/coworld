@@ -3692,3 +3692,18 @@ def test_download_agent_guide_tolerates_additive_doc_fields() -> None:
     manifest["game"]["docs"]["future_metadata"] = {"summary": "New server field"}
     manifest["game"]["docs"]["readme"]["future_metadata"] = "New nested field"
     assert download_agents_md("https://softmax.com/api", [], manifest) == expected
+
+
+def test_guidance_failure_precedes_remote_request(tmp_path, httpserver, monkeypatch):
+    monkeypatch.delenv("COWORLD_AGENT_GUIDANCE", raising=False)
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr("coworld.agent_guidance.detect_coding_agent", lambda: "codex")
+    monkeypatch.delenv("COWORLD_AGENT_GUIDANCE", raising=False)
+    (tmp_path / ".coworld-project").write_text("player")
+    (tmp_path / "AGENTS.md").write_text("<!-- BEGIN:coworld-agent-rules -->")
+    result = CliRunner().invoke(
+        app, ["upload-coworld", "--from-coworld", "cow_x", "--version", "1.0.1"] + ["--server", httpserver.url_for("")]
+    )
+    assert "Malformed" in result.output
+    assert result.exit_code == 1
+    assert httpserver.log == []
