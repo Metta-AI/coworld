@@ -113,6 +113,9 @@ class CoworldUploadResponse(BaseModel):
     manifest_hash: str
     size_bytes: int
     canonical: bool
+    forum_markdown_url: str
+    wiki_markdown_url: str
+    documentation_url: str
 
 
 class CoworldCertificationFailure(BaseModel):

@@ -70,6 +70,9 @@ Coworld does not currently provide a supported hosted game-only lobby where user
 `coworld play` for local browser play, or submit policies to leagues for fully hosted tournament episodes where the
 platform runs the game. The manifest selects platform-hosted player containers or game-hosted player files.
 
+`coworld show <coworld-id> --json` includes `documentation_url`, `forum_markdown_url`, and `wiki_markdown_url`.
+Community links may return 404 until those resources exist or when your identity cannot see them.
+
 ## Documentation Map
 
 Public guides:

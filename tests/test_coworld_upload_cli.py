@@ -78,27 +78,15 @@ class _FakeCoworldUploadClient:
 
     def upload_manifest(self, manifest: dict[str, object]) -> CoworldUploadResponse:
         self.uploads.append(manifest)
-        return CoworldUploadResponse(
-            id="cow_00000000-0000-0000-0000-000000000999",
-            name="unit-test-game",
-            version="0.1.0",
-            manifest=manifest,
-            manifest_hash="sha256:manifest-hash",
-            size_bytes=1234,
-            canonical=True,
+        return CoworldUploadResponse.model_validate(
+            _coworld_entry("cow_00000000-0000-0000-0000-000000000999", manifest, version="0.1.0", canonical=True)
         )
 
 
 def test_manifest_upload_retries_shared_rejection(httpserver: HTTPServer) -> None:
-    manifest = {"name": "unit-test-game", "version": "0.1.0"}
-    uploaded = CoworldUploadResponse(
-        id="cow_00000000-0000-0000-0000-000000000999",
-        name="unit-test-game",
-        version="0.1.0",
-        manifest=manifest,
-        manifest_hash="sha256:manifest-hash",
-        size_bytes=1234,
-        canonical=True,
+    manifest = _manifest()
+    uploaded = CoworldUploadResponse.model_validate(
+        _coworld_entry("cow_00000000-0000-0000-0000-000000000999", manifest, version="0.1.0", canonical=True)
     )
     for status, body in [(429, {"detail": "budget exceeded"}), (200, uploaded.model_dump())]:
         httpserver.expect_ordered_request(
@@ -361,13 +349,15 @@ def test_upload_coworld_posts_standalone_manifest(
         headers={"Authorization": "Bearer token"},
     ).respond_with_json(
         {
-            "id": "cow_00000000-0000-0000-0000-000000000001",
-            "name": "unit-test-game",
-            "version": "0.1.0",
-            "manifest": _manifest_with_image(image_id),
+            **_coworld_entry(
+                "cow_00000000-0000-0000-0000-000000000001",
+                _manifest_with_image(image_id),
+                version="0.1.0",
+                canonical=True,
+                name="unit-test-game",
+            ),
             "manifest_hash": "sha256:manifest-hash",
             "size_bytes": 1234,
-            "canonical": True,
         }
     )
 
@@ -461,13 +451,15 @@ def test_upload_coworld_command_certifies_before_uploading(
     )
     httpserver.expect_request("/observatory/v2/coworlds/upload", method="POST").respond_with_json(
         {
-            "id": "cow_00000000-0000-0000-0000-000000000002",
-            "name": "unit-test-game",
-            "version": "0.1.0",
-            "manifest": _manifest_with_image(image_id),
+            **_coworld_entry(
+                "cow_00000000-0000-0000-0000-000000000002",
+                _manifest_with_image(image_id),
+                version="0.1.0",
+                canonical=True,
+                name="unit-test-game",
+            ),
             "manifest_hash": "sha256:manifest-hash",
             "size_bytes": 1234,
-            "canonical": True,
         }
     )
 
@@ -1099,24 +1091,16 @@ def test_upload_coworld_from_existing_manifest_applies_patch_without_images(
     )
     httpserver.expect_request(f"/observatory/v2/coworlds/{coworld_id}", method="GET").respond_with_json(
         {
-            "id": coworld_id,
-            "name": "unit-test-game",
-            "version": "0.1.0",
-            "manifest": manifest,
+            **_coworld_entry(coworld_id, manifest, version="0.1.0", canonical=True, name="unit-test-game"),
             "manifest_hash": "sha256:old-manifest-hash",
             "size_bytes": 1234,
-            "canonical": True,
         }
     )
     httpserver.expect_request("/observatory/v2/coworlds/upload", method="POST").respond_with_json(
         {
-            "id": coworld_id,
-            "name": "unit-test-game",
-            "version": "0.2.0",
-            "manifest": manifest,
+            **_coworld_entry(coworld_id, manifest, version="0.2.0", canonical=True, name="unit-test-game"),
             "manifest_hash": "sha256:new-manifest-hash",
             "size_bytes": 1250,
-            "canonical": True,
         }
     )
 
@@ -1176,13 +1160,9 @@ def test_upload_coworld_from_existing_manifest_updates_one_role_image(
     monkeypatch.setattr("coworld.upload._push_container_image", lambda source_image, push_info: None)
     httpserver.expect_request(f"/observatory/v2/coworlds/{coworld_id}", method="GET").respond_with_json(
         {
-            "id": coworld_id,
-            "name": "unit-test-game",
-            "version": "0.1.0",
-            "manifest": manifest,
+            **_coworld_entry(coworld_id, manifest, version="0.1.0", canonical=True, name="unit-test-game"),
             "manifest_hash": "sha256:old-manifest-hash",
             "size_bytes": 1234,
-            "canonical": True,
         }
     )
     httpserver.expect_request(
@@ -1207,13 +1187,9 @@ def test_upload_coworld_from_existing_manifest_updates_one_role_image(
     )
     httpserver.expect_request("/observatory/v2/coworlds/upload", method="POST").respond_with_json(
         {
-            "id": coworld_id,
-            "name": "unit-test-game",
-            "version": "0.2.0",
-            "manifest": manifest,
+            **_coworld_entry(coworld_id, manifest, version="0.2.0", canonical=True, name="unit-test-game"),
             "manifest_hash": "sha256:new-manifest-hash",
             "size_bytes": 1250,
-            "canonical": True,
         }
     )
 
@@ -2067,6 +2043,18 @@ def test_coworld_show_command_prints_json(httpserver: HTTPServer, monkeypatch: p
 
     assert result.exit_code == 0, result.output
     assert json.loads(result.output)["name"] == "unit-test-game"
+    assert (
+        json.loads(result.output)["forum_markdown_url"]
+        == "https://softmax.com/api/observatory/v2/forums/unit-test-game.md"
+    )
+    assert (
+        json.loads(result.output)["wiki_markdown_url"]
+        == "https://softmax.com/api/observatory/v2/wikis/unit-test-game/pages.md"
+    )
+    assert (
+        json.loads(result.output)["documentation_url"]
+        == "https://docs.softmax.com/coworld/build-a-player/choose-a-coworld"
+    )
 
 
 def test_coworld_show_command_pages_until_uploaded_world(
@@ -2259,13 +2247,15 @@ def test_download_coworld_command_writes_local_package(
         method="GET",
     ).respond_with_json(
         {
-            "id": coworld_id,
-            "name": "unit-test-game",
-            "version": "0.1.0",
-            "manifest": _manifest_with_image(public_image_uri),
+            **_coworld_entry(
+                coworld_id,
+                _manifest_with_image(public_image_uri),
+                version="0.1.0",
+                canonical=True,
+                name="unit-test-game",
+            ),
             "manifest_hash": "sha256:manifest-hash",
             "size_bytes": 1234,
-            "canonical": True,
         }
     )
     _expect_public_leagues(httpserver, [_public_league(coworld_id)])
@@ -2329,13 +2319,15 @@ def test_download_coworld_command_materializes_player_files(
     )
     httpserver.expect_request(f"/observatory/v2/coworlds/{coworld_id}", method="GET").respond_with_json(
         {
-            "id": coworld_id,
-            "name": "unit-test-game",
-            "version": "0.1.0",
-            "manifest": _manifest_with_player_file(public_image_uri, content_hash),
+            **_coworld_entry(
+                coworld_id,
+                _manifest_with_player_file(public_image_uri, content_hash),
+                version="0.1.0",
+                canonical=True,
+                name="unit-test-game",
+            ),
             "manifest_hash": "sha256:manifest-hash",
             "size_bytes": 1234,
-            "canonical": True,
         }
     )
     httpserver.expect_request(
@@ -2374,13 +2366,9 @@ def test_download_coworld_command_fetches_a_shared_player_file_once(
     )
     httpserver.expect_request(f"/observatory/v2/coworlds/{coworld_id}", method="GET").respond_with_json(
         {
-            "id": coworld_id,
-            "name": "unit-test-game",
-            "version": "0.1.0",
-            "manifest": manifest,
+            **_coworld_entry(coworld_id, manifest, version="0.1.0", canonical=True, name="unit-test-game"),
             "manifest_hash": "sha256:manifest-hash",
             "size_bytes": 1234,
-            "canonical": True,
         }
     )
     httpserver.expect_request(
@@ -2467,13 +2455,15 @@ def test_download_coworld_command_resolves_canonical_name(
         method="GET",
     ).respond_with_json(
         {
-            "id": coworld_id,
-            "name": "unit-test-game",
-            "version": "0.1.0",
-            "manifest": _manifest_with_image(public_image_uri),
+            **_coworld_entry(
+                coworld_id,
+                _manifest_with_image(public_image_uri),
+                version="0.1.0",
+                canonical=True,
+                name="unit-test-game",
+            ),
             "manifest_hash": "sha256:manifest-hash",
             "size_bytes": 1234,
-            "canonical": True,
         }
     )
     _expect_public_leagues(httpserver, [_public_league(coworld_id)])
@@ -2560,13 +2550,15 @@ def test_download_coworld_command_refreshes_cached_coworld(
         method="GET",
     ).respond_with_json(
         {
-            "id": coworld_id,
-            "name": "unit-test-game",
-            "version": "0.1.0",
-            "manifest": _manifest_with_image(public_image_uri),
+            **_coworld_entry(
+                coworld_id,
+                _manifest_with_image(public_image_uri),
+                version="0.1.0",
+                canonical=True,
+                name="unit-test-game",
+            ),
             "manifest_hash": "sha256:manifest-hash",
             "size_bytes": 1234,
-            "canonical": True,
         }
     )
     # A league for some other Coworld: this download gets the generic pointer.
@@ -2861,6 +2853,9 @@ def _coworld_entry(
         "size_bytes": 1234,
         "created_at": "2026-05-08T21:00:00Z",
         "canonical": canonical,
+        "forum_markdown_url": f"https://softmax.com/api/observatory/v2/forums/{name}.md",
+        "wiki_markdown_url": f"https://softmax.com/api/observatory/v2/wikis/{name}/pages.md",
+        "documentation_url": "https://docs.softmax.com/coworld/build-a-player/choose-a-coworld",
     }
 
 
