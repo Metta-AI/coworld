@@ -7,6 +7,7 @@
 # of the package that would have let this become two pyproject_library
 # calls.)
 load("@rules_python//python:defs.bzl", "py_binary", "py_library")
+load("//bazel:format.bzl", "config_format")
 
 # Build the paintarena example image via the host docker daemon. Tags the
 # image `coworld-paintarena:latest` in the local docker store and writes a
@@ -118,10 +119,10 @@ filegroup(
 filegroup(
     name = "reporter_wit_worlds",
     srcs = [
-        "src/coworld/wit/softmax-reporter/world.wit",
         "src/coworld/wit/softmax-reporter-0.3.0/world.wit",
         "src/coworld/wit/softmax-reporter-0.4.0/world.wit",
         "src/coworld/wit/softmax-reporter-0.5.0/world.wit",
+        "src/coworld/wit/softmax-reporter/world.wit",
     ],
     visibility = ["//app_backend/tests:__pkg__"],
 )
@@ -247,8 +248,8 @@ py_library(
 py_binary(
     name = "coworld_bin",
     srcs = ["src/coworld/__main__.py"],
-    main = "src/coworld/__main__.py",
     imports = ["src"],
+    main = "src/coworld/__main__.py",
     visibility = ["//visibility:public"],
     deps = [":coworld"],
 )
@@ -265,11 +266,13 @@ py_binary(
 filegroup(
     name = "coworld_lint_srcs",
     srcs = glob(["src/**/*.py"]) + ["pyproject.toml"],
-    visibility = ["//visibility:public"],
     tags = ["manual"],
+    visibility = ["//visibility:public"],
 )
 
 exports_files(
     ["pyproject.toml"],
     visibility = ["//:__pkg__"],
 )
+
+config_format()

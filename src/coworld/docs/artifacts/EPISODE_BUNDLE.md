@@ -104,15 +104,15 @@ This route accepts a recorded Episode UUID. Job-backed episodes use the existing
 Episodes recorded without a job use the same ZIP manifest and include tokens, with `episode_id` in place of `ereq_id`.
 Recorded downloads require the player's owner, delegated player, or a Softmax team account.
 
-`results.json` contains the recorded game results. Explicit retained player captures appear under `player_artifact`
-in `files`; their paths are keyed by artifact ID. `manifest.json` includes each capture's reference, availability,
+`results.json` contains the recorded game results. Explicit retained player captures appear under `player_artifact` in
+`files`; their paths are keyed by artifact ID. `manifest.json` includes each capture's reference, availability,
 producer-reported time bounds, byte size, digest, and launch provenance. A partial-window capture is labeled as partial;
 producer-reported coverage is not independently certified. References must match the episode's policy, player, Coworld,
 and time window before bytes are included.
 
 Missing captures, invalid references, corrupt bytes, and captures over the bundle budget are identified in the manifest.
-No later live upload is substituted. Recorded episodes without references report `player_artifact_status: "missing"`.
-A recorded replay URL is returned as `replay_url` when requested; it is not fetched into the ZIP. Logs and traces inside
+No later live upload is substituted. Recorded episodes without references report `player_artifact_status: "missing"`. A
+recorded replay URL is returned as `replay_url` when requested; it is not fetched into the ZIP. Logs and traces inside
 player ZIPs remain opaque to Observatory and are inspected by the game's own tooling. Storage or malformed-manifest
 errors fail the download visibly and cannot roll back scoring.
 
@@ -148,9 +148,9 @@ COGAME_EPISODE_BUNDLE_URI=https://.../ep.zip
 The runnable reads the zip, inspects its `manifest.json` to discover what's inside, and processes the files. The
 runnable does not need to know whether the bundle came from a local workspace or a hosted artifact store.
 
-Reporter integration is different: the platform instantiates the submitted Wasm reporter version in-process and it
-reads per-episode artifacts through its `episodes` tool — no bundle env var, no request payload of presigned refs.
-The optimizer pulls artifacts through Coworld tooling rather than receiving a fixed bundle env var.
+Reporter integration is different: the platform instantiates the submitted Wasm reporter version in-process and it reads
+per-episode artifacts through its `episodes` tool — no bundle env var, no request payload of presigned refs. The
+optimizer pulls artifacts through Coworld tooling rather than receiving a fixed bundle env var.
 
 Supporting-role outputs are separate artifacts, not entries in the episode bundle today:
 

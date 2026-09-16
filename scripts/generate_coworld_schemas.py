@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import json
-import shutil
 import subprocess
 from pathlib import Path
 
@@ -24,14 +23,18 @@ def main() -> None:
     for path, schema in schemas.items():
         path.write_text(json.dumps(schema, indent=2) + "\n", encoding="utf-8")
 
-    # The repo-wide //:prettier_test check formats these tracked JSON files, so
-    # emit prettier-compatible output here to keep regeneration in sync with the
-    # check. prettier only reflows whitespace; the staleness test
-    # (test_generated_schema_files_match_types) compares parsed content, so this
-    # stays consistent with the generator output.
-    prettier = shutil.which("prettier") or shutil.which("bunx")
-    args = [prettier] if prettier and Path(prettier).name == "prettier" else [prettier, "prettier"]
-    subprocess.run([*args, "--write", *(str(p) for p in schemas)], check=True)
+    repo_root = PACKAGE_ROOT.parents[3]
+    subprocess.run(
+        [
+            str(repo_root / "node_modules/.bin/oxfmt"),
+            "--config",
+            str(repo_root / ".oxfmtrc.json"),
+            "--write",
+            *(str(p) for p in schemas),
+        ],
+        cwd=repo_root,
+        check=True,
+    )
 
 
 if __name__ == "__main__":
