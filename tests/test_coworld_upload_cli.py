@@ -879,6 +879,7 @@ def test_upload_coworld_command_wait_certification_fails_with_remediation(httpse
             "detail": "results.json is missing required field scores",
             "remediation": "Update the game to write results matching game.results_schema.",
             "retryable": False,
+            "documentation_url": "https://docs.softmax.com/coworld/build-a-coworld/build-certify-upload",
         },
     )
 
@@ -905,6 +906,7 @@ def test_upload_coworld_command_wait_certification_fails_with_remediation(httpse
     assert "Failed step: results-conform" in result.output
     assert "Reason: results.json is missing required field scores" in result.output
     assert "Fix: Update the game to write results matching game.results_schema." in result.output
+    assert "Docs: https://docs.softmax.com/coworld/build-a-coworld/build-certify-upload" in result.output
 
 
 def test_upload_coworld_command_wait_certification_timeout_exits_3(httpserver: HTTPServer) -> None:
@@ -1020,6 +1022,7 @@ def test_coworld_status_command_prints_pending_hosted_smoke(httpserver: HTTPServ
             "detail": "results.json is missing required field scores",
             "remediation": "Update the game to write results matching game.results_schema.",
             "retryable": False,
+            "documentation_url": "https://docs.softmax.com/coworld/build-a-coworld/build-certify-upload",
         },
     )
 
@@ -2055,6 +2058,14 @@ def test_coworld_show_command_prints_json(httpserver: HTTPServer, monkeypatch: p
         json.loads(result.output)["documentation_url"]
         == "https://docs.softmax.com/coworld/build-a-player/choose-a-coworld"
     )
+    assert (
+        json.loads(result.output)["certification_status_url"]
+        == f"https://softmax.com/api/observatory/v2/coworlds/{coworld_id}/certification"
+    )
+    assert (
+        json.loads(result.output)["certification_transcript_url"]
+        == f"https://softmax.com/api/observatory/v2/coworlds/{coworld_id}/certification/transcript"
+    )
 
 
 def test_coworld_show_command_pages_until_uploaded_world(
@@ -2856,6 +2867,8 @@ def _coworld_entry(
         "forum_markdown_url": f"https://softmax.com/api/observatory/v2/forums/{name}.md",
         "wiki_markdown_url": f"https://softmax.com/api/observatory/v2/wikis/{name}/pages.md",
         "documentation_url": "https://docs.softmax.com/coworld/build-a-player/choose-a-coworld",
+        "certification_status_url": f"https://softmax.com/api/observatory/v2/coworlds/{coworld_id}/certification",
+        "certification_transcript_url": f"https://softmax.com/api/observatory/v2/coworlds/{coworld_id}/certification/transcript",
     }
 
 

@@ -116,6 +116,8 @@ class CoworldUploadResponse(BaseModel):
     forum_markdown_url: str
     wiki_markdown_url: str
     documentation_url: str
+    certification_status_url: str
+    certification_transcript_url: str
 
 
 class CoworldCertificationFailure(BaseModel):
@@ -123,6 +125,7 @@ class CoworldCertificationFailure(BaseModel):
     detail: str
     remediation: str
     retryable: bool
+    documentation_url: str
 
 
 class CoworldCertificationStepSummary(BaseModel):
@@ -1672,6 +1675,7 @@ def upload_coworld_cmd(
     if certification.failure is not None:
         typer.echo(f"Reason: {certification.failure.detail}")
         typer.echo(f"Fix: {certification.failure.remediation}")
+        typer.echo(f"Docs: {certification.failure.documentation_url}")
         raise typer.Exit(code=3 if certification.failure.retryable else 2)
     raise typer.Exit(code=2)
 
