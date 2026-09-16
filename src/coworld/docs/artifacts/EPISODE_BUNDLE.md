@@ -94,6 +94,28 @@ uv run coworld replays --round round_... --mine --download-dir replays/
 uv run coworld --elevated episode-results ereq_... --output results.json # Softmax team accounts only
 ```
 
+### Recorded episodes
+
+```http
+GET /v2/episodes/{episode_id}/bundle?include=results,player_artifact
+```
+
+This route accepts a recorded Episode UUID. Job-backed episodes use the existing episode-request bundle builder.
+Episodes recorded without a job use the same ZIP manifest and include tokens, with `episode_id` in place of `ereq_id`.
+Recorded downloads require the player's owner, delegated player, or a Softmax team account.
+
+`results.json` contains the recorded game results. Explicit retained player captures appear under `player_artifact`
+in `files`; their paths are keyed by artifact ID. `manifest.json` includes each capture's reference, availability,
+producer-reported time bounds, byte size, digest, and launch provenance. A partial-window capture is labeled as partial;
+producer-reported coverage is not independently certified. References must match the episode's policy, player, Coworld,
+and time window before bytes are included.
+
+Missing captures, invalid references, corrupt bytes, and captures over the bundle budget are identified in the manifest.
+No later live upload is substituted. Recorded episodes without references report `player_artifact_status: "missing"`.
+A recorded replay URL is returned as `replay_url` when requested; it is not fetched into the ZIP. Logs and traces inside
+player ZIPs remain opaque to Observatory and are inspected by the game's own tooling. Storage or malformed-manifest
+errors fail the download visibly and cannot roll back scoring.
+
 ## Access Control
 
 The bundling layer applies the same per-artifact authorization model the existing artifact endpoints use, with one

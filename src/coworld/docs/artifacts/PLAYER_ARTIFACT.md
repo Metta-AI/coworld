@@ -27,7 +27,8 @@ marker and begins collection when results and the required replay exist; it does
 
 ## Contract
 
-- Exactly one object per player slot. Each successful upload replaces that slot's previous contents.
+- The default path keeps one live object per player slot. Each successful upload replaces that live object's contents.
+  Long-running sessions can additionally retain explicit captures using the protocol below.
 - Maximum size: 200 MiB (209,715,200 bytes). The worker skips an oversized game-hosted file without failing the
   episode.
 - A game-hosted worker records the file size, sends that value as `Content-Length`, and makes one upload attempt.
@@ -49,6 +50,48 @@ The two profiling approaches this enables:
 
 Missing, empty, and failed artifact uploads do not fail an otherwise successful episode. Results and replay remain
 success-critical.
+
+## Retained captures from long-running sessions
+
+A Persistent runtime can retain multiple uploads through its existing `COWORLD_PLAYER_ARTIFACT_UPLOAD_URL`.
+Send a normal ZIP `PUT` with the additional `X-Coworld-Artifact-Capture` header:
+
+```json
+{"capture_id":"<UUID>","started_at":"2026-09-01T00:00:00Z","ended_at":"2026-09-01T00:05:00Z"}
+```
+
+The producer chooses the capture UUID and reports what time span its diagnostics cover. Times must include a timezone;
+`ended_at` must follow `started_at`. Upload time does not establish capture coverage. A successful upload returns
+HTTP 201 and a JSON reference:
+
+```json
+{"runtime_id":"<UUID>","session_id":"<UUID>","artifact_id":"<SHA-256>"}
+```
+
+The producer passes this reference to its game's scoring-window recorder. The game's `coworld.recorded_window.v1`
+feed includes the selected references in `player_artifacts` (at most 16 per episode). Scoring persists those references
+without reading artifact storage. The producer owns choosing relevant captures and handling upload failures; a missing
+capture does not prevent score ingestion. Existing producers must implement this exchange to retain historical evidence.
+
+The trusted worker adds launch provenance, hashes the bytes, and writes the ZIP and a manifest under
+`jobs/{runtime_id}/sessions/{session_id}/artifacts/{artifact_id}/`. The artifact ID hashes the canonical manifest,
+including capture metadata, session provenance, size, and content digest. Identical retries reuse the same reference;
+changed bytes or metadata produce another reference. The worker holds one expiring, session-prefix-scoped storage POST
+capability. Players receive neither that capability nor arbitrary storage keys.
+
+Immutability is content-addressed, not an S3 write-once lock. Episode downloads verify manifest identity and content
+hashes before returning bytes. An overwritten or missing object is reported as corrupt or missing; it never resolves
+to the latest live checkpoint. No game-specific archive parsing occurs in Observatory.
+
+Limits: 200 MiB per ZIP, 128 distinct captures and 512 MiB of retained ZIP bytes per session. Reservations are written
+before upload to the worker's job volume. Failed uploads consume their reservation; identical retries reuse it.
+The worker returns HTTP 429 when the session budget is exhausted. Capability refresh does not reset the budget.
+A new controller launch has a new session and budget. There is no automatic periodic capture or age-based deletion in
+this protocol; the private bucket's retention policy still applies. Downloads also enforce a 512 MiB aggregate limit.
+
+Omitting the capture header retains the ordinary replaceable-live-checkpoint behavior. Retained captures do not replace
+that checkpoint. Runtimes without retained-upload capabilities reject capture requests; producers should treat retained
+capture upload as optional diagnostics, separately from gameplay and scoring.
 
 ## Visibility
 
