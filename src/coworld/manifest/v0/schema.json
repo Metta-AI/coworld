@@ -466,6 +466,22 @@
           "enum": ["identity", "gzip"],
           "title": "Replay Compression",
           "type": "string"
+        },
+        "format_identity": {
+          "anyOf": [
+            {
+              "maxLength": 256,
+              "minLength": 1,
+              "pattern": "^[!-~]+$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Game-owned immutable replay format and reducer identity. Persistent window feeds must echo this identity before their replay artifacts can be paired with this viewer. Change it whenever the viewer cannot read artifacts produced by the prior reducer.",
+          "title": "Format Identity"
         }
       },
       "required": ["bundle"],

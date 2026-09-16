@@ -19,3 +19,7 @@
   kind: compatible
   summary: Add the game-hosted player runtime and file-backed player manifests.
   fixture: packages/coworld/tests/manifest_versions/v1/game_hosted_players_manifest.json
+- schema_hash: e6fcee42b2cd85a218e4dc5b5229510d29cedc4b4db5dfd99c162164a6df70ff
+  kind: compatible
+  summary: Optional replay viewer format identity gates persistent recorded-window artifact delivery.
+  fixture: packages/coworld/tests/manifest_versions/v1/replay_format_identity_manifest.json

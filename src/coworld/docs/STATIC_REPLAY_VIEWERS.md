@@ -19,13 +19,13 @@ The viewer reads the episode replay URL from `#replay=` first, then the legacy `
 https://viewer.example/<immutable-coworld-version>/index.html#replay=https%3A%2F%2F...%2Freplay.replay
 ```
 
-Local viewers may open `index.html?replay=<url>` directly. Hosted Observatory keeps the immutable `index.html`
-network URL stable: `index.html?v=<headers-version>#replay=<url>`. The fragment is not sent in the HTTP request.
-`v` is a shared cache-buster for backend-injected headers and the host bootstrap, not per-episode. A temporary
-host bootstrap copies `#replay=` into `location.search` before game-owned scripts run so already-uploaded bundles
-that only read the query keep working. The query stays set after that copy; already-uploaded React viewers re-read
-`location.search` on later renders. Removing that bootstrap later requires bumping `v`. Observatory remounts still
-load the fragment URL from the session, so the HTML cache key does not vary per episode.
+Local viewers may open `index.html?replay=<url>` directly. Hosted Observatory keeps the immutable `index.html` network
+URL stable: `index.html?v=<headers-version>#replay=<url>`. The fragment is not sent in the HTTP request. `v` is a shared
+cache-buster for backend-injected headers and the host bootstrap, not per-episode. A temporary host bootstrap copies
+`#replay=` into `location.search` before game-owned scripts run so already-uploaded bundles that only read the query
+keep working. The query stays set after that copy; already-uploaded React viewers re-read `location.search` on later
+renders. Removing that bootstrap later requires bumping `v`. Observatory remounts still load the fragment URL from the
+session, so the HTML cache key does not vary per episode.
 
 The viewer must:
 
@@ -47,39 +47,42 @@ only says `index.html` arrived, so a viewer should tell the host when it has a p
 `src: "coworld-replay"` (target origin `"*"`: the bundle cannot know its embedder, the host checks the sender window,
 and the payload is timings only). Only post when `window.parent !== window`.
 
-| Message | When |
-| --- | --- |
-| `{type: "loading"}` | As early as the entry script evaluates, before `load`. After this, only `ready` lifts the overlay. |
-| `{type: "phase", phase, bytes?, compressed?}` | Optional marks: `bundle_ready` (app mounted, about to fetch), `replay_fetch_start`, `replay_fetch_end` (with `bytes` = downloaded byte count and `compressed` = gzip/zlib magic sniffed), `replay_parsed` (decoded, validated, and reduced into whatever the renderer draws from). |
-| `{type: "ready"}` | After the first frame is committed. Post from the commit (a `setTimeout(…, 0)` or equivalent), not from `requestAnimationFrame`: the host mounts the iframe lazily and browsers throttle animation frames in offscreen cross-origin frames, which would bill scroll dwell as draw time. |
-| `{type: "error", message}` | The replay could not be fetched, parsed, or drawn. |
+| Message                                       | When                                                                                                                                                                                                                                                                                    |
+| --------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `{type: "loading"}`                           | As early as the entry script evaluates, before `load`. After this, only `ready` lifts the overlay.                                                                                                                                                                                      |
+| `{type: "phase", phase, bytes?, compressed?}` | Optional marks: `bundle_ready` (app mounted, about to fetch), `replay_fetch_start`, `replay_fetch_end` (with `bytes` = downloaded byte count and `compressed` = gzip/zlib magic sniffed), `replay_parsed` (decoded, validated, and reduced into whatever the renderer draws from).      |
+| `{type: "ready"}`                             | After the first frame is committed. Post from the commit (a `setTimeout(…, 0)` or equivalent), not from `requestAnimationFrame`: the host mounts the iframe lazily and browsers throttle animation frames in offscreen cross-origin frames, which would bill scroll dwell as draw time. |
+| `{type: "error", message}`                    | The replay could not be fetched, parsed, or drawn.                                                                                                                                                                                                                                      |
 
 The host stamps every message with its own clock on receipt, so phases are host-receipt times (same-machine
-`postMessage` latency is sub-millisecond) and carry no timestamp of their own. They land in Datadog RUM as `bundle_ready_ms`, `replay_fetch_ms`,
-`replay_parse_ms`, `replay_draw_ms`, `replay_bytes`, and `replay_compressed`; viewers that post no phases leave those
-fields absent. Games built on `@cogweb/ui` get all of this from `useFeedStore` and `loadReplayFrames`; the magic sniff
-they share is `replayCompression` from `@cogweb/protocol`. Any other viewer:
+`postMessage` latency is sub-millisecond) and carry no timestamp of their own. They land in Datadog RUM as
+`bundle_ready_ms`, `replay_fetch_ms`, `replay_parse_ms`, `replay_draw_ms`, `replay_bytes`, and `replay_compressed`;
+viewers that post no phases leave those fields absent. Games built on `@cogweb/ui` get all of this from `useFeedStore`
+and `loadReplayFrames`; the magic sniff they share is `replayCompression` from `@cogweb/protocol`. Any other viewer:
 
 ```js
-const post = (m) => { if (window.parent !== window) window.parent.postMessage({ src: "coworld-replay", ...m }, "*"); };
-post({ type: "loading" });                                   // top of the entry script
-post({ type: "phase", phase: "bundle_ready" });              // app mounted, about to fetch
-post({ type: "phase", phase: "replay_fetch_start" });
-const bytes = new Uint8Array(await (await fetch(replayUrl)).arrayBuffer());
-const gzip = bytes[0] === 0x1f && bytes[1] === 0x8b;
-const zlib = (bytes[0] & 15) === 8 && (bytes[0] >> 4) <= 7 && ((bytes[0] << 8) | bytes[1]) % 31 === 0;
-post({ type: "phase", phase: "replay_fetch_end", bytes: bytes.byteLength, compressed: gzip || zlib });
-const replay = parse(gzip ? await inflate(bytes, "gzip") : zlib ? await inflate(bytes, "deflate") : bytes);
-post({ type: "phase", phase: "replay_parsed" });
-draw(replay); setTimeout(() => post({ type: "ready" }), 0);          // or post({ type: "error", message }) on failure
+const post = (m) => {
+  if (window.parent !== window) window.parent.postMessage({ src: 'coworld-replay', ...m }, '*')
+}
+post({ type: 'loading' }) // top of the entry script
+post({ type: 'phase', phase: 'bundle_ready' }) // app mounted, about to fetch
+post({ type: 'phase', phase: 'replay_fetch_start' })
+const bytes = new Uint8Array(await (await fetch(replayUrl)).arrayBuffer())
+const gzip = bytes[0] === 0x1f && bytes[1] === 0x8b
+const zlib = (bytes[0] & 15) === 8 && bytes[0] >> 4 <= 7 && ((bytes[0] << 8) | bytes[1]) % 31 === 0
+post({ type: 'phase', phase: 'replay_fetch_end', bytes: bytes.byteLength, compressed: gzip || zlib })
+const replay = parse(gzip ? await inflate(bytes, 'gzip') : zlib ? await inflate(bytes, 'deflate') : bytes)
+post({ type: 'phase', phase: 'replay_parsed' })
+draw(replay)
+setTimeout(() => post({ type: 'ready' }), 0) // or post({ type: "error", message }) on failure
 ```
 
 ## Choose The Replay Producer
 
-| Replay contains | Bundle normally contains | Preferred sharing boundary |
-| --- | --- | --- |
-| Public frames, snapshots, or events ready for presentation | Parser/reconstructor, shared renderer, controls, assets | Use the same presentation model and renderer as the live global viewer |
-| Actions, inputs, or deterministic state deltas | Version-matched game core compiled to WASM, shared presentation adapter and renderer, controls, assets | Compile the same rules, replay parser, state transitions, and presentation code as the native game |
+| Replay contains                                            | Bundle normally contains                                                                               | Preferred sharing boundary                                                                         |
+| ---------------------------------------------------------- | ------------------------------------------------------------------------------------------------------ | -------------------------------------------------------------------------------------------------- |
+| Public frames, snapshots, or events ready for presentation | Parser/reconstructor, shared renderer, controls, assets                                                | Use the same presentation model and renderer as the live global viewer                             |
+| Actions, inputs, or deterministic state deltas             | Version-matched game core compiled to WASM, shared presentation adapter and renderer, controls, assets | Compile the same rules, replay parser, state transitions, and presentation code as the native game |
 
 A larger WASM bundle is preferable to a second implementation of game behavior. It is fine to compile code that replay
 viewing does not strictly need. Do not copy mechanics into a browser-specific implementation merely to reduce bundle
@@ -118,10 +121,16 @@ stored manifest with `sha256:<digest>`. Extracted assets and public responses ar
 
 Omit `game.replay_viewer` to retain the version-matched game-container replay path.
 
+Persistent recorded-window feeds can declare `game.replay_viewer.format_identity`, an immutable game-owned
+format/reducer identifier. Observatory sends it as `replay_format_identity` and requires an identical
+`X-Coworld-Replay-Format` response header before ingesting any artifacts. An older gateway that ignores the query is
+rejected. Publish the platform reader before uploading manifests using this field. Preserve historical artifacts and
+viewer bindings; incompatible reducers require new immutable replay copies derived from the retained source.
+
 ### Opt-in gzip for the public replay copy
 
-Replay artifacts are copied byte-for-byte to a public bucket for browser viewing. A large uncompressed replay makes
-that download the dominant cost of opening a replay (tens of seconds on ordinary connections). Declare
+Replay artifacts are copied byte-for-byte to a public bucket for browser viewing. A large uncompressed replay makes that
+download the dominant cost of opening a replay (tens of seconds on ordinary connections). Declare
 
 ```json
 {
@@ -135,11 +144,11 @@ that download the dominant cost of opening a replay (tens of seconds on ordinary
 ```
 
 and the platform stores the public copy as gzip bytes instead. The bytes are served with **no** `Content-Encoding`
-header and an unchanged URL, so `Content-Length` remains the on-the-wire byte count for byte-driven progress UIs.
-Opt in only when the viewer detects compression by content — the gzip magic `0x1f 0x8b` (`DecompressionStream("gzip")`)
-or a valid zlib CMF/FLG header (`DecompressionStream("deflate")`) from an un-recompressed runner artifact —
-never by URL suffix or response headers. `replayCompression` in `@cogweb/protocol` is the reference sniff. The stored
-replay artifact the game and reporters read is never recompressed; only the public browser copy changes.
+header and an unchanged URL, so `Content-Length` remains the on-the-wire byte count for byte-driven progress UIs. Opt in
+only when the viewer detects compression by content — the gzip magic `0x1f 0x8b` (`DecompressionStream("gzip")`) or a
+valid zlib CMF/FLG header (`DecompressionStream("deflate")`) from an un-recompressed runner artifact — never by URL
+suffix or response headers. `replayCompression` in `@cogweb/protocol` is the reference sniff. The stored replay artifact
+the game and reporters read is never recompressed; only the public browser copy changes.
 
 ## Required Coworld Build Hook
 
@@ -159,9 +168,9 @@ tools/build_replay_viewer.sh /absolute/path/to/coworld/build/static-replay-viewe
 On Windows, `coworld build` runs the hook through the first `bash` on `PATH` (e.g. Git Bash) because Windows cannot
 execute a shell script directly; the build fails with an explicit error when no usable `bash` is found. WSL's launcher
 `bash.exe` does not count — it runs the script inside the distro, where the native `C:\...` arguments do not resolve —
-so with only WSL installed, run the whole build from inside WSL instead. The bundle directory
-argument is always the OS-native absolute path — a `C:\...` form on Windows — so hooks must accept that shape rather
-than requiring a POSIX-style path.
+so with only WSL installed, run the whole build from inside WSL instead. The bundle directory argument is always the
+OS-native absolute path — a `C:\...` form on Windows — so hooks must accept that shape rather than requiring a
+POSIX-style path.
 
 The hook is part of the build contract. It must:
 
@@ -199,17 +208,17 @@ output in `.gitignore`.
 
 Before uploading a new Coworld version:
 
-| Check | Evidence |
-| --- | --- |
-| Clean build | Add a sentinel file to the output, rerun the hook, and confirm the sentinel is gone |
-| Self-contained bundle | Serve the bundle over local HTTP; no game container is running |
-| Replay compatibility | Load a replay produced by the same Coworld version and representative historical fixtures |
-| Playback | Autoplay, pause, seek, speed, loop/end behavior, and resize work as intended |
-| Presentation parity | Compare representative live and replay public frames or screenshots |
-| Deterministic WASM parity | Native and WASM replay execution agree across seeds, seeking, and keyframes |
-| Failure behavior | Missing, corrupt, and incompatible replay bytes produce a visible error |
-| Build integration | Run `coworld build`; confirm the hook runs and the hydrated manifest points at the generated bundle |
-| Upload integration | Run `coworld upload-coworld`; confirm it finds that bundle and the stored manifest contains its digest |
+| Check                     | Evidence                                                                                               |
+| ------------------------- | ------------------------------------------------------------------------------------------------------ |
+| Clean build               | Add a sentinel file to the output, rerun the hook, and confirm the sentinel is gone                    |
+| Self-contained bundle     | Serve the bundle over local HTTP; no game container is running                                         |
+| Replay compatibility      | Load a replay produced by the same Coworld version and representative historical fixtures              |
+| Playback                  | Autoplay, pause, seek, speed, loop/end behavior, and resize work as intended                           |
+| Presentation parity       | Compare representative live and replay public frames or screenshots                                    |
+| Deterministic WASM parity | Native and WASM replay execution agree across seeds, seeking, and keyframes                            |
+| Failure behavior          | Missing, corrupt, and incompatible replay bytes produce a visible error                                |
+| Build integration         | Run `coworld build`; confirm the hook runs and the hydrated manifest points at the generated bundle    |
+| Upload integration        | Run `coworld upload-coworld`; confirm it finds that bundle and the stored manifest contains its digest |
 
 Run the browser test on both x86 and ARM when the viewer contains WASM or architecture-sensitive assets. When a static
 bundle is declared, `coworld certify` does not require the game image to expose the legacy `/client/replay` and
