@@ -129,7 +129,6 @@ filegroup(
 filegroup(
     name = "docs_files",
     srcs = [
-        "COOKBOOK.md",
         "README.md",
         "agents/coworlds-expert-agent/skills/upload-player-artifact/SKILL.md",
     ] + glob(["src/coworld/docs/**/*.md"]),
@@ -210,6 +209,7 @@ py_library(
     # `:coworld_core` and nothing else.
     data = glob(
         [
+            "src/coworld/docs/**/*.md",
             "src/coworld/examples/**/*.py",
             "src/coworld/examples/**/*.json",
             "src/coworld/examples/**/*.html",
@@ -246,8 +246,8 @@ py_library(
 
 py_binary(
     name = "coworld_bin",
-    srcs = ["src/coworld/cli.py"],
-    main = "src/coworld/cli.py",
+    srcs = ["src/coworld/__main__.py"],
+    main = "src/coworld/__main__.py",
     imports = ["src"],
     visibility = ["//visibility:public"],
     deps = [":coworld"],

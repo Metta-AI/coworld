@@ -57,7 +57,7 @@ Hosted runs schedule each player runnable with a 250m CPU / 256Mi memory request
 
 Players may receive policy-scoped secret environment variables (uploaded via `coworld upload-policy --secret-env`)
 on top of the manifest's public `env`. Secrets land only in the pod for the specific policy version that uploaded
-them. See [`COOKBOOK.md`](../../../../COOKBOOK.md#upload-and-submit-a-player) for the policy-upload flow.
+them. See [`COOKBOOK.md`](../COOKBOOK.md#upload-and-submit-a-player) for the policy-upload flow.
 
 ### Game-hosted players
 
@@ -172,7 +172,7 @@ game's output artifacts after the episode. Players' per-slot actions plus the ga
 - [`GAME.md`](GAME.md) — the player-side runtime contract is the mirror of the
   game runnable's `/player` websocket route.
 - [`COWORLD_MANIFEST.md`](../COWORLD_MANIFEST.md) — manifest guide and generated-schema pointer.
-- [`COOKBOOK.md`](../../../../COOKBOOK.md) — policy-upload flow, secrets, league submission.
+- [`COOKBOOK.md`](../COOKBOOK.md) — policy-upload flow, secrets, league submission.
 - [`BEDROCK.md`](../BEDROCK.md) — hosted Bedrock upload contract and robustness to shared-quota throttling.
 - [`artifacts/EPISODE_BUNDLE.md`](../artifacts/EPISODE_BUNDLE.md) — how player-related artifacts can be bundled.
 - [`artifacts/PLAYER_LOGS.md`](../artifacts/PLAYER_LOGS.md) — diagnostic logs produced by player containers.

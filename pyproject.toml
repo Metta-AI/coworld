@@ -44,6 +44,7 @@ test = [
 ]
 
 [project.urls]
+Documentation = "https://docs.softmax.com"
 Homepage = "https://github.com/Metta-AI/coworld"
 "Bug Tracker" = "https://github.com/Metta-AI/coworld/issues"
 

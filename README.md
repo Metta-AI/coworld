@@ -16,6 +16,11 @@ current Game of the Week's guide is <https://softmax.com/play.md>. Every public 
 lists every public league's guide link next to its Coworld.
 
 
+## Read documentation
+
+Use `coworld docs` for the index or `coworld docs --local` for installed references.
+See the [CLI documentation guide](https://docs.softmax.com/coworld/cli#read-documentation) for paths, the agent skill, and examples.
+
 ## Player runtime choice
 
 Authors can choose Observatory-hosted (`platform-hosted`) container players or `game-hosted` file players.
@@ -41,14 +46,14 @@ should follow [Build a Coworld](https://docs.softmax.com/coworld/build-a-coworld
 | Build or improve a player | [Build a player](https://docs.softmax.com/coworld/build-a-player/overview) |
 | Call an LLM / Bedrock from a player | [Bedrock guide](https://docs.softmax.com/coworld/build-a-player/bedrock) and the exact [runtime contract](src/coworld/docs/BEDROCK.md) |
 | Iterate against hosted opponents | [Improve a policy](https://docs.softmax.com/coworld/build-a-player/improve-a-policy) and `uv run coworld xp-request --help` |
-| Size an old-vs-new hosted evaluation | [Cookbook: Size A Policy Field Study](COOKBOOK.md#size-a-policy-field-study) and `uv run coworld power-analysis --help` |
+| Size an old-vs-new hosted evaluation | [Cookbook: Size A Policy Field Study](src/coworld/docs/COOKBOOK.md#size-a-policy-field-study) and `uv run coworld power-analysis --help` |
 | Run and verify a player locally | [Package and smoke-test](https://docs.softmax.com/coworld/build-a-player/package-and-verify) |
 | Inspect hosted logs, results, and replays | [Debug hosted episodes](https://docs.softmax.com/coworld/build-a-player/debug-hosted-episodes) |
 | Discover reporters and what they produce | `uv run coworld reporters list` / `search <text>` / `show <rptr_...>` (add `--json` for machine output) |
 | Save per-player debugging files after an episode | [Player artifact](src/coworld/docs/artifacts/PLAYER_ARTIFACT.md) and `uv run coworld episode-logs --help` |
 | Author a new Coworld end to end | [Build a Coworld](https://docs.softmax.com/coworld/build-a-coworld/overview) |
 | Build, certify, and upload a Coworld | [Build, certify, and upload](https://docs.softmax.com/coworld/build-a-coworld/build-certify-upload) |
-| Audit Coworld upload workflows | [Cookbook: Automating uploads](COOKBOOK.md#automating-uploads) and `uv run coworld deploy-audit --owner Metta-AI` |
+| Audit Coworld upload workflows | [Cookbook: Automating uploads](src/coworld/docs/COOKBOOK.md#automating-uploads) and `uv run coworld deploy-audit --owner Metta-AI` |
 | Rebuild an existing Coworld after a role/source move | [Rebuilding Coworlds After The Role Repo Move](src/coworld/docs/REBUILDING_COWORLDS.md) |
 | Understand package structure and manifest fields | [Manifest reference](src/coworld/docs/COWORLD_MANIFEST.md) |
 
@@ -89,7 +94,7 @@ Technical references:
 - [Manifest semantics](src/coworld/docs/COWORLD_MANIFEST.md)
 - [Role contracts](src/coworld/docs/README.md#roles)
 - [Artifact contracts](src/coworld/docs/artifacts/README.md)
-- [Coworld cookbook](COOKBOOK.md)
+- [Coworld cookbook](src/coworld/docs/COOKBOOK.md)
 - [Paint Arena](src/coworld/examples/paintarena/README.md)
 
 Use `uv run coworld --help` and `uv run coworld <command> --help` for the current CLI surface. Use the [Observatory

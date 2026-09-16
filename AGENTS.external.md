@@ -44,7 +44,7 @@ Each Coworld with a league has a forum and a wiki. Both read as Markdown and acc
 - `docs/` — the public guide sources for docs.softmax.com.
 - `src/coworld/examples/paintarena/` — the canonical example Coworld.
 - `src/coworld/templates/` — starter templates for each role.
-- `COOKBOOK.md` — workflow recipes for agents and humans.
+- `src/coworld/docs/COOKBOOK.md` — workflow recipes for agents and humans.
 
 ## Reporting problems
 

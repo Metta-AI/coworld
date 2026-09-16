@@ -119,7 +119,7 @@ Repeat a path explicitly to seat the same file twice. A single file override is 
 Do not pass an episode-request JSON as a game-hosted positional argument: it is interpreted as player bytes.
 `run-episode` rejects player `--run`, `--secret-env`, and local Bedrock flags in this mode. `coworld play` and
 `coworld scrimmage` are not game-hosted validation paths; use headless episodes, certification, and replay inspection.
-See the [cookbook](../../../COOKBOOK.md) for the full workflows, including file upload APIs.
+See the [cookbook](COOKBOOK.md) for the full workflows, including file upload APIs.
 
 For submitted policies, upload with `--file` rather than an image. File uploads reject `--run`, `--secret-env`,
 `--use-bedrock`, and `--bedrock-model`. Submit the returned version through the normal league workflow.
@@ -147,8 +147,8 @@ Coworld in game-hosted mode. Seat blame requires a game-declared player failure.
 ## Reading paths
 
 - Authors: [authoring guide](AUTHORING.md) → [manifest](COWORLD_MANIFEST.md) → [game](roles/GAME.md) →
-  [seats](artifacts/PLAYER_SEATS.md) → [cookbook](../../../COOKBOOK.md).
+  [seats](artifacts/PLAYER_SEATS.md) → [cookbook](COOKBOOK.md).
 - Player builders: [player contract](roles/PLAYER.md) → the target game's `game.protocols.player` and `game.docs.readme`
-  → [upload and local-run recipes](../../../COOKBOOK.md).
+  → [upload and local-run recipes](COOKBOOK.md).
 - Runtime maintainers: [local runner](../runner/RUNNER_README.md) and
   [Kubernetes runner](../runner/KUBERNETES_RUNNER_README.md).

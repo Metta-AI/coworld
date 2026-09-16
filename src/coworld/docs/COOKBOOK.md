@@ -104,7 +104,7 @@ The game defines the player-file format. Files and deterministic directory zips 
 cannot be combined with `--run`, `--secret-env`, `--use-bedrock`, or `--bedrock-model`.
 
 Add `--use-bedrock` (and `--bedrock-model MODEL`, which your player reads from `BEDROCK_MODEL`) during `upload-policy`
-when the hosted policy uses Bedrock; see [Bedrock for Coworld players](src/coworld/docs/BEDROCK.md). Add
+when the hosted policy uses Bedrock; see [Bedrock for Coworld players](BEDROCK.md). Add
 `--secret-env NAME=value` for other hosted provider credentials. For local Bedrock tests, use
 `run-episode --use-bedrock` or `play --use-bedrock` with the AWS profile and region options.
 
@@ -518,7 +518,7 @@ uv run coworld run-episode tmp/paintarena/coworld_manifest.json paintarena-playe
 ```
 
 `--aws-profile` and `--aws-region` require `--use-bedrock`. Local `--use-bedrock` uses your own AWS credentials; it does
-not prove the hosted upload is correct. See [Bedrock for Coworld players](src/coworld/docs/BEDROCK.md) for what hosted
+not prove the hosted upload is correct. See [Bedrock for Coworld players](BEDROCK.md) for what hosted
 tournaments require.
 
 ### Non-CLI Docker-Backed Python
@@ -730,7 +730,7 @@ Manager and injected only into that policy version's player pod.
 
 A Bedrock player can pass local certification and still fail its first hosted rounds if it was uploaded without
 `--use-bedrock` or reads its model from the wrong variable. See
-[Bedrock for Coworld players](src/coworld/docs/BEDROCK.md), which also covers staying robust when shared Bedrock
+[Bedrock for Coworld players](BEDROCK.md), which also covers staying robust when shared Bedrock
 capacity throttles (throttled episodes time out and score as a loss).
 
 Game-hosted policies cannot carry secret environment variables. The Coworld author's game receives the submitted file
@@ -770,7 +770,7 @@ uv run coworld secret put my_game qualifying_roster_42 ./roster-overlay.json
 
 The overlay uses format `coworld.game_config_overlay.v1`; nested `secret://` values are resolved only when the episode
 job is dispatched. The commissioner sets the reserved episode tag `coworld_config_overlay_secret=qualifying_roster_42`.
-See the [commissioner contract](src/coworld/docs/roles/COMMISSIONER.md#schedule_episodes) for the document shape and
+See the [commissioner contract](roles/COMMISSIONER.md#schedule_episodes) for the document shape and
 trust boundary.
 
 ### Non-CLI API

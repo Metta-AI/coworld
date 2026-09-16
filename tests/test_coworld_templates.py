@@ -43,6 +43,8 @@ def test_pyproject_ships_templates_and_complete_paintarena_example() -> None:
     package_data = pyproject["tool"]["setuptools"]["package-data"]["coworld"]
     excluded = pyproject["tool"]["setuptools"]["exclude-package-data"]["coworld"]
 
+    assert "docs/**/*.md" in package_data
+    assert pyproject["project"]["urls"]["Documentation"] == "https://docs.softmax.com"
     assert "templates/**/*" in package_data
     assert "examples/**/*" in package_data
     assert "**/Dockerfile" not in excluded

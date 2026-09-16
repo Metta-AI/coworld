@@ -4,7 +4,7 @@ from typer.testing import CliRunner
 
 from coworld.cli import app
 
-COOKBOOK = Path(__file__).resolve().parents[1] / "COOKBOOK.md"
+COOKBOOK = Path(__file__).resolve().parents[1] / "src/coworld/docs/COOKBOOK.md"
 RUNNER = CliRunner()
 
 

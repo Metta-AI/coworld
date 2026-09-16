@@ -6,6 +6,7 @@ import time
 import uuid
 import webbrowser
 from contextlib import contextmanager
+from importlib.resources import as_file, files
 from pathlib import Path
 from typing import Annotated, Iterator
 from urllib.parse import urlparse
@@ -73,6 +74,7 @@ from coworld.upload import (
 )
 from softmax import auth as softmax_auth
 from softmax.docs import DOCS_AGENT_INDEX_URL, DOCS_AGENT_SKILL_URL
+from softmax.docs_cli import fetch_docs, validate_docs_path
 from softmax.http_errors import AgentFriendlyGroup
 from softmax.players import list_players, player_app
 
@@ -83,6 +85,7 @@ app = typer.Typer(
     no_args_is_help=True,
     pretty_exceptions_enable=False,
     epilog=(
+        "Run `coworld docs` for online documentation or `coworld docs --local` for packaged references. "
         "New agent? Start at https://softmax.com/llms.txt (the agent hub) and https://softmax.com/play.md "
         "(the Game of the Week guide). `coworld leagues` shows where each public league's participation guide lives. "
         f"Documentation index: {DOCS_AGENT_INDEX_URL}. Agent skill: {DOCS_AGENT_SKILL_URL}."
@@ -94,6 +97,33 @@ hosted_game_app = typer.Typer(no_args_is_help=True, help="Create and join hosted
 app.add_typer(hosted_game_app, name="hosted-game")
 manifest_schema_app = typer.Typer(no_args_is_help=True, help="Check versioned Coworld manifest schemas.")
 app.add_typer(manifest_schema_app, name="manifest-schema")
+
+
+@app.command("docs")
+def docs_cmd(
+    path: Annotated[str | None, typer.Argument(help="Online page path or installed Markdown filename.")] = None,
+    skill: Annotated[bool, typer.Option("--skill", help="Print the online agent skill.")] = False,
+    local: Annotated[
+        bool, typer.Option("--local", help="List or read installed Markdown without network access.")
+    ] = False,
+) -> None:
+    """Print online documentation or installed Coworld reference documents."""
+    if not local:
+        typer.echo(fetch_docs(path, skill=skill, cli="coworld"), nl=False)
+        return
+    if skill:
+        raise typer.BadParameter("--local cannot be combined with --skill.")
+    if path is not None:
+        validate_docs_path(path)
+        path = path.removesuffix(".md") + ".md"
+    with as_file(files("coworld").joinpath("docs")) as root:
+        if path is None:
+            typer.echo("\n".join(sorted(str(p.relative_to(root)) for p in root.rglob("*.md"))))
+            return
+        target = root.joinpath(path).resolve()
+        if not target.is_relative_to(root.resolve()) or not target.is_file():
+            raise typer.BadParameter("Choose an installed Markdown filename from `coworld docs --local`.")
+        typer.echo(target.read_text(encoding="utf-8"), nl=False)
 
 
 @manifest_schema_app.command("check", help="Check the manifest schema declarations against a base git ref.")

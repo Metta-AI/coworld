@@ -49,5 +49,6 @@ def test_workflow_commands_point_at_their_docs_page() -> None:
 def test_root_help_names_the_docs_index_and_skill() -> None:
     result = typer.testing.CliRunner().invoke(app, ["--help"], env={"COLUMNS": "400"})
     assert result.exit_code == 0
+    assert "docs" in result.output
     assert DOCS_AGENT_INDEX_URL in result.output
     assert DOCS_AGENT_SKILL_URL in result.output

@@ -364,4 +364,4 @@ field.
 - [Coworld overview](README.md) for the role model and artifact flow.
 - [Lifecycle](LIFECYCLE.md) for local and hosted episode execution.
 - [Artifact reference](artifacts/README.md) for outputs produced from manifest-defined roles.
-- [Cookbook](../../../COOKBOOK.md) for local play, certification, upload, and inspection recipes.
+- [Cookbook](COOKBOOK.md) for local play, certification, upload, and inspection recipes.

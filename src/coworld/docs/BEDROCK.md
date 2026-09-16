@@ -232,4 +232,4 @@ Assume capacity can run out and keep the player playing:
 ## See Also
 
 - [Player role — secrets, Bedrock, and LLM credentials](roles/PLAYER.md#secrets-bedrock-and-llm-credentials)
-- [COOKBOOK.md — Upload And Submit A Player](../../../COOKBOOK.md#upload-and-submit-a-player)
+- [COOKBOOK.md — Upload And Submit A Player](COOKBOOK.md#upload-and-submit-a-player)

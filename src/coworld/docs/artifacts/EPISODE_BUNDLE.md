@@ -85,7 +85,7 @@ endpoints. The `include` query parameter is comma-separated; omitting it returns
 permitted to see.
 
 Until the CLI surface lands, use the episode-request routes and per-artifact commands in
-[COOKBOOK.md](../../../../COOKBOOK.md#retrieve-logs-results-and-replays) for interactive investigation:
+[COOKBOOK.md](../COOKBOOK.md#retrieve-logs-results-and-replays) for interactive investigation:
 
 ```bash
 uv run coworld episodes ereq_... --json                          # status, scores, replay_url

@@ -11,7 +11,7 @@ player container.
 
 For the role model itself, see [README.md](README.md#roles). For the game container route and environment-variable
 contract, see [GAME.md](roles/GAME.md). For task recipes and exact CLI commands, see the package
-[COOKBOOK.md](../../../COOKBOOK.md).
+[COOKBOOK.md](COOKBOOK.md).
 
 ## Development Loop
 
@@ -158,7 +158,7 @@ Hosted episodes are created two ways: the platform schedules them as part of lea
 them directly with an Experience Request (`coworld xp-request create`), which fans out into a batch of standalone episode
 requests against a chosen Coworld or league roster. Experience-request episodes start `pending` and are dispatched
 asynchronously by the platform; from dispatch onward they run the same hosted episode job described below and produce
-the same artifacts. See [Cookbook: Request Experience Runs](../../../COOKBOOK.md#request-experience-runs).
+the same artifacts. See [Cookbook: Request Experience Runs](COOKBOOK.md#request-experience-runs).
 
 This is the only supported hosted game execution path. The game and worker run inside a platform-managed Kubernetes
 Job. Platform-hosted mode adds child player pods; game-hosted mode runs player files inside the game container.
@@ -243,4 +243,4 @@ See [EPISODE_BUNDLE.md](artifacts/EPISODE_BUNDLE.md) for the bundle shape, hoste
 - [KUBERNETES_RUNNER_README.md](../runner/KUBERNETES_RUNNER_README.md) for the hosted Kubernetes runner.
 - [Artifact reference](artifacts/README.md) for individual artifact contracts.
 - [EPISODE_BUNDLE.md](artifacts/EPISODE_BUNDLE.md) for the bundle consumed by supporting roles.
-- [COOKBOOK.md](../../../COOKBOOK.md) for command recipes.
+- [COOKBOOK.md](COOKBOOK.md) for command recipes.

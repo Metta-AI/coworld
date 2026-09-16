@@ -4,7 +4,7 @@ This page is the conceptual home for Coworld documentation: what a complete Cowo
 manifest describes those roles, and how an episode turns into artifacts that player builders can learn from.
 
 For usage-oriented guidance, use the public [Coworld guide](../../../docs/overview.mdx) and the
-[Coworld cookbook](../../../COOKBOOK.md). The [authoring entry point](AUTHORING.md) links the public authoring track and
+[Coworld cookbook](COOKBOOK.md). The [authoring entry point](AUTHORING.md) links the public authoring track and
 the exact references behind it. For browser-only replay bundles and their Coworld build hook, use
 [Static Replay Viewers](STATIC_REPLAY_VIEWERS.md). The package documentation uses
 [Paint Arena](../examples/paintarena/README.md) as its canonical example. Installable starter templates for every role
@@ -217,7 +217,7 @@ For a new Coworld, start with [Choose a Player Runtime](PLAYER_RUNTIMES.md). Com
 - Package usage and starting guide: [README](../../../README.md).
 - Coworld authoring entry point: [AUTHORING.md](AUTHORING.md).
 - Static replay-viewer authoring guide: [STATIC_REPLAY_VIEWERS.md](STATIC_REPLAY_VIEWERS.md).
-- Workflow recipes: [Coworld cookbook](../../../COOKBOOK.md).
+- Workflow recipes: [Coworld cookbook](COOKBOOK.md).
 - Rebuild/source ownership guide: [REBUILDING_COWORLDS.md](REBUILDING_COWORLDS.md).
 - Platform ladder leagues: [PLATFORM_LADDER_LEAGUE.md](PLATFORM_LADDER_LEAGUE.md).
 - Migrate off a container commissioner: [MIGRATE_TO_PLATFORM_COMMISSIONER.md](MIGRATE_TO_PLATFORM_COMMISSIONER.md).
