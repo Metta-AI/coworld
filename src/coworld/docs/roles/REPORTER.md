@@ -45,7 +45,7 @@ identity:
   `softmax:reporter` WIT world — the authoritative interface definition (exported `run`, the
   `types`/`episodes`/`platform`/`reports`/`llm`/`output` tool interfaces, and the `tool-error`
   variant) lives at
-  [`packages/coworld/src/coworld/wit/softmax-reporter-0.4.0/world.wit`](../../wit/softmax-reporter-0.4.0/world.wit).
+  [`packages/coworld/src/coworld/wit/softmax-reporter-0.5.0/world.wit`](../../wit/softmax-reporter-0.5.0/world.wit).
   Toolchains: Python via `componentize-py`, JavaScript/TypeScript via `jco`, Rust via
   `cargo-component`, Go via TinyGo. SDKs wrap the raw WIT imports in idiomatic APIs — Python
   first, JavaScript second; Rust/Go target the WIT directly.
@@ -87,7 +87,7 @@ the sandbox limits they need:
 ```json
 {
   "purpose": "narrative",
-  "world": "softmax:reporter@0.4.0",
+  "world": "softmax:reporter@0.5.0",
   "outputs": [
     { "name": "recap",  "type": "render-html",
       "description": "A broadcast-style narrative recap of the round: standings movement, notable plays, one headline per division." },
@@ -167,6 +167,13 @@ copy the current WIT and regenerate your language bindings before rebuilding. It
 synchronous host and tool surface as `0.3.0`; the source-level migration is for reporters that
 directly returned `err(string)`, which must return a `tool-error` case instead. Reporters that only
 return `run-summary` on success and let imported tool errors propagate need no logic change.
+
+New builds should target `0.5.0`. Its `episodes.events` returns a successful
+`present(bytes)` or `absent(explanation)` case. An empty file is still present.
+Reporters branch on these cases to render recorded results or consult another data source when events are absent.
+Unknown episodes, forbidden reads, and failed downloads remain tool errors and propagate.
+Regenerate bindings and replace event `not-found` handlers with the absent case.
+Deploy a host supporting `0.5.0` before publishing components targeting it; earlier worlds remain immutable.
 
 The data tools are thin clients of the **public platform API** — every `episodes`, `platform`,
 and `reports` call is an authenticated HTTP request to the same `/v2` routes any user could hit,
