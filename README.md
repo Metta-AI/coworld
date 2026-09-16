@@ -25,6 +25,11 @@ A cached download by ID stays offline without regenerating this guide. `download
 Use `coworld docs` for the index or `coworld docs --local` for installed references.
 See the [CLI documentation guide](https://docs.softmax.com/coworld/cli#read-documentation) for paths, the agent skill, and examples.
 
+## Start a player project
+
+Run `coworld init player ./my-player`. See [player project initialization](https://docs.softmax.com/coworld/cli#start-a-player-project)
+for target requirements, generated files, runtime limits, and next steps.
+
 ## Player runtime choice
 
 Authors can choose Observatory-hosted (`platform-hosted`) container players or `game-hosted` file players.

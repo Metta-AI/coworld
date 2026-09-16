@@ -34,6 +34,7 @@ def test_workflow_commands_point_at_their_docs_page() -> None:
     assert isinstance(root, click.Group)
     commands = {" ".join(path): command for path, command in _walk(root)}
     expected = {
+        "init player": DOCS_PAGES["choose-a-coworld"],
         "download": DOCS_PAGES["choose-a-coworld"],
         "upload-policy": DOCS_PAGES["upload-and-evaluate"],
         "submit": DOCS_PAGES["submit-to-a-league"],

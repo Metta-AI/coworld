@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import shlex
+import shutil
 import time
 import uuid
 import webbrowser
@@ -17,7 +18,7 @@ from rich import box
 from rich.table import Table
 from typer.core import TyperCommand
 
-from coworld.agent_guidance import update_agent_guidance
+from coworld.agent_guidance import IMPORT_BLOCK, update_agent_guidance, upsert_guidance
 from coworld.api_client import AutoChampion, CoworldApiClient
 from coworld.bundle import build_coworld_manifest
 from coworld.campaign_cli import register_campaign_commands
@@ -40,7 +41,7 @@ from coworld.cli_support import (
     resolve_league_id,
     validate_run_argv,
 )
-from coworld.config import DEFAULT_OPTIMIZER_PORT, DEFAULT_SUBMIT_SERVER, docs_epilog
+from coworld.config import DEFAULT_OPTIMIZER_PORT, DEFAULT_SUBMIT_SERVER, DOCS_PAGES, docs_epilog
 from coworld.deploy_audit import (
     DEFAULT_GITHUB_OWNER,
     DEFAULT_REPO_PREFIX,
@@ -98,6 +99,30 @@ hosted_game_app = typer.Typer(no_args_is_help=True, help="Create and join hosted
 app.add_typer(hosted_game_app, name="hosted-game")
 manifest_schema_app = typer.Typer(no_args_is_help=True, help="Check versioned Coworld manifest schemas.")
 app.add_typer(manifest_schema_app, name="manifest-schema")
+
+init_app = typer.Typer(no_args_is_help=True, help="Create a project from a packaged starter template.")
+app.add_typer(init_app, name="init")
+
+
+@init_app.command("player", epilog=docs_epilog("choose-a-coworld"))
+def init_player(
+    directory: Annotated[Path, typer.Argument(help="Missing or empty target directory.")] = Path("."),
+) -> None:
+    """Create a platform-hosted WebSocket player skeleton."""
+    if directory.exists() and (not directory.is_dir() or any(directory.iterdir())):
+        raise typer.BadParameter("Target must be a missing or empty directory.")
+    with as_file(files("coworld") / "templates" / "roles" / "player") as template:
+        shutil.copytree(template, directory, dirs_exist_ok=True, ignore=shutil.ignore_patterns("__pycache__"))
+    (directory / ".coworld-project").write_text("player\n")
+    (directory / "AGENTS.md").write_bytes(
+        upsert_guidance(b"Read [README.md](README.md) for the player role scaffold.\n")
+    )
+    (directory / "CLAUDE.md").write_bytes(upsert_guidance(b"", IMPORT_BLOCK))
+    typer.echo(f"Created player project: {directory}")
+    typer.echo("This is a platform-hosted WebSocket skeleton, not a game-hosted file player.")
+    typer.echo("Read README.md and adapt player.py to your game's observations and actions before building its image.")
+    typer.echo(f"Next: {DOCS_PAGES['choose-a-coworld']}")
+    typer.echo("Run `coworld leagues` to choose a league and read its participation guide.")
 
 
 @app.command("docs")

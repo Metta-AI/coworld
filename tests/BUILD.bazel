@@ -50,6 +50,7 @@ pyproject_test(
         "requires-network",
     ],
     per_test = {
+        "test_init_cli": {"data": ["//packages/coworld:docs_files"]},
         "test_docs_cli": {"data": ["//packages/coworld:docs_files"]},
         "test_commissioner_docs": {"data": ["//packages/coworld:docs_files"]},
         "test_coworld_cookbook": {"data": ["//packages/coworld:docs_files"]},

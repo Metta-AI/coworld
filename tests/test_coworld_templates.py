@@ -50,3 +50,10 @@ def test_pyproject_ships_templates_and_complete_paintarena_example() -> None:
     assert "**/Dockerfile" not in excluded
     assert "examples/**/README.md" not in excluded
     assert "examples/**/*_spec.md" not in excluded
+
+
+def test_player_readme_uses_portable_installed_doc_commands() -> None:
+    readme = (Path(coworld.__file__).parent / "templates" / "roles" / "player" / "README.md").read_text()
+    assert "coworld docs --local PLAYER_RUNTIMES.md" in readme
+    assert "coworld docs --local roles/PLAYER.md" in readme
+    assert "../../../" not in readme

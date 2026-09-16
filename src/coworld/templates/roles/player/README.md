@@ -1,7 +1,7 @@
 # Player Template
 
 This scaffold demonstrates `platform-hosted` players. Authors may instead choose `game-hosted` file players;
-read [Choose a Player Runtime](../../../docs/PLAYER_RUNTIMES.md) before adopting the scaffold.
+run `coworld docs --local PLAYER_RUNTIMES.md` before adopting the scaffold.
 Game-hosted execution requires implementing the game's file interface and per-seat output contract.
 
 
@@ -13,7 +13,7 @@ previously deployed engines may not, and the client's default pong timeout would
 into a hosted episode — long after the short local smoke episode has already passed. Keepalive pings are still sent;
 the client just never kills the connection over a missing pong.
 
-Contract reference: `coworld/docs/roles/PLAYER.md`.
+Contract reference: `coworld docs --local roles/PLAYER.md`.
 
 Files:
 
