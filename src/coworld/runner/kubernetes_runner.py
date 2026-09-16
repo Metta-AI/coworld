@@ -76,7 +76,12 @@ from coworld.runner.phase_timings import (
     TimingClock,
     TimingInterval,
 )
-from coworld.runner.player_artifacts import PersistentDiagnosticTargets
+from coworld.runner.player_artifacts import (
+    PLAYER_ARTIFACT_CAPTURE_HEADER,
+    PersistentDiagnosticTargets,
+    PlayerArtifactCapture,
+    upload_captured_player_artifact,
+)
 from coworld.runner.runner import (
     CERTIFICATION_EPISODE_SOURCE,
     DEFAULT_PLAYER_EXIT_TIMEOUT_SECONDS,
@@ -362,6 +367,37 @@ class _PlayerArtifactUploadHandler(http.server.BaseHTTPRequestHandler):
                         return
                     artifact.write(chunk)
                     remaining -= len(chunk)
+                capture_header = self.headers.get(PLAYER_ARTIFACT_CAPTURE_HEADER)
+                if capture_header is not None:
+                    if len(capture_header) > 4096 or size == 0:
+                        self.send_error(400, "Invalid artifact capture metadata or empty artifact")
+                        return
+                    raw_targets = os.environ.get("PLAYER_ARTIFACT_UPLOAD_URLS", "")
+                    if not raw_targets.startswith("file://"):
+                        self.send_error(409, "This runtime does not accept retained captures")
+                        return
+                    targets = PersistentDiagnosticTargets.model_validate_json(Path(raw_targets[7:]).read_bytes())
+                    if targets.artifact_upload is None or targets.expires_at <= datetime.now(UTC):
+                        self.send_error(503, "Retained capture upload capability is unavailable")
+                        return
+                    manifest = upload_captured_player_artifact(
+                        grant=targets.artifact_upload,
+                        session=targets.session,
+                        capture=PlayerArtifactCapture.model_validate_json(capture_header),
+                        artifact=artifact,
+                        size=size,
+                        ledger_path=WORKDIR / "player-artifacts" / f"{targets.session.session_id}.json",
+                    )
+                    if manifest is None:
+                        self.send_error(429, "Retained capture session budget exhausted")
+                        return
+                    payload = manifest.reference.model_dump_json().encode()
+                    self.send_response(201)
+                    self.send_header("Content-Type", "application/json")
+                    self.send_header("Content-Length", str(len(payload)))
+                    self.end_headers()
+                    self.wfile.write(payload)
+                    return
                 upload_file(
                     self.server.upload_target(slot),
                     artifact,
