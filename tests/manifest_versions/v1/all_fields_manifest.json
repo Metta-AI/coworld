@@ -84,7 +84,8 @@
     },
     "replay_viewer": {
       "bundle": "viewer",
-      "replay_compression": "gzip"
+      "replay_compression": "gzip",
+      "format_identity": "example.replay.v2/reducer.v1"
     },
     "achievements": [
       {

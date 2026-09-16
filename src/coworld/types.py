@@ -388,6 +388,18 @@ class CoworldReplayViewer(BaseModel):
         ),
     )
 
+    format_identity: str | None = Field(
+        default=None,
+        min_length=1,
+        max_length=256,
+        pattern=r"^[!-~]+$",
+        description=(
+            "Game-owned immutable replay format and reducer identity. Persistent window feeds must echo this identity "
+            "before their replay artifacts can be paired with this viewer. Change it whenever the viewer cannot read "
+            "artifacts produced by the prior reducer."
+        ),
+    )
+
     @field_validator("bundle")
     @classmethod
     def validate_bundle(cls, bundle: str) -> str:
@@ -401,7 +413,7 @@ class CoworldReplayViewer(BaseModel):
         return bundle
 
     @model_serializer(mode="wrap")
-    def _omit_default_replay_compression(self, handler: SerializerFunctionWrapHandler) -> Any:
+    def _omit_unspecified_options(self, handler: SerializerFunctionWrapHandler) -> Any:
         # The coworld CLI publishes independently of backend deploys, and upload
         # validation is extra="forbid": emitting the default would make every
         # built manifest carry the field and be rejected by a backend that
@@ -409,6 +421,8 @@ class CoworldReplayViewer(BaseModel):
         data = handler(self)
         if isinstance(data, dict) and data.get("replay_compression") == "identity":
             data.pop("replay_compression")
+        if isinstance(data, dict) and data.get("format_identity") is None:
+            data.pop("format_identity", None)
         return data
 
 
