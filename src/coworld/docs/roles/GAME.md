@@ -28,8 +28,8 @@ league-submission steps.
 
 - `platform-hosted` is the default. Each player is an image-backed runnable in its own local container or hosted child
   pod.
-- `game-hosted` gives the game one verified file per seat. The game reads, executes, and observes those files inside
-  its own container. No player containers or child pods exist.
+- `game-hosted` gives the game one verified file per seat. The game reads, executes, and observes those files inside its
+  own container. No player containers or child pods exist.
 
 ## Contract
 
@@ -127,9 +127,9 @@ Coworld-authored configs are token-free:
 - `variants[].game_config`
 - `certification.game_config`
 
-In `platform-hosted` mode the runner starts one player runnable per slot with a fully formed
-`COWORLD_PLAYER_WS_URL`. In `game-hosted` mode the game owns player execution and receives the same ordered slots in
-`COGAME_PLAYER_SEATS_URI`; it decides how each file communicates with the game.
+In `platform-hosted` mode the runner starts one player runnable per slot with a fully formed `COWORLD_PLAYER_WS_URL`. In
+`game-hosted` mode the game owns player execution and receives the same ordered slots in `COGAME_PLAYER_SEATS_URI`; it
+decides how each file communicates with the game.
 
 Games start when all scheduled players connect or `player_connect_timeout_seconds` elapses (default 180 seconds). The
 Kubernetes runner uses the same deadline to reject infrastructure failures before they become competitive results.
@@ -160,8 +160,8 @@ families and token semantics are Coworld-wide.
 
 ## Hosted runtime resources
 
-Hosted tournament runs always schedule the game and worker in the parent pod. Platform-hosted runs add one child pod
-per player. Game-hosted runs add no player pods, so the game container's declared resources must cover the game and all
+Hosted tournament runs always schedule the game and worker in the parent pod. Platform-hosted runs add one child pod per
+player. Game-hosted runs add no player pods, so the game container's declared resources must cover the game and all
 player execution. The current baseline is 1 CPU / 512Mi for the game container, 250m CPU / 256Mi for the runner worker,
 250m CPU / 256Mi for each platform-hosted player container, and 2 CPU / 2Gi for replay containers; see
 [`KUBERNETES_RUNNER_README.md`](../../runner/KUBERNETES_RUNNER_README.md#hosted-resource-baseline). These are scheduling
@@ -192,20 +192,20 @@ selects the endpoint, credentials, and region (`AWS_ENDPOINT_URL_BEDROCK_RUNTIME
 `AWS_BEARER_TOKEN_BEDROCK_FILE`) is **reserved**: setting any of it in `manifest.game.runnable.env` is silently dropped,
 because an override there would route around the sidecar. Region is a platform setting, not a manifest one.
 
-This is hosted-runtime only. Local `coworld play` / `coworld run-episode` do not provide AWS credentials.
-For platform-hosted player Bedrock testing, pass host credentials with `--use-bedrock`; see
-[`PLAYER.md`](PLAYER.md#secrets-bedrock-and-llm-credentials). For other providers, use the player upload path.
-For game-hosted execution, configure the game through its
-[game-secret contract](../COWORLD_MANIFEST.md#hosted-episode-game-secrets) and hosted provider configuration;
-file policies cannot inject credentials. Local game credentials must be configured separately from player flags.
+This is hosted-runtime only. Local `coworld play` / `coworld run-episode` do not provide AWS credentials. For
+platform-hosted player Bedrock testing, pass host credentials with `--use-bedrock`; see
+[`PLAYER.md`](PLAYER.md#secrets-bedrock-and-llm-credentials). For other providers, use the player upload path. For
+game-hosted execution, configure the game through its
+[game-secret contract](../COWORLD_MANIFEST.md#hosted-episode-game-secrets) and hosted provider configuration; file
+policies cannot inject credentials. Local game credentials must be configured separately from player flags.
 
 A game that makes an LLM request for player slot `N` must add `X-Coworld-Player-Slot: N`. The hosted sidecar then
 attributes telemetry, spend, and the request-rate bucket to that player. It preserves the game image digest because the
 game code made the physical call. Missing headers remain game-attributed and are not charged against a player's
 per-episode spend ceiling. Invalid, out-of-range, or conflicting slot headers return `HTTP 400`.
 
-Game-hosted player files cannot carry policy environment or secret environment values. If a game-hosted player needs
-an LLM, the game must make the call and add the slot header. Headerless calls remain attributed to the game.
+Game-hosted player files cannot carry policy environment or secret environment values. If a game-hosted player needs an
+LLM, the game must make the call and add the slot header. Headerless calls remain attributed to the game.
 
 ## Logging
 
@@ -226,8 +226,7 @@ The game should put authoritative episode state in structured artifacts:
 
 The game produces the per-episode results, replay, and game-log artifacts. Platform-hosted players connect through
 `/player`; game-hosted players use the game-defined file interface. Reporters, graders, diagnosers, and optimizers
-consume completed artifacts after the episode. See
-[`README.md`](../README.md) for the full role and artifact flow.
+consume completed artifacts after the episode. See [`README.md`](../README.md) for the full role and artifact flow.
 
 ## See Also
 

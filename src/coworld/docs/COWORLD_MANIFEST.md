@@ -72,10 +72,10 @@ For a new Coworld, start from the Paint Arena manifest template and keep the gen
    [static replay-viewer guide](STATIC_REPLAY_VIEWERS.md).
 2. Choose `game.player_runtime`, then add matching bundled players for examples, certification, and local play.
 3. Add reporter references when the Coworld ships bespoke reporting (reporter v2, spec 0061). Reporter entries are
-   references — a platform reporter version (`"reporter": "owner/name@version"`, owner-qualified because reporter
-   names are only unique per owner) or a wasm component your build produces (at publish time the CLI registers a
-   reporter named `{coworld-name}-{reporter-id}` owned by you, then submits the component as a version against it) —
-   not bundled container images. The section is optional and there are no default reporters. See the
+   references — a platform reporter version (`"reporter": "owner/name@version"`, owner-qualified because reporter names
+   are only unique per owner) or a wasm component your build produces (at publish time the CLI registers a reporter
+   named `{coworld-name}-{reporter-id}` owned by you, then submits the component as a version against it) — not bundled
+   container images. The section is optional and there are no default reporters. See the
    [Reporter role](roles/REPORTER.md).
 4. Add grader runnables when the Coworld has custom graders or a default grader is useful.
 5. Add diagnoser and optimizer runnables when the Coworld has custom implementations, or when a default image is
@@ -120,8 +120,8 @@ other per-slot fields. Cross-Coworld player identity names flow through `game_co
 
 See [Game Role](roles/GAME.md#player-slots) and [Lifecycle](LIFECYCLE.md) for the runtime path.
 
-For runtime selection and implementation obligations, read [Choose a Player Runtime](PLAYER_RUNTIMES.md).
-The following examples show only the runtime-related fields; they are not complete manifests.
+For runtime selection and implementation obligations, read [Choose a Player Runtime](PLAYER_RUNTIMES.md). The following
+examples show only the runtime-related fields; they are not complete manifests.
 
 ## Player Runtime And Artifact Pairing
 
@@ -175,8 +175,8 @@ deterministic zip before hashing.
 Game-hosted files do not use the player's `run`, `env`, `resources`, or secret environment. Their format and execution
 belong to the game. See [Player Seats](artifacts/PLAYER_SEATS.md) for the runtime handoff.
 
-Game-hosted mode is episode-only in this version. The platform rejects, with a clear error, anything that needs a
-player container or a human at a seat:
+Game-hosted mode is episode-only in this version. The platform rejects, with a clear error, anything that needs a player
+container or a human at a seat:
 
 - lobbies (`/v2/leagues/{league_id}/lobbies`), hosted play sessions (`/v2/coworlds/play/session`), and local
   `coworld play`;
@@ -275,8 +275,8 @@ At hosted execution time, image tags resolve to immutable digests.
 
 `manifest.game.runnable.env.COWORLD_LOCAL_EXTRA_PORTS` is a local-runner-only deployment hint for games that expose
 additional host TCP services beyond Coworld HTTP on container port 8080. Use comma-separated
-`container_port[:host_port]` entries; `host_port` omitted or `0` means allocate a free localhost port. Local runners pass
-the resolved mappings back into the game container as `COWORLD_LOCAL_PORT_<container_port>` and
+`container_port[:host_port]` entries; `host_port` omitted or `0` means allocate a free localhost port. Local runners
+pass the resolved mappings back into the game container as `COWORLD_LOCAL_PORT_<container_port>` and
 `COWORLD_LOCAL_PORTS_JSON`. Hosted/Kubernetes runners do not support arbitrary extra host ports yet.
 
 `source_url` is optional provenance for humans inspecting a runnable, not a runtime input: runners do not clone or
@@ -289,8 +289,8 @@ For declared GitHub URLs, certification performs a lightweight provenance test. 
 full commit SHA, a short SHA, a branch, a tag, or the bare repository URL. The source must resolve through GitHub's
 contents API, have non-empty contents, and include a Dockerfile at that path or an ancestor build root. Full commit SHAs
 are preferred because they make provenance stable; mutable refs and bare repository URLs are recorded with a warning
-because certification checked whatever the ref or default branch resolved to at run time. Point `source_url` at
-the repository, directory, or file that implements the runnable, not just a documentation page. See
+because certification checked whatever the ref or default branch resolved to at run time. Point `source_url` at the
+repository, directory, or file that implements the runnable, not just a documentation page. See
 [REBUILDING_COWORLDS.md](REBUILDING_COWORLDS.md) for the current repo map and source-owner rules.
 
 `repository_url` is an optional, machine-readable field used by `coworld optimize`: on an `optimizer[]` entry it names

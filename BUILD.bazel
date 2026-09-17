@@ -7,7 +7,7 @@
 # of the package that would have let this become two pyproject_library
 # calls.)
 load("@rules_python//python:defs.bzl", "py_binary", "py_library")
-load("//bazel:format.bzl", "config_format")
+load("//bazel:format.bzl", "package_format")
 
 # Build the paintarena example image via the host docker daemon. Tags the
 # image `coworld-paintarena:latest` in the local docker store and writes a
@@ -275,4 +275,4 @@ exports_files(
     visibility = ["//:__pkg__"],
 )
 
-config_format()
+package_format()

@@ -2,17 +2,16 @@
 
 The task-focused authoring guide lives at
 [docs.softmax.com/coworld/build-a-coworld/overview](https://docs.softmax.com/coworld/build-a-coworld/overview). Its
-source is mirrored into this repository under
-[`docs/build-a-coworld/`](../../../docs/build-a-coworld/overview.mdx).
+source is mirrored into this repository under [`docs/build-a-coworld/`](../../../docs/build-a-coworld/overview.mdx).
 
 Follow that guide from game design through local checks, certification, upload, and hosted verification. This page is
 kept as a stable entry point for older links; it no longer duplicates the guide.
 
 ## Choose before building
 
-Start with [Choose a Player Runtime](PLAYER_RUNTIMES.md). Observatory-hosted (`platform-hosted`) players use
-containers and WebSockets; `game-hosted` players are files executed by the game. The guide covers tradeoffs,
-implementation obligations, unsupported workflows, and validation for each mode.
+Start with [Choose a Player Runtime](PLAYER_RUNTIMES.md). Observatory-hosted (`platform-hosted`) players use containers
+and WebSockets; `game-hosted` players are files executed by the game. The guide covers tradeoffs, implementation
+obligations, unsupported workflows, and validation for each mode.
 
 ## Exact technical references
 

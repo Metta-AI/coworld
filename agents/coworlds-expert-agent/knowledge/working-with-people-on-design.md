@@ -4,7 +4,8 @@ When collaborating on coworld design, understand the principle before implementi
 
 ## The pattern
 
-When someone describes a specific instance (e.g., specific graders for their game), they're often simultaneously communicating a general framework. See and articulate the general framework, not just the specific case.
+When someone describes a specific instance (e.g., specific graders for their game), they're often simultaneously
+communicating a general framework. See and articulate the general framework, not just the specific case.
 
 ## How to apply
 

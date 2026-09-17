@@ -67,13 +67,12 @@ the active player/policy memberships, reconciles one durable runtime per player,
 `coworld.recorded_window.v1` interval containing exactly that roster. Those windows become completed `RoundEpisode`
 evidence directly: the workflow creates no `EpisodeRequest` and dispatches no bounded job. The runtime game overlay is
 selected by `persistent.runtime.game_config_overlay_secret`; the seed's existing private commissioner overlay must
-provide `persistent_window_feed_config`, and its `persistent_window_floor_wall_clock_ms` remains the cutover fence.
-Each reconciliation reads newly sealed per-player windows before judging a restarted workload. A structured
-player-contract failure advances that runtime's failure streak; generic clean exits and infrastructure terminations do
-not. The division's `disqualify_after_consecutive_failures` threshold quarantines only the failing champion, while the
-remaining frozen roster must still be complete before a round is published.
-Disabling the ladder or returning the seed to container ownership stops only runtimes last authored by the platform
-reconciler.
+provide `persistent_window_feed_config`, and its `persistent_window_floor_wall_clock_ms` remains the cutover fence. Each
+reconciliation reads newly sealed per-player windows before judging a restarted workload. A structured player-contract
+failure advances that runtime's failure streak; generic clean exits and infrastructure terminations do not. The
+division's `disqualify_after_consecutive_failures` threshold quarantines only the failing champion, while the remaining
+frozen roster must still be complete before a round is published. Disabling the ladder or returning the seed to
+container ownership stops only runtimes last authored by the platform reconciler.
 
 ## Choose a seating strategy
 
@@ -101,30 +100,27 @@ Insufficient-player modes (ladder-wide):
 
 ### Seed policies (always-on neutrals)
 
-Separate from fillers. Configure a league seed-policy pool and a **seed policy
-number** K (Observatory league settings → Seed policies, or
-`GET/POST /v2/leagues/{id}/seed-policies`). For FFA strategies
-(`swiss_neighbor`, `round_robin`, `balanced_rotation`, `random_fill`), every
-episode matchmakes **N−K** ranked champions and always appends **K** seats from
-the seed pool. Seed seats are non-scoring (same exclusion as fillers). Use this
-when a game needs good neutral baselines in every episode (e.g. Heartleaf), not
-only when the roster is short. Fillers still handle short-roster top-up on the
-ranked seats. Team / `clone_fill` strategies reject K > 0.
+Separate from fillers. Configure a league seed-policy pool and a **seed policy number** K (Observatory league settings →
+Seed policies, or `GET/POST /v2/leagues/{id}/seed-policies`). For FFA strategies (`swiss_neighbor`, `round_robin`,
+`balanced_rotation`, `random_fill`), every episode matchmakes **N−K** ranked champions and always appends **K** seats
+from the seed pool. Seed seats are non-scoring (same exclusion as fillers). Use this when a game needs good neutral
+baselines in every episode (e.g. Heartleaf), not only when the roster is short. Fillers still handle short-roster top-up
+on the ranked seats. Team / `clone_fill` strategies reject K > 0.
 
 Volume / strategy knobs (optional unless noted; omit to keep derived defaults; rejected on strategies that do not
 consume them):
 
-| Field                                                                                     | Strategies                                                                  | Effect                                                                                                                                                      |
-| ----------------------------------------------------------------------------------------- | --------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `min_episodes_per_entrant`                                                                | `round_robin`, `swiss_neighbor`; **required** on `variable_seat`            | Repeat seating until every entrant plays at least this often                                                                                                |
-| `num_episodes`                                                                            | `balanced_rotation`, `random_fill`; optional cap / sample count on `team_n` | Exact episode count (or `team_n` matchup cap; required with `elo_softmax`)                                                                                  |
-| `neighbor_window`                                                                         | `swiss_neighbor`                                                            | Nearest neighbors each entrant meets (default 1)                                                                                                            |
-| `seat_count_min` / `seat_count_max` / `seat_count_weights`                                | `variable_seat`                                                             | Per-episode seat sample range (weights optional, uniform default)                                                                                           |
-| `seat_rungs` / `episodes_per_round`                                                       | `scaling_roster`                                                            | Ascending legal headcounts; copies per round (default 1)                                                                                                    |
-| `seat_count` / `episodes_per_entrant` / `clone_score_aggregation`                         | `clone_fill`                                                                | Seat override; episodes per champion; mean/sum fold of clone seats                                                                                          |
-| `team_count` / `team_layout` / `matchmaking` / `matchmaking_temperature` / `allied_teams` | `team_n`                                                                    | Team count; seat-dealing geometry (`interleaved` default / `blocks`, matching the game's slot→team map); `random` or `elo_softmax` sampling; ally partition |
+| Field                                                                                     | Strategies                                                                  | Effect                                                                                                                                                                                  |
+| ----------------------------------------------------------------------------------------- | --------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `min_episodes_per_entrant`                                                                | `round_robin`, `swiss_neighbor`; **required** on `variable_seat`            | Repeat seating until every entrant plays at least this often                                                                                                                            |
+| `num_episodes`                                                                            | `balanced_rotation`, `random_fill`; optional cap / sample count on `team_n` | Exact episode count (or `team_n` matchup cap; required with `elo_softmax`)                                                                                                              |
+| `neighbor_window`                                                                         | `swiss_neighbor`                                                            | Nearest neighbors each entrant meets (default 1)                                                                                                                                        |
+| `seat_count_min` / `seat_count_max` / `seat_count_weights`                                | `variable_seat`                                                             | Per-episode seat sample range (weights optional, uniform default)                                                                                                                       |
+| `seat_rungs` / `episodes_per_round`                                                       | `scaling_roster`                                                            | Ascending legal headcounts; copies per round (default 1)                                                                                                                                |
+| `seat_count` / `episodes_per_entrant` / `clone_score_aggregation`                         | `clone_fill`                                                                | Seat override; episodes per champion; mean/sum fold of clone seats                                                                                                                      |
+| `team_count` / `team_layout` / `matchmaking` / `matchmaking_temperature` / `allied_teams` | `team_n`                                                                    | Team count; seat-dealing geometry (`interleaved` default / `blocks`, matching the game's slot→team map); `random` or `elo_softmax` sampling; ally partition                             |
 | `variant_rotation`                                                                        | fixed-seat strategies                                                       | Ordered Coworld variant ids cycled per episode (the live map pool). Repeats weight the mix. League owners may write this field; Elo / topology / qualification stay Softmax-team-owned. |
-| `variant_rotation_by_seat_count`                                                          | `variable_seat`, `scaling_roster`                                           | Per-seat-count variant lists. Same owner write path as `variant_rotation`.                                                                                  |
+| `variant_rotation_by_seat_count`                                                          | `variable_seat`, `scaling_roster`                                           | Per-seat-count variant lists. Same owner write path as `variant_rotation`.                                                                                                              |
 
 Cadence: by default the parent starts the next eligible round as soon as the previous cycle settles (free-run). To pace
 a league whose episodes finish quickly, set the top-level `settings.round_interval_minutes` (a sibling of `ladder`, not
@@ -190,9 +186,9 @@ Notes:
   A row inserted by hand in SQL is not stamped, and a stored row that does not name its commissioner fails to parse, so
   always include the key there.
 - Seed create runs reconcile immediately. Expect `leagues.commissioner_key = platform` and `commissioner_config = null`.
-- The league pool is funded automatically. Positive and zero-credit overrides remain authoritative. Without an
-  override, the platform converts the league's daily budget at 10 credits per dollar. Unused default funding carries
-  forward up to ten days of the current budget.
+- The league pool is funded automatically. Positive and zero-credit overrides remain authoritative. Without an override,
+  the platform converts the league's daily budget at 10 credits per dollar. Unused default funding carries forward up to
+  ten days of the current budget.
 - Softmax team members can override this with `PUT /v2/leagues/{league_id}/reward-pool/drip`. A positive value sets a
   fixed allocation, zero disables funding, and `null` restores the league-budget default.
 - Platform seeds do **not** auto-create Qualifiers / Competition divisions. You declare topology next. Until you do —
@@ -345,11 +341,10 @@ Players submit policies as usual (`coworld submit` / Observatory submit). Option
 placement with platform-owned self-play. Without qualification, placed submissions enter competition directly.
 
 Self-play qualification may set `experience.game_config_overrides` when the proof must use stricter completion rules
-than ordinary rounds. When the Coworld consumes per-entrant role choices, set
-`experience.entrant_preferences_field`; the platform snapshots the submission preferences and repeats them for every
-self-play seat under that game-config field. Submission preferences are immutable and the qualification activity loads
-them from the submission identified by the workflow rather than adding them to Temporal's durable workflow payload.
-Neither field accepts `secret://` values.
+than ordinary rounds. When the Coworld consumes per-entrant role choices, set `experience.entrant_preferences_field`;
+the platform snapshots the submission preferences and repeats them for every self-play seat under that game-config
+field. Submission preferences are immutable and the qualification activity loads them from the submission identified by
+the workflow rather than adding them to Temporal's durable workflow payload. Neither field accepts `secret://` values.
 
 Optional `settings.ladder.players_per_user` caps how many distinct active players one user may hold (`1` = single seat
 per user). Unset defers to the Coworld manifest's `players_per_user` (default 2). Checked when a membership is placed or

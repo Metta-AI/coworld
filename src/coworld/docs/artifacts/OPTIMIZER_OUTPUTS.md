@@ -18,8 +18,8 @@ The [optimizer role](../roles/OPTIMIZER.md) may produce:
 - optional plan artifacts for simple reference optimizers.
 
 The Paint Arena reference optimizer writes a JSON plan to `COGAME_OPTIMIZER_OUTPUT_URI` with `optimizer_id`,
-`coworld_name`, `policy_workspace_uri`, `input_counts`, and `recommendations`. That is a useful reference implementation,
-not a finalized cross-game optimizer contract.
+`coworld_name`, `policy_workspace_uri`, `input_counts`, and `recommendations`. That is a useful reference
+implementation, not a finalized cross-game optimizer contract.
 
 ## Inputs
 

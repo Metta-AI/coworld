@@ -33,8 +33,8 @@ use `file:///coworld/player_seats.json`.
   when it is empty.
 - `artifact_uri` is where the game may write one optional per-seat artifact. Hosted upload accepts a non-empty file up
   to 200 MiB and stores it as `application/zip` without inspecting its contents.
-- `player_status_uri` is where the game may write the optional
-  [`player_status.json`](PLAYER_STATUS.md) diagnostic snapshot.
+- `player_status_uri` is where the game may write the optional [`player_status.json`](PLAYER_STATUS.md) diagnostic
+  snapshot.
 
 The game must finish writing every `log_uri`, `artifact_uri`, and `player_status_uri` output before it writes
 `results.json`. That file is the game-hosted completion marker. The worker begins collection when results and the
@@ -56,5 +56,5 @@ player output into game stdout or stderr because game logs may be visible to any
 
 - [Game role](../roles/GAME.md) for execution and output responsibilities.
 - [Player role](../roles/PLAYER.md) for file-policy upload and visibility.
-- [Player logs](PLAYER_LOGS.md), [player status](PLAYER_STATUS.md), and
-  [player artifacts](PLAYER_ARTIFACT.md) for the output contracts.
+- [Player logs](PLAYER_LOGS.md), [player status](PLAYER_STATUS.md), and [player artifacts](PLAYER_ARTIFACT.md) for the
+  output contracts.

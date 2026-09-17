@@ -18,18 +18,18 @@ The [grader role](../roles/GRADER.md) writes one JSON file to `COGAME_GRADE_URI`
 
 Fields:
 
-| Field | Required? | Purpose |
-| --- | --- | --- |
-| `score` | required | Floating-point grade. Range and meaning are grader-defined unless a specific grader documents otherwise. |
-| `grader_id` | recommended | Grader self-identification, conventionally matching the runnable id in `manifest.grader[]`. |
+| Field       | Required?   | Purpose                                                                                                  |
+| ----------- | ----------- | -------------------------------------------------------------------------------------------------------- |
+| `score`     | required    | Floating-point grade. Range and meaning are grader-defined unless a specific grader documents otherwise. |
+| `grader_id` | recommended | Grader self-identification, conventionally matching the runnable id in `manifest.grader[]`.              |
 
 Additional grader-specific fields may be included. Consumers should ignore fields they do not recognize.
 
 ## Interpretation
 
 Grade scores are not inherently comparable across different graders. A game-specific grader should document its scale in
-its role description or implementation docs. A future platform-level normalization rule may tighten this, but the current
-cross-game contract only requires a numeric `score`.
+its role description or implementation docs. A future platform-level normalization rule may tighten this, but the
+current cross-game contract only requires a numeric `score`.
 
 Graders are not required to produce identical scores across runs, but deterministic graders make episode ranking,
 caching, and tests easier.

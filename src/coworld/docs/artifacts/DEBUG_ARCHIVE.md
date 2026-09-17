@@ -29,9 +29,9 @@ diagnostic package; per-player log artifacts are the access-controlled policy-ow
 ## Visibility
 
 Treat the debug archive as a runner diagnostic source, not a user-facing authorization unit. Public surfaces split it
-into game-log and player-log views: game stdout/stderr are public to anyone with episode access, while player logs remain
-policy-scoped by default when served through player-log routes or episode bundles. Do not write secrets or private
-credentials to any container stdout, stderr, or optional log-posting endpoint.
+into game-log and player-log views: game stdout/stderr are public to anyone with episode access, while player logs
+remain policy-scoped by default when served through player-log routes or episode bundles. Do not write secrets or
+private credentials to any container stdout, stderr, or optional log-posting endpoint.
 
 ## Relationship To Bundles
 

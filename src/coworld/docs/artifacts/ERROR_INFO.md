@@ -8,15 +8,15 @@ The hosted runner writes error info to `ERROR_INFO_URI` when the coordinator fai
 The local runner does not currently produce a separate error-info file.
 
 A game may declare that its own rules make a player failure terminal by writing a `GamePlayerFailure` to the separate
-`COGAME_PLAYER_FAILURE_URI`. The coordinator validates that input, assigns `error_type: "player_error"`, and
-remains the sole producer of this final artifact. Games never infer or write `ERROR_INFO_URI`.
+`COGAME_PLAYER_FAILURE_URI`. The coordinator validates that input, assigns `error_type: "player_error"`, and remains the
+sole producer of this final artifact. Games never infer or write `ERROR_INFO_URI`.
 
 ## Contract
 
-The runner-side JSON follows the `RunnerError` shape. Download and upload failures report the slot, exception type,
-and HTTP status without including presigned URL query parameters. Generic exception reports contain the exception class
-and HTTP status. Pydantic validation reports contain an error list with its input and exception-context fields omitted.
-The original exception still propagates into captured Pod logs; this message formatting applies only to `error_info.json`.
+The runner-side JSON follows the `RunnerError` shape. Download and upload failures report the slot, exception type, and
+HTTP status without including presigned URL query parameters. Generic exception reports contain the exception class and
+HTTP status. Pydantic validation reports contain an error list with its input and exception-context fields omitted. The
+original exception still propagates into captured Pod logs; this message formatting applies only to `error_info.json`.
 
 ```json
 {
@@ -38,7 +38,7 @@ Fields:
 
 | Type                      | Meaning                                                                                                                                                                                                                                                                                           |
 | ------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `player_error`            | A terminal game-declared player failure, or a player startup/execution failure where the runner attributes a seat. Carries `failed_policy_index` when the runner can identify the slot.                                                                                                                                                           |
+| `player_error`            | A terminal game-declared player failure, or a player startup/execution failure where the runner attributes a seat. Carries `failed_policy_index` when the runner can identify the slot.                                                                                                           |
 | `player_never_started`    | Kubernetes did not start every scheduled player process within the game's player-connect window, even after recreating stuck pods. This is infrastructure failure evidence and never identifies or blames a policy slot.                                                                          |
 | `game_unhealthy`          | The game process itself failed: it never served `/healthz`, or the game container exited non-zero before or during the episode. The message includes the exit code when available.                                                                                                                |
 | `game_contract_violation` | The game became healthy but failed a route, WebSocket, or auth contract check such as `/client/player`, bad-token rejection, `/client/global`, or `/global`.                                                                                                                                      |
@@ -49,14 +49,14 @@ Fields:
 | `episode_timeout`         | The overall episode wall-clock expired and the runner could not attribute the failure to a more specific game, player, results, or replay condition.                                                                                                                                              |
 | `crash`                   | An unexpected runner/coordinator failure outside the typed episode failure categories.                                                                                                                                                                                                            |
 | `worker_error`            | The coordinator container terminated with a non-zero exit code without more specific structured error information.                                                                                                                                                                                |
-| `worker_oom`              | Kubernetes terminated the coordinator or init-config container for exceeding its memory limit. This is infrastructure failure evidence and never identifies or blames a policy slot.                                                                                                             |
-| `config_error`            | The runner could not fetch, parse, validate, or prepare its episode specification or required configuration, including the private coordinator mount. This is an infrastructure failure; it does not count against a player.                                                                                                                                                                                                   |
+| `worker_oom`              | Kubernetes terminated the coordinator or init-config container for exceeding its memory limit. This is infrastructure failure evidence and never identifies or blames a policy slot.                                                                                                              |
+| `config_error`            | The runner could not fetch, parse, validate, or prepare its episode specification or required configuration, including the private coordinator mount. This is an infrastructure failure; it does not count against a player.                                                                      |
 | `player_file_unavailable` | Trusted staging could not download a game-hosted player file. This is infrastructure failure evidence and never identifies or blames a policy slot.                                                                                                                                               |
 | `player_file_mismatch`    | A staged player file did not match its declared byte length or SHA-256 digest. This is infrastructure failure evidence and never identifies or blames a policy slot.                                                                                                                              |
 
 In game-hosted mode, only a game-declared `GamePlayerFailure` assigns seat blame. Player status is diagnostic.
-Game-container out-of-memory is `oom` and belongs to the Coworld; `worker_oom` belongs to infrastructure.
-File staging failures never assign `failed_policy_index`.
+Game-container out-of-memory is `oom` and belongs to the Coworld; `worker_oom` belongs to infrastructure. File staging
+failures never assign `failed_policy_index`.
 
 The backend may also synthesize an `error-info` response from stored job error fields when a persisted job failed before
 an uploaded `ERROR_INFO_URI` object is available.

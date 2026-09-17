@@ -1,7 +1,7 @@
 # Coworld Kubernetes Runner
 
-`coworld.runner.init_config` prepares one Coworld episode; `coworld.runner.kubernetes_runner` runs its coordinator.
-The runner uses an ordinary game container and selects one of two player execution paths.
+`coworld.runner.init_config` prepares one Coworld episode; `coworld.runner.kubernetes_runner` runs its coordinator. The
+runner uses an ordinary game container and selects one of two player execution paths.
 
 The parent Kubernetes `Job` owns the game and coordinator containers. In `platform-hosted` mode, the coordinator creates
 one child pod per player. In `game-hosted` mode, the trusted init container stages player files and the game executes
@@ -15,12 +15,12 @@ container. `COWORLD_LOCAL_EXTRA_PORTS` is local-runner-only today.
 Hosted Kubernetes runners schedule each episode component with explicit resource requests so the scheduler reserves real
 capacity:
 
-| Component               | Resource request          |
-| ----------------------- | ------------------------- |
-| Game container          | 1 CPU and 512Mi memory    |
-| Runner worker container | 250m CPU and 256Mi memory |
+| Component                             | Resource request          |
+| ------------------------------------- | ------------------------- |
+| Game container                        | 1 CPU and 512Mi memory    |
+| Runner worker container               | 250m CPU and 256Mi memory |
 | Each platform-hosted player container | 250m CPU and 256Mi memory |
-| Replay container        | 2 CPU and 2Gi memory      |
+| Replay container                      | 2 CPU and 2Gi memory      |
 
 These are scheduling **requests**, not CPU or memory limits. A container may use more if the node has spare capacity,
 but game and player authors should treat the requested capacity as the portable baseline available in hosted runs.
@@ -36,13 +36,13 @@ player's math-library thread pools (`OMP_NUM_THREADS`/`MKL_NUM_THREADS`/`OPENBLA
 `floor(limit)` cores so the player behaves like an N-core box on any node. The player image's own thread-env wins if it
 sets these explicitly.
 
-A game pod similarly gets **no CPU or memory limit by default**. A Coworld that wants a hard compute ceiling on the
-game container declares `game.runnable.resources.limits.cpu` and/or `game.runnable.resources.limits.memory` in its manifest; the backend
-clamps each declared field to its own bound envelope and applies it to the game container's `V1Container.resources`.
-Unlike the player CPU limit, no math-library thread-pool pinning happens for the game role — that convention is
-player/ML-policy specific. A declared limit must resolve to at least as much as that field's resolved request (itself
-possibly the role default, when the request is omitted): Kubernetes cannot schedule a pod whose limit is below its
-request, so registration rejects a manifest whose game limit would undercut its game request.
+A game pod similarly gets **no CPU or memory limit by default**. A Coworld that wants a hard compute ceiling on the game
+container declares `game.runnable.resources.limits.cpu` and/or `game.runnable.resources.limits.memory` in its manifest;
+the backend clamps each declared field to its own bound envelope and applies it to the game container's
+`V1Container.resources`. Unlike the player CPU limit, no math-library thread-pool pinning happens for the game role —
+that convention is player/ML-policy specific. A declared limit must resolve to at least as much as that field's resolved
+request (itself possibly the role default, when the request is omitted): Kubernetes cannot schedule a pod whose limit is
+below its request, so registration rejects a manifest whose game limit would undercut its game request.
 
 Per-player resource settings apply only to platform-hosted child pods. Game-hosted player execution consumes the game
 container's requested and limited resources. Authors must size the game for the full roster.
@@ -58,15 +58,16 @@ times out.
 The parent Job has:
 
 - `coworld-init-config`: writes the concrete game config and tokens. For game-hosted mode, it downloads, verifies, and
-  writes one player file at a time. It writes `player_seats.json` after every slot is staged.
-  It also writes the validated job specification to the private coordinator volume.
+  writes one player file at a time. It writes `player_seats.json` after every slot is staged. It also writes the
+  validated job specification to the private coordinator volume.
 - `game`: regular non-restarting container that runs `manifest.game.runnable.image`, listens on port `8080`, and has a
   TCP liveness probe against the worker's health port (`9090`) so the kubelet stops it when the worker exits.
 - `worker`: regular Job container that runs the Kubernetes coordinator and holds a TCP health port (`9090`) open for its
   whole lifetime.
 - `coworld-workdir`: an `emptyDir` volume mounted into all parent containers.
-- `coordinator-spec`: a separate `emptyDir` mounted at `/var/run/coworld-coordinator` only by initialization and the worker.
-  The worker mount is read-only. Game, player, and sidecar containers cannot read the full specification through this volume.
+- `coordinator-spec`: a separate `emptyDir` mounted at `/var/run/coworld-coordinator` only by initialization and the
+  worker. The worker mount is read-only. Game, player, and sidecar containers cannot read the full specification through
+  this volume.
 
 The game receives URI-based artifact environment variables. Today the app backend supplies `file://` URIs inside
 `COWORLD_WORKDIR` so the worker can validate results and upload hosted artifacts, but the game contract is URI-based
@@ -86,11 +87,10 @@ python -m coworld.runner.init_config
 python -m coworld.runner.kubernetes_runner run-core-sidecars-v1
 ```
 
-Separate modules keep Kubernetes client and coordinator server imports out of initialization.
-Kubernetes init containers finish before the game and worker containers start.
-`init.spec_write` maps the init process's `setup` interval to the private spec copy, separate from game configuration writes.
-The versioned run command makes mixed coordinator/backend deployments fail
-closed instead of silently bypassing the core sidecars.
+Separate modules keep Kubernetes client and coordinator server imports out of initialization. Kubernetes init containers
+finish before the game and worker containers start. `init.spec_write` maps the init process's `setup` interval to the
+private spec copy, separate from game configuration writes. The versioned run command makes mixed coordinator/backend
+deployments fail closed instead of silently bypassing the core sidecars.
 
 ## Required Inputs
 
@@ -112,16 +112,16 @@ POD_NAME
 POD_UID
 ```
 
-For a game-hosted init container, `PLAYER_FILE_URLS` is required. It is a JSON object mapping every zero-based slot to
-a trusted download URL. Its key set must equal `0..len(players)-1`; an absent variable, missing slots, or extra slots
-are `config_error`.
+For a game-hosted init container, `PLAYER_FILE_URLS` is required. It is a JSON object mapping every zero-based slot to a
+trusted download URL. Its key set must equal `0..len(players)-1`; an absent variable, missing slots, or extra slots are
+`config_error`.
 
-Initialization receives a remote `JOB_SPEC_URI` pointing to a JSON `CoworldEpisodeJobSpec`.
-It validates the downloaded specification and writes `/var/run/coworld-coordinator/job_spec.json` before succeeding.
-The worker receives that file URI and validates the same specification without downloading it again.
-Kubernetes starts the worker only after initialization succeeds, so it cannot read a partial write.
-Direct invocations of initialization must provide the private directory as well as `COWORLD_WORKDIR`.
-The full specification must never be written to the game-readable `/coworld` volume.
+Initialization receives a remote `JOB_SPEC_URI` pointing to a JSON `CoworldEpisodeJobSpec`. It validates the downloaded
+specification and writes `/var/run/coworld-coordinator/job_spec.json` before succeeding. The worker receives that file
+URI and validates the same specification without downloading it again. Kubernetes starts the worker only after
+initialization succeeds, so it cannot read a partial write. Direct invocations of initialization must provide the
+private directory as well as `COWORLD_WORKDIR`. The full specification must never be written to the game-readable
+`/coworld` volume.
 
 The specification has this shape:
 
@@ -161,11 +161,11 @@ A game-hosted spec uses `"player_runtime": "game-hosted"` and replaces every pla
 }
 ```
 
-The file is read from `policies/files/<content_hash>`; the key is derived, never carried. This is the only payload
-shape consumed by the coordinator. Backend bookkeeping such as the uploaded Coworld ID or
-manifest hash lives in the backend's stored job payload and is converted out before `spec.json` is uploaded. Runner
-specs do not carry backend-owned display-name metadata. Hosted dispatch injects resolved player names only into
-`game_config.players[].name`, and only when the game declares that field.
+The file is read from `policies/files/<content_hash>`; the key is derived, never carried. This is the only payload shape
+consumed by the coordinator. Backend bookkeeping such as the uploaded Coworld ID or manifest hash lives in the backend's
+stored job payload and is converted out before `spec.json` is uploaded. Runner specs do not carry backend-owned
+display-name metadata. Hosted dispatch injects resolved player names only into `game_config.players[].name`, and only
+when the game declares that field.
 
 ## Player Execution
 
@@ -185,18 +185,16 @@ The coordinator creates one pod per player:
 
 The player query string includes only the generated slot token and slot index.
 
-Each slot gets exactly one player pod generation during an episode. The
-coordinator does not replace a waiting or vanished pod because Kubernetes
-status may lag a process that has already acquired its one-shot game slot; a
-replacement with the same credential could then be rejected as a duplicate.
-`player_never_started` remains infrastructure-retryable, so recovery creates a
-fresh episode with a fresh game and fresh slot credentials.
+Each slot gets exactly one player pod generation during an episode. The coordinator does not replace a waiting or
+vanished pod because Kubernetes status may lag a process that has already acquired its one-shot game slot; a replacement
+with the same credential could then be rejected as a duplicate. `player_never_started` remains infrastructure-retryable,
+so recovery creates a fresh episode with a fresh game and fresh slot credentials.
 
 After creating player pods, the coordinator opens the global viewer websocket and holds it open while waiting for every
 `player` container to start. The deadline is the minimum of `game_config.player_connect_timeout_seconds` (default 180s)
 and `COWORLD_TIMEOUT_SECONDS`. A no-blame wait such as `ContainerCreating` retains the full budget. Policy failures
-remain `player_error`; exhausting the start deadline is retryable `player_never_started`. A missing pod after startup
-is inconclusive because Kubernetes may have reaped it.
+remain `player_error`; exhausting the start deadline is retryable `player_never_started`. A missing pod after startup is
+inconclusive because Kubernetes may have reaped it.
 
 The `address` query parameter is only for browser client pages served through an HTTP proxy, such as hosted play. The
 Kubernetes runner does not use `address` for policy containers: `COWORLD_PLAYER_WS_URL` is the direct game websocket URL
@@ -209,8 +207,8 @@ SHA-256 digest before writing `/coworld/players/{slot}/file`. Download failure i
 digest mismatch is `player_file_mismatch`. Both fail before the game starts and never blame a policy seat.
 
 The init container writes [`player_seats.json`](../docs/artifacts/PLAYER_SEATS.md) and the game receives
-`COGAME_PLAYER_SEATS_URI=file:///coworld/player_seats.json`. No player pod, Service, WebSocket URL, per-player resources,
-or policy secret environment exists in this mode.
+`COGAME_PLAYER_SEATS_URI=file:///coworld/player_seats.json`. No player pod, Service, WebSocket URL, per-player
+resources, or policy secret environment exists in this mode.
 
 For game-hosted jobs, `results.json` is the completion marker. The game must finish every seat log, seat artifact, and
 `player_status.json` before writing results. The worker begins collection when results and the required replay exist;
@@ -295,31 +293,28 @@ Outputs:
 - `ERROR_INFO_URI`: typed failure JSON written by the coordinator. A game-declared `player_failure.json` is an input to
   the coordinator, not this final hosted artifact.
 - `PLAYER_STATUS_URI`: `player_status.json` snapshot. The runner writes it before platform-hosted pod teardown. A
-  game-hosted game may write it through the seats document. Each
-  slot is `running`, `exited`, `not_started`, or `unavailable`; exited slots retain their exit code, Kubernetes reason,
-  and finish time. This is process-lifecycle evidence, not a claim that an exit was successful or proof of the
-  game-level WebSocket disconnect reason. An oversized game-authored file exceeds 1 MiB and is discarded as invalid.
+  game-hosted game may write it through the seats document. Each slot is `running`, `exited`, `not_started`, or
+  `unavailable`; exited slots retain their exit code, Kubernetes reason, and finish time. This is process-lifecycle
+  evidence, not a claim that an exit was successful or proof of the game-level WebSocket disconnect reason. An oversized
+  game-authored file exceeds 1 MiB and is discarded as invalid.
 - `POLICY_LOG_URLS`: JSON object mapping each player slot to a destination URI. Each log is uploaded from
   `policy_agent_{slot}.log`. Platform-hosted logs contain player-container output; game-hosted logs are game-written.
-  Each upload is capped at 10 MiB and receives a trailing truncation marker when the source is longer. Player logs are also
-  included in `DEBUG_URI`'s zip; `POLICY_LOG_URLS` exposes them individually for per-player consumption.
+  Each upload is capped at 10 MiB and receives a trailing truncation marker when the source is longer. Player logs are
+  also included in `DEBUG_URI`'s zip; `POLICY_LOG_URLS` exposes them individually for per-player consumption.
 - `PLAYER_ARTIFACT_UPLOAD_URLS`: JSON object mapping each player slot to a presigned `PUT` target. The coordinator
   exposes each target through `COWORLD_PLAYER_ARTIFACT_UPLOAD_URL` for platform-hosted pods. In game-hosted mode, it
   uploads each non-empty `policy_artifact_{slot}.zip` after the game writes `results.json`. Files over 200 MiB are
   skipped. Each final upload gets one attempt with the initial file size as `Content-Length`; growth or upload failure
-  skips that seat without changing the episode outcome. See
-  [player artifact](../docs/artifacts/PLAYER_ARTIFACT.md).
+  skips that seat without changing the episode outcome. See [player artifact](../docs/artifacts/PLAYER_ARTIFACT.md).
 
 Per-player logs are diagnostic only. After the game has produced valid results, the coordinator reads the last 10,000
 combined stdout/stderr lines from player pods whose `player` container has started and skips pods whose container is
 still waiting, such as `ContainerCreating`. Missing player logs do not fail an otherwise successful episode; result and
-replay upload remain the source of truth for episode success.
-The adjacent `player_status.json` artifact preserves the structured pod state that existed at that same observation
-point, separately from game-authored scores. Authorized episode consumers can fetch it from
-`/v2/episode-requests/{episode_request_id}/artifacts/player-status`.
-Kubernetes API transport failures during log collection are written into the
-corresponding diagnostic log artifact and likewise do not change the episode
-outcome.
+replay upload remain the source of truth for episode success. The adjacent `player_status.json` artifact preserves the
+structured pod state that existed at that same observation point, separately from game-authored scores. Authorized
+episode consumers can fetch it from `/v2/episode-requests/{episode_request_id}/artifacts/player-status`. Kubernetes API
+transport failures during log collection are written into the corresponding diagnostic log artifact and likewise do not
+change the episode outcome.
 
 For game-hosted output, an absent slot log becomes a diagnostic placeholder. Optional `player_status.json` is capped at
 1 MiB and validated against the version 1 schema; oversized or invalid JSON is logged, deleted, and not uploaded.
@@ -366,33 +361,31 @@ early.
 The parent Job has `ttlSecondsAfterFinished`, so completed and failed parent pods are cleaned up by the Kubernetes TTL
 controller.
 
-The private coordinator volume uses memory-backed `emptyDir`. Init copies the
-exact validated spec bytes there; the worker reads the same document. It counts
-against the Pod's memory rather than writing credentials to the node filesystem.
+The private coordinator volume uses memory-backed `emptyDir`. Init copies the exact validated spec bytes there; the
+worker reads the same document. It counts against the Pod's memory rather than writing credentials to the node
+filesystem.
 
-The backend and coordinator image form one deployment bundle.
-`.github/workflows/deploy-observatory.yml` waits for the same source revision's
-coordinator digest, then passes it with the backend image to both deployment
-actions. Deploy or roll back that bundle together; mixing revisions can break
-the init command and private spec path. Local changes require rebuilding the
-coordinator and running the matching backend checkout.
+The backend and coordinator image form one deployment bundle. `.github/workflows/deploy-observatory.yml` waits for the
+same source revision's coordinator digest, then passes it with the backend image to both deployment actions. Deploy or
+roll back that bundle together; mixing revisions can break the init command and private spec path. Local changes require
+rebuilding the coordinator and running the matching backend checkout.
 
 The `imports` interval excludes the eager `coworld` package imports. Complete process startup includes those imports
 through the Linux process-birth anchor; compare full process startup when measuring this optimization.
 
 Staging currently runs only the API and migrations, with dispatch and workers disabled
-(`devops/app-manifests/values.yaml`, `staging-observatory-backend`). Its backend-only
-deploy does not exercise this runner. Enabling dispatch there requires a matching
-coordinator image alongside the backend, as production deployment already supplies.
+(`devops/app-manifests/values.yaml`, `staging-observatory-backend`). Its backend-only deploy does not exercise this
+runner. Enabling dispatch there requires a matching coordinator image alongside the backend, as production deployment
+already supplies.
 
-A Docker build using `COWORLD_VERSION` must select a published release containing
-`coworld.runner.init_config`. The build import check rejects older releases.
+A Docker build using `COWORLD_VERSION` must select a published release containing `coworld.runner.init_config`. The
+build import check rejects older releases.
 
 The deployment values intentionally contain no coordinator image fallback. A fresh deployment must receive its matching
 immutable image through the deployment bundle before dispatch. Generic initialization failures and bare init-container
 exits use `config_error`, an infrastructure-only category that cannot count against policies. The commissioner aborts
-the affected round or wave without changing membership status; recovery needs a new attempt. This includes a game-authored
-configuration that violates its declared schema. Structured runner errors retain their specific type.
+the affected round or wave without changing membership status; recovery needs a new attempt. This includes a
+game-authored configuration that violates its declared schema. Structured runner errors retain their specific type.
 
 Generic exception reports in `error_info.json` include only the exception class and HTTP status. Validation reports omit
 Pydantic input and exception-context fields. The original exception still propagates into captured Pod logs.
@@ -401,9 +394,9 @@ Initialization runs no game or policy code; a missing mount or import failure is
 ## Coordinator image pull policy
 
 Coordinator init, worker, and player wait-for-service containers use `IfNotPresent` for immutable digest references and
-`Always` for mutable tags, matching the episode game image policy. Local development uses `IfNotPresent` for locally built tags.
-Release deployment resolves the coordinator image to a digest before configuring the backend and orchestrator. A changed
-digest selects new content; an already cached digest avoids a registry check.
+`Always` for mutable tags, matching the episode game image policy. Local development uses `IfNotPresent` for locally
+built tags. Release deployment resolves the coordinator image to a digest before configuring the backend and
+orchestrator. A changed digest selects new content; an already cached digest avoids a registry check.
 
-The dispatcher sets `COWORLD_PLAYER_IMAGE_PULL_POLICY=IfNotPresent` for local development.
-This override covers player images and their coordinator wait-for-service container.
+The dispatcher sets `COWORLD_PLAYER_IMAGE_PULL_POLICY=IfNotPresent` for local development. This override covers player
+images and their coordinator wait-for-service container.

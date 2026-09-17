@@ -4,8 +4,8 @@ This page is the conceptual home for Coworld documentation: what a complete Cowo
 manifest describes those roles, and how an episode turns into artifacts that player builders can learn from.
 
 For usage-oriented guidance, use the public [Coworld guide](../../../docs/overview.mdx) and the
-[Coworld cookbook](COOKBOOK.md). The [authoring entry point](AUTHORING.md) links the public authoring track and
-the exact references behind it. For browser-only replay bundles and their Coworld build hook, use
+[Coworld cookbook](COOKBOOK.md). The [authoring entry point](AUTHORING.md) links the public authoring track and the
+exact references behind it. For browser-only replay bundles and their Coworld build hook, use
 [Static Replay Viewers](STATIC_REPLAY_VIEWERS.md). The package documentation uses
 [Paint Arena](../examples/paintarena/README.md) as its canonical example. Installable starter templates for every role
 ship under `coworld/templates`. When rebuilding an existing Coworld after the June 2026 repo consolidation, use
@@ -37,15 +37,15 @@ protocols, or artifact contracts.
 Every Coworld is built from seven roles. Three roles participate during episode execution; four roles consume or
 organize episode artifacts after the episode ends.
 
-| Role             | Lifecycle                       | Status                            | Purpose                                                                                                                                           | Details                                    |
-| ---------------- | ------------------------------- | --------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------ |
-| **game**         | per episode, WebSocket server   | live                              | Runs the episode, serves browser clients, and writes result/replay artifacts.                                                                     | [Game role](roles/GAME.md)                 |
-| **player**       | per episode, game client or file | live                             | Acts in one player slot through the runtime selected by the Coworld.                                                                               | [Player role](roles/PLAYER.md)             |
-| **commissioner** | per round, WebSocket server     | **deprecated** (container leagues only) | Legacy container league control loop. New leagues use the platform ladder and omit this role.                                                  | [Commissioner role](roles/COMMISSIONER.md) |
-| **reporter**     | per run, submitted Wasm program | live (reporter v2, spec 0061)     | Turns platform evidence into declared, typed output parts — narrative renders, event logs, machine documents — via a capability-scoped tool belt. | [Reporter role](roles/REPORTER.md)         |
-| **grader**       | post episode, on demand         | contract defined, runtime pending | Scores how useful or interesting an episode is.                                                                                                   | [Grader role](roles/GRADER.md)             |
-| **diagnoser**    | post episode, on demand         | reserved                          | Evaluates a target policy and emits policy-facing advice.                                                                                         | [Diagnoser role](roles/DIAGNOSER.md)       |
-| **optimizer**    | workbench, long running         | reserved                          | Drives longer-running policy-improvement work.                                                                                                    | [Optimizer role](roles/OPTIMIZER.md)       |
+| Role             | Lifecycle                        | Status                                  | Purpose                                                                                                                                           | Details                                    |
+| ---------------- | -------------------------------- | --------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------ |
+| **game**         | per episode, WebSocket server    | live                                    | Runs the episode, serves browser clients, and writes result/replay artifacts.                                                                     | [Game role](roles/GAME.md)                 |
+| **player**       | per episode, game client or file | live                                    | Acts in one player slot through the runtime selected by the Coworld.                                                                              | [Player role](roles/PLAYER.md)             |
+| **commissioner** | per round, WebSocket server      | **deprecated** (container leagues only) | Legacy container league control loop. New leagues use the platform ladder and omit this role.                                                     | [Commissioner role](roles/COMMISSIONER.md) |
+| **reporter**     | per run, submitted Wasm program  | live (reporter v2, spec 0061)           | Turns platform evidence into declared, typed output parts — narrative renders, event logs, machine documents — via a capability-scoped tool belt. | [Reporter role](roles/REPORTER.md)         |
+| **grader**       | post episode, on demand          | contract defined, runtime pending       | Scores how useful or interesting an episode is.                                                                                                   | [Grader role](roles/GRADER.md)             |
+| **diagnoser**    | post episode, on demand          | reserved                                | Evaluates a target policy and emits policy-facing advice.                                                                                         | [Diagnoser role](roles/DIAGNOSER.md)       |
+| **optimizer**    | workbench, long running          | reserved                                | Drives longer-running policy-improvement work.                                                                                                    | [Optimizer role](roles/OPTIMIZER.md)       |
 
 ## Role Status
 
@@ -90,9 +90,8 @@ The short version:
 4. Platform-hosted players connect through `/player`; game-hosted players use the game's documented file contract.
 5. The episode produces per-episode artifacts: [results](artifacts/RESULTS.md), [replay bytes](artifacts/REPLAY.md),
    [logs](artifacts/GAME_LOGS.md), optional [player seats](artifacts/PLAYER_SEATS.md) and
-   [player artifacts](artifacts/PLAYER_ARTIFACT.md),
-   [player process status](artifacts/PLAYER_STATUS.md), and [failure information](artifacts/ERROR_INFO.md) when
-   applicable.
+   [player artifacts](artifacts/PLAYER_ARTIFACT.md), [player process status](artifacts/PLAYER_STATUS.md), and
+   [failure information](artifacts/ERROR_INFO.md) when applicable.
 6. Supporting roles consume episode evidence through bundles, tool-belt reads, or workbench tooling and produce
    [report outputs](artifacts/REPORT.md), [grades](artifacts/GRADE.md), [diagnoses](artifacts/DIAGNOSIS.md), or
    [optimizer outputs](artifacts/OPTIMIZER_OUTPUTS.md).
@@ -143,19 +142,20 @@ For each scheduled bounded episode, the runner starts:
 
 - one **game** container, listening on `COGAME_HOST:COGAME_PORT` with `/healthz`, `/player`, `/global`, and `/client/*`
   routes;
-- for `platform-hosted` mode, one **player** container per slot, each receiving its own `COWORLD_PLAYER_WS_URL` pointing at the game's `/player`
-  route with that slot's `slot` and `token` query params. `COGAMES_ENGINE_WS_URL` is also populated for compatibility
-  with older players.
+- for `platform-hosted` mode, one **player** container per slot, each receiving its own `COWORLD_PLAYER_WS_URL` pointing
+  at the game's `/player` route with that slot's `slot` and `token` query params. `COGAMES_ENGINE_WS_URL` is also
+  populated for compatibility with older players.
 
 Platform-hosted players connect through the game's `/player` WebSocket. Game-hosted games read verified files and
 per-seat output paths from [`COGAME_PLAYER_SEATS_URI`](artifacts/PLAYER_SEATS.md). The game writes results and replay;
 the runner preserves logs and failure information. Per-seat artifacts remain optional in both modes. On the platform
 ladder, Temporal settles the frozen episode plan and updates rankings and memberships.
 
-Persistent player runtimes support only `platform-hosted` players. Persistent leagues separate execution from accounting. Their scheduling response publishes a complete desired set of
-long-lived player runtimes. The platform reconciles at most one runtime per stable league player and replaces it when
-that player's selected policy changes. Sealed game windows become completed recorded episodes and round evidence without
-passing through the episode runner or spawning duplicate players.
+Persistent player runtimes support only `platform-hosted` players. Persistent leagues separate execution from
+accounting. Their scheduling response publishes a complete desired set of long-lived player runtimes. The platform
+reconciles at most one runtime per stable league player and replaces it when that player's selected policy changes.
+Sealed game windows become completed recorded episodes and round evidence without passing through the episode runner or
+spawning duplicate players.
 
 For the in-flight contracts, see the [game role](roles/GAME.md), the [player role](roles/PLAYER.md), and the
 [commissioner role](roles/COMMISSIONER.md). For artifact contracts, see the [artifact reference](artifacts/README.md).

@@ -18,9 +18,4 @@ def test_paintarena_builds_static_replay_viewer(tmp_path: Path) -> None:
     subprocess.run([PAINTARENA_ROOT / "tools" / "build_replay_viewer.sh", output], check=True)
 
     assert sorted(path.name for path in output.iterdir()) == ["index.html"]
-    html = (output / "index.html").read_text()
-    assert 'location.hash.slice(1)).get("replay")' in html
-    assert "new DecompressionStream(compression)" in html
-    assert "message = await receiveContainerReplay()" in html
-    assert "new WebSocket(websocketUrl)" in html
-    assert 'type: "ready"' in html
+    assert (output / "index.html").read_bytes() == (PAINTARENA_ROOT / "game" / "client" / "replay.html").read_bytes()

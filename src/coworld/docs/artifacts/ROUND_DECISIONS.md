@@ -4,8 +4,8 @@
 
 ## Producer
 
-The [commissioner role](../roles/COMMISSIONER.md) emits round decisions in its `round_complete` protocol message. This is
-not an episode artifact and is not part of the [episode bundle](EPISODE_BUNDLE.md).
+The [commissioner role](../roles/COMMISSIONER.md) emits round decisions in its `round_complete` protocol message. This
+is not an episode artifact and is not part of the [episode bundle](EPISODE_BUNDLE.md).
 
 ## Contract
 

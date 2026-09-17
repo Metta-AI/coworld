@@ -26,8 +26,8 @@ layout without first stabilizing this contract.
 
 ## Relationship To Bundles
 
-Diagnoses consume episode bundles, but diagnosis outputs are not currently included in the episode bundle. If an optimizer
-needs diagnosis output, it receives diagnosis artifact URIs separately today.
+Diagnoses consume episode bundles, but diagnosis outputs are not currently included in the episode bundle. If an
+optimizer needs diagnosis output, it receives diagnosis artifact URIs separately today.
 
 ## See Also
 

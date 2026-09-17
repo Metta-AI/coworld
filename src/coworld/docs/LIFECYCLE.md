@@ -36,7 +36,7 @@ This is the short lifecycle view of the roles. For details and status definition
 | Role         | Local development                                                                | Hosted tournament evaluation                                                                                                                                 |
 | ------------ | -------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------ |
 | Game         | Runs for `play`, `run-episode`, `certify`, and replay viewing.                   | Runs in the hosted Kubernetes episode job.                                                                                                                   |
-| Player       | Runs one container per slot, or runs inside the game for game-hosted mode.        | Runs one child pod per slot, or runs inside the game pod for game-hosted mode.                                                                               |
+| Player       | Runs one container per slot, or runs inside the game for game-hosted mode.       | Runs one child pod per slot, or runs inside the game pod for game-hosted mode.                                                                               |
 | Commissioner | `coworld certify` probes declared commissioners over `/healthz` and `/round`.    | Runs as a per-round container for leagues with `commissioner_key = "container"`.                                                                             |
 | Reporter     | `coworld certify` statically validates manifest reporter references (spec 0061). | Reporter v2: the platform runs submitted Wasm reporter versions in-process against a capability-scoped tool belt; runs produce typed output parts + a trace. |
 | Grader       | Not auto-run by the local runner.                                                | Contract defined, runtime pending; consumes bundles on demand when invoked.                                                                                  |
@@ -66,21 +66,21 @@ game container contract in [GAME.md](roles/GAME.md).
 
 Coworld certification turns the manifest's `certification` fixture into one local episode. It first validates the
 manifest, records GitHub `source_url` availability without gating, checks image reachability and the certification
-fixture itself, and then uses the
-same execution shape as a normal episode. Platform-hosted fixtures start bundled player images. Game-hosted fixtures
-stage bundled files and let the game execute them. Both paths validate results, replay, and replay viewing. Hosted
-platform-hosted certification also waits for every fixture player process to terminate successfully.
+fixture itself, and then uses the same execution shape as a normal episode. Platform-hosted fixtures start bundled
+player images. Game-hosted fixtures stage bundled files and let the game execute them. Both paths validate results,
+replay, and replay viewing. Hosted platform-hosted certification also waits for every fixture player process to
+terminate successfully.
 
 Certification is a package smoke test, not a gameplay benchmark. It should be short, deterministic enough to debug, and
 strong enough to prove that the manifest, game image, bundled players, HTTP routes, player-token rejection, results, and
 replay surface are wired correctly.
 
-Certification also verifies that each fixture slot left a player log. After the smoke episode, it resolves
-every manifest reporter reference and runs the shared static validator against each (component parses, targets a
-supported `softmax:reporter` world, imports nothing outside it, exports `run`, declares well-formed outputs — spec
-0061). It probes declared commissioners with a single `schedule_rounds_request` over `/round`, proving protocol
-compatibility without attempting to judge scheduling quality. Graders and diagnosers are recorded as declared with no
-harness available yet; optimizers are skipped because they belong to the later Viability degree.
+Certification also verifies that each fixture slot left a player log. After the smoke episode, it resolves every
+manifest reporter reference and runs the shared static validator against each (component parses, targets a supported
+`softmax:reporter` world, imports nothing outside it, exports `run`, declares well-formed outputs — spec 0061). It
+probes declared commissioners with a single `schedule_rounds_request` over `/round`, proving protocol compatibility
+without attempting to judge scheduling quality. Graders and diagnosers are recorded as declared with no harness
+available yet; optimizers are skipped because they belong to the later Viability degree.
 
 ## Local Development Lifecycle
 
@@ -144,24 +144,24 @@ headless episode and local artifact files.
 For a source manifest with `game.replay_viewer`, local replay viewing serves the static bundle and replay file from
 localhost without Docker. The viewer receives the replay URL through `index.html#replay=<url>`.
 
-Without a static bundle, local replay viewing starts the game image with
-`COGAME_LOAD_REPLAY_URI=<file-or-http-uri>`. The viewer enters through `/client/replay`, and the game's `/replay`
-WebSocket streams the replay. This legacy mode starts only the game container.
+Without a static bundle, local replay viewing starts the game image with `COGAME_LOAD_REPLAY_URI=<file-or-http-uri>`.
+The viewer enters through `/client/replay`, and the game's `/replay` WebSocket streams the replay. This legacy mode
+starts only the game container.
 
 ## Hosted Tournament Lifecycle
 
 Hosted tournament evaluation is platform-orchestrated. Player authors upload policy images or files, submit them, and
-the platform places policy versions into tournament divisions. Completed rounds and episodes then produce the
-results, logs, and replays that players inspect.
+the platform places policy versions into tournament divisions. Completed rounds and episodes then produce the results,
+logs, and replays that players inspect.
 
 Hosted episodes are created two ways: the platform schedules them as part of league rounds, or a player author requests
-them directly with an Experience Request (`coworld xp-request create`), which fans out into a batch of standalone episode
-requests against a chosen Coworld or league roster. Experience-request episodes start `pending` and are dispatched
-asynchronously by the platform; from dispatch onward they run the same hosted episode job described below and produce
-the same artifacts. See [Cookbook: Request Experience Runs](COOKBOOK.md#request-experience-runs).
+them directly with an Experience Request (`coworld xp-request create`), which fans out into a batch of standalone
+episode requests against a chosen Coworld or league roster. Experience-request episodes start `pending` and are
+dispatched asynchronously by the platform; from dispatch onward they run the same hosted episode job described below and
+produce the same artifacts. See [Cookbook: Request Experience Runs](COOKBOOK.md#request-experience-runs).
 
-This is the only supported hosted game execution path. The game and worker run inside a platform-managed Kubernetes
-Job. Platform-hosted mode adds child player pods; game-hosted mode runs player files inside the game container.
+This is the only supported hosted game execution path. The game and worker run inside a platform-managed Kubernetes Job.
+Platform-hosted mode adds child player pods; game-hosted mode runs player files inside the game container.
 
 The hosted lifecycle is:
 
@@ -227,7 +227,7 @@ See [EPISODE_BUNDLE.md](artifacts/EPISODE_BUNDLE.md) for the bundle shape, hoste
 | Main use         | Fast player and Coworld debugging.                               | League evaluation and leaderboard updates.                                                                                                                                      |
 | Inputs           | Local manifest, downloaded Coworld, or explicit episode request. | Uploaded Coworld release, uploaded policy versions, league/division state.                                                                                                      |
 | Game runtime     | Docker container on `coworld-local`.                             | Game container in a parent Kubernetes Job.                                                                                                                                      |
-| Player runtime   | One Docker container per slot, or execution inside the game.      | One child pod per slot, or execution inside the game pod.                                                                                                                       |
+| Player runtime   | One Docker container per slot, or execution inside the game.     | One child pod per slot, or execution inside the game pod.                                                                                                                       |
 | Artifact storage | Local workspace files.                                           | Uploaded artifact URIs recorded by the platform.                                                                                                                                |
 | Replay storage   | Exact local replay bytes.                                        | Replay bytes compressed for hosted storage and replay serving.                                                                                                                  |
 | Episode deadline | CLI `--timeout-seconds` for local runner waits.                  | 20 minute Kubernetes Job active deadline; coordinator waits default to `COWORLD_TIMEOUT_SECONDS=3600`.                                                                          |

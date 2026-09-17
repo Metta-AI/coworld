@@ -6,18 +6,18 @@ Each Coworld project owns its release inputs:
 - `coworld_manifest_template.json` describes the game and its roles without `game.version`;
 - `dist/coworld_manifest.json` is generated and must not be committed.
 
-Keep game-specific game, player, grader, diagnoser, and optimizer implementations in the game project.
-Use a shared role image only when it is intentionally shared and should change for every Coworld that consumes it.
-Reporter entries are platform or wasm references, not container services.
+Keep game-specific game, player, grader, diagnoser, and optimizer implementations in the game project. Use a shared role
+image only when it is intentionally shared and should change for every Coworld that consumes it. Reporter entries are
+platform or wasm references, not container services.
 
-Omit `manifest.commissioner[]` and any commissioner compose service. Softmax leagues use the platform ladder —
-see [Commissioner role](roles/COMMISSIONER.md).
+Omit `manifest.commissioner[]` and any commissioner compose service. Softmax leagues use the platform ladder — see
+[Commissioner role](roles/COMMISSIONER.md).
 
 ## Player runtime inputs
 
-Choose [platform-hosted or game-hosted players](PLAYER_RUNTIMES.md) in the owning manifest.
-Game-hosted `player[].file` paths are relative to the project template; build copies them into the output package.
-They need no player Compose service. Upload replaces paths with content digests; download restores local bundled files.
+Choose [platform-hosted or game-hosted players](PLAYER_RUNTIMES.md) in the owning manifest. Game-hosted `player[].file`
+paths are relative to the project template; build copies them into the output package. They need no player Compose
+service. Upload replaces paths with content digests; download restores local bundled files.
 
 ## Build Workflow
 
@@ -30,9 +30,9 @@ uv run coworld upload-coworld dist/coworld_manifest.json
 ```
 
 `coworld build` pulls and builds the compose services, resolves every mutable image reference to a digest, substitutes
-the image placeholders, stamps the requested version, and validates the result. It also pins mutable GitHub
-`source_url` values that belong to the current Git checkout to the checkout's commit. Build from committed, pushed
-state so those source commits are available to certification and future rebuilds.
+the image placeholders, stamps the requested version, and validates the result. It also pins mutable GitHub `source_url`
+values that belong to the current Git checkout to the checkout's commit. Build from committed, pushed state so those
+source commits are available to certification and future rebuilds.
 
 For a nonstandard layout, select the project and override individual filenames only when needed:
 
@@ -40,8 +40,8 @@ For a nonstandard layout, select the project and override individual filenames o
 uv run coworld build --project path/to/coworld --version 0.1.0
 ```
 
-Do not create a second compose file or manifest template in a coordinating repository. Fix and release the files in
-the repository that owns the Coworld.
+Do not create a second compose file or manifest template in a coordinating repository. Fix and release the files in the
+repository that owns the Coworld.
 
 ## One-Owner Rule
 

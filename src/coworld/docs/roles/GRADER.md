@@ -15,8 +15,8 @@ they are triggered by a CLI command or platform action, not by the episode runne
 ## Where it lives in the manifest
 
 `manifest.grader[]`, with `type: "grader"` on every entry. The section is optional; include grader runnables when the
-Coworld has custom graders or a default grader is useful. See
-[`COWORLD_MANIFEST.md`](../COWORLD_MANIFEST.md) for the full runnable shape.
+Coworld has custom graders or a default grader is useful. See [`COWORLD_MANIFEST.md`](../COWORLD_MANIFEST.md) for the
+full runnable shape.
 
 ## Contract
 
