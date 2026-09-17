@@ -68,7 +68,7 @@ def test_submit_policy_to_league_posts_v2_submission(
     assert "lpm_00000000-0000-0000-0000-000000000061" in result.output
     policy_path = f"/observatory/policies/versions/{POLICY_VERSION_ID}"
     assert policy_path in result.output
-    assert "https://docs.softmax.com/coworld/build-a-player/submit-to-a-league" in result.output
+    assert "https://softmax.com/docs/coworld/build-a-player/submit-to-a-league" in result.output
     assert "League forum: https://softmax.com/api/observatory/v2/forums/Paint Arena.md" in result.output
     assert "League wiki: https://softmax.com/api/observatory/v2/wikis/Paint Arena/pages.md" in result.output
     assert opened == [policy_path]
@@ -334,7 +334,7 @@ def test_http_failures_print_an_actionable_error_instead_of_a_traceback(httpserv
     assert "returned HTTP 422" in result.output
     assert "Detail: Coworld not found" in result.output
     assert "Request id: req-download-1" in result.output
-    assert "Docs: https://docs.softmax.com/api-reference/error-handling" in result.output
+    assert "Docs: https://softmax.com/docs/api-reference/error-handling" in result.output
 
 
 def test_api_client_failures_render_their_hint_without_a_traceback(httpserver: HTTPServer) -> None:
@@ -349,7 +349,7 @@ def test_api_client_failures_render_their_hint_without_a_traceback(httpserver: H
     assert "Authentication failed (401)" in result.output
     assert "uv run softmax login" in result.output
     assert "Request id: req-league-1" in result.output
-    assert "Docs: https://docs.softmax.com/guides/authentication" in result.output
+    assert "Docs: https://softmax.com/docs/guides/authentication" in result.output
 
 
 def test_guidance_failure_precedes_remote_request(tmp_path, httpserver, monkeypatch):

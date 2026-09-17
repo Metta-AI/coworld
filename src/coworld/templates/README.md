@@ -23,7 +23,7 @@ Use these templates as starter files, then compare the result with the complete 
 ## Start a player project
 
 Run `coworld init player ./my-player`. See
-[player project initialization](https://docs.softmax.com/coworld/cli#start-a-player-project) for target requirements,
+[player project initialization](https://softmax.com/docs/coworld/cli#start-a-player-project) for target requirements,
 generated files, runtime limits, and next steps.
 
 ## Contents

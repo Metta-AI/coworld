@@ -275,4 +275,8 @@ exports_files(
     visibility = ["//:__pkg__"],
 )
 
-package_format()
+# docs/ is a git symlink to web/softmax.com/content/docs/coworld. Bazel glob
+# follows it, so those MDX files would be formatted here under root markdown
+# settings instead of the softmax.com MDX overrides. //web/softmax.com:format_test
+# already owns that tree.
+package_format(exclude = ["docs/**"])

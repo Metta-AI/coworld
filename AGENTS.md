@@ -141,7 +141,8 @@ source of truth. They are generated docs and `$schema` targets; `test_types.py` 
 - [README.md](README.md) - package landing page, player-first orientation, and navigation.
 - [src/coworld/docs/COOKBOOK.md](src/coworld/docs/COOKBOOK.md) - task recipes for local play, policy upload/submission,
   tournament results, and Coworld upload.
-- [docs/](docs/) - public Mintlify guides. This path symlinks to the canonical sources under `web/docs/coworld/`.
+- [docs/](docs/) - public guide sources, published at https://softmax.com/docs. This path symlinks to
+  `web/softmax.com/content/docs/coworld/`.
 - [src/coworld/docs/README.md](src/coworld/docs/README.md) - Coworld concept map, role statuses, artifact flow, and
   cross-links.
 - [src/coworld/docs/AUTHORING.md](src/coworld/docs/AUTHORING.md) - stable pointer from older links to the public Coworld
