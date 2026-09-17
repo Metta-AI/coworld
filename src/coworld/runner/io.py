@@ -4,7 +4,7 @@ import logging
 import os
 import shutil
 import time
-from datetime import datetime
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Iterator, Literal, Protocol
 from urllib.error import HTTPError
@@ -14,6 +14,8 @@ from urllib.request import Request, urlopen
 import httpx
 from pydantic import BaseModel, ConfigDict, Field
 from tenacity import RetryCallState, Retrying, retry_if_exception, stop_after_attempt, wait_chain, wait_fixed
+
+from coworld.runner.player_artifacts import ArtifactUploadTargets
 
 _RETRY_DELAYS_SECONDS = (0.5, 1.0, 2.0)
 _RETRYABLE_STATUS_CODES = {429, 500, 502, 503, 504}
@@ -247,8 +249,18 @@ def write_data(uri: str, data: bytes | str, *, content_type: str) -> None:
     raise ValueError(f"Unsupported URI for write_data: {redact_uri(uri)}")
 
 
+def _resolve_upload_uri(uri: str) -> str:
+    parsed = urlparse(uri)
+    if parsed.scheme != "coworld-artifact+file":
+        return uri
+    targets = ArtifactUploadTargets.model_validate_json(Path(unquote(parsed.path)).read_bytes())
+    if targets.expires_at <= datetime.now(UTC):
+        raise ValueError("artifact upload targets expired")
+    return targets.targets[unquote(parsed.fragment)]
+
+
 def upload_data(uri: str, data: bytes | str, *, content_type: str) -> None:
-    write_data(uri, data, content_type=content_type)
+    write_data(_resolve_upload_uri(uri), data, content_type=content_type)
 
 
 def upload_file(
@@ -259,6 +271,7 @@ def upload_file(
     content_type: str,
     attempts: int = len(_RETRY_DELAYS_SECONDS) + 1,
 ) -> None:
+    uri = _resolve_upload_uri(uri)
     parsed = urlparse(uri)
     stream = _ExactSizeStream(file, size)
     if parsed.scheme in ("http", "https"):

@@ -29,6 +29,7 @@ import zipfile
 from collections import Counter
 from collections.abc import Callable
 from concurrent.futures import Future, ThreadPoolExecutor
+from contextlib import ExitStack
 from datetime import UTC, datetime
 from io import BytesIO
 from pathlib import Path
@@ -192,7 +193,15 @@ def _open_game_authored_file(path: Path) -> BinaryIO | None:
     # O_NONBLOCK so a FIFO the game left at an output path cannot park the worker in
     # open(); the flag is cleared again once the descriptor is known to be a regular file.
     try:
-        descriptor = os.open(path, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK)
+        # Pin every directory while traversing it. O_NOFOLLOW on the final file
+        # alone still lets a game redirect its log directory into private mounts.
+        with ExitStack() as directories:
+            directory_fd = os.open(path.anchor or ".", os.O_RDONLY | os.O_DIRECTORY)
+            directories.callback(os.close, directory_fd)
+            for part in path.parent.parts[1 if path.anchor else 0 :]:
+                directory_fd = os.open(part, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW, dir_fd=directory_fd)
+                directories.callback(os.close, directory_fd)
+            descriptor = os.open(path.name, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK, dir_fd=directory_fd)
     except FileNotFoundError:
         return None
     except OSError as exc:
@@ -422,7 +431,7 @@ class _PlayerArtifactUploadHandler(http.server.BaseHTTPRequestHandler):
 
 def _start_player_artifact_upload_server(tokens: list[str]) -> _PlayerArtifactUploadServer | None:
     raw_targets = os.environ.get("PLAYER_ARTIFACT_UPLOAD_URLS")
-    if raw_targets is None or (not raw_targets.startswith("file://") and "COWORLD_EGRESS_RELAY_URL" not in os.environ):
+    if raw_targets is None:
         return None
     targets = (
         PersistentDiagnosticTargets.model_validate_json(Path(raw_targets[7:]).read_bytes()).targets
@@ -1068,8 +1077,7 @@ def _create_game_service(
     if human_player_proxy_port is not None:
         proxy_port = int(human_player_proxy_port)
         ports.append(client.V1ServicePort(name="human-player", port=proxy_port, target_port=proxy_port))
-    artifact_targets = os.environ.get("PLAYER_ARTIFACT_UPLOAD_URLS", "")
-    if artifact_targets and (artifact_targets.startswith("file://") or os.environ.get("COWORLD_EGRESS_RELAY_URL")):
+    if "PLAYER_ARTIFACT_UPLOAD_URLS" in os.environ:
         ports.append(
             client.V1ServicePort(name="player-artifact", port=PLAYER_ARTIFACT_PORT, target_port=PLAYER_ARTIFACT_PORT)
         )
@@ -1361,14 +1369,9 @@ def _player_artifact_upload_url(slot: int, service_name: str, token: str) -> str
     raw = os.environ.get("PLAYER_ARTIFACT_UPLOAD_URLS")
     if raw is None:
         return None
-    if raw.startswith("file://"):
-        return f"http://{service_name}:{PLAYER_ARTIFACT_PORT}/player-artifact/{slot}/{token}"
-    target = json.loads(raw).get(str(slot))
-    if target is None:
+    if not raw.startswith("file://") and str(slot) not in json.loads(raw):
         return None
-    if os.environ.get("COWORLD_EGRESS_RELAY_URL"):
-        return f"http://{service_name}:{PLAYER_ARTIFACT_PORT}/player-artifact/{slot}/{token}"
-    return target
+    return f"http://{service_name}:{PLAYER_ARTIFACT_PORT}/player-artifact/{slot}/{token}"
 
 
 def _player_service_account_name(bedrock_enablement: BedrockEnablement) -> str | None:

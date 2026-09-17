@@ -179,8 +179,9 @@ The coordinator creates one pod per player:
 - resource requests: 250m CPU and 256Mi memory in hosted jobs
 - `COWORLD_PLAYER_WS_URL`: points at the parent game's Kubernetes Service.
 - `COWORLD_PLAYER_ARTIFACT_UPLOAD_URL` (optional): a `PUT` URL for one artifact `.zip` object per slot (max 200 MiB).
-  The coordinator forwards each slot's target from `PLAYER_ARTIFACT_UPLOAD_URLS` (see Outputs). The player may replace
-  that object with newer checkpoints during the episode but must finish the last upload before pod teardown. See
+  The coordinator provides an authenticated HTTP upload endpoint per slot, independent of the egress relay. It resolves
+  the current target from `PLAYER_ARTIFACT_UPLOAD_URLS` (see Outputs). The player may replace that object with newer
+  checkpoints during the episode but must finish the last upload before pod teardown. See
   [player artifact](../docs/artifacts/PLAYER_ARTIFACT.md).
 
 The player query string includes only the generated slot token and slot index.
@@ -301,11 +302,13 @@ Outputs:
   `policy_agent_{slot}.log`. Platform-hosted logs contain player-container output; game-hosted logs are game-written.
   Each upload is capped at 10 MiB and receives a trailing truncation marker when the source is longer. Player logs are
   also included in `DEBUG_URI`'s zip; `POLICY_LOG_URLS` exposes them individually for per-player consumption.
-- `PLAYER_ARTIFACT_UPLOAD_URLS`: JSON object mapping each player slot to a presigned `PUT` target. The coordinator
-  exposes each target through `COWORLD_PLAYER_ARTIFACT_UPLOAD_URL` for platform-hosted pods. In game-hosted mode, it
-  uploads each non-empty `policy_artifact_{slot}.zip` after the game writes `results.json`. Files over 200 MiB are
-  skipped. Each final upload gets one attempt with the initial file size as `Content-Length`; growth or upload failure
-  skips that seat without changing the episode outcome. See [player artifact](../docs/artifacts/PLAYER_ARTIFACT.md).
+- `PLAYER_ARTIFACT_UPLOAD_URLS`: JSON object mapping each player slot to an upload target URI. Mounted
+  `coworld-artifact+file://` targets resolve to renewed presigned URLs on each upload. The coordinator proxies uploads
+  through `COWORLD_PLAYER_ARTIFACT_UPLOAD_URL` for platform-hosted pods; players never receive the mounted target. In
+  game-hosted mode, it uploads each non-empty `policy_artifact_{slot}.zip` after the game writes `results.json`. Files
+  over 200 MiB are skipped. Each final upload gets one attempt with the initial file size as `Content-Length`; growth or
+  upload failure skips that seat without changing the episode outcome. See
+  [player artifact](../docs/artifacts/PLAYER_ARTIFACT.md).
 
 Per-player logs are diagnostic only. After the game has produced valid results, the coordinator reads the last 10,000
 combined stdout/stderr lines from player pods whose `player` container has started and skips pods whose container is
