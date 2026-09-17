@@ -5,7 +5,6 @@ apply to `platform-hosted` players. In `game-hosted` mode, the game uses its sid
 `X-Coworld-Player-Slot: N` on every request for seat `N`. File policies have no environment, secrets, or player sidecar;
 see [the game contract](roles/GAME.md#bedrock-and-aws-access).
 
-
 **Status:** live
 
 Players that call an LLM can use AWS Bedrock in hosted tournaments **without shipping their own model credentials**. The
@@ -16,16 +15,16 @@ platform runs a per-pod proxy (the "Bedrock sidecar") that holds the real identi
 > In a hosted episode your player pod is given the env var **`AWS_ENDPOINT_URL_BEDROCK_RUNTIME`** (e.g.
 > `http://127.0.0.1:9100`). **Every Bedrock call must go to that endpoint.** If you send to the real AWS host
 > (`https://bedrock-runtime.<region>.amazonaws.com`) instead, you bypass the sidecar, your call carries the
-> **placeholder credentials** the platform injected, and AWS rejects it with **HTTP 403**. Whether the player falls
-> back or fails then depends on the player implementation.
+> **placeholder credentials** the platform injected, and AWS rejects it with **HTTP 403**. Whether the player falls back
+> or fails then depends on the player implementation.
 >
 > **If you use a standard SDK, you get this for free** — boto3, `AnthropicBedrock`, the AWS SDK for JS, and
 > `@cogweb/llm` all read `AWS_ENDPOINT_URL_BEDROCK_RUNTIME` automatically. **Only hand-rolled HTTP must read the env var
 > itself.** Never hardcode the host or the port.
 >
 > **Don't supply real AWS credentials and don't worry about signing.** The sidecar strips whatever auth you send and
-> re-signs with the real runner identity. The `bedrock-sidecar` placeholder creds in your env are deliberately fake.
-> It supports `InvokeModel`, `InvokeModelWithResponseStream`, `Converse`, and `ConverseStream`.
+> re-signs with the real runner identity. The `bedrock-sidecar` placeholder creds in your env are deliberately fake. It
+> supports `InvokeModel`, `InvokeModelWithResponseStream`, `Converse`, and `ConverseStream`.
 
 ## How to make the call
 
@@ -34,16 +33,16 @@ platform runs a per-pod proxy (the "Bedrock sidecar") that holds the real identi
 The presence of **`AWS_ENDPOINT_URL_BEDROCK_RUNTIME`** is the signal that hosted Bedrock is available via the sidecar.
 Gate on that env var — do **not** gate solely on `USE_BEDROCK`, which can also be set for direct local access.
 
-The platform adds the Bedrock sidecar and injects this environment into a hosted player pod when its policy was
-uploaded with `--use-bedrock`:
+The platform adds the Bedrock sidecar and injects this environment into a hosted player pod when its policy was uploaded
+with `--use-bedrock`:
 
-| Env var | Value in a hosted, sidecar-backed pod | What you do with it |
-| --- | --- | --- |
-| `AWS_ENDPOINT_URL_BEDROCK_RUNTIME` | the sidecar, e.g. `http://127.0.0.1:9100` | **Send all Bedrock calls here.** Read it; never hardcode. |
-| `AWS_REGION` / `AWS_DEFAULT_REGION` | the Bedrock region | The SigV4 region (the SDK reads it automatically). |
-| `AWS_ACCESS_KEY_ID` / `AWS_SECRET_ACCESS_KEY` | `bedrock-sidecar` (placeholder) | Leave as-is. The sidecar re-signs; these never reach AWS. |
-| `AWS_BEARER_TOKEN_BEDROCK` | `bedrock-sidecar` (placeholder) | Same — placeholder, stripped by the sidecar. |
-| `BEDROCK_MODEL` | the model id from `--bedrock-model`, when provided | Read your model from this when your policy uses the upload option. |
+| Env var                                       | Value in a hosted, sidecar-backed pod              | What you do with it                                                |
+| --------------------------------------------- | -------------------------------------------------- | ------------------------------------------------------------------ |
+| `AWS_ENDPOINT_URL_BEDROCK_RUNTIME`            | the sidecar, e.g. `http://127.0.0.1:9100`          | **Send all Bedrock calls here.** Read it; never hardcode.          |
+| `AWS_REGION` / `AWS_DEFAULT_REGION`           | the Bedrock region                                 | The SigV4 region (the SDK reads it automatically).                 |
+| `AWS_ACCESS_KEY_ID` / `AWS_SECRET_ACCESS_KEY` | `bedrock-sidecar` (placeholder)                    | Leave as-is. The sidecar re-signs; these never reach AWS.          |
+| `AWS_BEARER_TOKEN_BEDROCK`                    | `bedrock-sidecar` (placeholder)                    | Same — placeholder, stripped by the sidecar.                       |
+| `BEDROCK_MODEL`                               | the model id from `--bedrock-model`, when provided | Read your model from this when your policy uses the upload option. |
 
 ### Standard SDKs — these route through the sidecar automatically
 
@@ -77,8 +76,8 @@ out = rt.invoke_model(
 
 ### Hand-rolled InvokeModel HTTP
 
-Hand-rolled clients must build the URL from the endpoint environment variable. This example calls `InvokeModel` with
-an Anthropic Messages body. No `Authorization` header is needed because the sidecar adds the real one:
+Hand-rolled clients must build the URL from the endpoint environment variable. This example calls `InvokeModel` with an
+Anthropic Messages body. No `Authorization` header is needed because the sidecar adds the real one:
 
 ```bash
 curl -sS -X POST \
@@ -101,11 +100,11 @@ curl -sS "$AWS_ENDPOINT_URL_BEDROCK_RUNTIME/healthz/core-v1" # expect: ok
 
 ## Troubleshooting
 
-| Symptom | Cause | Fix |
-| --- | --- | --- |
-| `HTTP 403` (e.g. `UnrecognizedClientException`, invalid token/signature) on every call | You're hitting the **real AWS host** with the placeholder creds — bypassing the sidecar | Send to `$AWS_ENDPOINT_URL_BEDROCK_RUNTIME`. Log the exact URL you POST to. |
-| `AWS_ENDPOINT_URL_BEDROCK_RUNTIME` is empty/unset | The policy was not uploaded with `--use-bedrock`, you're running locally, or hosted sidecar infrastructure is misconfigured | Locally, use your own AWS creds (below). For hosted, fix the upload (`--use-bedrock`); if it is already set, report the missing core sidecar as an infrastructure fault. |
-| 0 completed episodes / silent non-LLM baseline in hosted rounds | A failing model call is being swallowed and you fall back | Log the **response body** and the **endpoint URL** before anything else; it's almost always the 403/route issue above. |
+| Symptom                                                                                | Cause                                                                                                                       | Fix                                                                                                                                                                      |
+| -------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `HTTP 403` (e.g. `UnrecognizedClientException`, invalid token/signature) on every call | You're hitting the **real AWS host** with the placeholder creds — bypassing the sidecar                                     | Send to `$AWS_ENDPOINT_URL_BEDROCK_RUNTIME`. Log the exact URL you POST to.                                                                                              |
+| `AWS_ENDPOINT_URL_BEDROCK_RUNTIME` is empty/unset                                      | The policy was not uploaded with `--use-bedrock`, you're running locally, or hosted sidecar infrastructure is misconfigured | Locally, use your own AWS creds (below). For hosted, fix the upload (`--use-bedrock`); if it is already set, report the missing core sidecar as an infrastructure fault. |
+| 0 completed episodes / silent non-LLM baseline in hosted rounds                        | A failing model call is being swallowed and you fall back                                                                   | Log the **response body** and the **endpoint URL** before anything else; it's almost always the 403/route issue above.                                                   |
 
 When debugging, **log the response body, not just the status code** — the Bedrock error body names the exact failure
 (route, authentication, or model). A bot that logs only `HTTP 403` hides which one it is.
@@ -122,8 +121,8 @@ uv run coworld upload-policy my-player:latest \
 ```
 
 The policy name is derived from the active Softmax player's name and ID, making it globally unique. Without an active
-player session, it uses the account's default player. Pass `--name` to override the default or upload another version
-of an existing named policy.
+player session, it uses the account's default player. Pass `--name` to override the default or upload another version of
+an existing named policy.
 
 - `--use-bedrock` gives the hosted player Bedrock access (via the sidecar) without its own API key.
 - `--bedrock-model MODEL` sets `BEDROCK_MODEL`. Your player must read its model from `BEDROCK_MODEL` — do not hardcode a
@@ -140,8 +139,8 @@ no gameplay (0 completed episodes, no replay). Check the upload flags, `BEDROCK_
 
 For Claude models, the sidecar automatically enables provider prompt caching (5-minute TTL) on your calls unless you
 manage caching yourself: if your request contains any `cache_control` blocks (Anthropic shape) or `cachePoint` blocks
-(Converse shape), the sidecar forwards them untouched and adds nothing. Cache reads bill at ~0.1x the input-token
-price, so caching directly stretches your episode spend limit.
+(Converse shape), the sidecar forwards them untouched and adds nothing. Cache reads bill at ~0.1x the input-token price,
+so caching directly stretches your episode spend limit.
 
 Whether you benefit depends entirely on prompt structure — caching matches a byte-identical **prefix** of your prompt:
 
@@ -149,15 +148,14 @@ Whether you benefit depends entirely on prompt structure — caching matches a b
   prompt that opens with `TURN 361/400 ...` shares no prefix with the previous call and can never hit the cache.
 - Growing conversation transcripts (append each turn, never rewrite or trim earlier messages) cache best: each call
   re-reads the whole history from cache and pays full price only for the new turn.
-- Prompts below the model's minimum cacheable size never cache (silently): 1,024 tokens for Sonnet-class models,
-  4,096 for Haiku 4.5.
+- Prompts below the model's minimum cacheable size never cache (silently): 1,024 tokens for Sonnet-class models, 4,096
+  for Haiku 4.5.
 
 The sidecar backs off automatically for prompts that keep writing cache entries without ever re-reading them, so a
-volatile-first prompt is not penalized for long — but it also never gets cheaper. Cache usage appears in your
-response's `usage` fields (`cacheReadInputTokens` for Converse, `cacheReadInputTokenCount` for Nova InvokeModel,
-or `cache_read_input_tokens` for Claude InvokeModel).
-Cache count fields can be absent when the provider does not report them. Absence means unreported usage,
-not a measured zero; clients must tolerate missing cache counts.
+volatile-first prompt is not penalized for long — but it also never gets cheaper. Cache usage appears in your response's
+`usage` fields (`cacheReadInputTokens` for Converse, `cacheReadInputTokenCount` for Nova InvokeModel, or
+`cache_read_input_tokens` for Claude InvokeModel). Cache count fields can be absent when the provider does not report
+them. Absence means unreported usage, not a measured zero; clients must tolerate missing cache counts.
 
 ## Track your spend (and the league's spend limit)
 

@@ -59,9 +59,9 @@ the manifest-derived or configured default values.
 ### Local experience commands
 
 `coworld run-episode` runs one or more local episodes. First inspect `game.player_runtime` and follow
-[the selected runtime contract](../PLAYER_RUNTIMES.md). For game-hosted players, use bundled files or supply exactly
-one file path per seat. The image overrides, request JSON, and `scrimmage` examples below are platform-hosted only.
-Upload game-hosted candidates with `coworld upload-policy --file PATH`; file policies cannot carry player secrets.
+[the selected runtime contract](../PLAYER_RUNTIMES.md). For game-hosted players, use bundled files or supply exactly one
+file path per seat. The image overrides, request JSON, and `scrimmage` examples below are platform-hosted only. Upload
+game-hosted candidates with `coworld upload-policy --file PATH`; file policies cannot carry player secrets.
 
 ```bash
 uv run coworld run-episode <manifest.json|coworld-id> [episode_request.json|player-image...] \
@@ -87,8 +87,8 @@ The optimizer needs at least:
 
 Whether these arrive as env vars, CLI args, mounted config files, or some combination is not yet locked.
 
-The optimizer does not currently define a standard `COGAME_EPISODE_BUNDLE_URI` input, but an optimizer workbench may load
-episode bundles as seed evidence; see [`artifacts/EPISODE_BUNDLE.md`](../artifacts/EPISODE_BUNDLE.md).
+The optimizer does not currently define a standard `COGAME_EPISODE_BUNDLE_URI` input, but an optimizer workbench may
+load episode bundles as seed evidence; see [`artifacts/EPISODE_BUNDLE.md`](../artifacts/EPISODE_BUNDLE.md).
 
 ### Outputs
 

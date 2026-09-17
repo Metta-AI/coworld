@@ -100,13 +100,13 @@ uv run coworld upload-policy --file ./player.py --name game-hosted-player
 uv run coworld submit game-hosted-player --league league_...
 ```
 
-The game defines the player-file format. Files and deterministic directory zips are capped at 100 MiB. `--file`
-cannot be combined with `--run`, `--secret-env`, `--use-bedrock`, or `--bedrock-model`.
+The game defines the player-file format. Files and deterministic directory zips are capped at 100 MiB. `--file` cannot
+be combined with `--run`, `--secret-env`, `--use-bedrock`, or `--bedrock-model`.
 
 Add `--use-bedrock` (and `--bedrock-model MODEL`, which your player reads from `BEDROCK_MODEL`) during `upload-policy`
-when the hosted policy uses Bedrock; see [Bedrock for Coworld players](BEDROCK.md). Add
-`--secret-env NAME=value` for other hosted provider credentials. For local Bedrock tests, use
-`run-episode --use-bedrock` or `play --use-bedrock` with the AWS profile and region options.
+when the hosted policy uses Bedrock; see [Bedrock for Coworld players](BEDROCK.md). Add `--secret-env NAME=value` for
+other hosted provider credentials. For local Bedrock tests, use `run-episode --use-bedrock` or `play --use-bedrock` with
+the AWS profile and region options.
 
 ### How do I know my policy passed self-play?
 
@@ -518,8 +518,8 @@ uv run coworld run-episode tmp/paintarena/coworld_manifest.json paintarena-playe
 ```
 
 `--aws-profile` and `--aws-region` require `--use-bedrock`. Local `--use-bedrock` uses your own AWS credentials; it does
-not prove the hosted upload is correct. See [Bedrock for Coworld players](BEDROCK.md) for what hosted
-tournaments require.
+not prove the hosted upload is correct. See [Bedrock for Coworld players](BEDROCK.md) for what hosted tournaments
+require.
 
 ### Non-CLI Docker-Backed Python
 
@@ -612,11 +612,11 @@ named policy.
 
 ## Play A Campaign League
 
-Campaign leagues are territory wars: an LLM strategist issues invasion orders for your player each round, guided by
-your standing-orders strategy prompt, and battles are decided by the players' policies (or by an Elo emulation in
-`outcomes: emulated` leagues — the `board` command shows which). The `coworld campaign` commands are the player API
-for that loop. `--player` accepts a name or `ply_...` id and defaults to your only player in the league; league
-arguments accept a name or `league_...` id.
+Campaign leagues are territory wars: an LLM strategist issues invasion orders for your player each round, guided by your
+standing-orders strategy prompt, and battles are decided by the players' policies (or by an Elo emulation in
+`outcomes: emulated` leagues — the `board` command shows which). The `coworld campaign` commands are the player API for
+that loop. `--player` accepts a name or `ply_...` id and defaults to your only player in the league; league arguments
+accept a name or `league_...` id.
 
 See the board, each player's territory, and any in-flight round:
 
@@ -624,9 +624,9 @@ See the board, each player's territory, and any in-flight round:
 uv run coworld campaign board "CTF Campaign"
 ```
 
-Read your battle log (role, opponents, outcome per battle) and head-to-head records — transfers and the full
-territory series are in the `--json` output. History covers the league's retained frame window. Add `--player` to
-scout any other player's public history:
+Read your battle log (role, opponents, outcome per battle) and head-to-head records — transfers and the full territory
+series are in the `--json` output. History covers the league's retained frame window. Add `--player` to scout any other
+player's public history:
 
 ```bash
 uv run coworld campaign history "CTF Campaign" --rounds 10
@@ -650,18 +650,18 @@ uv run coworld campaign set-perks "CTF Campaign" armor scope
 uv run coworld campaign set-perks "CTF Campaign" --clear
 ```
 
-Inspect the exact strategist payload (system rules, tools, rendered board context with your prompt embedded) that
-will be sent next round, or read the full exchange from a past round — what the strategist saw, said, and ordered
-(recent rounds only; owner-only, like prompts):
+Inspect the exact strategist payload (system rules, tools, rendered board context with your prompt embedded) that will
+be sent next round, or read the full exchange from a past round — what the strategist saw, said, and ordered (recent
+rounds only; owner-only, like prompts):
 
 ```bash
 uv run coworld campaign full-prompt "CTF Campaign"
 uv run coworld campaign conversation "CTF Campaign" --round 12
 ```
 
-Every command takes `--json` (except `set-prompt` and `set-perks`) for programmatic use, e.g. driving a strategy-tuning loop from the
-same data the strategist sees. Prompts and full prompts are owner-only; boards and histories are visible to any
-authenticated viewer of the league.
+Every command takes `--json` (except `set-prompt` and `set-perks`) for programmatic use, e.g. driving a strategy-tuning
+loop from the same data the strategist sees. Prompts and full prompts are owner-only; boards and histories are visible
+to any authenticated viewer of the league.
 
 ## Upload And Submit A Player
 
@@ -689,9 +689,9 @@ uv run coworld upload-policy --file ./player-a.py --name player-a
 ```
 
 `--file` accepts one regular file or directory. Directories become deterministic zip files. The CLI rejects symlinks,
-missing paths, inputs over 100 MiB (104,857,600 bytes), and combinations with `--run`, `--secret-env`,
-`--use-bedrock`, or `--bedrock-model`. The backend rechecks the size and SHA-256 digest before creating the policy.
-Uploading the same bytes again under the same policy name returns the existing version instead of creating a new one.
+missing paths, inputs over 100 MiB (104,857,600 bytes), and combinations with `--run`, `--secret-env`, `--use-bedrock`,
+or `--bedrock-model`. The backend rechecks the size and SHA-256 digest before creating the policy. Uploading the same
+bytes again under the same policy name returns the existing version instead of creating a new one.
 
 Submit the uploaded policy to a league:
 
@@ -721,20 +721,19 @@ uv run coworld upload-policy paintarena-player:local --name paintarena-player \
 ```
 
 Image-based `upload-policy` requires Docker because it hashes and pushes the image before registration. File-based
-upload does not use Docker. Neither form needs local AWS credentials.
-`--use-bedrock` stores `USE_BEDROCK=true` with the policy version. Hosted Coworld tournaments run on AWS; when a policy
-opts into Bedrock, the player pod runs with the tournament Bedrock IAM role, so the player does not need to bring its
-own Bedrock API key. Add `--bedrock-model MODEL` to set `BEDROCK_MODEL`; your player must read its model from
-`BEDROCK_MODEL`. For other LLM providers, pass API keys with `--secret-env`; those secrets are stored in AWS Secrets
-Manager and injected only into that policy version's player pod.
+upload does not use Docker. Neither form needs local AWS credentials. `--use-bedrock` stores `USE_BEDROCK=true` with the
+policy version. Hosted Coworld tournaments run on AWS; when a policy opts into Bedrock, the player pod runs with the
+tournament Bedrock IAM role, so the player does not need to bring its own Bedrock API key. Add `--bedrock-model MODEL`
+to set `BEDROCK_MODEL`; your player must read its model from `BEDROCK_MODEL`. For other LLM providers, pass API keys
+with `--secret-env`; those secrets are stored in AWS Secrets Manager and injected only into that policy version's player
+pod.
 
 A Bedrock player can pass local certification and still fail its first hosted rounds if it was uploaded without
-`--use-bedrock` or reads its model from the wrong variable. See
-[Bedrock for Coworld players](BEDROCK.md), which also covers staying robust when shared Bedrock
-capacity throttles (throttled episodes time out and score as a loss).
+`--use-bedrock` or reads its model from the wrong variable. See [Bedrock for Coworld players](BEDROCK.md), which also
+covers staying robust when shared Bedrock capacity throttles (throttled episodes time out and score as a loss).
 
-Game-hosted policies cannot carry secret environment variables. The Coworld author's game receives the submitted file
-in clear and controls its execution. Do not submit sensitive source unless you accept that trust boundary. If a player
+Game-hosted policies cannot carry secret environment variables. The Coworld author's game receives the submitted file in
+clear and controls its execution. Do not submit sensitive source unless you accept that trust boundary. If a player
 needs Bedrock, the game makes the call and sends `X-Coworld-Player-Slot` for cost attribution.
 
 Game containers sometimes need hosted tournament/episode-only secrets, such as a signing key for a private worker.
@@ -770,8 +769,7 @@ uv run coworld secret put my_game qualifying_roster_42 ./roster-overlay.json
 
 The overlay uses format `coworld.game_config_overlay.v1`; nested `secret://` values are resolved only when the episode
 job is dispatched. The commissioner sets the reserved episode tag `coworld_config_overlay_secret=qualifying_roster_42`.
-See the [commissioner contract](roles/COMMISSIONER.md#schedule_episodes) for the document shape and
-trust boundary.
+See the [commissioner contract](roles/COMMISSIONER.md#schedule_episodes) for the document shape and trust boundary.
 
 ### Non-CLI API
 
@@ -932,13 +930,13 @@ uv run coworld xp-request episodes xreq_...
 The body is passed through to the backend unchanged, so use the `POST /v2/experience-requests` schema in the generated
 [API reference](https://docs.softmax.com/api-reference/overview) (direct `coworld_id`/`variant_id`, or a `target` with
 `league_name`/`division_name`, plus a `roster` of `policy_ref`, `top_n`, or `random` participants). For a game-owned
-private episode input, set `game_config_overlay_secret` to the name
-published by the Coworld owner; do not place `secret://` references in public `game_config_overrides`. Stateful Coworlds
-may additionally set a typed `state` object. Omit it for the Coworld's normal new-state start; use `head` for a player's
-live mutable state or `snapshot` for an immutable player/world checkpoint. Both explicit modes require
-`game_config_overlay_secret`. Participant state requires fixed `policy_ref` entries pinned in seat order, so new policy
-versions can retain player-owned state without using the policy version as the state key. Children start `pending` and
-are dispatched asynchronously, so a `get` right after `create` shows them as `pending`.
+private episode input, set `game_config_overlay_secret` to the name published by the Coworld owner; do not place
+`secret://` references in public `game_config_overrides`. Stateful Coworlds may additionally set a typed `state` object.
+Omit it for the Coworld's normal new-state start; use `head` for a player's live mutable state or `snapshot` for an
+immutable player/world checkpoint. Both explicit modes require `game_config_overlay_secret`. Participant state requires
+fixed `policy_ref` entries pinned in seat order, so new policy versions can retain player-owned state without using the
+policy version as the state key. Children start `pending` and are dispatched asynchronously, so a `get` right after
+`create` shows them as `pending`.
 
 ### Non-CLI API
 
@@ -1051,8 +1049,8 @@ uv run coworld replay-open ereq_... --hosted
 ```
 
 Use `coworld replay` when you already have a replay file and a manifest. For a source manifest with
-`game.replay_viewer`, it serves the bundle and replay from localhost without Docker. Otherwise, it starts the game
-image with `COGAME_LOAD_REPLAY_URI` and opens `/client/replay`. Pass `--no-open-browser` to suppress browser opening.
+`game.replay_viewer`, it serves the bundle and replay from localhost without Docker. Otherwise, it starts the game image
+with `COGAME_LOAD_REPLAY_URI` and opens `/client/replay`. Pass `--no-open-browser` to suppress browser opening.
 
 Use `coworld replay-open` when you have an Observatory episode request ID. Static bundles open through Observatory
 without starting a game runtime. Legacy Coworlds download or reuse the game image and serve the replay through Docker.
@@ -1188,8 +1186,8 @@ Metta monorepo contributors can test hosted execution against the local platform
 uv run metta dev up --full-coworld
 ```
 
-This command is opt-in. Local `certify`, `run-episode`, normal uploads to Softmax, installation, and default tests do not
-start this stack.
+This command is opt-in. Local `certify`, `run-episode`, normal uploads to Softmax, installation, and default tests do
+not start this stack.
 
 `certify` runs the Executable transcript locally. It records whether every runnable's optional `source_url` resolves to
 publicly accessible source (GitHub refs are checked for a Dockerfile at the source path or an ancestor), validates the
@@ -1201,15 +1199,15 @@ branch as it exists at run time. When no static replay viewer bundle is declared
 game image in replay mode with `COGAME_LOAD_REPLAY_URI`, verifies `GET /client/replay`, and waits for a frame from the
 `/replay` WebSocket. When a static replay viewer bundle is declared, legacy replay routes are not required and the
 certifier skips that probe. A declared static bundle skips that legacy route check. Manifest reporter references are
-statically validated (spec 0061); commissioners are probed over
-`/healthz` and `/round`. After a successful explicit `certify`, the exact manifest, certifier code, transcript, and
-local image IDs are cached. `upload-coworld` reuses that proof when nothing changed; otherwise it certifies before
-creating or pushing any Docker archive. After upload, the platform auto-queues a hosted certification run for the new
-version; the upload output prints the hosted certification state, `coworld status <cow_id>` shows the verdict and
-per-step transcript, and `--wait-certification` polls the hosted run to completion (exit 2 on an author-controlled
-failure, 3 on platform failure/timeout). The uploaded version remains visible immediately, but it becomes canonical
-only after hosted certification and upload smoke both pass. Retry an unchanged immutable candidate with
-`uv run coworld retry-certification cow_...` after correcting an external or platform failure.
+statically validated (spec 0061); commissioners are probed over `/healthz` and `/round`. After a successful explicit
+`certify`, the exact manifest, certifier code, transcript, and local image IDs are cached. `upload-coworld` reuses that
+proof when nothing changed; otherwise it certifies before creating or pushing any Docker archive. After upload, the
+platform auto-queues a hosted certification run for the new version; the upload output prints the hosted certification
+state, `coworld status <cow_id>` shows the verdict and per-step transcript, and `--wait-certification` polls the hosted
+run to completion (exit 2 on an author-controlled failure, 3 on platform failure/timeout). The uploaded version remains
+visible immediately, but it becomes canonical only after hosted certification and upload smoke both pass. Retry an
+unchanged immutable candidate with `uv run coworld retry-certification cow_...` after correcting an external or platform
+failure.
 
 `certify` also writes `certification_report.html` into the printed artifact workspace and opens it in the browser by
 default. The report is a local transcript view with each step's pass/fail status, failure reason, artifact paths, and
@@ -1251,8 +1249,8 @@ same envelope.
 
 ### Automating uploads
 
-Softmax-managed Coworld repositories use an internal reusable workflow. Other repositories can wrap the build,
-certify, and upload commands above in their own manually dispatched workflow.
+Softmax-managed Coworld repositories use an internal reusable workflow. Other repositories can wrap the build, certify,
+and upload commands above in their own manually dispatched workflow.
 
 Keep automated uploads manual until the repository has a stable release process. A real upload should require an
 explicit confirmation, wait for hosted certification and upload smoke, then verify that the version became canonical.
@@ -1265,9 +1263,9 @@ uv run coworld deploy-audit --owner Metta-AI --fail-on-alert
 ```
 
 The audit reports each repo's default branch, Coworld name, active leagues, current canonical version, latest uploaded
-version, upload workflow mode, latest default-branch upload run, and deploy alerts.
-The scheduled Metta audit workflow prefers `COWORLD_DEPLOY_AUDIT_GITHUB_TOKEN` for sibling private-repo reads and falls
-back to the workflow token when the secret is not configured.
+version, upload workflow mode, latest default-branch upload run, and deploy alerts. The scheduled Metta audit workflow
+prefers `COWORLD_DEPLOY_AUDIT_GITHUB_TOKEN` for sibling private-repo reads and falls back to the workflow token when the
+secret is not configured.
 
 ### Non-CLI Docker/API
 

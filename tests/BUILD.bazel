@@ -1,11 +1,15 @@
+load("@aspect_rules_js//js:defs.bzl", "js_test")
 load("@py_deps//:deps.bzl", "PYTEST_OPTS", "TEST_DEPS")
 load("//bazel:pyproject.bzl", "pyproject_test")
 load("//bazel:pytest.bzl", "pytest_test_typed")
 load("//bazel:ruff.bzl", "ruff_lint")
 
 _MANIFEST_COMPATIBILITY = "test_manifest_compatibility.py"
+
 _PACKAGE = "packages/coworld/tests"
+
 _LABEL = "//" + _PACKAGE
+
 _PYTEST_ARGS = [
     "--rootdir=" + _PACKAGE,
     "--confcutdir=" + _PACKAGE,
@@ -19,7 +23,10 @@ _PYTEST_ARGS = [
 ] + [
     item
     for key, value in PYTEST_OPTS.get(_LABEL, {}).items()
-    for item in ["-o", key + "=" + value]
+    for item in [
+        "-o",
+        key + "=" + value,
+    ]
 ]
 
 # Bare-source filegroup consumed by //:import_linter_test so grimp can
@@ -28,7 +35,10 @@ _PYTEST_ARGS = [
 # in `:_tests_lib`; this only ships the .py files for parsing.
 filegroup(
     name = "import_linter_srcs",
-    srcs = glob(["**/*.py"], exclude = ["**/fixtures/**"]),
+    srcs = glob(
+        ["**/*.py"],
+        exclude = ["**/fixtures/**"],
+    ),
     visibility = ["//visibility:public"],
 )
 
@@ -36,15 +46,6 @@ filegroup(
 # `:generated_schema_files`) against coworld.types' dynamic Pydantic
 # schema output.
 pyproject_test(
-    test_srcs = glob(
-        ["**/test_*.py"],
-        exclude = [
-            "**/__pycache__/**",
-            "**/fixtures/**",
-            _MANIFEST_COMPATIBILITY,
-        ],
-        allow_empty = True,
-    ),
     extra_tags = [
         "no-sandbox",
         "requires-network",
@@ -68,6 +69,15 @@ pyproject_test(
     # app_backend); ship its src tree so the ruff lint sorts the tests'
     # `coworld.*` imports first-party.
     ruff_context = ["//packages/coworld:coworld_lint_srcs"],
+    test_srcs = glob(
+        ["**/test_*.py"],
+        allow_empty = True,
+        exclude = [
+            "**/__pycache__/**",
+            "**/fixtures/**",
+            _MANIFEST_COMPATIBILITY,
+        ],
+    ),
     typecheck = False,
 )
 
@@ -95,4 +105,12 @@ ruff_lint(
     name = "_manifest_compatibility",
     srcs = [_MANIFEST_COMPATIBILITY],
     context = ["//packages/coworld:coworld_lint_srcs"],
+)
+
+js_test(
+    name = "paintarena_replay_test",
+    size = "small",
+    copy_data_to_bin = False,
+    data = ["//packages/coworld:paintarena_static_replay_files"],
+    entry_point = "paintarena_replay.test.mjs",
 )

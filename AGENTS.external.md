@@ -53,9 +53,9 @@ https://github.com/Metta-AI/coworld/issues with the command, league and Coworld 
 
 ## Automatic project guidance
 
-Automatic updates require a `.coworld-project` file containing `player` or `coworld`.
-`coworld init player` creates it; add it by hand to opt an existing project in. Manifest files alone do not qualify.
-The managed block points to the current [Softmax agent guide](https://softmax.com/agents.md).
+Automatic updates require a `.coworld-project` file containing `player` or `coworld`. `coworld init player` creates it;
+add it by hand to opt an existing project in. Manifest files alone do not qualify. The managed block points to the
+current [Softmax agent guide](https://softmax.com/agents.md).
 
-See [automatic project guidance](https://docs.softmax.com/coworld/cli#automatic-project-guidance) for command target selection,
-qualifying roots, ancestor opt-outs, managed blocks, and manual removal.
+See [automatic project guidance](https://docs.softmax.com/coworld/cli#automatic-project-guidance) for command target
+selection, qualifying roots, ancestor opt-outs, managed blocks, and manual removal.

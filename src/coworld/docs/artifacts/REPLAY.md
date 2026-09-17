@@ -44,8 +44,8 @@ back to tick 0 and continues until a user pauses or seeks.
 Replays are consumed by:
 
 - replay viewers, either local or hosted;
-- graders, diagnosers, and optimizers through the [episode bundle](EPISODE_BUNDLE.md) `replay` token; reporters
-  through their `episodes` tool (spec 0061);
+- graders, diagnosers, and optimizers through the [episode bundle](EPISODE_BUNDLE.md) `replay` token; reporters through
+  their `episodes` tool (spec 0061);
 - humans and agents through `coworld replay` for local replay files and `coworld replays` / `coworld replay-open` for
   hosted episode artifacts.
 
@@ -64,13 +64,13 @@ The episode bundle stores replay bytes as `replay` inside the outer zip. Bundle 
 - Local filename: `replay`.
 - Hosted artifact: `REPLAY_URI`, stored as raw `replay.replay`.
 - Episode bundle entry: `replay`.
-- Static viewer mode: immutable bundle `index.html`, with a host-bootstrapped `#replay=` fragment that does not vary
-  the entrypoint's network URL (`?replay=` remains a local/legacy fallback).
+- Static viewer mode: immutable bundle `index.html`, with a host-bootstrapped `#replay=` fragment that does not vary the
+  entrypoint's network URL (`?replay=` remains a local/legacy fallback).
 - Fallback replay server mode: same game image, with `COGAME_LOAD_REPLAY_URI` pointing at the replay bytes.
 - Replay viewer default: autoplay and loop from the recorded end back to tick 0.
 
-Certification checks that the replay file exists. Without a declared static bundle, it also verifies that the game
-image can load the replay through `/client/replay` and `/replay`. A declared static bundle replaces that legacy route
+Certification checks that the replay file exists. Without a declared static bundle, it also verifies that the game image
+can load the replay through `/client/replay` and `/replay`. A declared static bundle replaces that legacy route
 requirement and must be verified in a browser before upload.
 
 ## See Also

@@ -1,10 +1,12 @@
 # Coworlds Expert Agent
 
-A Claude Code agent that knows how to design and build Softmax Coworlds — game architecture, player policies, runnables, and optimization loops.
+A Claude Code agent that knows how to design and build Softmax Coworlds — game architecture, player policies, runnables,
+and optimization loops.
 
 ## What it knows
 
-- **Design principles** — the derivation chain (game → optimizer → graders/reporters), grader philosophy, common mistakes
+- **Design principles** — the derivation chain (game → optimizer → graders/reporters), grader philosophy, common
+  mistakes
 - **Player policy design** — orientation-first, trust the LLM, persona through context, memory as key capability
 - **Schema contracts** — manifest fields, role contracts, artifact formats, env vars
 - **Collaboration patterns** — understand before implementing, trace derivation chains, interview before proposing
@@ -12,8 +14,9 @@ A Claude Code agent that knows how to design and build Softmax Coworlds — game
 ## Runtime choice
 
 The agent starts new Coworld designs by comparing Observatory-hosted (`platform-hosted`) container players with
-`game-hosted` file players. The [runtime guide](https://github.com/Metta-AI/coworld/blob/main/src/coworld/docs/PLAYER_RUNTIMES.md) links both contracts and the game author's additional
-execution, isolation, output, and privacy responsibilities.
+`game-hosted` file players. The
+[runtime guide](https://github.com/Metta-AI/coworld/blob/main/src/coworld/docs/PLAYER_RUNTIMES.md) links both contracts
+and the game author's additional execution, isolation, output, and privacy responsibilities.
 
 ## Install
 
@@ -36,6 +39,7 @@ ln -s /path/to/metta/packages/coworld/agents/coworlds-expert-agent/knowledge \
 ## Usage
 
 Once installed, the agent is available in Claude Code sessions within your project. Launch it when you need guidance on:
+
 - Designing graders/reporters/diagnosers for your game
 - Designing or improving a player policy
 - Structuring your manifest for certification
@@ -59,8 +63,8 @@ coworlds-expert-agent/
 
 ## Skills
 
-Skills are task-focused guides a player author (or agent) follows directly. Copy a skill into your
-project's `.claude/skills/` directory to use it:
+Skills are task-focused guides a player author (or agent) follows directly. Copy a skill into your project's
+`.claude/skills/` directory to use it:
 
 ```bash
 cp -r skills/upload-player-artifact /path/to/your-coworld/.claude/skills/

@@ -1,5 +1,5 @@
 <!doctype html>
-<meta charset="utf-8">
+<meta charset="utf-8" />
 <title>Coworld Paint Arena Replay Client</title>
 <style>
   body {
@@ -41,7 +41,7 @@
     color: #637089;
     font-size: 11px;
     font-weight: 800;
-    letter-spacing: .04em;
+    letter-spacing: 0.04em;
     text-transform: uppercase;
   }
   #status {
@@ -76,7 +76,7 @@
   .score::before {
     background: var(--color);
     border-radius: 999px;
-    content: "";
+    content: '';
     flex: 0 0 auto;
     height: 10px;
     width: 10px;
@@ -91,7 +91,9 @@
     background: #d8e0ec;
     border: 1px solid #b8c4d8;
     border-radius: 8px;
-    box-shadow: inset 0 1px 0 rgba(255, 255, 255, .8), 0 18px 50px rgba(23, 32, 51, .12);
+    box-shadow:
+      inset 0 1px 0 rgba(255, 255, 255, 0.8),
+      0 18px 50px rgba(23, 32, 51, 0.12);
     display: grid;
     gap: 3px;
     overflow: hidden;
@@ -101,7 +103,7 @@
     aspect-ratio: 1;
     background: #f8fafc;
     border-radius: 5px;
-    box-shadow: inset 0 1px 0 rgba(255, 255, 255, .85);
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.85);
     min-height: 0;
     min-width: 0;
     overflow: hidden;
@@ -125,11 +127,11 @@
     font-size: 13px;
     font-weight: 900;
     place-items: center;
-    text-shadow: 0 1px 1px rgba(0, 0, 0, .3);
+    text-shadow: 0 1px 1px rgba(0, 0, 0, 0.3);
   }
   .agent::after {
     content: attr(data-heading);
-    font-size: min(42px, calc(var(--cell-size, 24px) * .72));
+    font-size: min(42px, calc(var(--cell-size, 24px) * 0.72));
     line-height: 1;
   }
   .agent-0 {
@@ -217,209 +219,212 @@
 <script type="module">
   const notifyHost = (message) => {
     if (window.parent !== window) {
-      window.parent.postMessage({ src: "coworld-replay", ...message }, "*");
+      window.parent.postMessage({ src: 'coworld-replay', ...message }, '*')
     }
-  };
-  notifyHost({ type: "loading" });
+  }
+  notifyHost({ type: 'loading' })
 
-  const arena = document.getElementById("arena");
-  const arenaShell = document.getElementById("arenaShell");
-  const status = document.getElementById("status");
-  const scores = document.getElementById("scores");
-  const play = document.getElementById("play");
-  const pause = document.getElementById("pause");
-  const slower = document.getElementById("slower");
-  const faster = document.getElementById("faster");
-  const scrubber = document.getElementById("scrubber");
-  const colors = ["#2563eb", "#dc2626", "#059669", "#7c3aed"];
-  const headingSymbols = { up: "↑", down: "↓", left: "←", right: "→", stay: "•" };
-  let frames = [];
-  let results = {};
-  let frameIndex = 0;
-  let speed = 1;
-  let timer = null;
+  const arena = document.getElementById('arena')
+  const arenaShell = document.getElementById('arenaShell')
+  const status = document.getElementById('status')
+  const scores = document.getElementById('scores')
+  const play = document.getElementById('play')
+  const pause = document.getElementById('pause')
+  const slower = document.getElementById('slower')
+  const faster = document.getElementById('faster')
+  const scrubber = document.getElementById('scrubber')
+  const colors = ['#2563eb', '#dc2626', '#059669', '#7c3aed']
+  const headingSymbols = { up: '↑', down: '↓', left: '←', right: '→', stay: '•' }
+  let frames = []
+  let results = {}
+  let frameIndex = 0
+  let speed = 1
+  let timer = null
 
   function replayUrl() {
-    return new URLSearchParams(location.hash.slice(1)).get("replay")
-      || new URLSearchParams(location.search).get("replay");
+    return (
+      new URLSearchParams(location.hash.slice(1)).get('replay') || new URLSearchParams(location.search).get('replay')
+    )
   }
 
   function replayCompression(bytes) {
-    if (bytes[0] === 0x1f && bytes[1] === 0x8b) return "gzip";
-    const zlib = bytes.length >= 2
-      && (bytes[0] & 15) === 8
-      && (bytes[0] >> 4) <= 7
-      && ((bytes[0] << 8) | bytes[1]) % 31 === 0;
-    return zlib ? "deflate" : null;
+    if (bytes[0] === 0x1f && bytes[1] === 0x8b) return 'gzip'
+    const zlib =
+      bytes.length >= 2 && (bytes[0] & 15) === 8 && bytes[0] >> 4 <= 7 && ((bytes[0] << 8) | bytes[1]) % 31 === 0
+    return zlib ? 'deflate' : null
   }
 
   async function parseReplay(bytes, compression) {
     const decoded = compression
       ? await new Response(new Blob([bytes]).stream().pipeThrough(new DecompressionStream(compression))).arrayBuffer()
-      : bytes;
-    return JSON.parse(new TextDecoder().decode(decoded));
+      : bytes
+    return JSON.parse(new TextDecoder().decode(decoded))
   }
 
   function receiveContainerReplay() {
-    status.textContent = "Connecting";
-    const websocketUrl = new URL(window.location.href);
-    websocketUrl.protocol = websocketUrl.protocol === "https:" ? "wss:" : "ws:";
-    websocketUrl.pathname = websocketUrl.pathname.replace(/\/client\/replay(\/.*)?$/, "/replay$1");
+    status.textContent = 'Connecting'
+    const websocketUrl = new URL(window.location.href)
+    websocketUrl.protocol = websocketUrl.protocol === 'https:' ? 'wss:' : 'ws:'
+    websocketUrl.pathname = websocketUrl.pathname.replace(/\/client\/replay(\/.*)?$/, '/replay$1')
     return new Promise((resolve, reject) => {
-      const socket = new WebSocket(websocketUrl);
+      const socket = new WebSocket(websocketUrl)
       socket.onmessage = (event) => {
-        const message = JSON.parse(event.data);
-        if (message.type !== "replay") return;
-        resolve(message);
-        socket.close();
-      };
-      socket.onerror = () => reject(new Error("Replay connection failed"));
-      socket.onclose = () => reject(new Error("Replay connection closed"));
-    });
+        const message = JSON.parse(event.data)
+        if (message.type !== 'replay') return
+        resolve(message)
+        socket.close()
+      }
+      socket.onerror = () => reject(new Error('Replay connection failed'))
+      socket.onclose = () => reject(new Error('Replay connection closed'))
+    })
   }
 
   function draw(message) {
-    scrubber.value = frameIndex;
-    scores.replaceChildren(...message.scores.map((score, slot) => {
-      const scoreEl = document.createElement("div");
-      scoreEl.className = "score";
-      scoreEl.style.setProperty("--color", colors[slot]);
-      scoreEl.textContent = `${message.player_names[slot]}: ${score}`;
-      return scoreEl;
-    }));
-    status.textContent = `Frame ${frameIndex + 1}/${frames.length} · tick ${message.tick}/${message.max_ticks} · ${speed}x`;
-    resizeArena(message);
-    const agents = new Map(message.positions.map((position, slot) => [`${position[0]},${position[1]}`, slot]));
-    const previous = frames[Math.max(frameIndex - 1, 0)] || message;
-    const cells = [];
+    scrubber.value = frameIndex
+    scores.replaceChildren(
+      ...message.scores.map((score, slot) => {
+        const scoreEl = document.createElement('div')
+        scoreEl.className = 'score'
+        scoreEl.style.setProperty('--color', colors[slot])
+        scoreEl.textContent = `${message.player_names[slot]}: ${score}`
+        return scoreEl
+      })
+    )
+    status.textContent = `Frame ${frameIndex + 1}/${frames.length} · tick ${message.tick}/${message.max_ticks} · ${speed}x`
+    resizeArena(message)
+    const agents = new Map(message.positions.map((position, slot) => [`${position[0]},${position[1]}`, slot]))
+    const previous = frames[Math.max(frameIndex - 1, 0)] || message
+    const cells = []
     for (let y = 0; y < message.height; y += 1) {
       for (let x = 0; x < message.width; x += 1) {
-        const key = `${x},${y}`;
-        const owner = message.tile_owners[y * message.width + x];
-        const cell = document.createElement("div");
-        cell.className = "cell";
-        if (owner >= 0) cell.classList.add(`owned-${owner}`);
+        const key = `${x},${y}`
+        const owner = message.tile_owners[y * message.width + x]
+        const cell = document.createElement('div')
+        cell.className = 'cell'
+        if (owner >= 0) cell.classList.add(`owned-${owner}`)
         if (agents.has(key)) {
-          const slot = agents.get(key);
-          cell.className = `cell agent owned-${slot} agent-${slot}`;
-          cell.dataset.heading = headingFor(previous.positions[slot], message.positions[slot]);
+          const slot = agents.get(key)
+          cell.className = `cell agent owned-${slot} agent-${slot}`
+          cell.dataset.heading = headingFor(previous.positions[slot], message.positions[slot])
         }
-        cells.push(cell);
+        cells.push(cell)
       }
     }
-    arena.replaceChildren(...cells);
+    arena.replaceChildren(...cells)
   }
 
   function resizeArena(message) {
-    const bounds = arenaShell.getBoundingClientRect();
-    if (bounds.width <= 0 || bounds.height <= 0) return;
-    const style = window.getComputedStyle(arena);
-    const gap = Number.parseFloat(style.columnGap) || 0;
-    const paddingX = (Number.parseFloat(style.paddingLeft) || 0) + (Number.parseFloat(style.paddingRight) || 0);
-    const paddingY = (Number.parseFloat(style.paddingTop) || 0) + (Number.parseFloat(style.paddingBottom) || 0);
-    const borderX = (Number.parseFloat(style.borderLeftWidth) || 0) + (Number.parseFloat(style.borderRightWidth) || 0);
-    const borderY = (Number.parseFloat(style.borderTopWidth) || 0) + (Number.parseFloat(style.borderBottomWidth) || 0);
-    const cellSize = Math.floor(Math.min(
-      (bounds.width - paddingX - borderX - gap * (message.width - 1)) / message.width,
-      (bounds.height - paddingY - borderY - gap * (message.height - 1)) / message.height,
-    ));
-    if (cellSize <= 0) return;
-    arena.style.setProperty("--cell-size", `${cellSize}px`);
-    arena.style.gridTemplateColumns = `repeat(${message.width}, ${cellSize}px)`;
-    arena.style.gridAutoRows = `${cellSize}px`;
-    arena.style.width = `${cellSize * message.width + gap * (message.width - 1) + paddingX + borderX}px`;
-    arena.style.height = `${cellSize * message.height + gap * (message.height - 1) + paddingY + borderY}px`;
+    const bounds = arenaShell.getBoundingClientRect()
+    if (bounds.width <= 0 || bounds.height <= 0) return
+    const style = window.getComputedStyle(arena)
+    const gap = Number.parseFloat(style.columnGap) || 0
+    const paddingX = (Number.parseFloat(style.paddingLeft) || 0) + (Number.parseFloat(style.paddingRight) || 0)
+    const paddingY = (Number.parseFloat(style.paddingTop) || 0) + (Number.parseFloat(style.paddingBottom) || 0)
+    const borderX = (Number.parseFloat(style.borderLeftWidth) || 0) + (Number.parseFloat(style.borderRightWidth) || 0)
+    const borderY = (Number.parseFloat(style.borderTopWidth) || 0) + (Number.parseFloat(style.borderBottomWidth) || 0)
+    const cellSize = Math.floor(
+      Math.min(
+        (bounds.width - paddingX - borderX - gap * (message.width - 1)) / message.width,
+        (bounds.height - paddingY - borderY - gap * (message.height - 1)) / message.height
+      )
+    )
+    if (cellSize <= 0) return
+    arena.style.setProperty('--cell-size', `${cellSize}px`)
+    arena.style.gridTemplateColumns = `repeat(${message.width}, ${cellSize}px)`
+    arena.style.gridAutoRows = `${cellSize}px`
+    arena.style.width = `${cellSize * message.width + gap * (message.width - 1) + paddingX + borderX}px`
+    arena.style.height = `${cellSize * message.height + gap * (message.height - 1) + paddingY + borderY}px`
   }
 
   function headingFor(previous, current) {
-    const dx = current[0] - previous[0];
-    const dy = current[1] - previous[1];
-    if (dx > 0) return headingSymbols.right;
-    if (dx < 0) return headingSymbols.left;
-    if (dy > 0) return headingSymbols.down;
-    if (dy < 0) return headingSymbols.up;
-    return headingSymbols.stay;
+    const dx = current[0] - previous[0]
+    const dy = current[1] - previous[1]
+    if (dx > 0) return headingSymbols.right
+    if (dx < 0) return headingSymbols.left
+    if (dy > 0) return headingSymbols.down
+    if (dy < 0) return headingSymbols.up
+    return headingSymbols.stay
   }
 
   function showFrame(index) {
-    frameIndex = Math.min(Math.max(index, 0), frames.length - 1);
-    draw(frames[frameIndex]);
+    frameIndex = Math.min(Math.max(index, 0), frames.length - 1)
+    draw(frames[frameIndex])
   }
 
   function stop() {
-    clearInterval(timer);
-    timer = null;
+    clearInterval(timer)
+    timer = null
   }
 
   function start() {
-    stop();
-    if (frames.length === 0) return;
+    stop()
+    if (frames.length === 0) return
     timer = setInterval(() => {
       if (frameIndex >= frames.length - 1) {
-        showFrame(0);
+        showFrame(0)
       } else {
-        showFrame(frameIndex + 1);
+        showFrame(frameIndex + 1)
       }
-    }, 200 / speed);
+    }, 200 / speed)
   }
 
   async function loadReplay() {
     try {
-      notifyHost({ type: "phase", phase: "bundle_ready" });
-      const url = replayUrl();
-      let message;
+      notifyHost({ type: 'phase', phase: 'bundle_ready' })
+      const url = replayUrl()
+      let message
       if (url) {
-        notifyHost({ type: "phase", phase: "replay_fetch_start" });
-        const response = await fetch(url);
-        if (!response.ok) throw new Error(`Replay request failed (${response.status})`);
-        const bytes = new Uint8Array(await response.arrayBuffer());
-        const compression = replayCompression(bytes);
+        notifyHost({ type: 'phase', phase: 'replay_fetch_start' })
+        const response = await fetch(url)
+        if (!response.ok) throw new Error(`Replay request failed (${response.status})`)
+        const bytes = new Uint8Array(await response.arrayBuffer())
+        const compression = replayCompression(bytes)
         notifyHost({
-          type: "phase",
-          phase: "replay_fetch_end",
+          type: 'phase',
+          phase: 'replay_fetch_end',
           bytes: bytes.byteLength,
           compressed: compression !== null,
-        });
-        message = await parseReplay(bytes, compression);
+        })
+        message = await parseReplay(bytes, compression)
       } else {
-        message = await receiveContainerReplay();
+        message = await receiveContainerReplay()
       }
       if (!Array.isArray(message.frames) || message.frames.length === 0) {
-        throw new Error("Replay contains no frames");
+        throw new Error('Replay contains no frames')
       }
-      frames = message.frames.map(frame => ({ ...frame, player_names: message.player_names }));
-      results = message.results;
-      scrubber.max = frames.length - 1;
-      notifyHost({ type: "phase", phase: "replay_parsed" });
-      showFrame(0);
-      start();
-      setTimeout(() => notifyHost({ type: "ready" }), 0);
+      frames = message.frames.map((frame) => ({ ...frame, player_names: message.player_names }))
+      results = message.results
+      scrubber.max = frames.length - 1
+      notifyHost({ type: 'phase', phase: 'replay_parsed' })
+      showFrame(0)
+      start()
+      setTimeout(() => notifyHost({ type: 'ready' }), 0)
     } catch (error) {
-      stop();
-      const message = error instanceof Error ? error.message : String(error);
-      status.textContent = `Replay unavailable · ${message}`;
-      notifyHost({ type: "error", message });
+      stop()
+      const message = error instanceof Error ? error.message : String(error)
+      status.textContent = `Replay unavailable · ${message}`
+      notifyHost({ type: 'error', message })
     }
   }
 
-  play.onclick = () => start();
-  pause.onclick = () => stop();
+  play.onclick = () => start()
+  pause.onclick = () => stop()
   slower.onclick = () => {
-    speed = Math.max(speed / 2, 0.25);
-    if (timer) start();
-    if (frames.length > 0) draw(frames[frameIndex]);
-  };
+    speed = Math.max(speed / 2, 0.25)
+    if (timer) start()
+    if (frames.length > 0) draw(frames[frameIndex])
+  }
   faster.onclick = () => {
-    speed = Math.min(speed * 2, 8);
-    if (timer) start();
-    if (frames.length > 0) draw(frames[frameIndex]);
-  };
+    speed = Math.min(speed * 2, 8)
+    if (timer) start()
+    if (frames.length > 0) draw(frames[frameIndex])
+  }
   scrubber.oninput = () => {
-    stop();
-    showFrame(Number(scrubber.value));
-  };
-  window.addEventListener("resize", () => {
-    if (frames.length > 0) resizeArena(frames[frameIndex]);
-  });
-  loadReplay();
+    stop()
+    showFrame(Number(scrubber.value))
+  }
+  window.addEventListener('resize', () => {
+    if (frames.length > 0) resizeArena(frames[frameIndex])
+  })
+  loadReplay()
 </script>
