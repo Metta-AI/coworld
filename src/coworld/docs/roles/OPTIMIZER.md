@@ -75,7 +75,7 @@ uv run coworld scrimmage <manifest.json|coworld-id> <player-image> \
 Run it without `--episodes` for one completed local episode, or pass `--episodes N` (`-n N`) for repeated optimizer
 experience. With more than one episode the game seed is incremented per episode and each episode's artifacts go in an
 `episode-NNNN` subdirectory. `scrimmage` runs one episode against the target player image passed as its required
-argument; it accepts the same `--run`, secret, Bedrock, timeout, and replay verification syntax.
+argument; it accepts the same `--run`, secret, timeout, and replay verification syntax.
 
 ### Inputs
 

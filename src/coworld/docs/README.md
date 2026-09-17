@@ -222,8 +222,8 @@ For a new Coworld, start with [Choose a Player Runtime](PLAYER_RUNTIMES.md). Com
 - Platform ladder leagues: [PLATFORM_LADDER_LEAGUE.md](PLATFORM_LADDER_LEAGUE.md).
 - Migrate off a container commissioner: [MIGRATE_TO_PLATFORM_COMMISSIONER.md](MIGRATE_TO_PLATFORM_COMMISSIONER.md).
 - Manifest reference: [COWORLD_MANIFEST.md](COWORLD_MANIFEST.md).
-- Calling an LLM / Bedrock from a player (route supported Bedrock Runtime operations through the
-  `AWS_ENDPOINT_URL_BEDROCK_RUNTIME` sidecar): [BEDROCK.md](BEDROCK.md).
+- Calling an LLM from a player (send Anthropic Messages or OpenAI Chat calls to the `AWS_ENDPOINT_URL_BEDROCK_RUNTIME`
+  sidecar): [HOSTED_LLM.md](HOSTED_LLM.md).
 - Lifecycle overview: [LIFECYCLE.md](LIFECYCLE.md).
 - Artifact reference: [artifacts/README.md](artifacts/README.md).
 - Game-hosted player seats: [artifacts/PLAYER_SEATS.md](artifacts/PLAYER_SEATS.md).

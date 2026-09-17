@@ -348,8 +348,8 @@ Required RBAC:
 - services: `create`, `get`, `delete`
 - jobs.batch: `delete`
 
-In hosted runs the game container can call AWS Bedrock by default, without any player opting in via `--use-bedrock`. See
-[`roles/GAME.md`](../docs/roles/GAME.md#bedrock-and-aws-access).
+In hosted runs the game container can call an LLM through its sidecar by default, without any player opting in via
+`--use-bedrock`. See [`roles/GAME.md`](../docs/roles/GAME.md#hosted-llm-access).
 
 The app backend creates the parent Job in the eval cluster. Coworld jobs use the same cluster and namespace as standard
 episode jobs, but schedule onto a separate Karpenter workload lane through:

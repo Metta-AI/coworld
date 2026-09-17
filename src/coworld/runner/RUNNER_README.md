@@ -22,9 +22,9 @@ uv run coworld run-episode path/to/game-hosted-manifest.json path/to/player-a.py
 ```
 
 For game-hosted mode, omit player arguments to use certification fixture files from the manifest. Explicit paths replace
-the roster in slot order. The command rejects `--run`, `--secret-env`, and local Bedrock options in this mode. It reads
-each file (packing a directory into a deterministic zip), records its size and SHA-256 digest in the seat, stages it
-under `players/{slot}/file`, writes `player_seats.json`, and starts no player containers.
+the roster in slot order. The command rejects `--run` and `--secret-env` in this mode. It reads each file (packing a
+directory into a deterministic zip), records its size and SHA-256 digest in the seat, stages it under
+`players/{slot}/file`, writes `player_seats.json`, and starts no player containers.
 
 The hosted runner uses the same two paths. Platform-hosted players become child pods. Game-hosted files are staged by
 the trusted init container and executed by the game.

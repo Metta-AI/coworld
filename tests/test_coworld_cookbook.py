@@ -43,8 +43,8 @@ def test_cookbook_answers_cli_faqs() -> None:
 
 def test_cookbook_faq_commands_match_cli_help() -> None:
     command_help_checks = {
-        ("play",): ["--variant", "--use-bedrock", "--secret-env", "--run"],
-        ("run-episode",): ["--episodes", "--variant", "--use-bedrock", "--secret-env", "--run"],
+        ("play",): ["--variant", "--secret-env", "--run"],
+        ("run-episode",): ["--episodes", "--variant", "--secret-env", "--run"],
         ("scrimmage",): ["--variant"],
         ("xp-request", "create"): [],
         ("xp-request", "episodes"): [],

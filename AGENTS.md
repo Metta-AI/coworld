@@ -4,14 +4,14 @@ Public CLI and Python package for Softmax v2 tournaments ("Coworlds"). This pack
 entrypoint, local episode/play tooling, Coworld uploads, policy uploads/submission helpers, the Paint Arena reference
 Coworld, and the public Coworld docs shipped with the package. It depends on `softmax-cli` for auth-backed commands.
 
-## ⚠️ Building a player that calls an LLM / Bedrock? Read [`src/coworld/docs/BEDROCK.md`](src/coworld/docs/BEDROCK.md) FIRST.
+## ⚠️ Building a player that calls an LLM? Read [`src/coworld/docs/HOSTED_LLM.md`](src/coworld/docs/HOSTED_LLM.md) FIRST.
 
-The one rule: in a hosted episode, **send every Bedrock call to the `AWS_ENDPOINT_URL_BEDROCK_RUNTIME` endpoint** (the
-per-pod sidecar that signs with the runner identity). Hitting the real AWS host instead returns HTTP 403 with the
-injected placeholder credentials. Standard SDKs (boto3, `AnthropicBedrock`, AWS SDK for JS, `@cogweb/llm`) honor that
-environment variable automatically; hand-rolled HTTP must read it. The sidecar supports InvokeModel and Converse,
-including both streaming forms. Full contract, examples, and troubleshooting:
-[`BEDROCK.md`](src/coworld/docs/BEDROCK.md).
+The one rule: in a hosted episode, **send every model call to the `AWS_ENDPOINT_URL_BEDROCK_RUNTIME` endpoint** (the
+per-pod sidecar that forwards to OpenRouter with the platform's key; the variable name is historical). Calling a public
+provider host instead fails authentication because the pod holds no real key. Point the Anthropic or OpenAI SDK at that
+base URL with a placeholder API key; hand-rolled HTTP must read it. The sidecar serves `/v1/messages` and
+`/v1/chat/completions`, non-streaming only. Full contract, examples, and troubleshooting:
+[`HOSTED_LLM.md`](src/coworld/docs/HOSTED_LLM.md).
 
 ## Choose the player runtime first
 
@@ -151,10 +151,9 @@ source of truth. They are generated docs and `$schema` targets; `test_types.py` 
   manifest, Coworld build-hook, source-sharing, and browser-verification contract.
 - [src/coworld/docs/COWORLD_MANIFEST.md](src/coworld/docs/COWORLD_MANIFEST.md) - manifest semantics and schema source of
   truth.
-- [src/coworld/docs/BEDROCK.md](src/coworld/docs/BEDROCK.md) - **how a player calls Bedrock at runtime** (the
-  `AWS_ENDPOINT_URL_BEDROCK_RUNTIME` sidecar endpoint, supported Bedrock Runtime operations, 403 troubleshooting), the
-  hosted Bedrock upload contract, and robustness to shared-quota throttling. Required reading before building an LLM
-  player.
+- [src/coworld/docs/HOSTED_LLM.md](src/coworld/docs/HOSTED_LLM.md) - **how a player calls an LLM at runtime** (the
+  `AWS_ENDPOINT_URL_BEDROCK_RUNTIME` sidecar endpoint, supported wire formats, model naming, troubleshooting), the
+  hosted upload contract, and robustness to rate limits. Required reading before building an LLM player.
 - [src/coworld/docs/LIFECYCLE.md](src/coworld/docs/LIFECYCLE.md) - local and hosted episode lifecycle.
 - [src/coworld/docs/TOURNAMENTS.md](src/coworld/docs/TOURNAMENTS.md) - league bracket tournaments (`tour_...` objects,
   waves, bracket matches) and how to read their episodes via the v2 API.

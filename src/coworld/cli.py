@@ -787,16 +787,17 @@ def play(
         bool,
         typer.Option(
             "--use-bedrock",
+            hidden=True,
             help="Enable AWS Bedrock access for player containers using host AWS credentials.",
         ),
     ] = False,
     aws_profile: Annotated[
         str | None,
-        typer.Option("--aws-profile", help="AWS profile to use when resolving --use-bedrock credentials."),
+        typer.Option("--aws-profile", hidden=True, help="AWS profile to use when resolving --use-bedrock credentials."),
     ] = None,
     aws_region: Annotated[
         str | None,
-        typer.Option("--aws-region", help="AWS region to use for --use-bedrock player containers."),
+        typer.Option("--aws-region", hidden=True, help="AWS region to use for --use-bedrock player containers."),
     ] = None,
     secret_env: Annotated[
         list[str] | None,
@@ -1206,14 +1207,21 @@ def upload_policy(
         bool,
         typer.Option(
             "--use-bedrock",
-            help="Enable AWS Bedrock access for this policy. Sets USE_BEDROCK=true in policy environment.",
+            help=(
+                "Attach the hosted LLM sidecar to this policy's player pod so it can call a model through the "
+                "platform's OpenRouter key. Sets USE_BEDROCK=true in the policy environment (the flag keeps its "
+                "original name)."
+            ),
         ),
     ] = False,
     bedrock_model: Annotated[
         str | None,
         typer.Option(
             "--bedrock-model",
-            help="Bedrock model ID for this policy. Requires --use-bedrock and sets BEDROCK_MODEL.",
+            help=(
+                "Model for this policy as a canonical OpenRouter slug, e.g. anthropic/claude-haiku-4.5. "
+                "Requires --use-bedrock and sets BEDROCK_MODEL."
+            ),
         ),
     ] = None,
     server: Annotated[str, typer.Option("--server", help="Observatory API server URL.")] = DEFAULT_SUBMIT_SERVER,
@@ -1388,16 +1396,17 @@ def run_episode(
         bool,
         typer.Option(
             "--use-bedrock",
+            hidden=True,
             help="Enable AWS Bedrock access for player containers using host AWS credentials.",
         ),
     ] = False,
     aws_profile: Annotated[
         str | None,
-        typer.Option("--aws-profile", help="AWS profile to use when resolving --use-bedrock credentials."),
+        typer.Option("--aws-profile", hidden=True, help="AWS profile to use when resolving --use-bedrock credentials."),
     ] = None,
     aws_region: Annotated[
         str | None,
-        typer.Option("--aws-region", help="AWS region to use for --use-bedrock player containers."),
+        typer.Option("--aws-region", hidden=True, help="AWS region to use for --use-bedrock player containers."),
     ] = None,
     secret_env: Annotated[
         list[str] | None,
@@ -1550,16 +1559,17 @@ def scrimmage(
         bool,
         typer.Option(
             "--use-bedrock",
+            hidden=True,
             help="Enable AWS Bedrock access for player containers using host AWS credentials.",
         ),
     ] = False,
     aws_profile: Annotated[
         str | None,
-        typer.Option("--aws-profile", help="AWS profile to use when resolving --use-bedrock credentials."),
+        typer.Option("--aws-profile", hidden=True, help="AWS profile to use when resolving --use-bedrock credentials."),
     ] = None,
     aws_region: Annotated[
         str | None,
-        typer.Option("--aws-region", help="AWS region to use for --use-bedrock player containers."),
+        typer.Option("--aws-region", hidden=True, help="AWS region to use for --use-bedrock player containers."),
     ] = None,
     secret_env: Annotated[
         list[str] | None,
