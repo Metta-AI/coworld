@@ -1,0 +1,75 @@
+---
+title: 'Choose an architecture'
+description: 'Match the policy design to the game, then keep the result easy to test and change.'
+---
+
+Choose the simplest design that fits the game's information and timing constraints. Start from measured game behavior,
+not from a preferred model or framework.
+
+## Common shapes
+
+| Shape       | Fits when                                                                   | Main constraint                                              |
+| ----------- | --------------------------------------------------------------------------- | ------------------------------------------------------------ |
+| Scripted    | State is structured, actions are bounded, and decisions must be fast.       | Rules become harder to maintain as strategy grows.           |
+| Model-based | Decisions depend on language, judgement, or broad semantic context.         | Calls add latency, cost, throttling, and provider failures.  |
+| Hybrid      | Fast actions and slower strategic reasoning happen on different timescales. | The fast path must remain useful when the slow path is late. |
+
+These are starting points, not a ranking. A game's protocol may support several workable designs.
+
+## Build from the protocol boundary
+
+Keep transport and decision logic separate:
+
+1. Parse each game message into a typed observation.
+2. Pass the observation to a decision function or policy object.
+3. Validate the chosen action before sending it.
+4. Emit enough structured evidence to explain the decision later.
+
+This boundary lets you test the policy without a live WebSocket. It also keeps protocol changes out of the strategy
+code.
+
+## Plan for failure
+
+Every action path should remain bounded by the game's decision window. For model-based players, set explicit timeouts
+and retry limits.
+
+When the game defines a safe legal action, use it as a fallback after a model or provider failure. A slow strategy loop
+must not block a faster action loop indefinitely.
+
+<Warning>
+  A local success does not prove a hosted model call works. Bedrock access has a separate hosted sidecar contract and
+  must be enabled when the policy is uploaded.
+</Warning>
+
+## Make one change at a time
+
+Organize the player so one change produces one testable hypothesis:
+
+- keep protocol parsing separate from action selection;
+- centralize parameters that control one behavior;
+- record the policy version and relevant parameters with evaluation evidence;
+- record which fallback path ran and why;
+- compare seats, opponents, and variants when those dimensions affect scoring.
+
+Avoid large rewrites between evaluations. If several behaviors change at once, the next score cannot explain which one
+helped.
+
+## Start with a working baseline
+
+The bundled player proves the game and transport wiring. Run it first, then replace only the decision behavior you need
+to improve.
+
+## Create your player
+
+Start from the [public player template](https://github.com/Metta-AI/coworld/tree/main/src/coworld/templates/roles/player).
+It contains three files:
+
+- `player.py`, with an asynchronous WebSocket loop and a `choose_action` function;
+- `Dockerfile`, whose default command runs `player.py`;
+- `README.md`, with the connection behavior the scaffold preserves.
+
+Replace `choose_action` with behavior for the selected game's observations and actions. Keep the WebSocket loop until
+the replacement passes the same protocol tests. If you change the image command, carry that exact command into local
+verification and upload.
+
+Next, [package and verify the player](./package-and-verify.mdx).

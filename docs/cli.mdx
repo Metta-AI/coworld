@@ -1,0 +1,81 @@
+---
+title: 'Coworld CLI'
+description: 'Find the command for a Coworld workflow and use built-in help for exact options.'
+---
+
+The `coworld` command covers local development, hosted policies, competition, and episode evidence. This page is a map,
+not a second command reference. Run built-in help for the version you have installed.
+
+```bash
+uv run coworld --help
+uv run coworld <command> --help
+```
+
+Every command's help describes the command, and the workflow commands (download, upload, submit, certify, episodes,
+logs, replays, leagues, rounds) end with the documentation page for that workflow. A failed Observatory request prints
+the HTTP status, the server's detail, the next step, the request id, and a documentation link instead of a traceback.
+
+## Read documentation
+
+```bash
+coworld docs                        # public index, no login
+coworld docs coworld/cli             # Markdown page; .md suffix is optional
+coworld docs --skill                 # agent skill
+coworld docs --local                 # installed references, offline
+coworld docs --local COOKBOOK.md     # packaged cookbook
+```
+
+Online paths are site-relative; URLs, traversal, queries, and fragments are rejected.
+Use `--skill` on its own. Installed `--local` paths also accept an optional `.md` suffix, such as `COOKBOOK` or `roles/PLAYER.md`.
+
+## Start a player project
+
+```bash
+coworld init player ./my-player
+```
+
+Omit the directory to use the current directory. The target must be missing or empty; existing files are never overwritten.
+This copies the packaged platform-hosted WebSocket skeleton (`player.py`, `Dockerfile`, and `README.md`).
+Adapt its observations and actions to your game's protocol; it is not a game-hosted file player or a ready-made competitive policy.
+The command creates `.coworld-project` containing `player`, an `AGENTS.md` block linking docs and the role README, and a `CLAUDE.md` import.
+Explicit initialization creates guidance even without agent detection or with `COWORLD_AGENT_GUIDANCE=0`; that opt-out controls subsequent automatic updates.
+Run `coworld leagues` and read the selected league's participation guide before adapting the player.
+
+## Common workflows
+
+| Goal                             | Start with                                                        |
+| -------------------------------- | ----------------------------------------------------------------- |
+| Discover a Coworld and league    | `coworld leagues`, `coworld divisions`, `coworld show`            |
+| Download and inspect a package   | `coworld download`, `coworld list`, `coworld show`                |
+| Run a player locally             | `coworld run-episode`, `coworld play`, `coworld replay`           |
+| Upload a policy version          | `coworld upload-policy`                                           |
+| Submit a version to a league     | `coworld submit`, `coworld submissions`                           |
+| Inspect competition              | `coworld memberships`, `coworld rounds`, `coworld results`        |
+| Debug hosted episodes            | `coworld episodes`, `coworld episode-logs`, `coworld replay-open` |
+| Run controlled hosted evaluation | `coworld xp-request`                                              |
+| Author a Coworld                 | `coworld build`, `coworld certify`, `coworld upload-coworld`      |
+
+Commands that call Softmax use the saved credential described in [Authentication and
+identities](../guides/authentication.mdx).
+
+<Note>
+  Commands and flags can change with the installed Coworld version. Treat `--help` as authoritative and keep scripts
+  pinned to the package version used in your project.
+</Note>
+
+## Automatic project guidance
+
+For coding agents, these commands update a managed block in `AGENTS.md`: `build`, `certify`, `download`, `run-episode`, `scrimmage`, `play`, `upload-policy`, `upload-coworld`, and `submit`. Updates follow command-option validation and precede workflow effects.
+Discovery starts at `build --project` or the local manifest's parent for `upload-coworld`, `certify`, `run-episode`, `scrimmage`, and `play`.
+Remote manifest references, `download`, `submit`, `upload-policy`, and `upload-coworld --from-coworld` use the current directory.
+Discovery walks ancestors to the Git/worktree root, stopping at home or the filesystem root if reached first. Without Git, it walks to home or the filesystem root.
+Automatic updates are opt-in. Only the nearest `.coworld-project` file containing `player` or `coworld` qualifies.
+`coworld init player` creates this file; add it by hand to opt an existing project in, for example with `printf 'player\n' > .coworld-project`.
+Manifest files alone do not qualify. Home and filesystem roots never qualify.
+The small managed block points agents to [the current Softmax agent guide](https://softmax.com/agents.md), maintained server-side, and names the docs commands and opt-outs.
+Under Claude Code, `CLAUDE.md` imports `AGENTS.md`; existing content and newline style are preserved, and symlink aliases are updated once.
+Escaping guidance symlinks or malformed/duplicate markers print a repair hint to stderr and exit 1 before the workflow.
+Only markers on their own lines delimit a block; inline mentions are preserved. Identical content is not rewritten; actual edits are announced on stderr.
+Set `COWORLD_AGENT_GUIDANCE=0` or create `.coworld-no-agent-guidance` in the qualifying directory or any ancestor through the discovery boundary to opt out before guidance files are read.
+Opt-out preserves existing blocks. To remove them, delete the lines from `<!-- BEGIN:coworld-agent-rules -->` through `<!-- END:coworld-agent-rules -->` in each file.
+Help, docs, list, show, status, and auth commands do not update project guidance. Runtime/manifest validation can still fail after the guidance update.

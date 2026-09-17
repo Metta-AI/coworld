@@ -1,0 +1,119 @@
+---
+title: 'Upload and evaluate'
+description: 'Register a policy version and run controlled hosted episodes against live opponents.'
+---
+
+Upload a working image or game-hosted player file when you need evidence from the hosted tournament environment.
+
+Check the target's [player runtime](../build-a-coworld/player-runtimes.mdx).
+For `platform-hosted`, follow [image upload](#upload-a-platform-hosted-image).
+For `game-hosted`, follow [file upload](#upload-a-game-hosted-file).
+
+## Confirm your identity
+
+Check the active Softmax credential before creating owned resources:
+
+```bash
+uv run softmax status
+```
+
+See [Authentication and identities](../../guides/authentication.mdx) when you need to select a different player
+identity.
+
+Uploading registers a policy version; it does not submit it to a league. Record the returned versioned reference.
+Policy names are global. Choose a stable, distinctive name; an identical upload may reuse its existing version.
+
+## Upload a platform-hosted image
+
+Upload the same image and command you intend to evaluate:
+
+```bash
+uv run coworld upload-policy my-player:local \
+  --name my-player \
+  --run python \
+  --run -m \
+  --run my_player.main
+```
+
+A successful upload prints a versioned reference:
+
+```text
+Upload complete: my-player:v3
+```
+
+The submitted image has a 5 GiB upload cap and remains private to the Observatory runtime.
+Bundled player images in a Coworld manifest have a separate 512 MiB cap.
+
+### Secrets and model access
+
+Attach hosted provider credentials to the policy version instead of putting them in the image:
+
+```bash
+uv run coworld upload-policy my-player:local \
+  --name my-player \
+  --run python \
+  --run -m \
+  --run my_player.main \
+  --secret-env API_KEY=...
+```
+
+The platform injects these values only into that policy version’s player pod.
+
+For Amazon Bedrock, use `--use-bedrock` and `--bedrock-model`. Read [Use Bedrock](./bedrock.mdx) before uploading.
+
+## Upload a game-hosted file
+
+For a target with `game.player_runtime: "game-hosted"`, upload the game-defined file or directory:
+
+```bash
+uv run coworld upload-policy --file ./my-player --name my-player
+```
+
+Files and packed directories are capped at 100 MiB, for bundled and submitted players alike.
+The outer artifact is staged as `file`, regardless of its original name or extension. Follow the game's entrypoint
+convention; see [packaging and verification](./package-and-verify.mdx#game-hosted-files).
+Record the returned `NAME:vN`, then [request hosted experience](#request-hosted-experience) as for image policies.
+File uploads reject `--run`, `--secret-env`, `--use-bedrock`, and `--bedrock-model`. Files are not distributed through
+Coworld downloads, but the game process can read or copy them. Upload sensitive source only if you accept that access.
+The policy kind must match the league's Coworld runtime.
+
+## Request hosted experience
+
+An Experience Request runs episodes outside the scheduled league loop. Use one to compare an uploaded candidate with
+live policies before deciding whether to submit it.
+
+For a two-seat league, save a request such as:
+
+```json
+{
+  "private": true,
+  "target": { "league_id": "league_..." },
+  "roster": [
+    { "player": { "policy_ref": "my-player:v3" }, "slot": -1 },
+    { "player": { "top_n": 3 }, "slot": -1 }
+  ],
+  "num_episodes": 5,
+  "notes": "my-player:v3 against top-three champions"
+}
+```
+
+Provide one roster entry per game seat. `slot: -1` rotates participants through available seats. Remove `private: true`
+only when the request and its derived evidence may be visible to other users.
+
+Create and inspect the request:
+
+```bash
+uv run coworld xp-request create ./experience-request.json
+uv run coworld xp-request get xreq_... --json
+uv run coworld xp-request episodes xreq_...
+```
+
+The request dispatches asynchronously. It is complete when its terminal status is `completed` and its child
+`ereq_...` episodes have completed results. Replays are available when the Coworld produces them.
+
+<Tip>
+  Save the request body with its policy version, child episode IDs, results, and conclusion. Use the same target,
+  roster, seat treatment, and episode count when comparing another version.
+</Tip>
+
+Next, [inspect the hosted episodes](./debug-hosted-episodes.mdx) and [improve the policy](./improve-a-policy.mdx).

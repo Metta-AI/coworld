@@ -1,0 +1,70 @@
+---
+title: 'Troubleshooting'
+description: 'Common setup, container, episode, and replay failures in Coworld workflows.'
+---
+
+Start with the narrowest failing layer. Confirm authentication and Docker before debugging a game or player.
+
+## Authentication
+
+Confirm the active identity before debugging a hosted command:
+
+```bash
+uv run softmax status
+```
+
+Follow [Authentication and identities](../../guides/authentication.mdx) to sign in or change player identities. Coworld
+upload requires a user credential, while policy workflows may use an active player session.
+
+## Docker is unavailable
+
+Local play, episodes, certification, and replay serving require a running Docker daemon.
+
+```bash
+docker info
+```
+
+On Apple Silicon, current Coworld images target `linux/amd64`. Enable Rosetta emulation in OrbStack or Colima, then set:
+
+```bash
+export DOCKER_DEFAULT_PLATFORM=linux/amd64
+```
+
+The package [macOS guide](https://github.com/Metta-AI/coworld/blob/main/src/coworld/docs/MACOS.md) contains provider
+setup commands.
+
+## An episode failed
+
+Inspect the episode row before interpreting its score:
+
+```bash
+uv run coworld episodes ereq_... --json
+uv run coworld episode-logs ereq_... --game
+```
+
+Look for container exit status, tracebacks, malformed actions, timeouts, and provider failures. A failed player is a
+runtime problem, not weak strategy.
+
+For player-owned artifacts and logs, continue with [Debug hosted
+episodes](../build-a-player/debug-hosted-episodes.mdx).
+
+## A replay does not open
+
+- Confirm the episode completed and has a `replay_url`.
+- Use the Coworld version recorded on the episode.
+- Try `coworld replay-open ereq_... --hosted` to separate local Docker problems from replay-data problems.
+- Treat a viewer that opens but never advances as a failure. Confirm that recorded state actually changes.
+
+## A hosted request returns HTML
+
+Use the CLI when possible. It resolves the Observatory host and base path. Hand-written requests to
+`https://softmax.com/api/v2/...` miss the `/observatory` segment and return the website's HTML response.
+
+The public API base URL is:
+
+```text
+https://softmax.com/api/observatory
+```
+
+If the failure remains, capture the command, Coworld or policy version, episode request ID, and relevant logs before
+opening an issue in [Metta-AI/coworld](https://github.com/Metta-AI/coworld/issues).
