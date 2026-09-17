@@ -35,7 +35,7 @@ def test_init_copies_packaged_player_and_explicit_guidance(tmp_path, monkeypatch
     assert (project / "CLAUDE.md").read_text() == IMPORT_BLOCK + "\n"
     assert "platform-hosted WebSocket skeleton" in result.output
     assert "game-hosted file player" in result.output
-    assert "https://docs.softmax.com/coworld/build-a-player/choose-a-coworld" in result.output
+    assert "https://softmax.com/docs/coworld/build-a-player/choose-a-coworld" in result.output
     assert "coworld leagues" in result.output
     before = {p.name: p.read_bytes() for p in project.iterdir()}
     assert CliRunner().invoke(app, args).exit_code == 2

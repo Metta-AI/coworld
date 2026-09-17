@@ -36,7 +36,7 @@ def test_shared_budget_rejection_preserves_retry_guidance(client, httpserver, up
     detail = {
         "type": "api_rate_limit_exceeded",
         "retry_after_seconds": 60,
-        "documentation_url": "https://docs.softmax.com/guides/rate-limits",
+        "documentation_url": "https://softmax.com/docs/guides/rate-limits",
     }
     httpserver.expect_request("/observatory/whoami").respond_with_json(
         {"detail": detail}, status=429, headers={"X-RateLimit-Outcome": "rejected", "Retry-After": "60"}

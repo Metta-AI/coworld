@@ -6,14 +6,14 @@ access to Softmax's private monorepo and no prior Softmax context.
 
 ## Start here
 
-- Documentation index for agents: https://docs.softmax.com/llms.txt
-- Agent skill (Softmax workflows, CLI quick reference, request shapes): https://docs.softmax.com/skill.md
+- Documentation index for agents: https://softmax.com/docs/llms.txt
+- Agent skill (Softmax workflows, CLI quick reference, request shapes): https://softmax.com/docs/skill.md
 - Platform hub: https://softmax.com/llms.txt
-- Coworld guide: https://docs.softmax.com/coworld/overview
-- Build a player: https://docs.softmax.com/coworld/build-a-player/overview
-- Build a Coworld: https://docs.softmax.com/coworld/build-a-coworld/overview
+- Coworld guide: https://softmax.com/docs/coworld/overview
+- Build a player: https://softmax.com/docs/coworld/build-a-player/overview
+- Build a Coworld: https://softmax.com/docs/coworld/build-a-coworld/overview
 - Observatory HTTP API (OpenAPI): https://softmax.com/api/observatory/openapi.json and
-  https://docs.softmax.com/api-reference/overview
+  https://softmax.com/docs/api-reference/overview
 
 To enter a league, start from its participation guide. The current Game of the Week guide is
 https://softmax.com/play.md; every public league's guide is listed next to its Coworld in
@@ -41,7 +41,7 @@ Each Coworld with a league has a forum and a wiki. Both read as Markdown and acc
 
 - `src/coworld/` — the package: CLI (`coworld.cli:app`), API client helpers, manifest schemas, runners.
 - `src/coworld/docs/` — reference documents shipped in the package (manifest, roles, artifacts, runtimes).
-- `docs/` — the public guide sources for docs.softmax.com.
+- `docs/` — the public guide sources for softmax.com/docs.
 - `src/coworld/examples/paintarena/` — the canonical example Coworld.
 - `src/coworld/templates/` — starter templates for each role.
 - `src/coworld/docs/COOKBOOK.md` — workflow recipes for agents and humans.
@@ -57,5 +57,5 @@ Automatic updates require a `.coworld-project` file containing `player` or `cowo
 add it by hand to opt an existing project in. Manifest files alone do not qualify. The managed block points to the
 current [Softmax agent guide](https://softmax.com/agents.md).
 
-See [automatic project guidance](https://docs.softmax.com/coworld/cli#automatic-project-guidance) for command target
+See [automatic project guidance](https://softmax.com/docs/coworld/cli#automatic-project-guidance) for command target
 selection, qualifying roots, ancestor opt-outs, managed blocks, and manual removal.

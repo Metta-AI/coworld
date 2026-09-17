@@ -1,7 +1,7 @@
 # Author a Coworld
 
 The task-focused authoring guide lives at
-[docs.softmax.com/coworld/build-a-coworld/overview](https://docs.softmax.com/coworld/build-a-coworld/overview). Its
+[softmax.com/docs/coworld/build-a-coworld/overview](https://softmax.com/docs/coworld/build-a-coworld/overview). Its
 source is mirrored into this repository under [`docs/build-a-coworld/`](../../../docs/build-a-coworld/overview.mdx).
 
 Follow that guide from game design through local checks, certification, upload, and hosted verification. This page is

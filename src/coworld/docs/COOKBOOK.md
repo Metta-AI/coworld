@@ -928,7 +928,7 @@ uv run coworld xp-request episodes xreq_...
 ```
 
 The body is passed through to the backend unchanged, so use the `POST /v2/experience-requests` schema in the generated
-[API reference](https://docs.softmax.com/api-reference/overview) (direct `coworld_id`/`variant_id`, or a `target` with
+[API reference](https://softmax.com/docs/api-reference/overview) (direct `coworld_id`/`variant_id`, or a `target` with
 `league_name`/`division_name`, plus a `roster` of `policy_ref`, `top_n`, or `random` participants). For a game-owned
 private episode input, set `game_config_overlay_secret` to the name published by the Coworld owner; do not place
 `secret://` references in public `game_config_overrides`. Stateful Coworlds may additionally set a typed `state` object.
