@@ -1,12 +1,15 @@
 import logging
+from datetime import UTC, datetime, timedelta
 from email.message import Message
 from io import BytesIO
+from pathlib import Path
 from urllib.error import HTTPError
 
 import httpx
 import pytest
 
 from coworld.runner import io as runner_io
+from coworld.runner.player_artifacts import ArtifactUploadTargets
 
 
 class _Response:
@@ -308,3 +311,41 @@ def test_relay_http_client_follows_redirects(monkeypatch: pytest.MonkeyPatch) ->
 
     assert runner_io._relay_http_client("http://relay.test:3128") is sentinel
     assert kwargs == {"proxy": "http://relay.test:3128", "timeout": 60.0, "follow_redirects": True}
+
+
+@pytest.mark.parametrize("streaming", [False, True])
+def test_upload_reads_current_mounted_target(tmp_path: Path, streaming: bool) -> None:
+    manifest = tmp_path / "targets.json"
+    uri = f"coworld-artifact+{manifest.as_uri()}#results.json"
+    for generation in range(2):
+        output = tmp_path / f"result-{generation}.json"
+        manifest.write_text(
+            ArtifactUploadTargets(
+                expires_at=datetime.now(UTC) + timedelta(hours=6), targets={"results.json": output.as_uri()}
+            ).model_dump_json()
+        )
+        if streaming:
+            runner_io.upload_file(uri, BytesIO(b"{}"), size=2, content_type="application/json")
+        else:
+            runner_io.upload_data(uri, b"{}", content_type="application/json")
+        assert output.read_bytes() == b"{}"
+
+
+@pytest.mark.parametrize("streaming", [False, True])
+@pytest.mark.parametrize("failure", ["expired", "missing-key"])
+def test_upload_rejects_unusable_mounted_target(tmp_path: Path, streaming: bool, failure: str) -> None:
+    manifest = tmp_path / "targets.json"
+    output = tmp_path / "result.json"
+    manifest.write_text(
+        ArtifactUploadTargets(
+            expires_at=datetime.now(UTC) + timedelta(hours=-1 if failure == "expired" else 6),
+            targets={"results.json": output.as_uri()} if failure == "expired" else {},
+        ).model_dump_json()
+    )
+    uri = f"coworld-artifact+{manifest.as_uri()}#results.json"
+    with pytest.raises(ValueError if failure == "expired" else KeyError):
+        if streaming:
+            runner_io.upload_file(uri, BytesIO(b"{}"), size=2, content_type="application/json")
+        else:
+            runner_io.upload_data(uri, b"{}", content_type="application/json")
+    assert not output.exists()

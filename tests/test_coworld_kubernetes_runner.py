@@ -14,7 +14,7 @@ import threading
 import time
 import zipfile
 from concurrent.futures import ThreadPoolExecutor
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from io import BytesIO
 from pathlib import Path
 from types import SimpleNamespace
@@ -51,6 +51,7 @@ from coworld.runner.kubernetes_runner import (
     _wait_for_episode_artifacts,
 )
 from coworld.runner.phase_timings import EpisodePhaseTimings, ProcessTimings, TimingClock
+from coworld.runner.player_artifacts import ArtifactUploadTargets
 from coworld.runner.runner import EpisodeArtifacts, EpisodeRunSpec, PlayerLaunchSpec, RunnableLaunchSpec
 from coworld.types import CoworldEpisodeJobSpec, CoworldHumanPlayerSpec, CoworldPlayerFileSpec, CoworldRunnableSpec
 
@@ -2457,19 +2458,59 @@ def test_create_game_service_exposes_human_proxy_without_rerouting_policy_player
     assert ports["human-player"].target_port == 8081
 
 
-def test_create_game_service_exposes_internal_artifact_upload_only_with_relay(monkeypatch):
+@pytest.mark.parametrize("relay_enabled", [False, True])
+def test_create_game_service_exposes_internal_artifact_upload(monkeypatch, relay_enabled):
     created: dict[str, Any] = {}
     core_v1 = SimpleNamespace(
         create_namespaced_service=lambda *, namespace, body: created.update({"namespace": namespace, "body": body})
     )
     monkeypatch.setenv("PLAYER_ARTIFACT_UPLOAD_URLS", '{"0":"https://s3.example/artifact"}')
-    monkeypatch.setenv("COWORLD_EGRESS_RELAY_URL", "http://egress-relay.jobs.svc.cluster.local:3128")
+    monkeypatch.delenv("COWORLD_EGRESS_RELAY_URL", raising=False)
+    if relay_enabled:
+        monkeypatch.setenv("COWORLD_EGRESS_RELAY_URL", "http://egress-relay.jobs.svc.cluster.local:3128")
 
     kubernetes_runner._create_game_service(core_v1, "jobs", "game-service", "job-id", [])
 
     ports = {port.name: port for port in created["body"].spec.ports}
     assert ports["player-artifact"].port == 9091
     assert ports["player-artifact"].target_port == 9091
+
+
+def test_player_artifact_upload_server_renews_mounted_targets_without_relay(monkeypatch, tmp_path):
+    manifest = tmp_path / "targets.json"
+    filename = "policy_artifact_0.zip"
+    monkeypatch.delenv("COWORLD_EGRESS_RELAY_URL", raising=False)
+    monkeypatch.setenv(
+        "PLAYER_ARTIFACT_UPLOAD_URLS", json.dumps({"0": f"coworld-artifact+{manifest.as_uri()}#{filename}"})
+    )
+    monkeypatch.setattr(kubernetes_runner, "PLAYER_ARTIFACT_PORT", 0)
+
+    server = kubernetes_runner._start_player_artifact_upload_server(["secret"])
+    assert server is not None
+    try:
+        monkeypatch.setattr(kubernetes_runner, "PLAYER_ARTIFACT_PORT", server.server_address[1])
+        url = kubernetes_runner._player_artifact_upload_url(0, "127.0.0.1", "secret")
+        assert url == f"http://127.0.0.1:{server.server_address[1]}/player-artifact/0/secret"
+        for generation in range(2):
+            output = tmp_path / f"artifact-{generation}.zip"
+            manifest.write_text(
+                ArtifactUploadTargets(
+                    expires_at=datetime.now(UTC) + timedelta(hours=6), targets={filename: output.as_uri()}
+                ).model_dump_json()
+            )
+            payload = f"artifact-{generation}".encode()
+            with urlopen(
+                Request(url, data=payload, method="PUT", headers={"Content-Type": "application/zip"}), timeout=2
+            ) as response:
+                assert response.status == 201
+            assert output.read_bytes() == payload
+            deadline = time.monotonic() + 1
+            while server.active_connections:
+                assert time.monotonic() < deadline
+                time.sleep(0.01)
+    finally:
+        server.shutdown()
+        server.server_close()
 
 
 def test_player_artifact_upload_server_accepts_periodic_overwrites(monkeypatch):
@@ -3180,14 +3221,17 @@ def test_create_player_pod_routes_every_sidecar_without_exposing_openrouter_key(
                     assert env.value is None
 
 
-def test_create_player_pod_forwards_artifact_upload_url_for_its_slot(monkeypatch):
+@pytest.mark.parametrize("relay_enabled", [False, True])
+def test_create_player_pod_forwards_artifact_upload_url_for_its_slot(monkeypatch, relay_enabled):
     created: dict[str, Any] = {}
     core_v1 = SimpleNamespace(create_namespaced_pod=lambda *, namespace, body: created.update({"body": body}))
     monkeypatch.setenv(
         "PLAYER_ARTIFACT_UPLOAD_URLS",
         '{"0": "https://s3.example/put/policy_artifact_0.zip", "1": "https://s3.example/put/policy_artifact_1.zip"}',
     )
-    monkeypatch.setenv("COWORLD_EGRESS_RELAY_URL", "http://egress-relay.jobs.svc.cluster.local:3128")
+    monkeypatch.delenv("COWORLD_EGRESS_RELAY_URL", raising=False)
+    if relay_enabled:
+        monkeypatch.setenv("COWORLD_EGRESS_RELAY_URL", "http://egress-relay.jobs.svc.cluster.local:3128")
     player = PlayerLaunchSpec(image="paintbot:latest", run=(), env={})
 
     kubernetes_runner._create_player_pod(
@@ -4175,3 +4219,16 @@ def test_init_entrypoint_does_not_import_kubernetes_client():
         capture_output=True,
         text=True,
     )
+
+
+@pytest.mark.parametrize("ancestor", [False, True])
+def test_zip_logs_rejects_symlinked_directories(tmp_path, ancestor):
+    private = tmp_path / "private"
+    (private / "logs").mkdir(parents=True)
+    (private / "logs" / "targets.json").write_text("private upload credentials")
+    link = tmp_path / "work"
+    link.symlink_to(private if ancestor else private / "logs", target_is_directory=True)
+    logs_dir = link / "logs" if ancestor else link
+
+    with zipfile.ZipFile(io.BytesIO(kubernetes_runner._zip_logs(logs_dir))) as archive:
+        assert archive.namelist() == []

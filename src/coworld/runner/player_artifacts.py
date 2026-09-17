@@ -9,6 +9,7 @@ from uuid import UUID
 import httpx
 from pydantic import AwareDatetime, BaseModel, ConfigDict, Field, TypeAdapter, model_validator
 
+ARTIFACT_TARGETS_PATH = "/var/run/coworld-uploads/targets.json"
 DIAGNOSTIC_TARGETS_PATH = "/var/run/coworld-diagnostics/targets.json"
 
 
@@ -34,12 +35,15 @@ class PlayerArtifactUploadGrant(BaseModel):
     fields: dict[str, str]
 
 
-class PersistentDiagnosticTargets(BaseModel):
+class ArtifactUploadTargets(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    session: PersistentDiagnosticSession
-    expires_at: datetime
+    expires_at: AwareDatetime
     targets: dict[str, str]
+
+
+class PersistentDiagnosticTargets(ArtifactUploadTargets):
+    session: PersistentDiagnosticSession
     artifact_upload: PlayerArtifactUploadGrant | None = None
 
 
