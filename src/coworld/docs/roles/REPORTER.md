@@ -173,13 +173,13 @@ The data tools are thin clients of the **public platform API** — every `episod
 authenticated HTTP request to the same `/v2` routes any user could hit, presenting a short-lived run-scoped token. Only
 `llm` talks to a non-API backend.
 
-| Tool family | What it gives you                                                                                                                                                                                                      |
-| ----------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `episodes`  | Episode artifacts by episode-request id: results, first-party event stream, replay, game logs, per-player logs, error info — typed sugar over the public episode routes                                                |
-| `platform`  | `get(path, query)` over an allowlisted subset of public platform read APIs: leagues, rounds, standings, players, coworlds, experience requests                                                                         |
-| `reports`   | Declared direct dependencies via `dependencies()`, plus described output listings and fetches by run id. Dependency entries are concrete completed runs selected by the platform graph, not guest-side search results. |
-| `llm`       | Native Anthropic/OpenAI requests (`anthropic-messages`/`openai-chat`) plus legacy Bedrock-shaped calls (`converse`/`invoke`) — host-signed, metered against your run's budget, billed to the run's requester           |
-| `output`    | `emit(name, part-value)` for each declared output — submitted through the same outputs API external reporters use, authenticated by the run context; `progress(pct, note)`; `log(level, msg)`                          |
+| Tool family | What it gives you                                                                                                                                                                                                                                                            |
+| ----------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `episodes`  | Episode artifacts by episode-request id: results, first-party event stream, replay, game logs, per-player logs, error info — typed sugar over the public episode routes                                                                                                      |
+| `platform`  | `get(path, query)` over an allowlisted subset of public platform read APIs: leagues, rounds, standings, players, coworlds, experience requests                                                                                                                               |
+| `reports`   | Declared direct dependencies via `dependencies()`, plus described output listings and fetches by run id. Dependency entries are concrete completed runs selected by the platform graph, not guest-side search results.                                                       |
+| `llm`       | Native Anthropic/OpenAI requests (`anthropic-messages`/`openai-chat`) forwarded to OpenRouter, plus legacy Bedrock-shaped calls (`converse`/`invoke`) that the host still signs and sends to Bedrock — both metered against your run's budget, billed to the run's requester |
+| `output`    | `emit(name, part-value)` for each declared output — submitted through the same outputs API external reporters use, authenticated by the run context; `progress(pct, note)`; `log(level, msg)`                                                                                |
 
 Key semantics:
 

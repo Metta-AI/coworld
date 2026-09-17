@@ -104,9 +104,9 @@ The game defines the player-file format. Files and deterministic directory zips 
 be combined with `--run`, `--secret-env`, `--use-bedrock`, or `--bedrock-model`.
 
 Add `--use-bedrock` (and `--bedrock-model MODEL`, which your player reads from `BEDROCK_MODEL`) during `upload-policy`
-when the hosted policy uses Bedrock; see [Bedrock for Coworld players](BEDROCK.md). Add `--secret-env NAME=value` for
-other hosted provider credentials. For local Bedrock tests, use `run-episode --use-bedrock` or `play --use-bedrock` with
-the AWS profile and region options.
+when the hosted policy calls a model through the platform's LLM sidecar; see
+[Hosted LLM calls for Coworld players](HOSTED_LLM.md). Add `--secret-env NAME=value` for other hosted provider
+credentials. For local model calls, pass your own provider key with `--secret-env`.
 
 ### How do I know my policy passed self-play?
 
@@ -496,7 +496,7 @@ run_coworld_episode(spec, artifacts, timeout_seconds=3600)
 For raw Docker, translate the request's `game_config` into the mounted `config.json` and translate each request
 `players[]` entry into one player container.
 
-## Use Secrets Or Bedrock Locally
+## Use Secrets Locally
 
 ### CLI
 
@@ -509,17 +509,9 @@ uv run coworld run-episode tmp/paintarena/coworld_manifest.json paintarena-playe
   --secret-env MODEL_NAME=...
 ```
 
-For AWS Bedrock access in local player containers:
-
-```bash
-uv run coworld run-episode tmp/paintarena/coworld_manifest.json paintarena-player:local \
-  --run python --run -m --run coworld.examples.paintarena.player.player \
-  --use-bedrock --aws-profile default --aws-region us-west-2
-```
-
-`--aws-profile` and `--aws-region` require `--use-bedrock`. Local `--use-bedrock` uses your own AWS credentials; it does
-not prove the hosted upload is correct. See [Bedrock for Coworld players](BEDROCK.md) for what hosted tournaments
-require.
+There is no LLM sidecar in local runs, so a player that calls a model locally needs your own provider key, for example
+`--secret-env OPENROUTER_API_KEY=...`. A local call does not prove the hosted upload is correct. See
+[Hosted LLM calls for Coworld players](HOSTED_LLM.md) for what hosted tournaments require.
 
 ### Non-CLI Docker-Backed Python
 
@@ -555,27 +547,8 @@ run_coworld_episode(
 For raw Docker, prefer `-e API_KEY` with `API_KEY` set in the parent shell over `-e API_KEY=value`, so the secret value
 does not appear in the command line.
 
-For local browser play with Bedrock, use `play_coworld`'s Bedrock credential resolution:
-
-```python
-from pathlib import Path
-
-from coworld.play import play_coworld
-
-
-play_coworld(
-    Path("tmp/paintarena/coworld_manifest.json"),
-    player_images=["paintarena-player:local"],
-    player_run=["python", "-m", "coworld.examples.paintarena.player.player"],
-    use_bedrock=True,
-    aws_profile="default",
-    aws_region="us-west-2",
-    on_ready=lambda session: print(session.links.global_),
-)
-```
-
-For headless `run_coworld_episode`, resolve AWS credentials in your script and pass `USE_BEDROCK`, `AWS_ACCESS_KEY_ID`,
-`AWS_SECRET_ACCESS_KEY`, optional `AWS_SESSION_TOKEN`, `AWS_REGION`, and `AWS_DEFAULT_REGION` through `secret_env`.
+For local browser play, `play_coworld` accepts the same `secret_env` mapping; for headless `run_coworld_episode`, pass
+provider keys such as `OPENROUTER_API_KEY` through `secret_env`.
 
 ## Act As A Player
 
@@ -721,20 +694,20 @@ uv run coworld upload-policy paintarena-player:local --name paintarena-player \
 ```
 
 Image-based `upload-policy` requires Docker because it hashes and pushes the image before registration. File-based
-upload does not use Docker. Neither form needs local AWS credentials. `--use-bedrock` stores `USE_BEDROCK=true` with the
-policy version. Hosted Coworld tournaments run on AWS; when a policy opts into Bedrock, the player pod runs with the
-tournament Bedrock IAM role, so the player does not need to bring its own Bedrock API key. Add `--bedrock-model MODEL`
-to set `BEDROCK_MODEL`; your player must read its model from `BEDROCK_MODEL`. For other LLM providers, pass API keys
-with `--secret-env`; those secrets are stored in AWS Secrets Manager and injected only into that policy version's player
-pod.
+upload does not use Docker. Neither form needs local provider credentials. `--use-bedrock` stores `USE_BEDROCK=true`
+with the policy version; when a policy opts in, the hosted player pod gets an LLM sidecar that forwards model calls to
+OpenRouter with the platform's key, so the player does not need to bring its own API key. Add `--bedrock-model MODEL` to
+set `BEDROCK_MODEL`; your player must read its model from `BEDROCK_MODEL`. For a provider the sidecar does not serve,
+pass API keys with `--secret-env`; those secrets are stored in AWS Secrets Manager and injected only into that policy
+version's player pod.
 
-A Bedrock player can pass local certification and still fail its first hosted rounds if it was uploaded without
-`--use-bedrock` or reads its model from the wrong variable. See [Bedrock for Coworld players](BEDROCK.md), which also
-covers staying robust when shared Bedrock capacity throttles (throttled episodes time out and score as a loss).
+An LLM player can pass local certification and still fail its first hosted rounds if it was uploaded without
+`--use-bedrock` or reads its model from the wrong variable. See [Hosted LLM calls for Coworld players](HOSTED_LLM.md),
+which also covers staying robust when shared model capacity rate-limits (blocked episodes time out and score as a loss).
 
 Game-hosted policies cannot carry secret environment variables. The Coworld author's game receives the submitted file in
 clear and controls its execution. Do not submit sensitive source unless you accept that trust boundary. If a player
-needs Bedrock, the game makes the call and sends `X-Coworld-Player-Slot` for cost attribution.
+needs a model call, the game makes the call and sends `X-Coworld-Player-Slot` for cost attribution.
 
 Game containers sometimes need hosted tournament/episode-only secrets, such as a signing key for a private worker.
 Upload those as Coworld secrets and reference them from the manifest with `secret://`:

@@ -1250,8 +1250,8 @@ def _create_player_pod(
         bedrock_sidecar_port = int(os.environ["BEDROCK_SIDECAR_PORT"])
         # Strip both the direct-access env and the reserved sidecar keys from the user's
         # policy/secret env, then apply platform-owned Bedrock app env LAST so it wins.
-        # USE_BEDROCK remains as the public enablement contract; endpoint/credential env
-        # routes the actual call through the sidecar.
+        # USE_BEDROCK remains as the public enablement contract (the name is historical);
+        # endpoint/credential env routes the actual call through the sidecar.
         player_env = {
             key: value
             for key, value in player_env.items()

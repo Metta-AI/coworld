@@ -178,24 +178,23 @@ a pod. Hosted episode Jobs have a 20 minute active deadline.
 `COWORLD_PLAYER_CPU_REQUEST`, `COWORLD_PLAYER_MEMORY_REQUEST`, and `COWORLD_PLAYER_CPU_LIMIT` apply only to
 platform-hosted child pods. They do not reserve or limit player work performed inside a game-hosted game container.
 
-## Bedrock and AWS access
+## Hosted LLM access
 
-In hosted runs your game image can call AWS Bedrock by default — Softmax wires Bedrock access into the game container at
-runtime, so you do not need to bake AWS keys into the image or have players opt in. Point any Bedrock client (for
-example `anthropic.AnthropicBedrock()`) at the default credential chain and it will work. The replay container gets the
-same treatment.
+In hosted episodes your game image can call an LLM by default — Softmax attaches an LLM sidecar to the game container at
+runtime, so you do not need to bake a provider key into the image or have players opt in. The sidecar forwards calls to
+OpenRouter with the platform's key and serves the Anthropic Messages (`/v1/messages`) and OpenAI Chat Completions
+(`/v1/chat/completions`) wire formats; the full contract is in [`HOSTED_LLM.md`](../HOSTED_LLM.md). Add
+`X-Coworld-Player-Slot: N` when a call is made on behalf of seat `N` so spend and rate limits attribute to that seat.
 
-In an episode the calls go through a Softmax-managed sidecar on loopback, not straight to AWS: your container is handed
-the sidecar's endpoint plus placeholder credentials, and the sidecar re-signs with the real identity. The env that
-selects the endpoint, credentials, and region (`AWS_ENDPOINT_URL_BEDROCK_RUNTIME`, `AWS_ACCESS_KEY_ID`,
-`AWS_SECRET_ACCESS_KEY`, `AWS_SESSION_TOKEN`, `AWS_REGION`, `AWS_DEFAULT_REGION`, `AWS_BEARER_TOKEN_BEDROCK`,
-`AWS_BEARER_TOKEN_BEDROCK_FILE`) is **reserved**: setting any of it in `manifest.game.runnable.env` is silently dropped,
-because an override there would route around the sidecar. Region is a platform setting, not a manifest one.
+Your container is handed the sidecar's base URL in `AWS_ENDPOINT_URL_BEDROCK_RUNTIME` (the name is historical) plus
+placeholder credential variables. The env that selects the endpoint, credentials, and region
+(`AWS_ENDPOINT_URL_BEDROCK_RUNTIME`, `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, `AWS_SESSION_TOKEN`, `AWS_REGION`,
+`AWS_DEFAULT_REGION`, `AWS_BEARER_TOKEN_BEDROCK`, `AWS_BEARER_TOKEN_BEDROCK_FILE`) is **reserved**: setting any of it in
+`manifest.game.runnable.env` is silently dropped, because an override there would route around the sidecar.
 
-This is hosted-runtime only. Local `coworld play` / `coworld run-episode` do not provide AWS credentials. For
-platform-hosted player Bedrock testing, pass host credentials with `--use-bedrock`; see
-[`PLAYER.md`](PLAYER.md#secrets-bedrock-and-llm-credentials). For other providers, use the player upload path. For
-game-hosted execution, configure the game through its
+This is hosted-runtime only. Local `coworld play` / `coworld run-episode` provide no sidecar and no provider
+credentials. For local platform-hosted player testing, pass your own provider key with `--secret-env`; see
+[`PLAYER.md`](PLAYER.md#secrets-and-llm-credentials). For game-hosted execution, configure the game through its
 [game-secret contract](../COWORLD_MANIFEST.md#hosted-episode-game-secrets) and hosted provider configuration; file
 policies cannot inject credentials. Local game credentials must be configured separately from player flags.
 

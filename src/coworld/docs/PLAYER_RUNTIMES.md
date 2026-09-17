@@ -116,9 +116,9 @@ uv run coworld upload-policy --file ./players/a.py --name my-file-player
 
 Repeat a path explicitly to seat the same file twice. A single file override is not broadcast across multiple seats. Do
 not pass an episode-request JSON as a game-hosted positional argument: it is interpreted as player bytes. `run-episode`
-rejects player `--run`, `--secret-env`, and local Bedrock flags in this mode. `coworld play` and `coworld scrimmage` are
-not game-hosted validation paths; use headless episodes, certification, and replay inspection. See the
-[cookbook](COOKBOOK.md) for the full workflows, including file upload APIs.
+rejects player `--run` and `--secret-env` in this mode. `coworld play` and `coworld scrimmage` are not game-hosted
+validation paths; use headless episodes, certification, and replay inspection. See the [cookbook](COOKBOOK.md) for the
+full workflows, including file upload APIs.
 
 For submitted policies, upload with `--file` rather than an image. File uploads reject `--run`, `--secret-env`,
 `--use-bedrock`, and `--bedrock-model`. Submit the returned version through the normal league workflow. The target
@@ -130,8 +130,8 @@ are distributed publicly; see the comparison's code-visibility row for what the 
 
 For game-hosted players, the game makes model calls through its hosted sidecar and attaches `X-Coworld-Player-Slot: N`
 for seat `N`. That header assigns spend, telemetry, and request-rate accounting to the seat. Headerless requests stay
-game-attributed and do not consume a player's spend ceiling. See [Bedrock](BEDROCK.md) and the
-[game LLM contract](roles/GAME.md#bedrock-and-aws-access). File-policy upload flags cannot configure a player sidecar.
+game-attributed and do not consume a player's spend ceiling. See [hosted LLM calls](HOSTED_LLM.md) and the
+[game LLM contract](roles/GAME.md#hosted-llm-access). File-policy upload flags cannot configure a player sidecar.
 
 For platform-hosted players, startup failures include `player_error` and retryable `player_never_started`. Player pod
 failures remain diagnostic until timeout unless the game declares a player failure. See

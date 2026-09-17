@@ -72,18 +72,18 @@ Game-hosted players receive no process environment or secret environment from th
 owns execution and must route each seat's output to the `log_uri` and optional `artifact_uri` in the seats document. The
 game's resources cover all player work; the platform creates no per-player container, pod, or compute allocation.
 
-## Secrets, Bedrock, and LLM credentials
+## Secrets and LLM credentials
 
 The upload and local secret flags below apply to platform-hosted container players. For game-hosted players,
-[the game makes and attributes model calls](GAME.md#bedrock-and-aws-access); player files carry no policy secrets.
+[the game makes and attributes model calls](GAME.md#hosted-llm-access); player files carry no policy secrets.
 
-If your player calls an LLM via Bedrock, read [`BEDROCK.md`](../BEDROCK.md) **before writing the call** — it is the
-authoritative runtime contract. The one rule: in a hosted episode, send every Bedrock call to the
-`AWS_ENDPOINT_URL_BEDROCK_RUNTIME` endpoint (the per-pod sidecar that signs with the runner identity) using InvokeModel,
-InvokeModelWithResponseStream, Converse, or ConverseStream. Standard SDKs (boto3, `AnthropicBedrock`, `@cogweb/llm`)
-honor that env var automatically; hand-rolled HTTP must read it, or the call hits real AWS with placeholder creds and
-403s into a silent non-LLM baseline. `BEDROCK.md` also covers the upload contract and shared-capacity throttling. This
-section covers the underlying secret-env mechanics.
+If your player calls an LLM, read [`HOSTED_LLM.md`](../HOSTED_LLM.md) **before writing the call** — it is the
+authoritative runtime contract. The one rule: in a hosted episode, send every model call to the
+`AWS_ENDPOINT_URL_BEDROCK_RUNTIME` endpoint (the per-pod sidecar that forwards to OpenRouter with the platform's key)
+using the Anthropic Messages or OpenAI Chat Completions wire format. Point a standard SDK at that base URL with a
+placeholder API key; a client that calls a public provider host directly fails authentication and turns into a silent
+non-LLM baseline. `HOSTED_LLM.md` also covers the upload contract, model naming, and rate-limit robustness. This section
+covers the underlying secret-env mechanics.
 
 Treat `manifest.player[].env` as public configuration. Bundled player images may be mirrored for download. Bundled
 player files are also downloaded with the Coworld package. Do not include secrets in either artifact.
@@ -101,17 +101,9 @@ Repeat `--run` for each argv token. `coworld play` and `coworld run-episode` inj
 into the local player containers started for that run. They are not written back to the manifest and should not be
 committed.
 
-For local AWS Bedrock testing, use:
-
-```bash
-uv run coworld run-episode <manifest.json> <player-image> \
-  --run python --run -m --run your_player.module \
-  --use-bedrock --aws-profile default --aws-region us-west-2
-```
-
-Local `--use-bedrock` resolves host AWS credentials with the AWS CLI, sets `USE_BEDROCK=true`, and passes
-`AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, `AWS_SESSION_TOKEN` when present, `AWS_REGION`, and `AWS_DEFAULT_REGION`
-into the local player container. `--aws-profile` and `--aws-region` are valid only with `--use-bedrock`.
+There is no LLM sidecar in local runs. For local model calls, pass your own provider key (for example
+`--secret-env OPENROUTER_API_KEY=...`) and have the player fall back to the public endpoint when
+`AWS_ENDPOINT_URL_BEDROCK_RUNTIME` is absent; see [`HOSTED_LLM.md`](../HOSTED_LLM.md#test-locally).
 
 For hosted league evaluation, secrets are attached to the submitted policy version, not to the Coworld manifest:
 
@@ -120,15 +112,16 @@ uv run coworld upload-policy <player-image> --name <policy-name> \
   --run python --run -m --run your_player.module \
   --secret-env API_KEY=... \
   --use-bedrock \
-  --bedrock-model us.amazon.nova-micro-v1:0
+  --bedrock-model anthropic/claude-haiku-4.5
 ```
 
 `upload-policy --secret-env` stores provider keys in AWS Secrets Manager and the hosted runner injects them only into
 that policy version's player pod. `upload-policy --use-bedrock` stores `USE_BEDROCK=true`; hosted tournament jobs then
-run that player pod with the Bedrock service account instead of requiring a Bedrock API key in the image or manifest.
-Use `--bedrock-model` when the player reads `BEDROCK_MODEL`; the model is stored with the policy env so uploads can
-select an account-enabled Bedrock model without rebuilding the image. For non-Bedrock LLM providers, use `--secret-env`
-for the provider key and keep model/provider selection in explicit environment variables that your player code reads.
+attach the LLM sidecar to that player pod, so the player calls a model through the platform's OpenRouter key instead of
+requiring its own key in the image or manifest. Use `--bedrock-model` when the player reads `BEDROCK_MODEL`; the model
+is stored with the policy env so uploads can change models without rebuilding the image. For a provider the sidecar does
+not serve, use `--secret-env` for the provider key and keep model/provider selection in explicit environment variables
+that your player code reads.
 
 ## Bundled players vs submitted policies
 
@@ -171,7 +164,7 @@ game's output artifacts after the episode. Players' per-slot actions plus the ga
   route.
 - [`COWORLD_MANIFEST.md`](../COWORLD_MANIFEST.md) — manifest guide and generated-schema pointer.
 - [`COOKBOOK.md`](../COOKBOOK.md) — policy-upload flow, secrets, league submission.
-- [`BEDROCK.md`](../BEDROCK.md) — hosted Bedrock upload contract and robustness to shared-quota throttling.
+- [`HOSTED_LLM.md`](../HOSTED_LLM.md) — hosted LLM sidecar contract, upload flags, and robustness to rate limits.
 - [`artifacts/EPISODE_BUNDLE.md`](../artifacts/EPISODE_BUNDLE.md) — how player-related artifacts can be bundled.
 - [`artifacts/PLAYER_LOGS.md`](../artifacts/PLAYER_LOGS.md) — diagnostic logs produced by player containers.
 - [`artifacts/PLAYER_ARTIFACT.md`](../artifacts/PLAYER_ARTIFACT.md) — optional artifact a player may checkpoint and

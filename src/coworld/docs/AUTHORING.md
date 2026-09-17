@@ -19,7 +19,7 @@ obligations, unsupported workflows, and validation for each mode.
 - [Game role](roles/GAME.md) and [player role](roles/PLAYER.md) for container and protocol behavior.
 - [Coworld lifecycle](LIFECYCLE.md) for local and hosted execution.
 - [Static replay viewers](STATIC_REPLAY_VIEWERS.md) when the replay client is a browser-only bundle.
-- [Bedrock for Coworld players](BEDROCK.md) when a bundled player calls a hosted model.
+- [Hosted LLM calls for Coworld players](HOSTED_LLM.md) when a bundled player calls a hosted model.
 - [Paint Arena](../examples/paintarena/README.md) for the smallest complete implementation.
 
 Use built-in help for the installed command surface:
