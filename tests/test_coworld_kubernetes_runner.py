@@ -14,6 +14,7 @@ import threading
 import time
 import zipfile
 from concurrent.futures import ThreadPoolExecutor
+from contextlib import nullcontext
 from datetime import UTC, datetime, timedelta
 from io import BytesIO
 from pathlib import Path
@@ -2250,6 +2251,7 @@ def test_game_hosted_kubernetes_episode_skips_player_resources_and_records_zero_
     kubernetes_runner._run_kubernetes_episode(
         _runtime_job("game-hosted", [object(), object()]),
         artifacts,
+        players_ready=threading.Event(),
         timeout_seconds=600.0,
         timings=timings,
         upload_timings=lambda current: timing_snapshots.append(current.phase_seconds()),
@@ -2278,6 +2280,7 @@ def test_game_hosted_kubernetes_episode_skips_player_resources_and_records_zero_
         ),
     ],
 )
+@pytest.mark.parametrize("launch_fails", [False, True])
 def test_run_kubernetes_episode_keeps_artifacts_authoritative_except_for_certification(
     monkeypatch,
     tmp_path,
@@ -2285,6 +2288,7 @@ def test_run_kubernetes_episode_keeps_artifacts_authoritative_except_for_certifi
     expected_player_start_timeout,
     episode_tags,
     expected_completion_waits,
+    launch_fails,
 ):
     artifacts = EpisodeArtifacts.create(tmp_path)
     artifacts.results_path.write_text("{}", encoding="utf-8")
@@ -2296,7 +2300,10 @@ def test_run_kubernetes_episode_keeps_artifacts_authoritative_except_for_certifi
     completion_waits: list[tuple[str, list[str], float]] = []
     pong_requirements: list[bool] = []
     timing_snapshots: list[dict[str, float]] = []
+    players_ready = threading.Event()
     startup_events: list[str] = []
+    launch_events: list[str] = []
+    patched_deadlines: list[int] = []
 
     async def noop_async(*_args, **_kwargs):
         return None
@@ -2304,13 +2311,18 @@ def test_run_kubernetes_episode_keeps_artifacts_authoritative_except_for_certifi
     async def record_global_startup_timeout(*_args, startup_timeout_seconds, on_connected, require_pong, **_kwargs):
         startup_timeouts.append(startup_timeout_seconds)
         pong_requirements.append(require_pong)
+        assert not players_ready.is_set()
         startup_events.append("viewer connected")
         on_connected()
-        clock["now"] = 130.0
+        clock["now"] += 4.0
 
-    def record_player_start(*_args, timeout_seconds, **_kwargs):
+    def record_player_start(*_args, timeout_seconds, timings, **_kwargs):
         player_start_timeouts.append(timeout_seconds)
+        assert players_ready.is_set()
         startup_events.append("players started")
+        assert timings.players[1].pod_uid == "player-pod-uid"
+        assert timings.players[1].create.seconds == 2.0
+        assert timings.clock.monotonic_ns + timings.players[1].create.start_ns == 340_000_000_000
 
     def record_timing_upload(timings):
         snapshot = timings.phase_seconds()
@@ -2319,6 +2331,7 @@ def test_run_kubernetes_episode_keeps_artifacts_authoritative_except_for_certifi
         clock["now"] += 1.0
 
     monkeypatch.setattr(kubernetes_runner, "STATE_PATH", state_path)
+    monkeypatch.setattr(kubernetes_runner, "COORDINATOR_SPEC_PATH", tmp_path / "job_spec.json")
     clock = {"now": 100.0}
     monkeypatch.setattr(kubernetes_runner.time, "monotonic", lambda: clock["now"])
     monkeypatch.setattr(kubernetes_runner.time, "monotonic_ns", lambda: int(clock["now"] * 1_000_000_000))
@@ -2328,9 +2341,19 @@ def test_run_kubernetes_episode_keeps_artifacts_authoritative_except_for_certifi
         lambda *, egress_enforcement_enabled: None,
     )
     monkeypatch.setattr(kubernetes_runner.client, "CoreV1Api", lambda _api_client: object())
+    monkeypatch.setattr(kubernetes_runner.client, "CoordinationV1Api", lambda _api_client: object())
+    monkeypatch.setattr(
+        kubernetes_runner.client,
+        "BatchV1Api",
+        lambda _api_client: SimpleNamespace(
+            patch_namespaced_job=lambda *, name, namespace, body: patched_deadlines.append(
+                body["spec"]["activeDeadlineSeconds"]
+            )
+        ),
+    )
     monkeypatch.setattr(kubernetes_runner, "_create_game_service", lambda *_args: None)
     monkeypatch.setattr(
-        kubernetes_runner, "_wait_for_health", lambda *_args, **_kwargs: clock.__setitem__("now", 120.0)
+        kubernetes_runner, "_wait_for_health", lambda *_args, **_kwargs: clock.__setitem__("now", clock["now"] + 20.0)
     )
     monkeypatch.setattr(kubernetes_runner, "_require_http_ok", lambda *_args, **_kwargs: None)
     monkeypatch.setattr(kubernetes_runner, "_require_bad_player_rejected", noop_async)
@@ -2338,7 +2361,7 @@ def test_run_kubernetes_episode_keeps_artifacts_authoritative_except_for_certifi
     monkeypatch.setattr(
         kubernetes_runner,
         "_wait_for_episode_artifacts",
-        lambda *_args, **_kwargs: clock.__setitem__("now", 200.0),
+        lambda *_args, **_kwargs: clock.__setitem__("now", clock["now"] + 69.0),
     )
     monkeypatch.setattr(kubernetes_runner, "_validate_results_file", lambda *_args, **_kwargs: None)
     monkeypatch.setattr(
@@ -2373,6 +2396,33 @@ def test_run_kubernetes_episode_keeps_artifacts_authoritative_except_for_certifi
     monkeypatch.setenv("JOB_ID", "job-id")
     monkeypatch.setenv("POD_NAME", "game-pod")
     monkeypatch.setenv("POD_UID", "pod-uid")
+    monkeypatch.setenv("JOB_NAME", "game-job")
+    monkeypatch.setenv("JOB_UID", "job-uid")
+    monkeypatch.setenv("COWORLD_PLAYER_POD_LAUNCH_RATE_PER_MINUTE", "60")
+    monkeypatch.setenv("COWORLD_PLAYER_POD_LAUNCH_BURST", "120")
+    monkeypatch.setenv("COWORLD_PLAYER_POD_LAUNCH_BUDGET_SECONDS", "0")
+    monkeypatch.setenv("COWORLD_JOB_ACTIVE_DEADLINE_SECONDS", "900")
+    monkeypatch.setattr(
+        kubernetes_runner.time,
+        "sleep",
+        lambda seconds: clock.__setitem__("now", clock["now"] + seconds),
+    )
+
+    decisions = iter([(False, 240.0 - second) for second in range(0, 240, 5)] + [(True, 0.0)])
+
+    def acquire_launch(remaining):
+        assert remaining == 1
+        launch_events.append("capacity")
+        granted, finish_delay = next(decisions)
+        return SimpleNamespace(granted=granted, finish_delay=finish_delay, retry_after=finish_delay)
+
+    monkeypatch.setattr(
+        kubernetes_runner,
+        "PlayerPodLaunchGate",
+        lambda *_args, **_kwargs: SimpleNamespace(
+            acquire=acquire_launch, release=lambda: launch_events.append("release")
+        ),
+    )
 
     def create_player_pod(
         _core_v1,
@@ -2394,8 +2444,16 @@ def test_run_kubernetes_episode_keeps_artifacts_authoritative_except_for_certifi
     ):
         assert timings is not None
         assert game_pod_ip is None
+        launch_events.append("create")
+        if launch_fails:
+            raise RuntimeError("pod creation failed")
         created.append((slot, player_cpu_request, player_memory_request, player_cpu_limit))
-        clock["now"] = 125.0
+        create_start = int(clock["now"] * 1_000_000_000) - timings.clock.monotonic_ns
+        timings.players[slot] = kubernetes_runner.PlayerStartupTiming(
+            pod_uid="player-pod-uid",
+            create=kubernetes_runner.TimingInterval(start_ns=create_start, end_ns=create_start + 2_000_000_000),
+        )
+        clock["now"] += 2.0
 
     monkeypatch.setattr(kubernetes_runner, "_create_player_pod", create_player_pod)
     job = cast(
@@ -2412,15 +2470,29 @@ def test_run_kubernetes_episode_keeps_artifacts_authoritative_except_for_certifi
         ),
     )
 
-    kubernetes_runner._run_kubernetes_episode(
-        job,
-        artifacts,
-        timeout_seconds=600.0,
-        timings=EpisodePhaseTimings(worker=ProcessTimings(clock=TimingClock.capture())),
-        upload_timings=record_timing_upload,
-    )
+    with pytest.raises(RuntimeError, match="pod creation failed") if launch_fails else nullcontext():
+        launch_timings = ProcessTimings(clock=TimingClock.capture())
+        kubernetes_runner._prepare_player_pods(job, launch_timings)
+        assert clock["now"] - 100.0 > expected_player_start_timeout
+        assert startup_events == []
+        (tmp_path / "player_launch_timings.json").write_text(launch_timings.model_dump_json())
+        kubernetes_runner._run_kubernetes_episode(
+            job,
+            artifacts,
+            players_ready=players_ready,
+            timeout_seconds=600.0,
+            timings=EpisodePhaseTimings(worker=ProcessTimings(clock=TimingClock.capture())),
+            upload_timings=record_timing_upload,
+        )
+
+    assert not players_ready.is_set()
+    assert launch_events == ["capacity"] * 49 + ["create", "release"]
+    if launch_fails:
+        assert not created
+        return
 
     assert created == [(1, "2", "2Gi", "")]
+    assert patched_deadlines == [1140]
     assert startup_timeouts == [runner_module.LOBBY_RUNTIME_STARTUP_TIMEOUT_SECONDS]
     assert pong_requirements == [episode_tags.get("source") == runner_module.CERTIFICATION_EPISODE_SOURCE]
     assert player_start_timeouts == [expected_player_start_timeout]
@@ -2435,9 +2507,9 @@ def test_run_kubernetes_episode_keeps_artifacts_authoritative_except_for_certifi
     ]
     assert timing_snapshots == [
         {"game_boot": 20.0},
-        {"game_boot": 20.0, "player_launch": 4.0},
-        {"game_boot": 20.0, "player_launch": 4.0, "first_step": 4.0},
-        {"game_boot": 20.0, "player_launch": 4.0, "first_step": 4.0, "gameplay": 69.0},
+        {"game_boot": 20.0, "player_launch": 242.0},
+        {"game_boot": 20.0, "player_launch": 242.0, "first_step": 4.0},
+        {"game_boot": 20.0, "player_launch": 242.0, "first_step": 4.0, "gameplay": 69.0},
     ]
 
 
@@ -2452,6 +2524,8 @@ def test_create_game_service_exposes_human_proxy_without_rerouting_policy_player
 
     service: Any = created["body"]
     ports = {port.name: port for port in service.spec.ports}
+    assert ports["player-start"].port == kubernetes_runner.HEALTH_PORT
+    assert ports["player-start"].target_port == kubernetes_runner.HEALTH_PORT
     assert ports["http"].port == 8080
     assert ports["http"].target_port == 8080
     assert ports["human-player"].port == 8081
@@ -2474,6 +2548,9 @@ def test_create_game_service_exposes_internal_artifact_upload(monkeypatch, relay
     ports = {port.name: port for port in created["body"].spec.ports}
     assert ports["player-artifact"].port == 9091
     assert ports["player-artifact"].target_port == 9091
+    assert kubernetes_runner._player_artifact_upload_url(0, "game-service", "slot-token") == (
+        "http://game-service:9091/player-artifact/0/slot-token"
+    )
 
 
 def test_player_artifact_upload_server_renews_mounted_targets_without_relay(monkeypatch, tmp_path):
@@ -2721,7 +2798,7 @@ def test_create_player_pod_injects_policy_secret_env(monkeypatch):
     assert wait_env == {
         "COWORLD_GAME_HOST": "game-service",
         "COWORLD_GAME_PORT": "8080",
-        "COWORLD_GAME_WAIT_TIMEOUT_SECONDS": "60",
+        "COWORLD_WORKER_HEALTH_PORT": str(kubernetes_runner.HEALTH_PORT),
     }
 
 
@@ -2798,6 +2875,46 @@ def test_create_player_pod_omits_attribution_labels_without_forwarded_env(monkey
     assert "coworld-source" not in labels
 
 
+def test_player_service_gate_waits_for_worker_viewer():
+    viewer_ready = threading.Event()
+    worker_polled = threading.Event()
+
+    class GateHandler(socketserver.BaseRequestHandler):
+        def handle(self):
+            request = self.request.recv(4096)
+            if request.startswith(b"GET /players-ready "):
+                worker_polled.set()
+                status = b"200 OK" if viewer_ready.is_set() else b"503 Service Unavailable"
+            else:
+                assert request.startswith(b"GET /healthz ")
+                status = b"200 OK"
+            self.request.sendall(b"HTTP/1.1 " + status + b"\r\nContent-Length: 0\r\nConnection: close\r\n\r\n")
+
+    with socketserver.TCPServer(("127.0.0.1", 0), GateHandler) as server:
+        thread = threading.Thread(target=server.serve_forever, daemon=True)
+        thread.start()
+        process = subprocess.Popen(
+            [sys.executable, "-c", kubernetes_runner._WAIT_FOR_GAME_SERVICE_SCRIPT],
+            env={
+                **os.environ,
+                "COWORLD_GAME_HOST": "127.0.0.1",
+                "COWORLD_GAME_PORT": str(server.server_address[1]),
+                "COWORLD_WORKER_HEALTH_PORT": str(server.server_address[1]),
+            },
+        )
+        try:
+            assert worker_polled.wait(2), "player escaped on game health without waiting for the worker viewer"
+            assert process.poll() is None
+            viewer_ready.set()
+            assert process.wait(timeout=3) == 0
+        finally:
+            if process.poll() is None:
+                process.terminate()
+            process.wait(timeout=3)
+            server.shutdown()
+            thread.join(timeout=1)
+
+
 def test_player_service_gate_waits_for_delayed_endpoint():
     listener = socket.socket()
     listener.bind(("127.0.0.1", 0))
@@ -2806,11 +2923,12 @@ def test_player_service_gate_waits_for_delayed_endpoint():
     def make_service_ready() -> None:
         time.sleep(0.1)
         listener.listen()
-        connection, _ = listener.accept()
-        request = connection.recv(4096)
-        assert request.startswith(b"GET /healthz HTTP/1.1\r\n")
-        connection.sendall(b"HTTP/1.1 200 OK\r\nContent-Length: 0\r\nConnection: close\r\n\r\n")
-        connection.close()
+        for path in (b"/healthz", b"/players-ready"):
+            connection, _ = listener.accept()
+            request = connection.recv(4096)
+            assert request.startswith(b"GET " + path + b" HTTP/1.1\r\n")
+            connection.sendall(b"HTTP/1.1 200 OK\r\nContent-Length: 0\r\nConnection: close\r\n\r\n")
+            connection.close()
         listener.close()
 
     thread = threading.Thread(target=make_service_ready, daemon=True)
@@ -2821,7 +2939,7 @@ def test_player_service_gate_waits_for_delayed_endpoint():
             **os.environ,
             "COWORLD_GAME_HOST": "127.0.0.1",
             "COWORLD_GAME_PORT": str(port),
-            "COWORLD_GAME_WAIT_TIMEOUT_SECONDS": "2",
+            "COWORLD_WORKER_HEALTH_PORT": str(port),
         },
         check=False,
         timeout=3,
@@ -2841,6 +2959,12 @@ def test_player_service_gate_rejects_a_tcp_listener_without_http_health():
     def accept_one_connection() -> None:
         connection, _ = listener.accept()
         connection.close()
+        for path in (b"/healthz", b"/players-ready"):
+            connection, _ = listener.accept()
+            request = connection.recv(4096)
+            assert request.startswith(b"GET " + path)
+            connection.sendall(b"HTTP/1.1 200 OK\r\nContent-Length: 0\r\nConnection: close\r\n\r\n")
+            connection.close()
         listener.close()
 
     thread = threading.Thread(target=accept_one_connection, daemon=True)
@@ -2851,14 +2975,14 @@ def test_player_service_gate_rejects_a_tcp_listener_without_http_health():
             **os.environ,
             "COWORLD_GAME_HOST": "127.0.0.1",
             "COWORLD_GAME_PORT": str(port),
-            "COWORLD_GAME_WAIT_TIMEOUT_SECONDS": "0.2",
+            "COWORLD_WORKER_HEALTH_PORT": str(port),
         },
         check=False,
         timeout=3,
     )
     thread.join(timeout=1)
 
-    assert completed.returncode != 0
+    assert completed.returncode == 0
     assert not thread.is_alive()
 
 
@@ -2868,7 +2992,7 @@ from urllib.error import URLError
 import urllib.request
 from types import SimpleNamespace
 
-outcomes = iter([URLError("temporary DNS failure"), None])
+outcomes = iter([URLError("temporary DNS failure"), None, None])
 
 class FlakyOpener:
     def open(self, url, timeout):
@@ -2892,7 +3016,7 @@ urllib.request.build_opener = direct_opener
             "HTTP_PROXY": "http://proxy.invalid:8080",
             "COWORLD_GAME_HOST": "game-service",
             "COWORLD_GAME_PORT": "8080",
-            "COWORLD_GAME_WAIT_TIMEOUT_SECONDS": "2",
+            "COWORLD_WORKER_HEALTH_PORT": "9090",
         },
         check=False,
         timeout=3,
@@ -3888,7 +4012,13 @@ def test_worker_health_server_accepts_connections_until_socket_closes():
         probe.bind(("127.0.0.1", 0))
         port = probe.getsockname()[1]
 
-    kubernetes_runner._start_worker_health_server(port)
+    players_ready = kubernetes_runner._start_worker_health_server(port)
+    url = f"http://127.0.0.1:{port}/players-ready"
+    assert httpx.get(url, trust_env=False).status_code == 503
+    players_ready.set()
+    assert httpx.get(url, trust_env=False).status_code == 200
+    players_ready.clear()
+    assert httpx.get(url, trust_env=False).status_code == 503
 
     with socket.create_connection(("127.0.0.1", port), timeout=2) as conn:
         assert conn.fileno() >= 0
