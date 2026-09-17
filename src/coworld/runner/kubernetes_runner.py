@@ -16,6 +16,7 @@ import hmac
 import http.server
 import json
 import logging
+import math
 import os
 import shutil
 import socket
@@ -56,7 +57,7 @@ from coworld.runner.bedrock_sidecar_wiring import (
     build_bedrock_sidecar,
     resolve_image_attribution_key,
 )
-from coworld.runner.bootstrap import STATE_PATH, WORKDIR, process_timings
+from coworld.runner.bootstrap import COORDINATOR_SPEC_PATH, STATE_PATH, WORKDIR, process_timings
 from coworld.runner.bootstrap import read_job_spec as _read_job_spec
 from coworld.runner.bootstrap import write_error_info as _write_error_info
 from coworld.runner.io import (
@@ -83,6 +84,7 @@ from coworld.runner.player_artifacts import (
     PlayerArtifactCapture,
     upload_captured_player_artifact,
 )
+from coworld.runner.player_pod_launch_gate import LAUNCH_POLL_SECONDS, PlayerPodLaunchGate
 from coworld.runner.runner import (
     CERTIFICATION_EPISODE_SOURCE,
     DEFAULT_PLAYER_EXIT_TIMEOUT_SECONDS,
@@ -174,18 +176,20 @@ import os
 import time
 from urllib.request import ProxyHandler, build_opener
 
-deadline = time.monotonic() + float(os.environ["COWORLD_GAME_WAIT_TIMEOUT_SECONDS"])
 host = os.environ["COWORLD_GAME_HOST"]
 port = int(os.environ["COWORLD_GAME_PORT"])
-url = f"http://{host}:{port}/healthz"
+worker_port = int(os.environ["COWORLD_WORKER_HEALTH_PORT"])
+urls = [f"http://{host}:{port}/healthz", f"http://{host}:{worker_port}/players-ready"]
 opener = build_opener(ProxyHandler({}))
-while time.monotonic() < deadline:
+while True:
     with contextlib.suppress(OSError):
-        with opener.open(url, timeout=1) as response:
-            if response.status == 200:
-                raise SystemExit(0)
+        for url in urls:
+            with opener.open(url, timeout=1) as response:
+                if response.status != 200:
+                    break
+        else:
+            raise SystemExit(0)
     time.sleep(0.5)
-raise SystemExit(f"Timed out waiting for {url}")
 """.strip()
 
 
@@ -249,14 +253,30 @@ class PlayerPodFailure(RunnerEpisodeError):
         super().__init__(message, error_type="player_error", failed_policy_index=failed_policy_index)
 
 
-class _HealthRequestHandler(socketserver.BaseRequestHandler):
-    def handle(self) -> None:
+class _HealthRequestHandler(http.server.BaseHTTPRequestHandler):
+    server: _WorkerHealthServer
+
+    def do_GET(self) -> None:
+        if self.path != "/players-ready":
+            self.send_error(404)
+            return
+        self.send_response(200 if self.server.players_ready.is_set() else 503)
+        self.end_headers()
+
+    def log_message(self, _format: str, *args: object) -> None:
         pass
 
 
-def _start_worker_health_server(port: int) -> None:
-    server = socketserver.TCPServer(("0.0.0.0", port), _HealthRequestHandler)
+class _WorkerHealthServer(http.server.ThreadingHTTPServer):
+    def __init__(self, port: int) -> None:
+        self.players_ready = threading.Event()
+        super().__init__(("0.0.0.0", port), _HealthRequestHandler)
+
+
+def _start_worker_health_server(port: int) -> threading.Event:
+    server = _WorkerHealthServer(port)
     threading.Thread(target=server.serve_forever, daemon=True).start()
+    return server.players_ready
 
 
 class _PlayerArtifactUploadServer(socketserver.ThreadingMixIn, http.server.HTTPServer):
@@ -446,11 +466,11 @@ def _start_player_artifact_upload_server(tokens: list[str]) -> _PlayerArtifactUp
     return server
 
 
-def run_from_env() -> None:
+def run_from_env(*, prepare_players: bool = False) -> None:
     # Hold a TCP port open for the worker's entire lifetime so the game container can liveness-probe it.
     # When this process exits for any reason (timeout, crash, OOM) the kernel closes the socket, the
     # game's probe fails, and the kubelet tears the game container down instead of leaving a hard zombie.
-    _start_worker_health_server(HEALTH_PORT)
+    players_ready = _start_worker_health_server(HEALTH_PORT)
     artifacts = EpisodeArtifacts.create(WORKDIR, prefix="coworld-job-")
     timings = EpisodePhaseTimings()
     timing_uploads: list[Future[None]] = []
@@ -496,9 +516,17 @@ def run_from_env() -> None:
         # writes missing-log placeholders, so a second pass would report clean diagnostics.
         outputs_prepared = False
         try:
+            if prepare_players:
+                _prepare_player_pods(job, worker_timings)
+                worker_timings.final_clock = TimingClock.capture()
+                COORDINATOR_SPEC_PATH.with_name("player_launch_timings.json").write_text(
+                    worker_timings.model_dump_json(), encoding="utf-8"
+                )
+                return
             _run_kubernetes_episode(
                 job,
                 artifacts,
+                players_ready=players_ready,
                 timeout_seconds=float(os.environ.get("COWORLD_TIMEOUT_SECONDS", "3600")),
                 timings=timings,
                 upload_timings=queue_timings_upload,
@@ -710,37 +738,12 @@ def _zip_logs(logs_dir: Path) -> bytes:
     return buf.getvalue()
 
 
-def _run_kubernetes_episode(
-    job: CoworldEpisodeJobSpec,
-    artifacts: EpisodeArtifacts,
-    *,
-    timeout_seconds: float,
-    timings: EpisodePhaseTimings,
-    upload_timings: Callable[[EpisodePhaseTimings], None],
-) -> None:
-    assert timings.worker is not None
-    worker_start = time.monotonic_ns()
-    worker_timings = timings.worker
+def _prepare_player_pods(job: CoworldEpisodeJobSpec, worker_timings: ProcessTimings) -> None:
     egress_enforcement_enabled = os.environ.get("COWORLD_EGRESS_ENFORCEMENT_ENABLED") == "true"
     api_client = _load_incluster_config(egress_enforcement_enabled=egress_enforcement_enabled)
     core_v1 = client.CoreV1Api(api_client)
     namespace = os.environ["JOB_NAMESPACE"]
-    pod_name = os.environ["POD_NAME"]
     tokens = json.loads(STATE_PATH.read_text(encoding="utf-8"))["tokens"]
-    if job.manifest.game.player_runtime == "game-hosted":
-        _run_game_hosted_episode(
-            job,
-            artifacts,
-            core_v1=core_v1,
-            namespace=namespace,
-            pod_name=pod_name,
-            worker_start=worker_start,
-            timeout_seconds=timeout_seconds,
-            timings=timings,
-            upload_timings=upload_timings,
-        )
-        return
-
     service_name = os.environ["COWORLD_SERVICE_NAME"]
     job_id = os.environ["JOB_ID"]
     owner_references = _owner_references()
@@ -749,28 +752,19 @@ def _run_kubernetes_episode(
         for slot, player in enumerate(job.players)
         if isinstance(player, CoworldRunnableSpec)
     ]
-    is_lobby = len(policy_players) != len(job.players)
-    startup_timeout_seconds = (
-        LOBBY_RUNTIME_STARTUP_TIMEOUT_SECONDS if is_lobby else DEFAULT_RUNTIME_STARTUP_TIMEOUT_SECONDS
-    )
     policy_secrets = _policy_secrets_from_env()
     player_cpu_request = os.environ.get("COWORLD_PLAYER_CPU_REQUEST", DEFAULT_PLAYER_CPU_REQUEST)
     player_memory_request = os.environ.get("COWORLD_PLAYER_MEMORY_REQUEST", DEFAULT_PLAYER_MEMORY_REQUEST)
     # Empty (the default) means no CPU limit: a player pod may burst to the whole node, so it
     # sees 8/12/16 cores depending on placement. A declared limit caps every player pod here.
     player_cpu_limit = os.environ.get("COWORLD_PLAYER_CPU_LIMIT", "")
-    player_connect_timeout_seconds = float(
-        job.game_config["player_connect_timeout_seconds"]
-        if "player_connect_timeout_seconds" in job.game_config
-        else DEFAULT_PLAYER_CONNECT_TIMEOUT_SECONDS
-    )
+    player_pod_launch_rate_per_minute = float(os.environ["COWORLD_PLAYER_POD_LAUNCH_RATE_PER_MINUTE"])
+    player_pod_launch_burst = float(os.environ["COWORLD_PLAYER_POD_LAUNCH_BURST"])
+    coordination_v1 = client.CoordinationV1Api(api_client)
     child_names: list[str] = []
-    # Detection-time record of player containers that failed and became dead seats: teardown log
-    # collection falls back to it when the pod itself is gone by then (terminated-pod GC).
-    dead_seat_statuses: dict[int, PlayerRuntimeStatus] = {}
-    artifact_server = _start_player_artifact_upload_server(tokens)
     networking_v1 = client.NetworkingV1Api(api_client) if egress_enforcement_enabled else None
-
+    player_launch_start = time.monotonic_ns()
+    launched = False
     try:
         _create_game_service(core_v1, namespace, service_name, job_id, owner_references)
         game_pod_ip = None
@@ -815,6 +809,7 @@ def _run_kubernetes_episode(
                                 ],
                                 ports=[
                                     client.V1NetworkPolicyPort(protocol="TCP", port=GAME_PORT),
+                                    client.V1NetworkPolicyPort(protocol="TCP", port=HEALTH_PORT),
                                     client.V1NetworkPolicyPort(protocol="TCP", port=PLAYER_ARTIFACT_PORT),
                                 ],
                             ),
@@ -835,6 +830,129 @@ def _run_kubernetes_episode(
                     ),
                 ),
             )
+        if policy_players:
+            batch_v1 = client.BatchV1Api(api_client)
+            launch_gate = PlayerPodLaunchGate(
+                coordination_v1,
+                batch_v1,
+                namespace,
+                job_name=os.environ["JOB_NAME"],
+                job_uid=os.environ["JOB_UID"],
+                refill_per_second=player_pod_launch_rate_per_minute / 60,
+                burst=player_pod_launch_burst,
+            )
+            reservation_start = time.monotonic()
+            deadline_extension_seconds = 0
+            try:
+                for index, (slot, player) in enumerate(policy_players):
+                    while True:
+                        decision = launch_gate.acquire(len(policy_players) - index)
+                        extension = math.ceil(
+                            max(
+                                0.0,
+                                time.monotonic()
+                                - reservation_start
+                                + decision.finish_delay
+                                - float(os.environ["COWORLD_PLAYER_POD_LAUNCH_BUDGET_SECONDS"]),
+                            )
+                        )
+                        if extension > deadline_extension_seconds:
+                            batch_v1.patch_namespaced_job(
+                                name=os.environ["JOB_NAME"],
+                                namespace=namespace,
+                                body={
+                                    "spec": {
+                                        "activeDeadlineSeconds": int(os.environ["COWORLD_JOB_ACTIVE_DEADLINE_SECONDS"])
+                                        + extension
+                                    }
+                                },
+                            )
+                            deadline_extension_seconds = extension
+                        if decision.granted:
+                            break
+                        time.sleep(min(LAUNCH_POLL_SECONDS, decision.retry_after))
+                    name = f"{service_name}-player-{slot}"
+                    child_names.append(name)
+                    _create_player_pod(
+                        core_v1,
+                        namespace,
+                        name,
+                        slot,
+                        tokens[slot],
+                        player,
+                        policy_secrets.get(slot, {}),
+                        job_id,
+                        service_name,
+                        player_cpu_request,
+                        player_memory_request,
+                        player_cpu_limit,
+                        owner_references,
+                        game_pod_ip=game_pod_ip,
+                        timings=worker_timings,
+                    )
+            finally:
+                launch_gate.release()
+        launched = True
+    finally:
+        if not launched:
+            _delete_child_resources(core_v1, namespace, service_name, child_names)
+    worker_timings.record("player_launch", player_launch_start)
+
+
+def _run_kubernetes_episode(
+    job: CoworldEpisodeJobSpec,
+    artifacts: EpisodeArtifacts,
+    *,
+    players_ready: threading.Event,
+    timeout_seconds: float,
+    timings: EpisodePhaseTimings,
+    upload_timings: Callable[[EpisodePhaseTimings], None],
+) -> None:
+    assert timings.worker is not None
+    worker_start = time.monotonic_ns()
+    worker_timings = timings.worker
+    egress_enforcement_enabled = os.environ.get("COWORLD_EGRESS_ENFORCEMENT_ENABLED") == "true"
+    api_client = _load_incluster_config(egress_enforcement_enabled=egress_enforcement_enabled)
+    core_v1 = client.CoreV1Api(api_client)
+    namespace = os.environ["JOB_NAMESPACE"]
+    pod_name = os.environ["POD_NAME"]
+    tokens = json.loads(STATE_PATH.read_text(encoding="utf-8"))["tokens"]
+    if job.manifest.game.player_runtime == "game-hosted":
+        _run_game_hosted_episode(
+            job,
+            artifacts,
+            core_v1=core_v1,
+            namespace=namespace,
+            pod_name=pod_name,
+            worker_start=worker_start,
+            timeout_seconds=timeout_seconds,
+            timings=timings,
+            upload_timings=upload_timings,
+        )
+        return
+
+    service_name = os.environ["COWORLD_SERVICE_NAME"]
+    policy_players = [
+        (slot, PlayerLaunchSpec.from_model(player))
+        for slot, player in enumerate(job.players)
+        if isinstance(player, CoworldRunnableSpec)
+    ]
+    is_lobby = len(policy_players) != len(job.players)
+    startup_timeout_seconds = (
+        LOBBY_RUNTIME_STARTUP_TIMEOUT_SECONDS if is_lobby else DEFAULT_RUNTIME_STARTUP_TIMEOUT_SECONDS
+    )
+    player_connect_timeout_seconds = float(
+        job.game_config["player_connect_timeout_seconds"]
+        if "player_connect_timeout_seconds" in job.game_config
+        else DEFAULT_PLAYER_CONNECT_TIMEOUT_SECONDS
+    )
+    child_names = [f"{service_name}-player-{slot}" for slot, _ in policy_players]
+    # Detection-time record of player containers that failed and became dead seats: teardown log
+    # collection falls back to it when the pod itself is gone by then (terminated-pod GC).
+    dead_seat_statuses: dict[int, PlayerRuntimeStatus] = {}
+    artifact_server = _start_player_artifact_upload_server(tokens)
+
+    try:
         health_start = time.monotonic_ns()
         worker_timings.record("setup", worker_start, health_start)
         worker_timings.record("bootstrap", worker_timings.clock.monotonic_ns, health_start)
@@ -843,37 +961,46 @@ def _run_kubernetes_episode(
         worker_timings.record("health_wait", health_start, game_ready)
         timings.game_boot_s = (game_ready - worker_start) / 1_000_000_000
         upload_timings(timings)
-        player_launch_start = time.monotonic_ns()
         if job.players:
             _require_http_ok(_player_client_url(0, tokens[0]))
             asyncio.run(_require_bad_player_rejected(f"ws://127.0.0.1:{GAME_PORT}/player?slot=0&token=bad"))
         _require_http_ok(f"http://127.0.0.1:{GAME_PORT}/client/global")
 
-        for slot, player in policy_players:
-            name = f"{service_name}-player-{slot}"
-            child_names.append(name)
-            _create_player_pod(
-                core_v1,
-                namespace,
-                name,
-                slot,
-                tokens[slot],
-                player,
-                policy_secrets.get(slot, {}),
-                job_id,
-                service_name,
-                player_cpu_request,
-                player_memory_request,
-                player_cpu_limit,
-                owner_references,
-                game_pod_ip=game_pod_ip,
-                timings=worker_timings,
+        launch_timings = ProcessTimings.model_validate_json(
+            COORDINATOR_SPEC_PATH.with_name("player_launch_timings.json").read_bytes()
+        )
+        # Init and worker share the node's monotonic clock, but have different anchors.
+        launch_interval = launch_timings.intervals["player_launch"]
+        timings.player_launch_s = worker_timings.record(
+            "player_launch",
+            launch_timings.clock.monotonic_ns + launch_interval.start_ns,
+            launch_timings.clock.monotonic_ns + launch_interval.end_ns,
+        )
+        clock_offset = launch_timings.clock.monotonic_ns - worker_timings.clock.monotonic_ns
+        for slot, player_timing in launch_timings.players.items():
+            assert player_timing.create is not None
+            worker_timings.players[slot] = PlayerStartupTiming(
+                pod_uid=player_timing.pod_uid,
+                create=TimingInterval(
+                    start_ns=player_timing.create.start_ns + clock_offset,
+                    end_ns=player_timing.create.end_ns + clock_offset,
+                ),
             )
-        players_launched = time.monotonic_ns()
-        timings.player_launch_s = worker_timings.record("player_launch", player_launch_start, players_launched)
         upload_timings(timings)
         player_start_deadline = time.monotonic() + min(timeout_seconds, player_connect_timeout_seconds)
         first_step_start = time.monotonic_ns()
+
+        def start_players() -> None:
+            players_ready.set()
+            _ensure_player_pods_started(
+                core_v1,
+                namespace,
+                child_names,
+                timeout_seconds=max(0.0, player_start_deadline - time.monotonic()),
+                player_images={slot: player.image for slot, player in policy_players},
+                dead_seat_statuses=dead_seat_statuses,
+                timings=worker_timings,
+            )
 
         asyncio.run(
             _require_global_message(
@@ -883,15 +1010,7 @@ def _run_kubernetes_episode(
                 # Hold the viewer connection open while proving every player process started.
                 # Some games begin as soon as the last player connects and may not accept a
                 # new viewer handshake once gameplay is consuming the server event loop.
-                on_connected=lambda: _ensure_player_pods_started(
-                    core_v1,
-                    namespace,
-                    child_names,
-                    timeout_seconds=max(0.0, player_start_deadline - time.monotonic()),
-                    player_images={slot: player.image for slot, player in policy_players},
-                    dead_seat_statuses=dead_seat_statuses,
-                    timings=worker_timings,
-                ),
+                on_connected=start_players,
                 on_connect_failure=lambda: _raise_if_player_pod_failed(core_v1, namespace, child_names),
                 require_pong=job.episode_tags.get("source") == CERTIFICATION_EPISODE_SOURCE,
             )
@@ -930,6 +1049,7 @@ def _run_kubernetes_episode(
             )
             worker_timings.record("players_complete", completion_start)
     finally:
+        players_ready.clear()
         logs_start = time.monotonic_ns()
         _collect_logs(core_v1, namespace, pod_name, child_names, artifacts, dead_seat_statuses=dead_seat_statuses)
         worker_timings.record("logs_collect", logs_start)
@@ -1072,7 +1192,10 @@ def _create_game_service(
     job_id: str,
     owner_references: list[client.V1OwnerReference],
 ) -> client.V1Service:
-    ports = [client.V1ServicePort(name="http", port=GAME_PORT, target_port=GAME_PORT)]
+    ports = [
+        client.V1ServicePort(name="http", port=GAME_PORT, target_port=GAME_PORT),
+        client.V1ServicePort(name="player-start", port=HEALTH_PORT, target_port=HEALTH_PORT),
+    ]
     human_player_proxy_port = os.environ.get("COWORLD_HUMAN_PLAYER_PROXY_PORT")
     if human_player_proxy_port is not None:
         proxy_port = int(human_player_proxy_port)
@@ -1197,9 +1320,9 @@ def _create_player_pod(
             ),
         )
     ]
-    # The game is healthy on loopback before this pod is created, but Kubernetes service
-    # endpoints can lag that signal. Do not start a one-shot player until the service path
-    # it will actually use is reachable.
+    # Pods are paced before the game starts. Keep players in init until the worker
+    # establishes its viewer, so a fast game cannot finish before that handshake.
+    # The owning Job bounds this wait, including launch queue time.
     init_containers = [
         client.V1Container(
             name="wait-for-game-service",
@@ -1215,10 +1338,7 @@ def _create_player_pod(
                     name="COWORLD_GAME_PORT",
                     value=str(GAME_PORT),
                 ),
-                client.V1EnvVar(
-                    name="COWORLD_GAME_WAIT_TIMEOUT_SECONDS",
-                    value=os.environ["COWORLD_TIMEOUT_SECONDS"],
-                ),
+                client.V1EnvVar(name="COWORLD_WORKER_HEALTH_PORT", value=str(HEALTH_PORT)),
             ],
         )
     ]
@@ -1997,9 +2117,9 @@ def _workload_tolerations() -> list[client.V1Toleration] | None:
 
 def main() -> None:
     parser = argparse.ArgumentParser()
-    parser.add_argument("command", choices=("run-core-sidecars-v1",))
-    parser.parse_args()
-    run_from_env()
+    parser.add_argument("command", choices=("run-core-sidecars-v1", "prepare-players"))
+    args = parser.parse_args()
+    run_from_env(prepare_players=args.command == "prepare-players")
 
 
 if __name__ == "__main__":
