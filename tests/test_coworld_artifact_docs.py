@@ -24,3 +24,20 @@ def test_player_artifact_docs_describe_cli_and_ownership_route() -> None:
         assert "Each successful upload replaces" in contract
     assert "Save per-player debugging files after an episode" in readme
     assert "src/coworld/docs/artifacts/PLAYER_ARTIFACT.md" in readme
+
+
+def test_results_docs_describe_the_seat_display_contract() -> None:
+    docs = PACKAGE_ROOT / "src" / "coworld" / "docs"
+    results_doc = (docs / "artifacts" / "RESULTS.md").read_text(encoding="utf-8")
+    game_doc = (docs / "roles" / "GAME.md").read_text(encoding="utf-8")
+    ladder_doc = (docs / "PLATFORM_LADDER_LEAGUE.md").read_text(encoding="utf-8")
+    guide = (PACKAGE_ROOT / "docs" / "concepts" / "competition.mdx").read_text(encoding="utf-8")
+
+    assert "## Seat Display (Optional)" in results_doc
+    assert '{"slot": 1, "model": "anthropic/claude-haiku-4.5", "label": "briefing only"}' in results_doc
+    assert "Never copy prompt or player-file text" in results_doc
+    for doc in (results_doc, game_doc, ladder_doc, guide):
+        assert "results.players[].model" in doc
+    for doc in (game_doc, ladder_doc):
+        assert "artifacts/RESULTS.md#seat-display-optional" in doc
+    assert "<model> · <policy>:v<N> by <player>" in ladder_doc
