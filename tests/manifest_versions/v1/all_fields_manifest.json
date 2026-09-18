@@ -94,7 +94,18 @@
         "description": "Win a game without attacking at all.",
         "points": 25
       }
-    ]
+    ],
+    "log": {
+      "agent_label_field": "agent",
+      "team_field": "team",
+      "objective": "Control more territory than every other team when the match clock ends.",
+      "panels": [
+        {
+          "title": "Combat",
+          "kinds": ["attack", "kill", "death"]
+        }
+      ]
+    }
   },
   "player": [
     {

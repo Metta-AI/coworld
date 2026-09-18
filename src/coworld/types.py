@@ -455,6 +455,51 @@ class CoworldAchievement(BaseModel):
     )
 
 
+class CoworldLogPanel(BaseModel):
+    """One named grouping of `events.json` kinds (see docs/artifacts/EVENTS.md) that the
+    default platform Log renders as its own panel instead of one combined kind-count table."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    title: str = Field(min_length=1, description="Panel heading shown on the default Log page.")
+    kinds: list[str] = Field(
+        min_length=1,
+        description="Event `kind` values (see docs/artifacts/EVENTS.md) grouped into this panel.",
+    )
+
+
+class CoworldGameLog(BaseModel):
+    """Optional Log Contract v1 hints (docs/surfaces/logs.md) that raise the default platform
+    Log from tier 0/1 to tier 2: named panels and objective/team semantics instead of field
+    names inferred from `events.json`. Never required; `coworld certify` reports the resulting
+    richness tier but never fails on its absence."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    agent_label_field: str | None = Field(
+        default=None,
+        description=(
+            "`events.json` field (see docs/artifacts/EVENTS.md) whose value the default Log uses to label an "
+            "agent, e.g. `agent`. Defaults to the raw `agent` event field when unset."
+        ),
+    )
+    team_field: str | None = Field(
+        default=None,
+        description="`events.json` field the default Log uses to group agents into teams, e.g. `team`.",
+    )
+    objective: str | None = Field(
+        default=None,
+        description="Human-readable statement of what winning means, shown near the default Log's result banner.",
+    )
+    panels: list[CoworldLogPanel] = Field(
+        default_factory=list,
+        description=(
+            "Named `events.json` kind groupings the default Log renders as separate panels instead of one "
+            "combined kind-count table."
+        ),
+    )
+
+
 class CoworldGameManifest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -504,6 +549,13 @@ class CoworldGameManifest(BaseModel):
         description=(
             "Optional achievement catalog. The game awards achievements itself via the results artifact; this "
             "catalog is what lets the platform display them and score Achievement Points."
+        ),
+    )
+    log: CoworldGameLog | None = Field(
+        default=None,
+        description=(
+            "Optional Log Contract v1 hints (docs/surfaces/logs.md) that raise the default platform Log to tier "
+            "2: named panels and objective/team semantics. Never required; see docs/artifacts/EVENTS.md."
         ),
     )
 

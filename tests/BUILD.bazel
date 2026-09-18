@@ -62,6 +62,7 @@ pyproject_test(
         "test_coworld_templates": {"data": ["//packages/coworld:package_metadata_files"]},
         "test_coworld_kubernetes_runner": {"data": [":manifest_version_fixtures"]},
         "test_manifest_versions": {"data": [":manifest_version_fixtures"]},
+        "test_log_richness": {"data": [":manifest_version_fixtures"]},
         "test_paintarena_static_replay": {"data": ["//packages/coworld:paintarena_static_replay_files"]},
         "test_types": {"data": ["//packages/coworld:generated_schema_files"]},
     },

@@ -145,6 +145,61 @@
       "title": "CoworldDocs",
       "type": "object"
     },
+    "CoworldGameLog": {
+      "additionalProperties": false,
+      "description": "Optional Log Contract v1 hints (docs/surfaces/logs.md) that raise the default platform\nLog from tier 0/1 to tier 2: named panels and objective/team semantics instead of field\nnames inferred from `events.json`. Never required; `coworld certify` reports the resulting\nrichness tier but never fails on its absence.",
+      "properties": {
+        "agent_label_field": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "`events.json` field (see docs/artifacts/EVENTS.md) whose value the default Log uses to label an agent, e.g. `agent`. Defaults to the raw `agent` event field when unset.",
+          "title": "Agent Label Field"
+        },
+        "team_field": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "`events.json` field the default Log uses to group agents into teams, e.g. `team`.",
+          "title": "Team Field"
+        },
+        "objective": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Human-readable statement of what winning means, shown near the default Log's result banner.",
+          "title": "Objective"
+        },
+        "panels": {
+          "description": "Named `events.json` kind groupings the default Log renders as separate panels instead of one combined kind-count table.",
+          "items": {
+            "$ref": "#/$defs/CoworldLogPanel"
+          },
+          "title": "Panels",
+          "type": "array"
+        }
+      },
+      "title": "CoworldGameLog",
+      "type": "object"
+    },
     "CoworldGameManifest": {
       "additionalProperties": false,
       "properties": {
@@ -247,6 +302,18 @@
           "default": null,
           "description": "Optional achievement catalog. The game awards achievements itself via the results artifact; this catalog is what lets the platform display them and score Achievement Points.",
           "title": "Achievements"
+        },
+        "log": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/CoworldGameLog"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Optional Log Contract v1 hints (docs/surfaces/logs.md) that raise the default platform Log to tier 2: named panels and objective/team semantics. Never required; see docs/artifacts/EVENTS.md."
         }
       },
       "required": [
@@ -280,6 +347,30 @@
       },
       "required": ["type", "token"],
       "title": "CoworldHumanPlayerSpec",
+      "type": "object"
+    },
+    "CoworldLogPanel": {
+      "additionalProperties": false,
+      "description": "One named grouping of `events.json` kinds (see docs/artifacts/EVENTS.md) that the\ndefault platform Log renders as its own panel instead of one combined kind-count table.",
+      "properties": {
+        "title": {
+          "description": "Panel heading shown on the default Log page.",
+          "minLength": 1,
+          "title": "Title",
+          "type": "string"
+        },
+        "kinds": {
+          "description": "Event `kind` values (see docs/artifacts/EVENTS.md) grouped into this panel.",
+          "items": {
+            "type": "string"
+          },
+          "minItems": 1,
+          "title": "Kinds",
+          "type": "array"
+        }
+      },
+      "required": ["title", "kinds"],
+      "title": "CoworldLogPanel",
       "type": "object"
     },
     "CoworldManifest": {

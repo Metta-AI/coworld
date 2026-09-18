@@ -9,7 +9,7 @@ import webbrowser
 from contextlib import contextmanager
 from importlib.resources import as_file, files
 from pathlib import Path
-from typing import Annotated, Iterator
+from typing import Annotated, Iterator, cast
 from urllib.parse import urlparse
 
 import typer
@@ -28,6 +28,7 @@ from coworld.certifier import (
     build_manifest_episode_job_spec,
     certification_player_file_paths,
     certify_coworld,
+    compute_log_richness,
     load_coworld_package,
     load_executable_transcript,
     load_manifest_episode_job_spec,
@@ -56,7 +57,7 @@ from coworld.play import PlaySession, ReplaySession, _resolve_bedrock_aws_env, p
 from coworld.runner.runner import DEFAULT_PLAYER_EXIT_TIMEOUT_SECONDS, EpisodeArtifacts, run_coworld_episode
 from coworld.submit import submit_policy_to_league_cmd
 from coworld.tournament_cli import register_tournament_commands
-from coworld.types import StepResult, TranscriptStep
+from coworld.types import CoworldManifest, StepResult, TranscriptStep
 from coworld.upload import (
     ContainerImageResponse,
     CoworldCertificationStatus,
@@ -690,6 +691,10 @@ def certify(
     else:
         typer.echo("Replay liveness: verified /client/replay and /replay")
     typer.echo(f"Logs: {result.artifacts.logs_dir}")
+    log_richness = _certify_log_richness(result)
+    if log_richness is not None:
+        log_richness_tier, log_richness_reason = log_richness
+        typer.echo(f"Log richness: tier {log_richness_tier} — {log_richness_reason}")
     for reference_line in result.reporter_references:
         typer.echo(f"Reporter reference: {reference_line}")
     _echo_feedback_commands(
@@ -1799,15 +1804,40 @@ def _echo_feedback_commands(
     typer.echo("Inspect logs: " + shlex.join(["ls", str(artifacts.logs_dir)]))
 
 
-def _uses_static_replay_viewer_bundle(result: object) -> bool:
+def _result_manifest(result: object) -> object | None:
+    """Best-effort manifest lookup shared by every certify/play echo that inspects it.
+
+    `result` is `CertificationResult` for `certify` and `PlaySession`-wrapping for `play`; both
+    carry a `package.manifest` (directly, or via `.session.package`), but stubbed test doubles
+    for either command do not always populate `package`, so every read here stays optional.
+    """
     package = getattr(result, "package", None)
     if package is None:
         session = getattr(result, "session", None)
         package = getattr(session, "package", None) if session is not None else None
-    manifest = getattr(package, "manifest", None) if package is not None else None
+    return getattr(package, "manifest", None) if package is not None else None
+
+
+def _uses_static_replay_viewer_bundle(result: object) -> bool:
+    manifest = _result_manifest(result)
     game = getattr(manifest, "game", None) if manifest is not None else None
     replay_viewer = getattr(game, "replay_viewer", None) if game is not None else None
     return getattr(replay_viewer, "bundle", None) is not None
+
+
+def _certify_log_richness(result: object) -> tuple[int, str] | None:
+    """Compute the certify richness line only when the manifest supports it.
+
+    Mirrors `_uses_static_replay_viewer_bundle`'s optional read of `result.package.manifest`: a
+    stubbed `certify_coworld` test double may supply a manifest-like object that only has the
+    fields its own test cares about (no `game.log` or `game.results_schema`), so this checks the
+    exact attributes `compute_log_richness` needs before calling it, rather than crashing.
+    """
+    manifest = _result_manifest(result)
+    game = getattr(manifest, "game", None) if manifest is not None else None
+    if game is None or not hasattr(game, "log") or not hasattr(game, "results_schema"):
+        return None
+    return compute_log_richness(cast(CoworldManifest, manifest))
 
 
 def _print_play_session(session: PlaySession) -> None:

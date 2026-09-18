@@ -1,0 +1,106 @@
+{
+  "game": {
+    "name": "log-contract-coworld",
+    "version": "1.0.0",
+    "description": "Minimal Coworld manifest declaring Log Contract v1 hints (tier 2).",
+    "owner": "coworld@example.com",
+    "config_schema": {
+      "type": "object",
+      "required": ["tokens"],
+      "properties": {
+        "tokens": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 1,
+          "items": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    "results_schema": {
+      "type": "object",
+      "properties": {
+        "scores": {
+          "type": "array",
+          "items": {
+            "type": "number"
+          }
+        },
+        "damage_dealt": {
+          "type": "array",
+          "items": {
+            "type": "number"
+          },
+          "x-display": {
+            "unit": "hp",
+            "higher_is_better": true,
+            "per_seat": true,
+            "label": "Damage dealt"
+          }
+        }
+      },
+      "required": ["scores"]
+    },
+    "runnable": {
+      "type": "game",
+      "image": "example.com/log-contract-game:1"
+    },
+    "protocols": {
+      "player": {
+        "type": "text",
+        "value": "Player protocol"
+      },
+      "global": {
+        "type": "text",
+        "value": "Global protocol"
+      }
+    },
+    "docs": {
+      "readme": {
+        "type": "text",
+        "value": "Log Contract v1 Coworld"
+      }
+    },
+    "log": {
+      "agent_label_field": "agent",
+      "team_field": "team",
+      "objective": "Control more territory than every other team when the match clock ends.",
+      "panels": [
+        {
+          "title": "Combat",
+          "kinds": ["attack", "kill", "death"]
+        },
+        {
+          "title": "Territory",
+          "kinds": ["capture", "lose_tile"]
+        }
+      ]
+    }
+  },
+  "player": [
+    {
+      "type": "player",
+      "image": "example.com/log-contract-player:1",
+      "id": "log-contract-player",
+      "name": "Log Contract Player",
+      "description": "Minimal bundled player."
+    }
+  ],
+  "variants": [
+    {
+      "id": "default",
+      "name": "Default",
+      "game_config": {},
+      "description": "Minimal variant."
+    }
+  ],
+  "certification": {
+    "game_config": {},
+    "players": [
+      {
+        "player_id": "log-contract-player"
+      }
+    ]
+  }
+}

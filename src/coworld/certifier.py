@@ -192,6 +192,48 @@ def validate_certification_references(package: CoworldPackage) -> None:
     _certification_player_selection(package)
 
 
+LOG_RICHNESS_TIER_0_REASON = (
+    "tier 0 from the manifest; tier 1 if the game writes events.json (see docs/artifacts/EVENTS.md)"
+)
+
+
+def _results_schema_x_display_fields(results_schema: JsonSchema) -> list[str]:
+    properties = results_schema.get("properties")
+    if not isinstance(properties, dict):
+        return []
+    return sorted(
+        field_name
+        for field_name, field_schema in properties.items()
+        if isinstance(field_schema, dict) and "x-display" in field_schema
+    )
+
+
+def compute_log_richness(manifest: CoworldManifest) -> tuple[int, str]:
+    """Compute the informational "Log richness" tier `coworld certify` reports.
+
+    This never fails certification: Log Contract v1 (docs/surfaces/logs.md) is a zero-ask
+    baseline — every Coworld already gets a tier 0 default Log from the universal
+    results/replay/game-log contract, and richer tiers are optional enrichments a game may or
+    may not declare.
+
+    Tier 2 is knowable from the manifest alone: `game.log` hints (docs/artifacts/EVENTS.md,
+    COWORLD_MANIFEST.md) or any `results_schema` `x-display` hint. Whether a game actually
+    writes `events.json` at runtime is not a manifest fact today -- nothing in the manifest
+    declares an events emission -- so tier 1 can only be offered as a possibility, never
+    certified, and this function reports tier 0 with that caveat instead of guessing tier 1.
+    """
+    game_log = manifest.game.log
+    display_fields = _results_schema_x_display_fields(manifest.game.results_schema)
+    if game_log is None and not display_fields:
+        return 0, LOG_RICHNESS_TIER_0_REASON
+    reasons = []
+    if game_log is not None:
+        reasons.append("game.log hints declared")
+    if display_fields:
+        reasons.append(f"results_schema x-display on {', '.join(display_fields)}")
+    return 2, "; ".join(reasons)
+
+
 def validate_image_references(package: CoworldPackage, *, require_linux_amd64: bool = False) -> None:
     for label, image in _image_references(package):
         assert_docker_image_reachable(image, label=label, require_linux_amd64=require_linux_amd64)
