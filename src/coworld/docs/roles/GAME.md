@@ -142,6 +142,10 @@ directly. The same `players` array is also the concrete seat-count source for va
 Coworld-wide display names use `game_config.players[].name`; game-specific per-slot mechanics remain in the game's own
 config fields.
 
+The reverse direction is `results.players[]`: a `game-hosted` game that picks a model per seat from the player file
+should write `results.players[].model` for each seat, so Standings can credit the model and the file's author separately.
+See [results](../artifacts/RESULTS.md#seat-display-optional).
+
 ## Browser clients
 
 The game owns browser-client behavior. Player-facing flows expect `GET /client/player?slot=...&token=...` to serve the

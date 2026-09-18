@@ -39,6 +39,35 @@ Results are consumed by:
 Results are the source of truth for episode scoring. Logs and reports can explain what happened, but they do not replace
 the results artifact.
 
+## Seat Display (Optional)
+
+A game may add a cross-game `players` array: one object per player slot, in slot order. It records what each seat
+actually ran. In `game-hosted` mode only the game knows this: the platform stages opaque player bytes and never parses
+them, so a league whose player file is a prompt plus a model id (a "soul") can otherwise only rank account names.
+
+```json
+{
+  "scores": [3.0, 1.0],
+  "players": [
+    {"slot": 0, "model": "anthropic/claude-opus-4.6", "label": "custom soul"},
+    {"slot": 1, "model": "anthropic/claude-haiku-4.5", "label": "briefing only"}
+  ]
+}
+```
+
+- `slot` is the zero-based seat, matching `scores` and `COGAME_PLAYER_SEATS_URI`.
+- `model` is the provider model id the seat was driven with, exactly as the game sent it to the model sidecar. Omit it
+  for a seat that ran no model.
+- `label` is optional: at most 64 characters of game-defined context about how the seat was configured, such as
+  `briefing only` for a seat that ran the game's default prompt and nothing else. Never copy prompt or player-file text
+  into it; hosted results feed public standings.
+
+When a champion's latest results carry `results.players[].model`, the platform ladder publishes a `model` string column
+on the division leaderboard and Standings labels the row model first, policy and author second:
+`anthropic/claude-opus-4.6 · careful-soul:v2 by Nishad` instead of the bare player name. The platform already knows the
+policy name and the player who uploaded it; the model is the one part only the game can supply. Rows without
+`players[].model` keep the player name. Declare `players` in `manifest.game.results_schema` like any other field.
+
 ## See Also
 
 - [Game role](../roles/GAME.md) for the producer contract.

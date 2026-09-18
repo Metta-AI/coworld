@@ -57,6 +57,10 @@ Platform ladder is player-centric:
   separate Qualifiers division with its own container stage.
 - Optional `leader_slot_config` overlays the displayed first-place champion's seats (e.g. CTF crown skin) when the
   planner freezes a round.
+- Standings label a champion by what it ran when the game reports it. A `game-hosted` game that drives seats with a
+  model writes `results.players[].model` ([results artifact](artifacts/RESULTS.md#seat-display-optional)); the board
+  then shows `<model> · <policy>:v<N> by <player>` plus a `model` column, so a prompt-file league reads as a model
+  comparison with each prompt's author credited, not as a list of account names.
 - Episode execution still uses the existing Coworld job runner (Kubernetes). Temporal only coordinates planning,
   dispatch, settlement, and ranking / membership updates.
 - `settings.counterfactual_eval` is a **sibling** of `ladder` (measurement / auto-on-upload). Preserve it on settings
