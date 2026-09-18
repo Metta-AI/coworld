@@ -8,6 +8,7 @@ consumes something; artifact pages describe the thing itself.
 | Artifact                              | Producer                  | Where it appears                                                                                                 |
 | ------------------------------------- | ------------------------- | ---------------------------------------------------------------------------------------------------------------- |
 | [Results](RESULTS.md)                 | Game                      | Local `results.json`, hosted `RESULTS_URI`, episode bundle `results` token                                       |
+| [Events](EVENTS.md)                   | Game (optional)           | Local `events.json`, hosted `EVENTS_URI`, game container input `COGAME_EVENTS_URI`                               |
 | [Replay](REPLAY.md)                   | Game                      | Local `replay`, hosted `REPLAY_URI`, episode bundle `replay` token                                               |
 | [Game logs](GAME_LOGS.md)             | Game container / runner   | Local `logs/game.*.log`, hosted `DEBUG_URI`, episode bundle `game_logs` token                                    |
 | [Player seats](PLAYER_SEATS.md)       | Runner                    | Game-hosted `COGAME_PLAYER_SEATS_URI` input and per-seat output locations                                        |

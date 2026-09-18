@@ -23,3 +23,8 @@
   kind: compatible
   summary: Optional replay viewer format identity gates persistent recorded-window artifact delivery.
   fixture: packages/coworld/tests/manifest_versions/v0/replay_format_identity_manifest.json
+- schema_hash: 3bd448a9027193635a319ab528ce074db5f070db6b5171ce72296c6458197d39
+  kind: compatible
+  summary: Add the optional game.log block (Log Contract v1 hints - agent_label_field, team_field,
+    objective, panels) that raises coworld certify's Log richness tier to 2.
+  fixture: packages/coworld/tests/manifest_versions/v0/log_contract_manifest.json

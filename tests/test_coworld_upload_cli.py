@@ -2565,9 +2565,11 @@ def test_download_agent_guide_links_game_docs_without_copying_text(server: str) 
     assert "https://softmax.com/docs/llms.txt" in guide
     assert "https://softmax.com/docs/skill.md" in guide
     base = server.rstrip("/") + "/observatory"
+    web_base = server.rstrip("/").removesuffix("/api")
     assert f"{base}/openapi.json" in guide
     assert f"{base}/v2/forums/{manifest['game']['name']}.md" in guide
     assert f"{base}/v2/wikis/{manifest['game']['name']}/pages.md" in guide
+    assert f"{web_base}/{manifest['game']['name']}/logs" in guide
     assert len(guide.splitlines()) < 40
 
 

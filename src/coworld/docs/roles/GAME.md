@@ -220,6 +220,15 @@ The game should put authoritative episode state in structured artifacts:
 - [`RESULTS.md`](../artifacts/RESULTS.md) for final game-defined results.
 - [`REPLAY.md`](../artifacts/REPLAY.md) for replay bytes.
 - [`GAME_LOGS.md`](../artifacts/GAME_LOGS.md) for diagnostic logs.
+- [`EVENTS.md`](../artifacts/EVENTS.md) for the optional, game-written `events.json` envelope that raises the default
+  platform Log (`docs/surfaces/logs.md`, at the monorepo root) from tier 0 to tier 1. Entirely optional; a game that
+  never writes it still gets a complete tier 0 Log.
+
+A game may also declare `game.results_schema` field `x-display` hints and an optional manifest `game.log` block
+(`agent_label_field`, `team_field`, `objective`, `panels`) to sharpen the default Log's tier 0/1 panels — see
+[COWORLD_MANIFEST.md](../COWORLD_MANIFEST.md#optional-x-display-display-hints) and
+[COWORLD_MANIFEST.md](../COWORLD_MANIFEST.md#log-contract-hints-gamelog). Neither is required; `coworld certify` reports
+the resulting richness tier but never fails on its absence.
 
 ## How it fits with other roles
 

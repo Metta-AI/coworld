@@ -15,7 +15,9 @@ from coworld.types import (
     CoworldDocPage,
     CoworldDocs,
     CoworldEpisodeJobSpec,
+    CoworldGameLog,
     CoworldGameManifest,
+    CoworldLogPanel,
     CoworldManifest,
     CoworldManifestRoleSpec,
     CoworldPlayerFileSpec,
@@ -69,6 +71,8 @@ def test_all_fields_fixture_covers_every_manifest_model_field() -> None:
     assert_covers_all_fields(manifest["game"]["promo"], CoworldPromo)
     assert_covers_all_fields(manifest["game"]["replay_viewer"], CoworldReplayViewer)
     assert_covers_all_fields(manifest["game"]["achievements"][0], CoworldAchievement)
+    assert_covers_all_fields(manifest["game"]["log"], CoworldGameLog)
+    assert_covers_all_fields(manifest["game"]["log"]["panels"][0], CoworldLogPanel)
     assert_covers_all_fields(manifest["player"][0], CoworldManifestRoleSpec)
     assert_covers_all_fields(manifest["reporter"][0], CoworldReporterPlatformReference)
     assert_covers_all_fields(manifest["reporter"][1], CoworldReporterWasmReference)

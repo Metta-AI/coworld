@@ -227,6 +227,66 @@ the Coworld's own `results_schema`.
 
 See [Results Artifact](artifacts/RESULTS.md) for the artifact contract.
 
+### Optional `x-display` Display Hints
+
+Any property in `game.results_schema.properties` may carry an `x-display` object to help the default platform Log
+(`docs/surfaces/logs.md`, at the monorepo root) present that field without guessing from its raw name:
+
+```json
+"damage_dealt": {
+  "type": "array",
+  "items": { "type": "number" },
+  "x-display": {
+    "unit": "hp",
+    "higher_is_better": true,
+    "per_seat": true,
+    "label": "Damage dealt"
+  }
+}
+```
+
+| Field              | Type    | Purpose                                                                                                                   |
+| ------------------ | ------- | ------------------------------------------------------------------------------------------------------------------------- |
+| `unit`             | string  | Unit label shown beside the value, e.g. `"hp"`, `"tiles"`, `"seconds"`.                                                   |
+| `higher_is_better` | boolean | Whether a larger value is the better outcome, for coloring or ranking the field.                                          |
+| `per_seat`         | boolean | Whether the field is an array aligned to seat count (one value per player slot) rather than a single episode-level value. |
+| `label`            | string  | Human-readable field label. Falls back to the JSON Schema `title`/`description` or the raw field name when absent.        |
+
+`x-` prefixed keys are ordinary JSON Schema annotation keywords: every schema validator on this path
+(`Draft202012Validator.check_schema`/`.validate` in [`schema_validation.py`](../schema_validation.py)) accepts and
+ignores unknown keywords by design, so `x-display` never fails manifest, certification, or upload validation. It is
+entirely optional — see [`coworld certify`](../certifier.py)'s Log richness tier (`compute_log_richness`), which reports
+tier 2 when any `x-display` hint is present.
+
+## Log Contract Hints (`game.log`)
+
+`game.log` is an optional block of Log Contract v1 hints (`docs/surfaces/logs.md`, at the monorepo root) that names
+panels and semantics for the default platform Log instead of leaving it to infer them from `events.json` field names
+(see [`EVENTS.md`](artifacts/EVENTS.md) for that envelope):
+
+```json
+"log": {
+  "agent_label_field": "agent",
+  "team_field": "team",
+  "objective": "Control more territory than every other team when the match clock ends.",
+  "panels": [
+    { "title": "Combat", "kinds": ["attack", "kill", "death"] },
+    { "title": "Territory", "kinds": ["capture", "lose_tile"] }
+  ]
+}
+```
+
+| Field               | Type                      | Purpose                                                                                                                 |
+| ------------------- | ------------------------- | ----------------------------------------------------------------------------------------------------------------------- |
+| `agent_label_field` | string                    | `events.json` field whose value labels an agent in the default Log. Defaults to the raw `agent` event field when unset. |
+| `team_field`        | string                    | `events.json` field the default Log uses to group agents into teams.                                                    |
+| `objective`         | string                    | Human-readable statement of what winning means, shown near the result banner.                                           |
+| `panels`            | array of `{title, kinds}` | Named groupings of `events.json` `kind` values, rendered as separate panels instead of one combined kind-count table.   |
+
+`game.log` is entirely optional; omitting it does not change tier 0 or tier 1 rendering. See
+[`coworld certify`](../certifier.py)'s Log richness tier (`compute_log_richness`), which reports tier 2 when `game.log`
+declares any hint.
+
 ## Docs In The Manifest
 
 The manifest stores document references, not local file uploads. A document is either inline text or a public HTTP(S)
@@ -365,3 +425,6 @@ field.
 - [Lifecycle](LIFECYCLE.md) for local and hosted episode execution.
 - [Artifact reference](artifacts/README.md) for outputs produced from manifest-defined roles.
 - [Cookbook](COOKBOOK.md) for local play, certification, upload, and inspection recipes.
+- [Events artifact](artifacts/EVENTS.md) for the optional `events.json` envelope `x-display` and `game.log` build on.
+- `docs/surfaces/logs.md` (at the monorepo root) for the default Log's tier ladder and the Log Contract v1 this manifest
+  hint set implements.
