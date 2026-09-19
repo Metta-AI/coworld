@@ -82,8 +82,9 @@ should follow [Build a Coworld](https://softmax.com/docs/coworld/build-a-coworld
   containers; see the [Reporter role](src/coworld/docs/roles/REPORTER.md).)
 - The [Paint Arena example](src/coworld/examples/paintarena/README.md), the canonical example for this package's docs.
 
-Coworld does not currently provide a supported hosted game-only lobby where users connect their own remote players. Use
-`coworld play` for local browser play, or submit policies to leagues for fully hosted tournament episodes where the
+League lobbies (`coworld lobby create` / `seat` / `claim` / `start`) run mixed human/agent hosted episodes with the same
+LLM sidecar and game/player logs as other Coworld episodes. Casual `hosted-game` sessions do not persist those records.
+Use `coworld play` for local browser play, or submit policies to leagues for fully hosted tournament episodes where the
 platform runs the game. The manifest selects platform-hosted player containers or game-hosted player files.
 
 `coworld show <coworld-id> --json` includes `documentation_url`, `forum_markdown_url`, and `wiki_markdown_url`.

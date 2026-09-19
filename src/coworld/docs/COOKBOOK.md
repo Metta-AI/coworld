@@ -53,9 +53,27 @@ echo '{"coworld_id": "cow_...", "variant_id": "variant_...", "roster": [{"player
 uv run coworld xp-request episodes xreq_...
 ```
 
-`xp-request` is the supported path for replayable non-tournament policy evaluation and fills a full `roster` — each seat
-is a specific policy (`policy_ref`) or a `top_n`/`random` champion from a target league. Coworld does not currently
-provide a supported hosted game-only lobby for people to join through browser slots.
+Use a league lobby for mixed human/agent games. Those episodes use the same Bedrock sidecar, game logs, player logs, and
+player artifacts as experience requests:
+
+```bash
+uv run coworld lobby create league_... --num-players 6 \
+  --override nightLengthSeconds=45 \
+  --seat 1:human_open --seat 2:human_open --seat 3:league_player:ply_...
+uv run coworld lobby claim lby_... 1
+uv run coworld lobby start lby_...
+uv run coworld episode-logs ereq_... --game
+```
+
+`POST /v2/leagues/{league_id}/lobbies` is the same create call and accepts an optional `seats` roster. Any signed-in
+user who can see the league may create one. Policy seats must be competing champions in that league — upload, submit,
+and promote the agent first. Human seats are `human_open` until a guest claims them. Seat 0 defaults to the host. One
+active lobby per host; usage is credited to the host. After the game, pull logs with `coworld episode-logs` — game logs
+for host and human participants, player logs/artifacts for policies you own.
+
+`xp-request` is the supported path for replayable all-agent evaluation and fills a full `roster` — each seat is a
+specific policy (`policy_ref`) or a `top_n`/`random` champion from a target league. Casual `hosted-game` sessions do not
+persist those episode records.
 
 ## Size A Policy Field Study
 

@@ -539,6 +539,49 @@ class V2EpisodeRequestRow(V2EpisodeRequestListRow):
     game_config: dict[str, Any] | None = None
 
 
+class LobbySeatPublic(CoworldAPIModel):
+    position: int
+    kind: str
+    player_id: str | None = None
+    player_name: str | None = None
+    is_me: bool
+    claimant_label: str | None = None
+    can_claim: bool
+    can_remove: bool
+
+
+class LobbyPermissions(CoworldAPIModel):
+    can_start: bool
+    can_edit: bool
+    can_remove_player: bool
+    can_end_game: bool
+
+
+class LobbyPublic(CoworldAPIModel):
+    id: str
+    league_id: str
+    coworld_id: str
+    coworld_name: str
+    coworld_version: str
+    coworld_manifest_hash: str
+    host_user_id: str | None = None
+    variant_id: str | None = None
+    min_players: int
+    max_players: int
+    status: str
+    revision: int
+    episode_request_id: str | None = None
+    episode_id: UUID | None = None
+    replay_url: str | None = None
+    created_at: datetime
+    started_at: datetime | None = None
+    ended_at: datetime | None = None
+    expires_at: datetime
+    seats: list[LobbySeatPublic]
+    can_manage: bool
+    permissions: LobbyPermissions
+
+
 class V2EpisodeRequestSummary(CoworldAPIModel):
     id: str
     status: str
@@ -793,6 +836,66 @@ class CoworldApiClient:
 
     def get_league(self, league_id: str) -> LeaguePublic:
         return self._get(f"/v2/leagues/{league_id}", LeaguePublic)
+
+    def create_lobby(
+        self,
+        league_id: str,
+        *,
+        idempotency_key: str,
+        variant_id: str | None = None,
+        game_config_overrides: dict[str, object] | None = None,
+        num_players: int | None = None,
+        seats: list[dict[str, object]] | None = None,
+    ) -> LobbyPublic:
+        body: dict[str, object] = {"idempotency_key": idempotency_key}
+        if variant_id is not None:
+            body["variant_id"] = variant_id
+        if game_config_overrides is not None:
+            body["game_config_overrides"] = game_config_overrides
+        if num_players is not None:
+            body["num_players"] = num_players
+        if seats is not None:
+            body["seats"] = seats
+        return self._post(f"/v2/leagues/{league_id}/lobbies", LobbyPublic, json=body)
+
+    def get_lobby(self, lobby_id: str) -> LobbyPublic:
+        return self._get(f"/v2/lobbies/{lobby_id}", LobbyPublic)
+
+    def update_lobby_seat(
+        self,
+        lobby_id: str,
+        position: int,
+        *,
+        expected_revision: int,
+        kind: str,
+        player_id: str | None = None,
+    ) -> LobbyPublic:
+        body: dict[str, object] = {"expected_revision": expected_revision, "kind": kind}
+        if player_id is not None:
+            body["player_id"] = player_id
+        return self._request("PUT", f"/v2/lobbies/{lobby_id}/seats/{position}", LobbyPublic, json=body)
+
+    def claim_lobby_seat(self, lobby_id: str, position: int) -> LobbyPublic:
+        return self._post(f"/v2/lobbies/{lobby_id}/seats/{position}/claim", LobbyPublic)
+
+    def remove_lobby_player(self, lobby_id: str, position: int) -> LobbyPublic:
+        return self._request("DELETE", f"/v2/lobbies/{lobby_id}/seats/{position}/player", LobbyPublic)
+
+    def leave_lobby(self, lobby_id: str) -> LobbyPublic:
+        return self._post(f"/v2/lobbies/{lobby_id}/leave", LobbyPublic)
+
+    def start_lobby(self, lobby_id: str, *, idempotency_key: str, expected_revision: int) -> LobbyPublic:
+        return self._post(
+            f"/v2/lobbies/{lobby_id}/start",
+            LobbyPublic,
+            json={"idempotency_key": idempotency_key, "expected_revision": expected_revision},
+        )
+
+    def cancel_lobby(self, lobby_id: str) -> LobbyPublic:
+        return self._post(f"/v2/lobbies/{lobby_id}/cancel", LobbyPublic)
+
+    def end_lobby(self, lobby_id: str) -> LobbyPublic:
+        return self._post(f"/v2/lobbies/{lobby_id}/end", LobbyPublic)
 
     def get_game_of_week_league(self) -> LeaguePublic | None:
         return self._get("/v2/leagues/game-of-week", LeaguePublic | None)

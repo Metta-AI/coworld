@@ -19,7 +19,7 @@ from rich.table import Table
 from typer.core import TyperCommand
 
 from coworld.agent_guidance import IMPORT_BLOCK, update_agent_guidance, upsert_guidance
-from coworld.api_client import AutoChampion, CoworldApiClient
+from coworld.api_client import AutoChampion, CoworldApiClient, LobbyPublic
 from coworld.bundle import build_coworld_manifest
 from coworld.campaign_cli import register_campaign_commands
 from coworld.certification_report import write_certification_report
@@ -196,6 +196,12 @@ league_app = typer.Typer(
 )
 app.add_typer(league_app, name="league")
 
+lobby_app = typer.Typer(
+    no_args_is_help=True,
+    help="Create and start league lobbies for mixed human/agent Coworld games.",
+)
+app.add_typer(lobby_app, name="lobby")
+
 counterfactual_app = typer.Typer(
     no_args_is_help=True,
     help="Trigger and inspect counterfactual evals (candidate vs baseline on a league).",
@@ -303,6 +309,182 @@ def counterfactual_get(
         console.print(f"[red]error[/red] {result['error']}")
     detail_url = observatory_web_url(server, f"/observatory/v2?detail=counterfactual-eval:{result['id']}")
     console.print(f"[dim]UI[/dim] {detail_url}", soft_wrap=True)
+
+
+def _print_lobby(server: str, lobby: LobbyPublic, *, json_output: bool) -> None:
+    if json_output:
+        emit_json(lobby.model_dump(mode="json"))
+        return
+    console.print(f"[bold]{lobby.id}[/bold]  status={lobby.status}  revision={lobby.revision}")
+    console.print(f"[dim]League:[/dim] {lobby.league_id}")
+    console.print(f"[dim]Coworld:[/dim] {lobby.coworld_name} {lobby.coworld_version}")
+    if lobby.episode_request_id is not None:
+        console.print(f"[dim]Episode:[/dim] {lobby.episode_request_id}")
+    for seat in lobby.seats:
+        occupant = seat.claimant_label or seat.player_name or seat.player_id or "-"
+        console.print(f"[dim]Seat {seat.position}:[/dim] {seat.kind} {occupant}")
+    lobby_url = observatory_web_url(server, f"/observatory/v2/lobbies/{lobby.id}")
+    console.print(f"[dim]Lobby:[/dim] {lobby_url}", soft_wrap=True)
+
+
+def _parse_lobby_seat(value: str) -> dict[str, object]:
+    parts = value.split(":")
+    if len(parts) < 2:
+        raise typer.BadParameter("Expected POSITION:KIND or POSITION:league_player:PLAYER_ID")
+    try:
+        position = int(parts[0])
+    except ValueError as exc:
+        raise typer.BadParameter(f"Seat position must be an integer, got {parts[0]!r}") from exc
+    kind = parts[1]
+    player_id = ":".join(parts[2:]) or None
+    if kind == "league_player" and player_id is None:
+        raise typer.BadParameter("league_player seats require POSITION:league_player:PLAYER_ID")
+    if kind != "league_player" and player_id is not None:
+        raise typer.BadParameter(f"{kind} seats do not take a player id")
+    seat: dict[str, object] = {"position": position, "kind": kind}
+    if player_id is not None:
+        seat["player_id"] = player_id
+    return seat
+
+
+@lobby_app.command("create", help="Create a draft league lobby for mixed human/agent play.")
+def lobby_create(
+    league_id: Annotated[str, typer.Argument(help="League that owns the lobby Coworld.")],
+    variant_id: Annotated[str | None, typer.Option("--variant", help="Manifest variant id.")] = None,
+    num_players: Annotated[int | None, typer.Option("--num-players", min=1, help="Active seat count.")] = None,
+    overrides: Annotated[
+        list[str] | None,
+        typer.Option("--override", help="Public game config override as KEY=JSON_VALUE."),
+    ] = None,
+    seats: Annotated[
+        list[str] | None,
+        typer.Option("--seat", help="Roster overlay as POSITION:KIND or POSITION:league_player:PLAYER_ID."),
+    ] = None,
+    server: Annotated[str, typer.Option("--server", help="Observatory API server URL.")] = DEFAULT_SUBMIT_SERVER,
+    json_output: Annotated[bool, typer.Option("--json", help="Print raw JSON.")] = False,
+) -> None:
+    with CoworldApiClient.from_login(server_url=server) as client:
+        lobby = client.create_lobby(
+            league_id,
+            idempotency_key=f"cli-lobby-create-{uuid.uuid4()}",
+            variant_id=variant_id,
+            game_config_overrides=dict(_parse_override(item) for item in overrides) if overrides else None,
+            num_players=num_players,
+            seats=[_parse_lobby_seat(item) for item in seats] if seats else None,
+        )
+    _print_lobby(server, lobby, json_output=json_output)
+
+
+@lobby_app.command("get", help="Show a league lobby.")
+def lobby_get(
+    lobby_id: Annotated[str, typer.Argument(help="Lobby id (lby_...).")],
+    server: Annotated[str, typer.Option("--server", help="Observatory API server URL.")] = DEFAULT_SUBMIT_SERVER,
+    json_output: Annotated[bool, typer.Option("--json", help="Print raw JSON.")] = False,
+) -> None:
+    with CoworldApiClient.from_login(server_url=server) as client:
+        lobby = client.get_lobby(lobby_id)
+    _print_lobby(server, lobby, json_output=json_output)
+
+
+@lobby_app.command("start", help="Start a draft league lobby as a hosted episode.")
+def lobby_start(
+    lobby_id: Annotated[str, typer.Argument(help="Lobby id (lby_...).")],
+    revision: Annotated[
+        int | None,
+        typer.Option("--revision", help="Expected draft revision. Omit to use the current revision."),
+    ] = None,
+    server: Annotated[str, typer.Option("--server", help="Observatory API server URL.")] = DEFAULT_SUBMIT_SERVER,
+    json_output: Annotated[bool, typer.Option("--json", help="Print raw JSON.")] = False,
+) -> None:
+    with CoworldApiClient.from_login(server_url=server) as client:
+        current = client.get_lobby(lobby_id)
+        lobby = client.start_lobby(
+            lobby_id,
+            idempotency_key=f"cli-lobby-start-{uuid.uuid4()}",
+            expected_revision=current.revision if revision is None else revision,
+        )
+    _print_lobby(server, lobby, json_output=json_output)
+
+
+@lobby_app.command("seat", help="Set a draft lobby seat to human_open, league_player, random, or closed.")
+def lobby_seat(
+    lobby_id: Annotated[str, typer.Argument(help="Lobby id (lby_...).")],
+    spec: Annotated[str, typer.Argument(help="POSITION:KIND or POSITION:league_player:PLAYER_ID.")],
+    revision: Annotated[
+        int | None,
+        typer.Option("--revision", help="Expected draft revision. Omit to use the current revision."),
+    ] = None,
+    server: Annotated[str, typer.Option("--server", help="Observatory API server URL.")] = DEFAULT_SUBMIT_SERVER,
+    json_output: Annotated[bool, typer.Option("--json", help="Print raw JSON.")] = False,
+) -> None:
+    seat = _parse_lobby_seat(spec)
+    with CoworldApiClient.from_login(server_url=server) as client:
+        current = client.get_lobby(lobby_id)
+        lobby = client.update_lobby_seat(
+            lobby_id,
+            int(seat["position"]),
+            expected_revision=current.revision if revision is None else revision,
+            kind=str(seat["kind"]),
+            player_id=str(seat["player_id"]) if "player_id" in seat else None,
+        )
+    _print_lobby(server, lobby, json_output=json_output)
+
+
+@lobby_app.command("claim", help="Claim an open human seat in a draft lobby.")
+def lobby_claim(
+    lobby_id: Annotated[str, typer.Argument(help="Lobby id (lby_...).")],
+    position: Annotated[int, typer.Argument(help="Zero-based seat position.")],
+    server: Annotated[str, typer.Option("--server", help="Observatory API server URL.")] = DEFAULT_SUBMIT_SERVER,
+    json_output: Annotated[bool, typer.Option("--json", help="Print raw JSON.")] = False,
+) -> None:
+    with CoworldApiClient.from_login(server_url=server) as client:
+        lobby = client.claim_lobby_seat(lobby_id, position)
+    _print_lobby(server, lobby, json_output=json_output)
+
+
+@lobby_app.command("remove", help="Clear a human player from a draft lobby seat.")
+def lobby_remove(
+    lobby_id: Annotated[str, typer.Argument(help="Lobby id (lby_...).")],
+    position: Annotated[int, typer.Argument(help="Zero-based seat position.")],
+    server: Annotated[str, typer.Option("--server", help="Observatory API server URL.")] = DEFAULT_SUBMIT_SERVER,
+    json_output: Annotated[bool, typer.Option("--json", help="Print raw JSON.")] = False,
+) -> None:
+    with CoworldApiClient.from_login(server_url=server) as client:
+        lobby = client.remove_lobby_player(lobby_id, position)
+    _print_lobby(server, lobby, json_output=json_output)
+
+
+@lobby_app.command("leave", help="Leave a draft lobby human seat.")
+def lobby_leave(
+    lobby_id: Annotated[str, typer.Argument(help="Lobby id (lby_...).")],
+    server: Annotated[str, typer.Option("--server", help="Observatory API server URL.")] = DEFAULT_SUBMIT_SERVER,
+    json_output: Annotated[bool, typer.Option("--json", help="Print raw JSON.")] = False,
+) -> None:
+    with CoworldApiClient.from_login(server_url=server) as client:
+        lobby = client.leave_lobby(lobby_id)
+    _print_lobby(server, lobby, json_output=json_output)
+
+
+@lobby_app.command("cancel", help="Cancel a draft lobby before it starts.")
+def lobby_cancel(
+    lobby_id: Annotated[str, typer.Argument(help="Lobby id (lby_...).")],
+    server: Annotated[str, typer.Option("--server", help="Observatory API server URL.")] = DEFAULT_SUBMIT_SERVER,
+    json_output: Annotated[bool, typer.Option("--json", help="Print raw JSON.")] = False,
+) -> None:
+    with CoworldApiClient.from_login(server_url=server) as client:
+        lobby = client.cancel_lobby(lobby_id)
+    _print_lobby(server, lobby, json_output=json_output)
+
+
+@lobby_app.command("end", help="End a running lobby game.")
+def lobby_end(
+    lobby_id: Annotated[str, typer.Argument(help="Lobby id (lby_...).")],
+    server: Annotated[str, typer.Option("--server", help="Observatory API server URL.")] = DEFAULT_SUBMIT_SERVER,
+    json_output: Annotated[bool, typer.Option("--json", help="Print raw JSON.")] = False,
+) -> None:
+    with CoworldApiClient.from_login(server_url=server) as client:
+        lobby = client.end_lobby(lobby_id)
+    _print_lobby(server, lobby, json_output=json_output)
 
 
 @league_app.command("create", help="Create a league seed for a Coworld.")
