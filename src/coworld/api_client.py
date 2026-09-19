@@ -15,6 +15,11 @@ from softmax.agent import user_agent
 from softmax.rate_limits import RateLimitTransport
 
 
+def _query_params(**values: str | int | UUID | list[str] | None) -> dict[str, str | int | list[str]]:
+    """Omit absent filters while retaining empty values, false flags and field order."""
+    return {key: str(value) if isinstance(value, UUID) else value for key, value in values.items() if value is not None}
+
+
 class CoworldAPIModel(BaseModel):
     model_config = ConfigDict(extra="allow")
 
@@ -817,6 +822,12 @@ class CoworldApiClient:
     def _post(self, path: str, response_type: Any, **kwargs: Any) -> Any:
         return self._request("POST", path, response_type, **kwargs)
 
+    def _get_page(self, path: str, page_type: Any, entry_type: Any, **kwargs: Any) -> Any:
+        response = self._http_client.get(path, headers=self._headers(), **kwargs)
+        _raise_for_status(response)
+        entries, next_cursor = list_page_payload(response)
+        return page_type(entries=TypeAdapter(list[entry_type]).validate_python(entries), next_cursor=next_cursor)
+
     def get_bytes(self, path: str, *, timeout: float | None = None) -> bytes:
         response = self._http_client.get(path, headers=self._headers(), timeout=timeout)
         _raise_for_status(response)
@@ -941,17 +952,13 @@ class CoworldApiClient:
     def get_campaign_history(
         self, league_id: str, *, player_id: str, rounds: int | None = None
     ) -> CampaignHistoryPublic:
-        params: dict[str, str | int] = {"player_id": player_id}
-        if rounds is not None:
-            params["rounds"] = rounds
+        params = _query_params(player_id=player_id, rounds=rounds)
         return self._get(f"/v2/leagues/{league_id}/campaign/history", CampaignHistoryPublic, params=params)
 
     def get_campaign_conversation(
         self, league_id: str, *, player_id: str, round_no: int | None = None
     ) -> CampaignConversationPublic:
-        params: dict[str, str | int] = {"player_id": player_id}
-        if round_no is not None:
-            params["round"] = round_no
+        params = _query_params(player_id=player_id, round=round_no)
         return self._get(f"/v2/leagues/{league_id}/campaign/conversation", CampaignConversationPublic, params=params)
 
     def get_campaign_prompt(self, league_id: str, *, player_id: str) -> CampaignPromptPublic:
@@ -1022,15 +1029,7 @@ class CoworldApiClient:
         limit: int = 25,
         cursor: str | None = None,
     ) -> RoundListPublic:
-        params: dict[str, str | int] = {"limit": limit}
-        if league_id is not None:
-            params["league_id"] = league_id
-        if division_id is not None:
-            params["division_id"] = division_id
-        if status is not None:
-            params["status"] = status
-        if cursor is not None:
-            params["cursor"] = cursor
+        params = _query_params(limit=limit, league_id=league_id, division_id=division_id, status=status, cursor=cursor)
         return self._get("/v2/rounds", RoundListPublic, params=params)
 
     def get_round(self, round_id: str) -> RoundDetailPublic:
@@ -1049,29 +1048,19 @@ class CoworldApiClient:
         limit: int | None = None,
         cursor: str | None = None,
     ) -> LeaguePolicyMembershipPage:
-        params: dict[str, str | int | bool] = {
-            "active_only": str(active_only).lower(),
-            "champions_only": str(champions_only).lower(),
-            "mine": str(mine).lower(),
-        }
-        if league_id is not None:
-            params["league_id"] = league_id
-        if division_id is not None:
-            params["division_id"] = division_id
-        if policy_version_id is not None:
-            params["policy_version_id"] = str(policy_version_id)
-        if player_id is not None:
-            params["player_id"] = player_id
-        if limit is not None:
-            params["limit"] = limit
-        if cursor is not None:
-            params["cursor"] = cursor
-        response = self._http_client.get("/v2/league-policy-memberships", headers=self._headers(), params=params)
-        _raise_for_status(response)
-        entries, next_cursor = list_page_payload(response)
-        return LeaguePolicyMembershipPage(
-            entries=TypeAdapter(list[LeaguePolicyMembershipPublic]).validate_python(entries),
-            next_cursor=next_cursor,
+        params = _query_params(
+            active_only=str(active_only).lower(),
+            champions_only=str(champions_only).lower(),
+            mine=str(mine).lower(),
+            league_id=league_id,
+            division_id=division_id,
+            policy_version_id=policy_version_id,
+            player_id=player_id,
+            limit=limit,
+            cursor=cursor,
+        )
+        return self._get_page(
+            "/v2/league-policy-memberships", LeaguePolicyMembershipPage, LeaguePolicyMembershipPublic, params=params
         )
 
     def retire_membership(
@@ -1099,24 +1088,15 @@ class CoworldApiClient:
         limit: int | None = None,
         cursor: str | None = None,
     ) -> LeagueSubmissionPage:
-        params: dict[str, str | int | bool] = {"mine": str(mine).lower()}
-        if league_id is not None:
-            params["league_id"] = league_id
-        if player_id is not None:
-            params["player_id"] = player_id
-        if policy_version_id is not None:
-            params["policy_version_id"] = str(policy_version_id)
-        if limit is not None:
-            params["limit"] = limit
-        if cursor is not None:
-            params["cursor"] = cursor
-        response = self._http_client.get("/v2/league-submissions", headers=self._headers(), params=params)
-        _raise_for_status(response)
-        entries, next_cursor = list_page_payload(response)
-        return LeagueSubmissionPage(
-            entries=TypeAdapter(list[LeagueSubmissionPublic]).validate_python(entries),
-            next_cursor=next_cursor,
+        params = _query_params(
+            mine=str(mine).lower(),
+            league_id=league_id,
+            player_id=player_id,
+            policy_version_id=policy_version_id,
+            limit=limit,
+            cursor=cursor,
         )
+        return self._get_page("/v2/league-submissions", LeagueSubmissionPage, LeagueSubmissionPublic, params=params)
 
     def submit_to_league(
         self,
@@ -1152,9 +1132,7 @@ class CoworldApiClient:
         limit: int = 50,
         cursor: str | None = None,
     ) -> EpisodeRequestSummaryPage:
-        params: dict[str, str | int] = {"limit": limit}
-        if cursor is not None:
-            params["cursor"] = cursor
+        params = _query_params(limit=limit, cursor=cursor)
         return self._get(
             f"/v2/rounds/{round_id}/episode-requests",
             EpisodeRequestSummaryPage,
@@ -1168,9 +1146,7 @@ class CoworldApiClient:
         limit: int = 50,
         cursor: str | None = None,
     ) -> EpisodeRequestSummaryPage:
-        params: dict[str, str | int] = {"limit": limit}
-        if cursor is not None:
-            params["cursor"] = cursor
+        params = _query_params(limit=limit, cursor=cursor)
         return self._get(
             f"/v2/policy-versions/{policy_version_id}/episode-requests",
             EpisodeRequestSummaryPage,
@@ -1201,11 +1177,7 @@ class CoworldApiClient:
         limit: int = 50,
         cursor: str | None = None,
     ) -> EpisodeRequestSummaryPage:
-        params: dict[str, str | int] = {"limit": limit}
-        if source is not None:
-            params["source"] = source
-        if cursor is not None:
-            params["cursor"] = cursor
+        params = _query_params(limit=limit, source=source, cursor=cursor)
         return self._get(
             f"/v2/coworlds/{coworld_id}/episode-requests",
             EpisodeRequestSummaryPage,
@@ -1219,9 +1191,7 @@ class CoworldApiClient:
         limit: int = 50,
         cursor: str | None = None,
     ) -> EpisodeRequestSummaryPage:
-        params: dict[str, str | int] = {"limit": limit}
-        if cursor is not None:
-            params["cursor"] = cursor
+        params = _query_params(limit=limit, cursor=cursor)
         return self._get(
             f"/v2/experience-requests/{experience_request_id}/episode-requests",
             EpisodeRequestSummaryPage,
@@ -1254,9 +1224,7 @@ class CoworldApiClient:
         limit: int = 50,
         cursor: str | None = None,
     ) -> ExperienceRequestPage:
-        params: dict[str, str | int] = {"mine": str(mine).lower(), "limit": limit}
-        if cursor is not None:
-            params["cursor"] = cursor
+        params = _query_params(mine=str(mine).lower(), limit=limit, cursor=cursor)
         return self._get(
             "/v2/experience-requests",
             ExperienceRequestPage,
@@ -1285,30 +1253,18 @@ class CoworldApiClient:
         limit: int = 50,
         cursor: str | None = None,
     ) -> CompetitionEventPage:
-        params: dict[str, str | int] = {"limit": limit}
-        if league_id is not None:
-            params["league_id"] = league_id
-        if division_id is not None:
-            params["division_id"] = division_id
-        if round_id is not None:
-            params["round_id"] = round_id
-        if event_type is not None:
-            params["event_type"] = event_type
-        if audience is not None:
-            params["audience"] = audience
-        if player_id is not None:
-            params["player_id"] = player_id
-        if policy_version_id is not None:
-            params["policy_version_id"] = str(policy_version_id)
-        if cursor is not None:
-            params["cursor"] = cursor
-        response = self._http_client.get("/v2/competition-events", headers=self._headers(), params=params)
-        _raise_for_status(response)
-        entries, next_cursor = list_page_payload(response)
-        return CompetitionEventPage(
-            entries=TypeAdapter(list[CompetitionEventPublic]).validate_python(entries),
-            next_cursor=next_cursor,
+        params = _query_params(
+            limit=limit,
+            league_id=league_id,
+            division_id=division_id,
+            round_id=round_id,
+            event_type=event_type,
+            audience=audience,
+            player_id=player_id,
+            policy_version_id=policy_version_id,
+            cursor=cursor,
         )
+        return self._get_page("/v2/competition-events", CompetitionEventPage, CompetitionEventPublic, params=params)
 
     def get_job_artifact_bytes(self, job_id: UUID, artifact_type: str) -> bytes:
         return self.get_bytes(f"/jobs/{job_id}/artifacts/{artifact_type}")
@@ -1354,30 +1310,16 @@ class CoworldApiClient:
         limit: int = 200,
         cursor: str | None = None,
     ) -> ReporterListPage:
-        params: dict[str, Any] = {"mode": mode, "limit": limit}
-        if q is not None:
-            params["q"] = q
-        if types is not None:
-            params["type"] = list(types)
-        if author is not None:
-            params["author"] = author
-        if cursor is not None:
-            params["cursor"] = cursor
-        response = self._http_client.get("/v2/reporters", headers=self._headers(), params=params)
-        _raise_for_status(response)
-        entries, next_cursor = list_page_payload(response)
-        return ReporterListPage(
-            entries=TypeAdapter(list[ReporterPublic]).validate_python(entries),
-            next_cursor=next_cursor,
+        params = _query_params(
+            mode=mode, limit=limit, q=q, type=list(types) if types is not None else None, author=author, cursor=cursor
         )
+        return self._get_page("/v2/reporters", ReporterListPage, ReporterPublic, params=params)
 
     def get_reporter(self, reporter_id: str) -> ReporterDetailPublic:
         return self._get(f"/v2/reporters/{reporter_id}", ReporterDetailPublic)
 
     def lookup_policy_version(self, *, name: str, version: int | None = None) -> PolicyVersionRow | None:
-        params: dict[str, str | int] = {"mine": "true", "name_exact": name, "limit": 100}
-        if version is not None:
-            params["version"] = version
+        params = _query_params(mine="true", name_exact=name, limit=100, version=version)
         response = self._get("/stats/policy-versions", PolicyVersionsResponse, params=params)
         return response.entries[0] if response.entries else None
 
