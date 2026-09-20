@@ -42,24 +42,15 @@ def materialized_manifest_path(manifest_uri: str, *, server: str | None = None) 
 @contextmanager
 def materialized_replay_path(replay_uri: str) -> Iterator[Path]:
     parsed = urlparse(replay_uri)
-    if parsed.scheme == "file":
-        with _materialized_local_replay_path(Path(unquote(parsed.path)).resolve()) as replay_path:
-            yield replay_path
-        return
-    if parsed.scheme in ("http", "https"):
-        with tempfile.TemporaryDirectory(prefix="coworld-replay-") as temp_dir:
-            replay_path = Path(temp_dir) / _materialized_replay_name(parsed.path)
-            replay_path.write_bytes(_decode_replay_bytes(parsed.path, _download_bytes(replay_uri)))
-            yield replay_path
-        return
-    if parsed.scheme == "s3":
+    if parsed.scheme in ("http", "https", "s3"):
         with tempfile.TemporaryDirectory(prefix="coworld-replay-") as temp_dir:
             replay_path = Path(temp_dir) / _materialized_replay_name(parsed.path)
             replay_path.write_bytes(_decode_replay_bytes(parsed.path, read_data(replay_uri)))
             yield replay_path
         return
 
-    with _materialized_local_replay_path(Path(replay_uri).resolve()) as replay_path:
+    local_path = Path(unquote(parsed.path)) if parsed.scheme == "file" else Path(replay_uri)
+    with _materialized_local_replay_path(local_path.resolve()) as replay_path:
         yield replay_path
 
 
