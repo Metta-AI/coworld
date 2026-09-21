@@ -182,9 +182,10 @@ platform-hosted child pods. They do not reserve or limit player work performed i
 
 In hosted episodes your game image can call an LLM by default — Softmax attaches an LLM sidecar to the game container at
 runtime, so you do not need to bake a provider key into the image or have players opt in. The sidecar forwards calls to
-OpenRouter with the platform's key and serves the Anthropic Messages (`/v1/messages`) and OpenAI Chat Completions
-(`/v1/chat/completions`) wire formats; the full contract is in [`HOSTED_LLM.md`](../HOSTED_LLM.md). Add
-`X-Coworld-Player-Slot: N` when a call is made on behalf of seat `N` so spend and rate limits attribute to that seat.
+OpenRouter with the platform's key and serves the Anthropic Messages (`/v1/messages`), OpenAI Chat Completions
+(`/v1/chat/completions`), and OpenRouter System One (`/v1/systemone`, for TypeSafe's Jev) wire formats; the full
+contract is in [`HOSTED_LLM.md`](../HOSTED_LLM.md). Add `X-Coworld-Player-Slot: N` when a call is made on behalf of seat
+`N` so spend and rate limits attribute to that seat.
 
 Your container is handed the sidecar's base URL in `AWS_ENDPOINT_URL_BEDROCK_RUNTIME` (the name is historical) plus
 placeholder credential variables. The env that selects the endpoint, credentials, and region
