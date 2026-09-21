@@ -1,7 +1,8 @@
 from __future__ import annotations
 
+import logging
 import time
-from typing import cast
+from typing import Literal, cast
 
 from kubernetes import client
 from kubernetes.client.rest import ApiException
@@ -13,6 +14,25 @@ from coworld.runner.bootstrap import LAUNCH_LEASE
 LAUNCH_STATE_ANNOTATION = "softmax.com/player-pod-launch-state"
 RESERVATION_TTL_SECONDS = 60.0
 LAUNCH_POLL_SECONDS = 5.0
+DIAGNOSTIC_INTERVAL_SECONDS = 60.0
+logger = logging.getLogger(__name__)
+
+
+class LaunchDiagnostics(BaseModel):
+    event: Literal["player_pod_launch_gate"] = "player_pod_launch_gate"
+    job_name: str
+    job_uid: str
+    elapsed_seconds: float = 0
+    conflicts: int = 0
+    grants: int = 0
+    lost_reservations: int = 0
+    remaining: int = 0
+    queue_position: int | None = None
+    pods_ahead: int | None = None
+    available_tokens: float | None = None
+    snapshot_age_seconds: float | None = None
+    snapshot_committed: bool = False
+    released: bool = False
 
 
 class LaunchReservation(BaseModel):
@@ -61,17 +81,50 @@ class PlayerPodLaunchGate:
         self.job_uid = job_uid
         self.refill_per_second = refill_per_second
         self.burst = burst
+        self.diagnostics = LaunchDiagnostics(job_name=job_name, job_uid=job_uid)
+        self.started_at = time.monotonic()
+        self.last_log_at = self.started_at
+        self.last_snapshot_at: float | None = None
+        self.reservation_owned = False
+
+    def _log_progress(self, *, released: bool = False) -> None:
+        now = time.monotonic()
+        if now - self.started_at < DIAGNOSTIC_INTERVAL_SECONDS:
+            return
+        if not released and now - self.last_log_at < DIAGNOSTIC_INTERVAL_SECONDS:
+            return
+        self.diagnostics.elapsed_seconds = now - self.started_at
+        self.diagnostics.released = released
+        if self.last_snapshot_at is not None:
+            self.diagnostics.snapshot_age_seconds = now - self.last_snapshot_at
+        # The runner has no logging configuration: WARNING uses lastResort's bare-message stderr handler.
+        logger.warning(self.diagnostics.model_dump_json())
+        self.last_log_at = now
+
+    def _retry_conflict(self, exc: BaseException) -> bool:
+        if isinstance(exc, ApiException) and exc.status == 409:
+            self.diagnostics.conflicts += 1
+            self._log_progress()
+            return True
+        return False
 
     def acquire(self, remaining: int) -> LaunchDecision:
         assert remaining > 0
-        return self._update(remaining)
+        self.diagnostics.remaining = remaining
+        decision = self._update(remaining)
+        if decision.granted:
+            self.diagnostics.grants += 1
+        self.diagnostics.remaining = remaining - int(decision.granted)
+        self._log_progress()
+        return decision
 
     def release(self) -> None:
         self._update(0)
+        self._log_progress(released=True)
 
     def _update(self, remaining: int) -> LaunchDecision:
         for attempt in Retrying(
-            retry=retry_if_exception(lambda exc: isinstance(exc, ApiException) and exc.status == 409),
+            retry=retry_if_exception(self._retry_conflict),
             # Yield acquisition conflicts to the launch loop so it can keep
             # extending the Job deadline. Cleanup retries until it commits.
             stop=stop_after_delay(1) if remaining else stop_never,
@@ -96,6 +149,13 @@ class PlayerPodLaunchGate:
                     self.burst, state.tokens + (refill_time - state.refilled_at) * self.refill_per_second
                 )
                 state.refilled_at = refill_time
+                lost_reservation = (
+                    remaining > 0
+                    and self.reservation_owned
+                    and not any(
+                        entry.job_uid == self.job_uid and entry.expires_at > refill_time for entry in state.reservations
+                    )
+                )
                 state.reservations = [
                     reservation
                     for reservation in state.reservations
@@ -157,6 +217,13 @@ class PlayerPodLaunchGate:
                     decision.finish_delay = (
                         refill_time - now + max(0.0, (ahead + remaining - state.tokens) / self.refill_per_second)
                     )
+                    self.diagnostics.queue_position = next(
+                        index for index, entry in enumerate(state.reservations) if entry.job_uid == self.job_uid
+                    )
+                    self.diagnostics.pods_ahead = ahead
+                    self.diagnostics.available_tokens = state.tokens
+                    self.last_snapshot_at = time.monotonic()
+                    self.diagnostics.snapshot_committed = False
                     if state.reservations[0].job_uid == self.job_uid:
                         decision.retry_after = refill_time - now + max(0.0, (1 - state.tokens) / self.refill_per_second)
                         if state.tokens >= 1 and now >= refill_time:
@@ -169,5 +236,9 @@ class PlayerPodLaunchGate:
                 annotations[LAUNCH_STATE_ANNOTATION] = state.model_dump_json()
                 metadata.annotations = annotations
                 self.coordination.replace_namespaced_lease(name=LAUNCH_LEASE, namespace=self.namespace, body=lease)
+                self.diagnostics.lost_reservations += int(lost_reservation)
+                self.reservation_owned = any(entry.job_uid == self.job_uid for entry in state.reservations)
+                if remaining:
+                    self.diagnostics.snapshot_committed = True
                 return decision
         return LaunchDecision(granted=False, finish_delay=LAUNCH_POLL_SECONDS)

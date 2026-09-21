@@ -1,7 +1,12 @@
+import os
+import subprocess
+import sys
 from copy import deepcopy
 from types import SimpleNamespace
+from typing import cast
 
 import pytest
+from kubernetes import client
 from kubernetes.client.rest import ApiException
 
 from coworld.runner import player_pod_launch_gate as gate_module
@@ -12,6 +17,7 @@ from coworld.runner.player_pod_launch_gate import PlayerPodLaunchGate
 def cluster(monkeypatch):
     clock = [100.0]
     monkeypatch.setattr(gate_module.time, "time", lambda: clock[0])
+    monkeypatch.setattr(gate_module.time, "monotonic", lambda: clock[0])
     lease = SimpleNamespace(metadata=SimpleNamespace(annotations={}, resource_version="0"))
     jobs = {}
     writes = []
@@ -38,7 +44,13 @@ def cluster(monkeypatch):
             status=SimpleNamespace(conditions=None),
         )
         return PlayerPodLaunchGate(
-            coordination, batch, "jobs", job_name=name, job_uid=f"{name}-uid", refill_per_second=1.0, burst=burst
+            cast(client.CoordinationV1Api, coordination),
+            cast(client.BatchV1Api, batch),
+            "jobs",
+            job_name=name,
+            job_uid=f"{name}-uid",
+            refill_per_second=1.0,
+            burst=burst,
         )
 
     return SimpleNamespace(clock=clock, lease=lease, jobs=jobs, gate=gate, coordination=coordination, writes=writes)
@@ -101,6 +113,7 @@ def test_expired_owner_reacquires_behind_live_owner(cluster):
     cluster.clock[0] += gate_module.RESERVATION_TTL_SECONDS / 2
     assert second.acquire(4).granted  # expired head no longer owns its old slots
     assert not first.acquire(3).granted  # resumed worker must queue behind second
+    assert first.diagnostics.lost_reservations == 1
     second.release()
     assert first.acquire(3).granted
     assert not first.acquire(2).granted
@@ -223,3 +236,94 @@ def test_non_conflict_api_errors_propagate(cluster, status, operation):
         else:
             worker.release()
     assert raised.value.status == status
+
+
+def test_diagnostics_are_quiet_for_fast_launches(cluster, caplog):
+    worker = cluster.gate("worker")
+    assert worker.acquire(2).granted
+    assert worker.acquire(1).granted
+    worker.release()
+    assert not caplog.records
+
+
+def test_diagnostics_distinguish_queue_blocking_from_token_exhaustion(cluster, caplog):
+    first, second = cluster.gate("first"), cluster.gate("second")
+    assert first.acquire(100).granted
+    assert not second.acquire(1).granted
+    for _ in range(12):
+        cluster.clock[0] += 5
+        assert first.acquire(99 - _).granted
+        assert not second.acquire(1).granted
+    records = [record for record in caplog.records if '"job_name":"second"' in record.message]
+    assert len(records) == 1
+    snapshot = gate_module.LaunchDiagnostics.model_validate_json(records[0].message)
+    assert snapshot.event == "player_pod_launch_gate"
+    assert snapshot.job_uid == "second-uid"
+    assert snapshot.queue_position == 1
+    assert snapshot.pods_ahead == 87
+    assert snapshot.available_tokens == 1
+    assert snapshot.conflicts == 0
+    assert snapshot.snapshot_age_seconds == 0
+    for _ in range(20):
+        assert not second.acquire(1).granted
+    assert len([record for record in caplog.records if '"job_name":"second"' in record.message]) == 1
+    second.release()
+    assert '"released":true' in caplog.records[-1].message
+
+
+def test_conflict_only_waits_emit_bounded_diagnostics(cluster, monkeypatch, caplog):
+    worker = cluster.gate("worker")
+    monkeypatch.setattr(gate_module.time, "sleep", lambda _: None)
+
+    def conflict(**_kwargs):
+        cluster.clock[0] += 5
+        raise ApiException(status=409)
+
+    cluster.coordination.replace_namespaced_lease = conflict
+    for _ in range(24):
+        assert not worker.acquire(2).granted
+    assert len(caplog.records) == 2
+    snapshot = gate_module.LaunchDiagnostics.model_validate_json(caplog.records[-1].message)
+    assert snapshot.conflicts == 24
+    assert snapshot.grants == 0
+    assert snapshot.available_tokens == 2
+    assert snapshot.elapsed_seconds == 120
+
+
+def test_diagnostics_count_committed_expired_reservations(cluster):
+    worker = cluster.gate("worker")
+    assert worker.acquire(4).granted
+    cluster.clock[0] += gate_module.RESERVATION_TTL_SECONDS
+    assert worker.acquire(3).granted
+    assert worker.diagnostics.lost_reservations == 1
+
+
+def test_unconfigured_runner_logging_emits_json_on_stderr():
+    result = subprocess.run(
+        [
+            sys.executable,
+            "-c",
+            """
+from kubernetes import client
+from coworld.runner.player_pod_launch_gate import PlayerPodLaunchGate
+
+gate = PlayerPodLaunchGate(
+    client.CoordinationV1Api(), client.BatchV1Api(), "jobs",
+    job_name="worker", job_uid="worker-uid", refill_per_second=6, burst=720,
+)
+gate.started_at -= 61
+gate.last_log_at -= 61
+gate._log_progress()
+""",
+        ],
+        capture_output=True,
+        text=True,
+        check=True,
+        # Bazel installs dependencies on the test's sys.path, not in the interpreter's site-packages.
+        env={**os.environ, "PYTHONPATH": os.pathsep.join(sys.path)},
+    )
+    assert not result.stdout
+    assert len(result.stderr.splitlines()) == 1
+    snapshot = gate_module.LaunchDiagnostics.model_validate_json(result.stderr)
+    assert snapshot.event == "player_pod_launch_gate"
+    assert snapshot.job_uid == "worker-uid"
