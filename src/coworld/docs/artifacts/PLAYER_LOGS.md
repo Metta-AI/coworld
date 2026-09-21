@@ -12,8 +12,11 @@ The producer depends on `game.player_runtime`:
 - hosted runner: both modes upload one object per slot through `POLICY_LOG_URLS`;
 - hosted debug archive: also included in the [debug archive](DEBUG_ARCHIVE.md) when collected.
 
-For platform-hosted jobs, the runner reads up to the last 10,000 pod-log lines from started player containers. For
-game-hosted jobs, the game decides what one seat log contains.
+For platform-hosted jobs, the runner reads up to the last 10,000 pod-log lines from started player containers. That is
+a tail: a player that writes more than 10,000 lines in an episode keeps only the last 10,000, so the captured log loses
+the beginning of the episode, not the end. A policy that needs its complete log should upload it as a
+[player artifact](PLAYER_ARTIFACT.md), which has no line cap. For game-hosted jobs, the game decides what one seat log
+contains.
 
 ## Visibility
 
