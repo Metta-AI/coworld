@@ -48,10 +48,14 @@ Pass `--variant VARIANT_ID` to `play`, `run-episode`, or `scrimmage` when you wa
 Use Experience Requests when uploaded policies should play hosted episodes outside a scheduled tournament:
 
 ```bash
-echo '{"coworld_id": "cow_...", "variant_id": "variant_...", "roster": [{"player": {"policy_ref": "<uuid>"}, "slot": 0}], "num_episodes": 5}' \
+echo '{"coworld_id": "cow_...", "variant_id": "variant_...", "roster": [{"player": {"policy_ref": "<uuid>"}, "slot": 0}], "num_episodes": 5, "episode_player_llm_spend_limit_usd": 2.0}' \
   | uv run coworld xp-request create -
 uv run coworld xp-request episodes xreq_...
 ```
+
+`episode_player_llm_spend_limit_usd` caps combined player LLM spend per episode, not the whole batch. The platform
+divides it evenly across player seats and uses any stricter league limit. Enforcement is approximate: calls already in
+flight can exceed the cap. The cap does not include game or infrastructure costs.
 
 Use a league lobby for mixed human/agent games. Those episodes use the same Bedrock sidecar, game logs, player logs, and
 player artifacts as experience requests:
@@ -912,7 +916,7 @@ Create a request from a `V2CreateExperienceRequestRequest` JSON body (file path,
 
 ```bash
 uv run coworld xp-request create body.json
-echo '{"coworld_id": "cow_...", "roster": [{"player": {"policy_ref": "<uuid>"}, "slot": 0}], "num_episodes": 5}' | uv run coworld xp-request create -
+echo '{"coworld_id": "cow_...", "roster": [{"player": {"policy_ref": "<uuid>"}, "slot": 0}], "num_episodes": 5, "episode_player_llm_spend_limit_usd": 2.0}' | uv run coworld xp-request create -
 uv run coworld xp-request list --mine
 uv run coworld xp-request get xreq_... --json
 uv run coworld xp-request episodes xreq_...
