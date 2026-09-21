@@ -61,6 +61,7 @@ leaves the pod. A well-formed slug the provider does not serve is forwarded and 
 | --------------------------- | ---------------------------------------------------------------------- |
 | `POST /v1/messages`         | Anthropic Messages API. Use it with the Anthropic SDK or plain HTTP.   |
 | `POST /v1/chat/completions` | OpenAI Chat Completions API. Use it with the OpenAI SDK or plain HTTP. |
+| `POST /v1/systemone`        | OpenRouter System One API (Jev). Plain HTTP only; see below.           |
 | `GET /spend`                | The pod's running spend and limits as JSON (see below).                |
 | `GET /healthz/core-v1`      | Liveness probe; returns `ok`.                                          |
 
@@ -111,6 +112,54 @@ curl -sS -X POST "$AWS_ENDPOINT_URL_BEDROCK_RUNTIME/v1/messages" \
 
 Routing fields such as `provider`, `models`, `route`, `plugins`, and `metadata` are owned by the platform; the sidecar
 replaces any you send.
+
+### System One models (Jev)
+
+TypeSafe's System One model Jev is not a chat model: you send it a JSON `state` and a set of typed `questions`, and it
+answers each question. The sidecar serves OpenRouter's System One wire format at `POST /v1/systemone` under the same
+policy as the chat endpoints: the model allowlist, the spend limit, a request ceiling, and the platform-owned routing
+fields all apply, and a game container attributes a call to a seat with `X-Coworld-Player-Slot`. System One calls count
+against their own request bucket, at four times the chat ceiling (120 per minute per slot by default); see
+[Stay under the request ceiling](#stay-under-the-request-ceiling).
+
+Name the pinned slug `typesafe/jev-1.13`. The moving alias `~typesafe/jev-latest` is not a canonical slug, so the
+sidecar rejects it with HTTP 403. The league must also allow the model.
+
+The request is a JSON object with `model`, `state` (a string, an array, or an object; not a bare number, boolean, or
+null), and `questions` (a non-empty object keyed by your own question ids). Each question has a `type`, optional
+`instructions`, and `criteria` whose shape depends on the type:
+
+| `type`   | Answers                                   | `criteria`                                                              |
+| -------- | ----------------------------------------- | ----------------------------------------------------------------------- |
+| `noul`   | the probability that the answer is yes    | optional: an object with `true` and/or `false` descriptions, or null    |
+| `choice` | one option, with a probability per option | required: a non-empty object mapping each option label to a description |
+| `score`  | a position along ordered levels           | required: a non-empty array of level descriptions, lowest first         |
+
+The sidecar itself rejects, with HTTP 400 before any call leaves the pod, a request without `state` or with missing or
+empty `questions`. It does not validate question shapes: a `criteria` of the wrong shape (an object for a `score`, a
+string for a `noul`) is forwarded and comes back as the provider's HTTP 400, which names the offending path.
+
+```bash
+curl -sS -X POST "$AWS_ENDPOINT_URL_BEDROCK_RUNTIME/v1/systemone" \
+  -H "Content-Type: application/json" \
+  -d '{"model": "typesafe/jev-1.13",
+       "state": {"tick": 41, "paint": {"red": 12, "blue": 9}},
+       "questions": {"push": {"type": "noul",
+                              "instructions": "Should red push the center?",
+                              "criteria": {"true": "red leads on paint and holds the nearer hearts",
+                                           "false": "red is behind or outnumbered near the center"}}}}'
+# {"id": "gen-dec-...", "model": "typesafe/jev-1.13-20260917", "provider": "TypeSafe",
+#  "answers": {"push": {"type": "noul", "noul": 0.87}},
+#  "usage": {"input_tokens": 339, "output_tokens": 20, "cost": 0.000014238}}
+```
+
+`answers` is keyed by the same ids as `questions`. Errors use OpenRouter's System One shape whether the sidecar or the
+provider raised them: `{"error": {"message": "...", "code": 400}}`, with `code` equal to the HTTP status. The sidecar's
+own statuses are 400 (malformed request), 403 (model not allowed), 429 (spend limit, or request ceiling with
+`Retry-After`), and 500/503 (sidecar or provider fault). The one exception is the plain-text HTTP 503
+`OpenRouter is not configured` described above, which every native endpoint returns on a legacy-lane episode.
+
+Use plain HTTP; there is no SDK path. The TypeSafe SDK's model listing does not work through OpenRouter.
 
 ### Verify it's reachable
 
@@ -233,12 +282,14 @@ You don't have to wait for the 429 — the sidecar tells you where you stand:
 curl -sS "$AWS_ENDPOINT_URL_BEDROCK_RUNTIME/spend"
 # {"spend_usd": 0.42, "spend_by_slot": {"3": 0.42},
 #  "spend_limit_usd": 1.5, "remaining_usd": 1.08,
-#  "rate_limited_requests": 0, "request_limit_per_minute": 30}
+#  "rate_limited_requests": 0, "request_limit_per_minute": 30,
+#  "system_one_request_limit_per_minute": 120}
 # spend_limit_usd / remaining_usd are null when the league has no limit.
+# system_one_request_limit_per_minute is absent on a legacy-lane episode, where /v1/systemone is not served.
 ```
 
-`spend_usd`, the response headers, and `rate_limited_requests` describe the request's effective player slot.
-`spend_by_slot` exposes every slot this sidecar has served.
+`spend_usd`, the response headers, the two request limits, and `rate_limited_requests` describe the request's effective
+player slot. `spend_by_slot` exposes every slot this sidecar has served.
 
 With the Anthropic SDK, read the headers from `client.messages.with_raw_response.create(...)`; with the OpenAI SDK, from
 `client.chat.completions.with_raw_response.create(...)`. A budget-aware player can, for example, switch to a cheaper
@@ -254,6 +305,12 @@ Provider capacity is shared across every player, game, and league, so the ceilin
 degrading everyone. It is far above normal play: the busiest real player pods measured on prod run a few calls per
 minute.
 
+System One calls (`POST /v1/systemone`) have a separate bucket per slot at four times that ceiling —
+`system_one_request_limit_per_minute`, 120 by default, and `× player slots served` again for a game pod's own traffic. A
+Jev judgment takes a fraction of a second, costs a few thousandths of a cent, and is asked by a game host at the game's
+own cadence (up to one per second per seat), so the chat ceiling would throttle ordinary play. The two buckets share
+nothing: draining one never costs the other a call, and spend stays bounded by the spend limit either way.
+
 Over-ceiling calls are rejected **before** reaching the provider, with the same `HTTP 429` `rate_limit_error` as a spend
 cutoff and a real upstream rate limit — again, no Softmax-specific exception type, so a player that handles rate limits
 correctly needs no new code. The difference is that this one clears on its own, and the response tells you when:
@@ -261,8 +318,8 @@ correctly needs no new code. The difference is that this one clears on its own, 
 - `Retry-After` — whole seconds.
 - `Retry-After-Ms` — the same wait in milliseconds, which is what it usually is. Prefer this one; whole seconds cannot
   express a sub-second wait, and the Anthropic and OpenAI SDKs read it first.
-- `GET /spend` reports `request_limit_per_minute` (read it up front and stay under it) and `rate_limited_requests` (how
-  many of your calls have been rejected so far).
+- `GET /spend` reports `request_limit_per_minute` and `system_one_request_limit_per_minute` (read them up front and stay
+  under them) and `rate_limited_requests` (how many of your calls have been rejected so far, across both buckets).
 
 Rejected calls consume no quota of yours, so retrying is safe — but a tight retry loop just burns your own attempt
 budget. Back off for the advertised wait and fall back to a valid default move in the meantime.
