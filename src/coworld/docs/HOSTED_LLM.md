@@ -9,7 +9,7 @@ on every request for seat `N`. File policies have no environment, secrets, or pl
 
 Players that call an LLM can do so in hosted tournaments **without shipping their own model credentials**. The platform
 runs a per-pod proxy (the "LLM sidecar") that holds the real provider key, forwards your calls to
-[OpenRouter](https://openrouter.ai), and meters spend against the league's limits.
+[OpenRouter](https://openrouter.ai), and meters spend against league and experience-request limits.
 
 > ## ⚠️ THE ONE RULE — send every model call to `AWS_ENDPOINT_URL_BEDROCK_RUNTIME`
 >
@@ -260,23 +260,25 @@ volatile-first prompt is not penalized for long — but it also never gets cheap
 Chat). Cache count fields can be absent when the provider does not report them. Absence means unreported usage, not a
 measured zero; clients must tolerate missing cache counts.
 
-## Track your spend (and the league's spend limit)
+## Track your spend and spend limit
 
-Leagues can set a per-episode LLM spend limit for each player pod. The sidecar meters every call's cost as reported by
-the provider and, once the running total reaches the limit, rejects further calls for the rest of the episode with a
-standard rate-limit error (`HTTP 429`, type `rate_limit_error`) — the same failure mode the
-["Be robust to rate limits"](#be-robust-to-rate-limits) section below already requires you to handle. A player that
-handles rate limits correctly needs **zero new code** for spend limits; there is no Softmax-specific exception type.
-Setting the limit to `$0` disables player-pod LLM access by rejecting the first call. A blank limit leaves access
-unlimited. The league's limit applies to every episode in the league — tournament rounds, league-bound experience
-requests, and lobbies alike; episodes outside any league are never capped (for experience requests, the requester's
-credit allowance is the control).
+Leagues can set a per-episode LLM spend limit for each player pod. Experience requesters can instead set
+`episode_player_llm_spend_limit_usd`, which is divided evenly across the request's player seats. When both apply, the
+lower per-player limit wins. The sidecar meters every call's cost as reported by the provider and, once the running
+total reaches the limit, rejects further calls for the rest of the episode with a standard rate-limit error (`HTTP 429`,
+type `rate_limit_error`) — the same failure mode the ["Be robust to rate limits"](#be-robust-to-rate-limits) section
+below already requires you to handle. A player that handles rate limits correctly needs **zero new code** for spend
+limits; there is no Softmax-specific exception type. Setting the limit to `$0` disables player-pod LLM access by
+rejecting the first call. A blank limit leaves access unlimited. The league's limit applies to every episode in the
+league — tournament rounds, league-bound experience requests, and lobbies alike. A requester limit also caps league-less
+experience requests.
 
 You don't have to wait for the 429 — the sidecar tells you where you stand:
 
 - **Response headers** on every proxied call:
   - `X-Coworld-Spend-Usd` — the pod's running spend after that call.
-  - `X-Coworld-Spend-Limit-Usd` — the league's limit; absent when the league has no limit.
+  - `X-Coworld-Spend-Limit-Usd` — the effective per-player limit; absent when neither the league nor the experience
+    requester set one.
 - **`GET $AWS_ENDPOINT_URL_BEDROCK_RUNTIME/spend`** — current totals as JSON:
 
 ```bash
@@ -285,7 +287,7 @@ curl -sS "$AWS_ENDPOINT_URL_BEDROCK_RUNTIME/spend"
 #  "spend_limit_usd": 1.5, "remaining_usd": 1.08,
 #  "rate_limited_requests": 0, "request_limit_per_minute": 30,
 #  "system_one_request_limit_per_minute": 120}
-# spend_limit_usd / remaining_usd are null when the league has no limit.
+# spend_limit_usd / remaining_usd are null when neither the league nor requester set a limit.
 # system_one_request_limit_per_minute is absent on a legacy-lane episode, where /v1/systemone is not served.
 ```
 
