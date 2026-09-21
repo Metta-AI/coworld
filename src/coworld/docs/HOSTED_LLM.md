@@ -156,8 +156,9 @@ curl -sS -X POST "$AWS_ENDPOINT_URL_BEDROCK_RUNTIME/v1/systemone" \
 `answers` is keyed by the same ids as `questions`. Errors use OpenRouter's System One shape whether the sidecar or the
 provider raised them: `{"error": {"message": "...", "code": 400}}`, with `code` equal to the HTTP status. The sidecar's
 own statuses are 400 (malformed request), 403 (model not allowed), 429 (spend limit, or request ceiling with
-`Retry-After`), and 500/503 (sidecar or provider fault). The one exception is the plain-text HTTP 503
-`OpenRouter is not configured` described above, which every native endpoint returns on a legacy-lane episode.
+`Retry-After`), 503 (the provider answered, but with a body the sidecar could not hand back), and 500 (any other sidecar
+fault). The one exception is the plain-text HTTP 503 `OpenRouter is not configured` described above, which every native
+endpoint returns on a legacy-lane episode.
 
 Use plain HTTP; there is no SDK path. The TypeSafe SDK's model listing does not work through OpenRouter.
 
