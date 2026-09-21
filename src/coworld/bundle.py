@@ -41,8 +41,32 @@ def build_coworld_manifest(
     if isinstance(game, dict) and "version" in game:
         raise RuntimeError(f"Coworld manifest templates must not set game.version: {template_path}")
 
-    compose_services = _compose_services(compose_file)
-    manifest = _load_template_manifest(manifest_json, version, _compose_image_placeholders(compose_services))
+    compose_config = subprocess.run(
+        ["docker", "compose", "-f", str(compose_file), "config", "--format", "json"],
+        cwd=compose_file.parent,
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+    compose_services = json.loads(compose_config.stdout)["services"]
+    image_placeholders = {
+        f"{{{{{service_name.upper().replace('-', '_')}_IMAGE}}}}": service["image"]
+        for service_name, service in compose_services.items()
+    }
+    game["version"] = version
+    runnables: list[dict[str, Any]] = [game["runnable"]]
+    for section in ROLE_SECTIONS:
+        if section in manifest_json:
+            runnables.extend(manifest_json[section])
+    for runnable in runnables:
+        image = runnable.get("image")
+        if image is None:
+            continue
+        if image in image_placeholders:
+            runnable["image"] = image_placeholders[image]
+        elif image.startswith("{{") and image.endswith("}}"):
+            raise RuntimeError(f"Coworld image placeholder does not match a Compose service: {image}")
+    manifest = validate_upload_manifest(manifest_json).runtime_manifest
     manifest = _with_pinned_source_urls(manifest, _github_source_contexts((compose_file.parent,)))
     # Pull image-only services before building; buildable services are produced locally below.
     subprocess.run(
@@ -60,14 +84,48 @@ def build_coworld_manifest(
         cwd=compose_file.parent,
         check=True,
     )
-    resolved_image_refs = _resolved_mutable_image_refs(manifest)
+    resolved_image_refs = {
+        image: resolve_registry_image_ref(image)
+        for image in _manifest_images(manifest)
+        if is_mutable_registry_image_ref(image)
+    }
     manifest = _with_image_tags(manifest, resolved_image_refs)
-    _pull_image_refs(
-        resolved_image_refs,
-        _compose_image_platforms(compose_services),
-        _compose_default_platform(compose_services),
-    )
-    manifest = _with_image_tags(manifest, _built_image_tags(manifest))
+    image_platforms = {
+        service["image"]: service["platform"]
+        for service in compose_services.values()
+        if isinstance(service.get("image"), str) and isinstance(service.get("platform"), str)
+    }
+    platforms = {
+        service["platform"] for service in compose_services.values() if isinstance(service.get("platform"), str)
+    }
+    default_platform = next(iter(platforms)) if len(platforms) == 1 else None
+    for source_image, resolved_image in sorted(resolved_image_refs.items()):
+        command = ["docker", "pull"]
+        platform = image_platforms.get(source_image, default_platform)
+        if platform:
+            command.extend(["--platform", platform])
+        command.append(resolved_image)
+        subprocess.run(command, check=True)
+
+    image_tags: dict[str, str] = {}
+    for image in _manifest_images(manifest):
+        if is_digest_pinned_image_ref(image):
+            image_tags[image] = image
+            continue
+        tag_image = image.split("@", 1)[0]
+        image_id = subprocess.run(
+            ["docker", "image", "inspect", "--format", "{{.Id}}", image],
+            check=True,
+            capture_output=True,
+            text=True,
+        ).stdout.strip()
+        tag_separator = tag_image.rfind(":")
+        slash_separator = tag_image.rfind("/")
+        image_name = tag_image[:tag_separator] if tag_separator > slash_separator else tag_image
+        build_tag = f"{image_name}:coworld-{image_id.removeprefix('sha256:')[:12]}"
+        subprocess.run(["docker", "tag", image, build_tag], check=True)
+        image_tags[image] = build_tag
+    manifest = _with_image_tags(manifest, image_tags)
 
     output_path.parent.mkdir(parents=True, exist_ok=True)
     _build_replay_viewer_bundle(manifest, template_path.parent, output_path.parent)
@@ -144,61 +202,6 @@ def _build_replay_viewer_bundle(manifest: CoworldManifest, source_root: Path, ou
         raise RuntimeError(f"Replay viewer build hook did not produce its bundle directory: {bundle_dir}")
     if not (bundle_dir / "index.html").is_file():
         raise RuntimeError(f"Replay viewer build hook did not produce index.html: {bundle_dir}")
-
-
-def _load_template_manifest(
-    manifest_json: dict[str, Any], version: str, image_placeholders: dict[str, str]
-) -> CoworldManifest:
-    game = manifest_json["game"]
-    game["version"] = version
-    runnables: list[dict[str, Any]] = [game["runnable"]]
-    for section in ROLE_SECTIONS:
-        if section in manifest_json:
-            runnables.extend(manifest_json[section])
-    for runnable in runnables:
-        image = runnable.get("image")
-        if image is None:
-            continue  # a file-backed player has no image to hydrate
-        if image in image_placeholders:
-            runnable["image"] = image_placeholders[image]
-        elif image.startswith("{{") and image.endswith("}}"):
-            raise RuntimeError(f"Coworld image placeholder does not match a Compose service: {image}")
-    return validate_upload_manifest(manifest_json).runtime_manifest
-
-
-def _compose_services(compose_file: Path) -> dict[str, dict[str, Any]]:
-    completed = subprocess.run(
-        ["docker", "compose", "-f", str(compose_file), "config", "--format", "json"],
-        cwd=compose_file.parent,
-        check=True,
-        capture_output=True,
-        text=True,
-    )
-    return json.loads(completed.stdout)["services"]
-
-
-def _compose_image_placeholders(services: Mapping[str, Mapping[str, Any]]) -> dict[str, str]:
-    return {
-        f"{{{{{service_name.upper().replace('-', '_')}_IMAGE}}}}": service["image"]
-        for service_name, service in services.items()
-    }
-
-
-def _compose_image_platforms(services: Mapping[str, Mapping[str, Any]]) -> dict[str, str]:
-    image_platforms: dict[str, str] = {}
-    for service in services.values():
-        image = service.get("image")
-        platform = service.get("platform")
-        if isinstance(image, str) and isinstance(platform, str):
-            image_platforms[image] = platform
-    return image_platforms
-
-
-def _compose_default_platform(services: Mapping[str, Mapping[str, Any]]) -> str | None:
-    platforms = {service["platform"] for service in services.values() if isinstance(service.get("platform"), str)}
-    if len(platforms) == 1:
-        return next(iter(platforms))
-    return None
 
 
 def _github_source_contexts(source_contexts: tuple[Path, ...]) -> dict[str, Path]:
@@ -288,34 +291,6 @@ def _git_stdout(repo_path: Path, *args: str) -> str:
     return completed.stdout.strip()
 
 
-def _built_image_tags(manifest: CoworldManifest) -> dict[str, str]:
-    image_tags: dict[str, str] = {}
-    for image in _manifest_images(manifest):
-        if is_digest_pinned_image_ref(image):
-            image_tags[image] = image
-            continue
-        tag_image = image.split("@", 1)[0]
-        image_id = subprocess.run(
-            ["docker", "image", "inspect", "--format", "{{.Id}}", image],
-            check=True,
-            capture_output=True,
-            text=True,
-        ).stdout.strip()
-        build_tag = _sha_tag(tag_image, image_id)
-        subprocess.run(["docker", "tag", image, build_tag], check=True)
-        image_tags[image] = build_tag
-
-    return image_tags
-
-
-def _resolved_mutable_image_refs(manifest: CoworldManifest) -> dict[str, str]:
-    return {
-        image: resolve_registry_image_ref(image)
-        for image in _manifest_images(manifest)
-        if is_mutable_registry_image_ref(image)
-    }
-
-
 def resolve_registry_image_ref(image: str) -> str:
     completed = subprocess.run(
         ["docker", "buildx", "imagetools", "inspect", image, "--format", "{{json .Manifest}}"],
@@ -330,30 +305,11 @@ def resolve_registry_image_ref(image: str) -> str:
     return f"{image_ref_without_tag(image)}@{digest}"
 
 
-def _pull_image_refs(
-    image_refs: Mapping[str, str], image_platforms: Mapping[str, str], default_platform: str | None
-) -> None:
-    for source_image, resolved_image in sorted(image_refs.items()):
-        command = ["docker", "pull"]
-        platform = image_platforms.get(source_image, default_platform)
-        if platform:
-            command.extend(["--platform", platform])
-        command.append(resolved_image)
-        subprocess.run(command, check=True)
-
-
 def _manifest_images(manifest: CoworldManifest) -> tuple[str, ...]:
     images = [manifest.game.runnable.image]
     for section in ROLE_SECTIONS:
         images.extend(runnable.image for runnable in getattr(manifest, section) if runnable.image is not None)
     return tuple(dict.fromkeys(images))
-
-
-def _sha_tag(image: str, image_id: str) -> str:
-    tag_separator = image.rfind(":")
-    slash_separator = image.rfind("/")
-    image_name = image[:tag_separator] if tag_separator > slash_separator else image
-    return f"{image_name}:coworld-{image_id.removeprefix('sha256:')[:12]}"
 
 
 def _with_image_tags(manifest: CoworldManifest, image_tags: dict[str, str]) -> CoworldManifest:

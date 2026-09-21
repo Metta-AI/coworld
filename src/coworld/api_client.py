@@ -828,8 +828,8 @@ class CoworldApiClient:
         entries, next_cursor = list_page_payload(response)
         return page_type(entries=TypeAdapter(list[entry_type]).validate_python(entries), next_cursor=next_cursor)
 
-    def get_bytes(self, path: str, *, timeout: float | None = None) -> bytes:
-        response = self._http_client.get(path, headers=self._headers(), timeout=timeout)
+    def get_bytes(self, path: str, **kwargs: Any) -> bytes:
+        response = self._http_client.get(path, headers=self._headers(), **kwargs)
         _raise_for_status(response)
         return response.content
 
@@ -1206,13 +1206,7 @@ class CoworldApiClient:
 
     def get_episode_request_bundle(self, episode_request_id: str, include: Iterable[str] | None = None) -> bytes:
         params = None if include is None else {"include": ",".join(include)}
-        response = self._http_client.get(
-            f"/v2/episode-requests/{episode_request_id}/bundle",
-            headers=self._headers(),
-            params=params,
-        )
-        _raise_for_status(response)
-        return response.content
+        return self.get_bytes(f"/v2/episode-requests/{episode_request_id}/bundle", params=params)
 
     def create_experience_request(self, body: dict[str, Any]) -> ExperienceRequestDetail:
         return self._post("/v2/experience-requests", ExperienceRequestDetail, json=body, timeout=120.0)
@@ -1342,23 +1336,19 @@ class CoworldApiClient:
         }
         if n is not None:
             body["n"] = n
-        response = self._http_client.post(
+        return self._post(
             "/v2/counterfactual-evals",
-            headers=self._headers(),
+            dict[str, Any],
             json=body,
             timeout=60.0,
         )
-        _raise_for_status(response)
-        return response.json()
 
     def get_counterfactual_eval(self, counterfactual_eval_id: str) -> dict[str, Any]:
-        response = self._http_client.get(
+        return self._get(
             f"/v2/counterfactual-evals/{counterfactual_eval_id}",
-            headers=self._headers(),
+            dict[str, Any],
             timeout=30.0,
         )
-        _raise_for_status(response)
-        return response.json()
 
 
 def _detail(response: httpx.Response) -> str | None:
