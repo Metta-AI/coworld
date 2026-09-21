@@ -180,7 +180,13 @@ def register_tournament_commands(app: typer.Typer) -> None:
             return
         _print_power_analysis(report)
 
-    @xp_request_app.command("create", help="Create a hosted Experience Request from a JSON body.")
+    @xp_request_app.command(
+        "create",
+        help=(
+            "Create a hosted Experience Request from JSON. Set episode_player_llm_spend_limit_usd "
+            "for an approximate per-episode player LLM spend cap."
+        ),
+    )
     def xp_request_create(
         body: Annotated[
             str,
