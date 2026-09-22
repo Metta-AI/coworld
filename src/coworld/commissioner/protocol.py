@@ -212,7 +212,7 @@ class RecordedEpisodeSpec(BaseModel):
     # RecordedEpisodeSpecs -- an extra="forbid" model only rejects *undeclared*
     # fields; omitting a declared-optional one is always legal (rolling-deploy
     # safety: an older commissioner build never 422s a newer server, and vice
-    # versa). Mirrors metta.app_backend.v2.commissioners.RecordedEpisodeSpec.
+    # versa). Mirrors observatory_core.v2.commissioners.RecordedEpisodeSpec.
     realized_config_stamp: dict[str, Any] | None = None
 
     @model_validator(mode="after")

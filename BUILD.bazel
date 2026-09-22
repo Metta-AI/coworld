@@ -50,7 +50,7 @@ echo "coworld-paintarena@$$iid" > $@
 )
 
 # `:coworld_core` is the import-surface every external library consumer
-# (//app_backend, //metta:metta_obs) actually needs:
+# (//packages/observatory-api, //metta:metta_obs) actually needs:
 #
 #   coworld.types, coworld.certifier, coworld.manifest_validation,
 #   coworld.schema_validation, coworld.commissioner.protocol,
@@ -124,7 +124,7 @@ filegroup(
         "src/coworld/wit/softmax-reporter-0.5.0/world.wit",
         "src/coworld/wit/softmax-reporter/world.wit",
     ],
-    visibility = ["//app_backend/tests:__pkg__"],
+    visibility = ["//packages/observatory-api/tests:__pkg__"],
 )
 
 filegroup(
@@ -155,13 +155,13 @@ filegroup(
 filegroup(
     name = "arena_game_wit",
     srcs = ["src/coworld/wit/softmax-game/world.wit"],
-    visibility = ["//app_backend/tests:__pkg__"],
+    visibility = ["//packages/observatory-api/tests:__pkg__"],
 )
 
 filegroup(
     name = "arena_player_wit",
     srcs = ["src/coworld/wit/softmax-player/world.wit"],
-    visibility = ["//app_backend/tests:__pkg__"],
+    visibility = ["//packages/observatory-api/tests:__pkg__"],
 )
 
 py_library(
