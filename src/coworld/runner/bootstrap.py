@@ -23,7 +23,6 @@ from coworld.types import CoworldEpisodeJobSpec
 WORKDIR = Path(os.environ.get("COWORLD_WORKDIR", "/coworld"))
 STATE_PATH = WORKDIR / "state.json"
 COORDINATOR_SPEC_PATH = Path("/var/run/coworld-coordinator/job_spec.json")
-LAUNCH_LEASE = "coworld-player-pod-launch-rate"
 
 
 def process_timings(
