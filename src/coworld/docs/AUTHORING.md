@@ -20,6 +20,7 @@ obligations, unsupported workflows, and validation for each mode.
 - [Coworld lifecycle](LIFECYCLE.md) for local and hosted execution.
 - [Static replay viewers](STATIC_REPLAY_VIEWERS.md) when the replay client is a browser-only bundle.
 - [Hosted LLM calls for Coworld players](HOSTED_LLM.md) when a bundled player calls a hosted model.
+- [League lobbies](LEAGUE_LOBBIES.md) for mixed human/agent hosted episodes after upload.
 - [Paint Arena](../examples/paintarena/README.md) for the smallest complete implementation.
 
 Use built-in help for the installed command surface:

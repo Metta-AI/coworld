@@ -156,6 +156,8 @@ source of truth. They are generated docs and `$schema` targets; `test_types.py` 
   `AWS_ENDPOINT_URL_BEDROCK_RUNTIME` sidecar endpoint, supported wire formats, model naming, troubleshooting), the
   hosted upload contract, and robustness to rate limits. Required reading before building an LLM player.
 - [src/coworld/docs/LIFECYCLE.md](src/coworld/docs/LIFECYCLE.md) - local and hosted episode lifecycle.
+- [src/coworld/docs/LEAGUE_LOBBIES.md](src/coworld/docs/LEAGUE_LOBBIES.md) - mixed human/agent league lobbies (CLI,
+  REST, seat kinds, artifact grants).
 - [src/coworld/docs/TOURNAMENTS.md](src/coworld/docs/TOURNAMENTS.md) - league bracket tournaments (`tour_...` objects,
   waves, bracket matches) and how to read their episodes via the v2 API.
 - [src/coworld/docs/PLATFORM_LADDER_LEAGUE.md](src/coworld/docs/PLATFORM_LADDER_LEAGUE.md) - create/maintain platform

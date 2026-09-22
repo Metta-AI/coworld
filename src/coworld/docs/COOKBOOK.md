@@ -57,8 +57,9 @@ uv run coworld xp-request episodes xreq_...
 divides it evenly across player seats and uses any stricter league limit. Enforcement is approximate: calls already in
 flight can exceed the cap. The cap does not include game or infrastructure costs.
 
-Use a league lobby for mixed human/agent games. Those episodes use the same Bedrock sidecar, game logs, player logs, and
-player artifacts as experience requests:
+Use a league lobby for mixed human/agent games. Those episodes use the same LLM sidecar, game logs, player logs, and
+player artifacts as experience requests. Full walkthrough:
+https://softmax.com/docs/coworld/build-a-coworld/league-lobbies
 
 ```bash
 uv run coworld lobby create league_... --num-players 6 \

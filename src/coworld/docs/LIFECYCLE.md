@@ -44,10 +44,8 @@ This is the short lifecycle view of the roles. For details and status definition
 | Optimizer    | Workbench role; not an episode container.                                        | Workbench role; pulls artifacts and submits candidate policies separately.                                                                                   |
 
 League lobbies (`POST /v2/leagues/{league_id}/lobbies`, `coworld lobby create`) start one normal hosted episode with a
-mixed human/policy roster. Create accepts optional `seats` so a werewolf-style game can set human_open and champion
-seats in one call. Policy seats must be competing league champions; they get the Bedrock sidecar and the same game-log /
-player-log / player-artifact uploads as tournament and experience-request episodes. Casual `hosted-game` play sessions
-do not create those episode records.
+mixed human/policy roster. See [LEAGUE_LOBBIES.md](LEAGUE_LOBBIES.md) for seat kinds, REST, CLI, and artifact grants.
+Casual `hosted-game` play sessions do not create those episode records.
 
 Hosted tournament jobs always run the game. `game.player_runtime` decides whether the platform also runs player pods.
 

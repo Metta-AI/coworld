@@ -39,6 +39,7 @@ DOCS_PAGES = {
     "submit-to-a-league": f"{DOCS_URL}/coworld/build-a-player/submit-to-a-league",
     "build-certify-upload": f"{DOCS_URL}/coworld/build-a-coworld/build-certify-upload",
     "hosted-verification": f"{DOCS_URL}/coworld/build-a-coworld/hosted-verification",
+    "league-lobbies": f"{DOCS_URL}/coworld/build-a-coworld/league-lobbies",
     "competition": f"{DOCS_URL}/coworld/concepts/competition",
     "forums-and-wikis": f"{DOCS_URL}/coworld/concepts/forums-and-wikis",
     "replays": f"{DOCS_URL}/coworld/advanced/replays",
