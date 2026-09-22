@@ -2303,7 +2303,6 @@ def test_run_kubernetes_episode_keeps_artifacts_authoritative_except_for_certifi
     players_ready = threading.Event()
     startup_events: list[str] = []
     launch_events: list[str] = []
-    patched_deadlines: list[int] = []
 
     async def noop_async(*_args, **_kwargs):
         return None
@@ -2341,17 +2340,22 @@ def test_run_kubernetes_episode_keeps_artifacts_authoritative_except_for_certifi
         lambda *, egress_enforcement_enabled: None,
     )
     monkeypatch.setattr(kubernetes_runner.client, "CoreV1Api", lambda _api_client: object())
-    monkeypatch.setattr(kubernetes_runner.client, "CoordinationV1Api", lambda _api_client: object())
+    monkeypatch.setattr(
+        kubernetes_runner.client,
+        "CoordinationV1Api",
+        lambda _api_client: pytest.fail("admitted episodes must not access a launch Lease"),
+    )
     monkeypatch.setattr(
         kubernetes_runner.client,
         "BatchV1Api",
-        lambda _api_client: SimpleNamespace(
-            patch_namespaced_job=lambda *, name, namespace, body: patched_deadlines.append(
-                body["spec"]["activeDeadlineSeconds"]
-            )
-        ),
+        lambda _api_client: pytest.fail("player launch must not extend the Job deadline"),
     )
-    monkeypatch.setattr(kubernetes_runner, "_create_game_service", lambda *_args: None)
+    # Slow API preparation must not consume the game's player connection timeout.
+    monkeypatch.setattr(
+        kubernetes_runner,
+        "_create_game_service",
+        lambda *_args: clock.__setitem__("now", clock["now"] + 240.0),
+    )
     monkeypatch.setattr(
         kubernetes_runner, "_wait_for_health", lambda *_args, **_kwargs: clock.__setitem__("now", clock["now"] + 20.0)
     )
@@ -2398,30 +2402,10 @@ def test_run_kubernetes_episode_keeps_artifacts_authoritative_except_for_certifi
     monkeypatch.setenv("POD_UID", "pod-uid")
     monkeypatch.setenv("JOB_NAME", "game-job")
     monkeypatch.setenv("JOB_UID", "job-uid")
-    monkeypatch.setenv("COWORLD_PLAYER_POD_LAUNCH_RATE_PER_MINUTE", "60")
-    monkeypatch.setenv("COWORLD_PLAYER_POD_LAUNCH_BURST", "120")
-    monkeypatch.setenv("COWORLD_PLAYER_POD_LAUNCH_BUDGET_SECONDS", "0")
-    monkeypatch.setenv("COWORLD_JOB_ACTIVE_DEADLINE_SECONDS", "900")
     monkeypatch.setattr(
         kubernetes_runner.time,
         "sleep",
         lambda seconds: clock.__setitem__("now", clock["now"] + seconds),
-    )
-
-    decisions = iter([(False, 240.0 - second) for second in range(0, 240, 5)] + [(True, 0.0)])
-
-    def acquire_launch(remaining):
-        assert remaining == 1
-        launch_events.append("capacity")
-        granted, finish_delay = next(decisions)
-        return SimpleNamespace(granted=granted, finish_delay=finish_delay, retry_after=finish_delay)
-
-    monkeypatch.setattr(
-        kubernetes_runner,
-        "PlayerPodLaunchGate",
-        lambda *_args, **_kwargs: SimpleNamespace(
-            acquire=acquire_launch, release=lambda: launch_events.append("release")
-        ),
     )
 
     def create_player_pod(
@@ -2486,13 +2470,12 @@ def test_run_kubernetes_episode_keeps_artifacts_authoritative_except_for_certifi
         )
 
     assert not players_ready.is_set()
-    assert launch_events == ["capacity"] * 49 + ["create", "release"]
+    assert launch_events == ["create"]
     if launch_fails:
         assert not created
         return
 
     assert created == [(1, "2", "2Gi", "")]
-    assert patched_deadlines == [1140]
     assert startup_timeouts == [runner_module.LOBBY_RUNTIME_STARTUP_TIMEOUT_SECONDS]
     assert pong_requirements == [episode_tags.get("source") == runner_module.CERTIFICATION_EPISODE_SOURCE]
     assert player_start_timeouts == [expected_player_start_timeout]
@@ -2511,6 +2494,46 @@ def test_run_kubernetes_episode_keeps_artifacts_authoritative_except_for_certifi
         {"game_boot": 20.0, "player_launch": 242.0, "first_step": 4.0},
         {"game_boot": 20.0, "player_launch": 242.0, "first_step": 4.0, "gameplay": 69.0},
     ]
+
+
+@pytest.mark.parametrize("creation_fails", [False, True])
+def test_prepare_players_creates_all_slots_or_cleans_partial_launch(monkeypatch, tmp_path, creation_fails):
+    state_path = tmp_path / "state.json"
+    state_path.write_text(json.dumps({"tokens": ["token-0", "token-1", "token-2"]}))
+    monkeypatch.setattr(kubernetes_runner, "STATE_PATH", state_path)
+    monkeypatch.setenv("JOB_NAMESPACE", "jobs")
+    monkeypatch.setenv("JOB_ID", "job-id")
+    monkeypatch.setenv("POD_NAME", "parent-pod")
+    monkeypatch.setenv("POD_UID", "parent-uid")
+    monkeypatch.setenv("COWORLD_SERVICE_NAME", "game-service")
+    monkeypatch.delenv("COWORLD_EGRESS_ENFORCEMENT_ENABLED", raising=False)
+    monkeypatch.setattr(kubernetes_runner, "_load_incluster_config", lambda **kwargs: None)
+    monkeypatch.setattr(kubernetes_runner, "_policy_secrets_from_env", lambda: {})
+    core = MagicMock()
+    monkeypatch.setattr(kubernetes_runner.client, "CoreV1Api", lambda _: core)
+    create = MagicMock(side_effect=[None, RuntimeError("pod creation failed")] if creation_fails else None)
+    monkeypatch.setattr(kubernetes_runner, "_create_player_pod", create)
+    job = _runtime_job(players=[CoworldRunnableSpec(type="player", image="player:test") for _ in range(3)])
+    timings = ProcessTimings(clock=TimingClock.capture())
+
+    with pytest.raises(RuntimeError, match="pod creation failed") if creation_fails else nullcontext():
+        kubernetes_runner._prepare_player_pods(job, timings)
+
+    expected_slots = list(range(2 if creation_fails else 3))
+    assert [call.args[3] for call in create.call_args_list] == expected_slots
+    assert [call.args[4] for call in create.call_args_list] == [f"token-{slot}" for slot in expected_slots]
+    core.create_namespaced_service.assert_called_once()
+    if creation_fails:
+        # Include the failed request's name: the API may have accepted it before the client failed.
+        assert [call.kwargs["name"] for call in core.delete_namespaced_pod.call_args_list] == [
+            "game-service-player-0",
+            "game-service-player-1",
+        ]
+        core.delete_namespaced_service.assert_called_once_with(name="game-service", namespace="jobs")
+    else:
+        core.delete_namespaced_pod.assert_not_called()
+        core.delete_namespaced_service.assert_not_called()
+        assert "player_launch" in timings.intervals
 
 
 def test_create_game_service_exposes_human_proxy_without_rerouting_policy_players(monkeypatch):
@@ -4161,9 +4184,10 @@ def test_game_hosted_run_from_env_keeps_diagnostic_counts_when_publishing_fails(
     assert policy_log_paths[1].read_text(encoding="utf-8") == runner_module.GAME_HOSTED_PLAYER_LOG_MISSING
     assert timing_snapshots[-1]["slot_log_missing_count"] == 1
     assert timing_snapshots[-1]["player_status_invalid_count"] == 1
-    final_worker = timing_snapshots[-1]["worker"]
-    assert final_worker["final_clock"]["monotonic_ns"] >= final_worker["clock"]["monotonic_ns"] + max(
-        interval["end_ns"] for interval in final_worker["intervals"].values()
+    final_worker = ProcessTimings.model_validate(timing_snapshots[-1]["worker"])
+    assert final_worker.final_clock is not None
+    assert final_worker.final_clock.monotonic_ns >= final_worker.clock.monotonic_ns + max(
+        interval.end_ns for interval in final_worker.intervals.values()
     )
 
 

@@ -16,7 +16,6 @@ import hmac
 import http.server
 import json
 import logging
-import math
 import os
 import shutil
 import socket
@@ -84,7 +83,6 @@ from coworld.runner.player_artifacts import (
     PlayerArtifactCapture,
     upload_captured_player_artifact,
 )
-from coworld.runner.player_pod_launch_gate import LAUNCH_POLL_SECONDS, PlayerPodLaunchGate
 from coworld.runner.runner import (
     CERTIFICATION_EPISODE_SOURCE,
     DEFAULT_PLAYER_EXIT_TIMEOUT_SECONDS,
@@ -758,9 +756,6 @@ def _prepare_player_pods(job: CoworldEpisodeJobSpec, worker_timings: ProcessTimi
     # Empty (the default) means no CPU limit: a player pod may burst to the whole node, so it
     # sees 8/12/16 cores depending on placement. A declared limit caps every player pod here.
     player_cpu_limit = os.environ.get("COWORLD_PLAYER_CPU_LIMIT", "")
-    player_pod_launch_rate_per_minute = float(os.environ["COWORLD_PLAYER_POD_LAUNCH_RATE_PER_MINUTE"])
-    player_pod_launch_burst = float(os.environ["COWORLD_PLAYER_POD_LAUNCH_BURST"])
-    coordination_v1 = client.CoordinationV1Api(api_client)
     child_names: list[str] = []
     networking_v1 = client.NetworkingV1Api(api_client) if egress_enforcement_enabled else None
     player_launch_start = time.monotonic_ns()
@@ -830,68 +825,28 @@ def _prepare_player_pods(job: CoworldEpisodeJobSpec, worker_timings: ProcessTimi
                     ),
                 ),
             )
-        if policy_players:
-            batch_v1 = client.BatchV1Api(api_client)
-            launch_gate = PlayerPodLaunchGate(
-                coordination_v1,
-                batch_v1,
+        # Episode admission belongs to the backend; persistent runtimes reconcile directly.
+        # Neither path waits on a shared reservation while creating player pods.
+        for slot, player in policy_players:
+            name = f"{service_name}-player-{slot}"
+            child_names.append(name)
+            _create_player_pod(
+                core_v1,
                 namespace,
-                job_name=os.environ["JOB_NAME"],
-                job_uid=os.environ["JOB_UID"],
-                refill_per_second=player_pod_launch_rate_per_minute / 60,
-                burst=player_pod_launch_burst,
+                name,
+                slot,
+                tokens[slot],
+                player,
+                policy_secrets.get(slot, {}),
+                job_id,
+                service_name,
+                player_cpu_request,
+                player_memory_request,
+                player_cpu_limit,
+                owner_references,
+                game_pod_ip=game_pod_ip,
+                timings=worker_timings,
             )
-            reservation_start = time.monotonic()
-            deadline_extension_seconds = 0
-            try:
-                for index, (slot, player) in enumerate(policy_players):
-                    while True:
-                        decision = launch_gate.acquire(len(policy_players) - index)
-                        extension = math.ceil(
-                            max(
-                                0.0,
-                                time.monotonic()
-                                - reservation_start
-                                + decision.finish_delay
-                                - float(os.environ["COWORLD_PLAYER_POD_LAUNCH_BUDGET_SECONDS"]),
-                            )
-                        )
-                        if extension > deadline_extension_seconds:
-                            batch_v1.patch_namespaced_job(
-                                name=os.environ["JOB_NAME"],
-                                namespace=namespace,
-                                body={
-                                    "spec": {
-                                        "activeDeadlineSeconds": int(os.environ["COWORLD_JOB_ACTIVE_DEADLINE_SECONDS"])
-                                        + extension
-                                    }
-                                },
-                            )
-                            deadline_extension_seconds = extension
-                        if decision.granted:
-                            break
-                        time.sleep(min(LAUNCH_POLL_SECONDS, decision.retry_after))
-                    name = f"{service_name}-player-{slot}"
-                    child_names.append(name)
-                    _create_player_pod(
-                        core_v1,
-                        namespace,
-                        name,
-                        slot,
-                        tokens[slot],
-                        player,
-                        policy_secrets.get(slot, {}),
-                        job_id,
-                        service_name,
-                        player_cpu_request,
-                        player_memory_request,
-                        player_cpu_limit,
-                        owner_references,
-                        game_pod_ip=game_pod_ip,
-                        timings=worker_timings,
-                    )
-            finally:
-                launch_gate.release()
         launched = True
     finally:
         if not launched:
@@ -1320,9 +1275,9 @@ def _create_player_pod(
             ),
         )
     ]
-    # Pods are paced before the game starts. Keep players in init until the worker
+    # Pods are created before the game starts. Keep players in init until the worker
     # establishes its viewer, so a fast game cannot finish before that handshake.
-    # The owning Job bounds this wait, including launch queue time.
+    # The owning Job bounds this wait.
     init_containers = [
         client.V1Container(
             name="wait-for-game-service",

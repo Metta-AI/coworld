@@ -55,20 +55,22 @@ times out.
 
 ## Parent Job Shape
 
-Before creating a platform-hosted Job, the trusted backend dispatcher provisions the shared launch Lease with
-server-side apply. It applies only the Lease identity, preserving existing launch reservations and tokens on retries.
-ArgoCD excludes Leases, so the chart manages worker permissions while the dispatcher owns this runtime state. Workers
-retain only Lease `get`/`update` permissions; provisioning failure prevents Job creation.
+The backend admits the whole episode before dispatch, accounting for its coordinator and container players together.
+Waiting reservations retain their refill priority. Once admitted, an episode creates its pods without another shared
+queue or per-player token check; slow pod creation cannot hold up other admitted episodes.
+
+Persistent player runtimes reconcile directly, outside the episode admission queue. They also create players without
+worker-side token pacing. The episode admission rate does not bound persistent-runtime launch bursts.
 
 The parent Job has:
 
 - `coworld-init-config`: writes the concrete game config and tokens. For game-hosted mode, it downloads, verifies, and
   writes one player file at a time. It writes `player_seats.json` after every slot is staged. It also writes the
   validated job specification to the private coordinator volume.
-- `launch-players`: platform-hosted init container that creates the game Service and paces player pod creation through
-  the shared launch Lease. Kubernetes starts the game only after this init container succeeds, so queue time cannot
-  consume the game's player connection timeout. Player pods wait for game HTTP health in their own init containers; the
-  owning Job bounds that wait and reclaims them on termination.
+- `launch-players`: platform-hosted init container that creates the game Service and player pods. Kubernetes starts the
+  game only after this init container succeeds, so pod creation time cannot consume the game's player connection
+  timeout. Player pods wait for game HTTP health in their own init containers; the owning Job bounds that wait and
+  reclaims them on termination.
 - `game`: regular non-restarting container that runs `manifest.game.runnable.image`, listens on port `8080`, and has a
   TCP liveness probe against the worker's health port (`9090`) so the kubelet stops it when the worker exits.
 - `worker`: regular Job container that runs the Kubernetes coordinator and holds a TCP health port (`9090`) open for its
