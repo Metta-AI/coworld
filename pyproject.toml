@@ -37,6 +37,7 @@ test = [
   "numpy>=2.3.0",
   "pyarrow>=16.1.0",
   "pytest",
+  "pytest-asyncio>=1.0.0",
   "pytest-httpserver",
   "pytest-xdist",
   "ruff",

@@ -50,10 +50,12 @@ from coworld.runner.bedrock_metadata import CoworldEpisodeBedrockMetadata, seria
 from coworld.runner.bedrock_sidecar_wiring import (
     BEDROCK_SIDECAR_CONTAINER_NAME,
     COWORLD_EGRESS_ENFORCED_LABEL,
+    COWORLD_EGRESS_RELAY_MODE_LABEL,
     RESERVED_SIDECAR_APP_ENV,
     bedrock_app_endpoint_env,
     bedrock_sidecar_token_volume,
     build_bedrock_sidecar,
+    egress_relay_client_tls_volume,
     resolve_image_attribution_key,
 )
 from coworld.runner.bootstrap import COORDINATOR_SPEC_PATH, STATE_PATH, WORKDIR, process_timings
@@ -83,6 +85,7 @@ from coworld.runner.player_artifacts import (
     PlayerArtifactCapture,
     upload_captured_player_artifact,
 )
+from coworld.runner.relay_client import egress_relay_ssl_context
 from coworld.runner.runner import (
     CERTIFICATION_EPISODE_SOURCE,
     DEFAULT_PLAYER_EXIT_TIMEOUT_SECONDS,
@@ -765,9 +768,11 @@ def _prepare_player_pods(job: CoworldEpisodeJobSpec, worker_timings: ProcessTimi
         game_pod_ip = None
         if networking_v1 is not None:
             game_pod_ip = os.environ["POD_IP"]
-            relay_port = urlsplit(os.environ["COWORLD_EGRESS_RELAY_URL"]).port
-            if relay_port is None:
-                raise ValueError("COWORLD_EGRESS_RELAY_URL must include the relay Service port")
+            relay_url = urlsplit(os.environ["COWORLD_EGRESS_RELAY_URL"])
+            relay_port = relay_url.port
+            if relay_port is None or relay_url.hostname is None:
+                raise ValueError("COWORLD_EGRESS_RELAY_URL must include the relay Service host and port")
+            relay_service = relay_url.hostname.split(".", maxsplit=1)[0]
             networking_v1.create_namespaced_network_policy(
                 namespace=namespace,
                 body=client.V1NetworkPolicy(
@@ -811,7 +816,7 @@ def _prepare_player_pods(job: CoworldEpisodeJobSpec, worker_timings: ProcessTimi
                             client.V1NetworkPolicyEgressRule(
                                 to=[
                                     client.V1NetworkPolicyPeer(
-                                        pod_selector=client.V1LabelSelector(match_labels={"app": "egress-relay"})
+                                        pod_selector=client.V1LabelSelector(match_labels={"app": relay_service})
                                     )
                                 ],
                                 ports=[
@@ -1118,8 +1123,19 @@ def _load_incluster_config(*, egress_enforcement_enabled: bool) -> client.ApiCli
     client.Configuration.set_default(default)
     api_client = client.ApiClient(default)
     if egress_enforcement_enabled:
+        relay_url = os.environ["COWORLD_EGRESS_RELAY_URL"]
+        relay_context = (
+            egress_relay_ssl_context(
+                ca_file=os.environ["COWORLD_EGRESS_RELAY_CA_FILE"],
+                cert_file=os.environ["COWORLD_EGRESS_RELAY_CLIENT_CERT_FILE"],
+                key_file=os.environ["COWORLD_EGRESS_RELAY_CLIENT_KEY_FILE"],
+            )
+            if relay_url.startswith("https://")
+            else None
+        )
         api_client.rest_client.pool_manager = urllib3.ProxyManager(
-            proxy_url=os.environ["COWORLD_EGRESS_RELAY_URL"],
+            proxy_url=relay_url,
+            proxy_ssl_context=relay_context,
             num_pools=4,
             maxsize=default.connection_pool_maxsize,
             cert_reqs=ssl.CERT_REQUIRED,
@@ -1307,6 +1323,8 @@ def _create_player_pod(
         prompt_prefix_sample_rate = float(os.environ.get("BEDROCK_SIDECAR_PROMPT_PREFIX_SAMPLE_RATE", "0"))
         egress_relay_url = os.environ.get("BEDROCK_SIDECAR_EGRESS_RELAY_URL") or None
         pod_volumes = [bedrock_sidecar_token_volume(prompt_prefix_measurement=prompt_prefix_sample_rate > 0)]
+        if egress_relay_url is not None and egress_relay_url.startswith("https://"):
+            pod_volumes.append(egress_relay_client_tls_volume())
         init_containers.append(
             build_bedrock_sidecar(
                 metadata=player_bedrock_metadata.model_copy(update={"metadata_origin": "bedrock_sidecar"}),
@@ -1390,6 +1408,11 @@ def _create_player_pod(
                 "coworld-component": "player",
                 "coworld-player-slot": str(slot),
                 **({COWORLD_EGRESS_ENFORCED_LABEL: "true"} if enforced else {}),
+                **(
+                    {COWORLD_EGRESS_RELAY_MODE_LABEL: "mtls"}
+                    if enforced and os.environ["COWORLD_EGRESS_RELAY_URL"].startswith("https://")
+                    else {}
+                ),
                 # coworld-id / league-id / coworld-source are AWS cost-attribution labels, forwarded by the
                 # dispatcher through the worker env so player pods carry the same identity
                 # as the game pod. League-less episodes get no COWORLD_LEAGUE_ID.

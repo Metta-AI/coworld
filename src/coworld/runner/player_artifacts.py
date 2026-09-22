@@ -6,8 +6,9 @@ from pathlib import Path
 from typing import IO
 from uuid import UUID
 
-import httpx
 from pydantic import AwareDatetime, BaseModel, ConfigDict, Field, TypeAdapter, model_validator
+
+from coworld.runner.relay_client import relay_http_client
 
 ARTIFACT_TARGETS_PATH = "/var/run/coworld-uploads/targets.json"
 DIAGNOSTIC_TARGETS_PATH = "/var/run/coworld-diagnostics/targets.json"
@@ -135,7 +136,7 @@ def upload_captured_player_artifact(
         pending.write_text(json.dumps(reservations))
         pending.replace(ledger_path)
     artifact.seek(0)
-    with httpx.Client(proxy=os.environ.get("COWORLD_EGRESS_RELAY_URL"), timeout=60) as client:
+    with relay_http_client(os.environ["COWORLD_EGRESS_RELAY_URL"]) as client:
         response = client.post(
             grant.url,
             data={**grant.fields, "key": f"{reference.prefix}/artifact.zip"},

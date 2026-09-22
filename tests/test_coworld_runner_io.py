@@ -9,6 +9,7 @@ import httpx
 import pytest
 
 from coworld.runner import io as runner_io
+from coworld.runner import relay_client
 from coworld.runner.player_artifacts import ArtifactUploadTargets
 
 
@@ -302,15 +303,45 @@ def test_relay_routed_upload_data_does_not_retry_client_errors(monkeypatch: pyte
 def test_relay_http_client_follows_redirects(monkeypatch: pytest.MonkeyPatch) -> None:
     kwargs = {}
     sentinel = object()
+    tls_context = object()
 
     def client(**values: object) -> object:
         kwargs.update(values)
         return sentinel
 
+    monkeypatch.setenv("COWORLD_EGRESS_RELAY_CLIENT_CERT_FILE", "/tls/client.crt")
+    monkeypatch.setenv("COWORLD_EGRESS_RELAY_CLIENT_KEY_FILE", "/tls/client.key")
+    monkeypatch.setenv("COWORLD_EGRESS_RELAY_CA_FILE", "/tls/ca.crt")
+    monkeypatch.setattr(relay_client, "egress_relay_ssl_context", lambda **_kwargs: tls_context)
+    monkeypatch.setattr(
+        runner_io.httpx,
+        "Proxy",
+        lambda url, *, ssl_context: (url, ssl_context),
+    )
     monkeypatch.setattr(runner_io.httpx, "Client", client)
 
-    assert runner_io._relay_http_client("http://relay.test:3128") is sentinel
-    assert kwargs == {"proxy": "http://relay.test:3128", "timeout": 60.0, "follow_redirects": True}
+    assert runner_io._relay_http_client("https://relay.test:3128") is sentinel
+    assert kwargs == {
+        "proxy": ("https://relay.test:3128", tls_context),
+        "timeout": 60.0,
+        "follow_redirects": True,
+    }
+
+
+def test_relay_http_client_keeps_deployed_http_proxy_without_tls_files(monkeypatch: pytest.MonkeyPatch) -> None:
+    kwargs = {}
+    monkeypatch.delenv("COWORLD_EGRESS_RELAY_CLIENT_CERT_FILE", raising=False)
+    monkeypatch.delenv("COWORLD_EGRESS_RELAY_CLIENT_KEY_FILE", raising=False)
+    monkeypatch.delenv("COWORLD_EGRESS_RELAY_CA_FILE", raising=False)
+    monkeypatch.setattr(runner_io.httpx, "Client", lambda **values: kwargs.update(values))
+
+    runner_io._relay_http_client("http://egress-relay.jobs.svc.cluster.local:3128")
+
+    assert kwargs == {
+        "proxy": "http://egress-relay.jobs.svc.cluster.local:3128",
+        "timeout": 60.0,
+        "follow_redirects": True,
+    }
 
 
 @pytest.mark.parametrize("streaming", [False, True])
