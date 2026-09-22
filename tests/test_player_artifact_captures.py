@@ -34,7 +34,8 @@ def upload(monkeypatch, tmp_path):
     )
     client = MagicMock()
     client.__enter__.return_value = client
-    monkeypatch.setattr(httpx, "Client", lambda **_: client)
+    monkeypatch.setenv("COWORLD_EGRESS_RELAY_URL", "http://relay.test:3128")
+    monkeypatch.setattr(artifacts, "relay_http_client", lambda _: client)
     return dict(
         grant=artifacts.PlayerArtifactUploadGrant(url="https://storage.example", fields={"policy": "signed"}),
         session=session,

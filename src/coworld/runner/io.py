@@ -16,6 +16,7 @@ from pydantic import BaseModel, ConfigDict, Field
 from tenacity import RetryCallState, Retrying, retry_if_exception, stop_after_attempt, wait_chain, wait_fixed
 
 from coworld.runner.player_artifacts import ArtifactUploadTargets
+from coworld.runner.relay_client import relay_http_client
 
 _RETRY_DELAYS_SECONDS = (0.5, 1.0, 2.0)
 _RETRYABLE_STATUS_CODES = {429, 500, 502, 503, 504}
@@ -313,4 +314,4 @@ def upload_file(
 
 
 def _relay_http_client(relay_url: str) -> httpx.Client:
-    return httpx.Client(proxy=relay_url, timeout=60.0, follow_redirects=True)
+    return relay_http_client(relay_url)

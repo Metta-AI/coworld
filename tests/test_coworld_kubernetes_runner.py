@@ -44,6 +44,10 @@ from coworld.runner.bedrock_sidecar_wiring import (
     BEDROCK_SIDECAR_CONTAINER_NAME,
     BEDROCK_SIDECAR_TOKEN_FILE,
     BEDROCK_SIDECAR_TOKEN_VOLUME_NAME,
+    EGRESS_RELAY_CA_FILE,
+    EGRESS_RELAY_CLIENT_CERT_FILE,
+    EGRESS_RELAY_CLIENT_KEY_FILE,
+    EGRESS_RELAY_CLIENT_TLS_VOLUME_NAME,
 )
 from coworld.runner.kubernetes_runner import (
     _collect_logs,
@@ -120,7 +124,11 @@ def test_enforced_incluster_config_keeps_relay_hostname_after_token_refresh(monk
         cast(Any, configuration).refresh_api_key_hook = sdk_refresh
 
     cast(Any, loaded).refresh_api_key_hook = sdk_refresh
-    monkeypatch.setenv("COWORLD_EGRESS_RELAY_URL", "http://egress-relay.jobs.svc.cluster.local:3128")
+    monkeypatch.setenv("COWORLD_EGRESS_RELAY_URL", "https://egress-relay.jobs.svc.cluster.local:3128")
+    monkeypatch.setenv("COWORLD_EGRESS_RELAY_CA_FILE", "/tls/ca.crt")
+    monkeypatch.setenv("COWORLD_EGRESS_RELAY_CLIENT_CERT_FILE", "/tls/client.crt")
+    monkeypatch.setenv("COWORLD_EGRESS_RELAY_CLIENT_KEY_FILE", "/tls/client.key")
+    monkeypatch.setattr(kubernetes_runner, "egress_relay_ssl_context", lambda **_kwargs: object())
     monkeypatch.setattr(kubernetes_runner.config, "load_incluster_config", lambda: None)
     monkeypatch.setattr(kubernetes_runner.client.Configuration, "get_default_copy", lambda: loaded)
     monkeypatch.setattr(kubernetes_runner.client.Configuration, "set_default", lambda _configuration: None)
@@ -2564,7 +2572,7 @@ def test_create_game_service_exposes_internal_artifact_upload(monkeypatch, relay
     monkeypatch.setenv("PLAYER_ARTIFACT_UPLOAD_URLS", '{"0":"https://s3.example/artifact"}')
     monkeypatch.delenv("COWORLD_EGRESS_RELAY_URL", raising=False)
     if relay_enabled:
-        monkeypatch.setenv("COWORLD_EGRESS_RELAY_URL", "http://egress-relay.jobs.svc.cluster.local:3128")
+        monkeypatch.setenv("COWORLD_EGRESS_RELAY_URL", "https://egress-relay.jobs.svc.cluster.local:3128")
 
     kubernetes_runner._create_game_service(core_v1, "jobs", "game-service", "job-id", [])
 
@@ -2832,7 +2840,7 @@ def test_create_player_pod_enforcement_removes_dns_and_uses_secure_pool(monkeypa
     )
     monkeypatch.setenv("COWORLD_EGRESS_ENFORCEMENT_ENABLED", "true")
     monkeypatch.setenv("COWORLD_EGRESS_RELAY_IP", "172.20.10.20")
-    monkeypatch.setenv("COWORLD_EGRESS_RELAY_URL", "http://egress-relay.jobs.svc.cluster.local:3128")
+    monkeypatch.setenv("COWORLD_EGRESS_RELAY_URL", "https://egress-relay-mtls.jobs.svc.cluster.local:3128")
     monkeypatch.setenv("COWORLD_WORKLOAD_TYPE", "coworld-egress-jobs")
     monkeypatch.setenv("COWORLD_BEDROCK_REGION", "us-east-1")
 
@@ -2855,11 +2863,12 @@ def test_create_player_pod_enforcement_removes_dns_and_uses_secure_pool(monkeypa
 
     pod = created["body"]
     assert pod.metadata.labels["coworld-egress-enforced"] == "true"
+    assert pod.metadata.labels["coworld-egress-relay-mode"] == "mtls"
     assert pod.spec.node_selector == {"workload-type": "coworld-egress-jobs"}
     assert pod.spec.tolerations[0].value == "coworld-egress-jobs"
     assert [(alias.ip, alias.hostnames) for alias in pod.spec.host_aliases] == [
         ("172.20.20.30", ["game-service"]),
-        ("172.20.10.20", ["egress-relay.jobs.svc.cluster.local"]),
+        ("172.20.10.20", ["egress-relay-mtls.jobs.svc.cluster.local"]),
     ]
 
 
@@ -3132,7 +3141,7 @@ def test_create_player_pod_with_bedrock_sidecar_inverts_bedrock_access(monkeypat
     monkeypatch.setenv("BEDROCK_SIDECAR_UPSTREAM_ENDPOINT", "http://bedrock.local")
     monkeypatch.setenv("BEDROCK_SIDECAR_SPEND_LIMIT_USD", "1.5")
     monkeypatch.setenv("BEDROCK_SIDECAR_PRICING_JSON", '{"claude-sonnet-4-6":[3.0,15.0,0.3,3.75]}')
-    monkeypatch.setenv("BEDROCK_SIDECAR_EGRESS_RELAY_URL", "http://egress-relay.jobs.svc.cluster.local:3128")
+    monkeypatch.setenv("BEDROCK_SIDECAR_EGRESS_RELAY_URL", "https://egress-relay.jobs.svc.cluster.local:3128")
     player = PlayerLaunchSpec(
         image="ghcr.io/metta-ai/players/paintbot@sha256:player123",
         run=(),
@@ -3215,8 +3224,11 @@ def test_create_player_pod_with_bedrock_sidecar_inverts_bedrock_access(monkeypat
     assert not player_container.volume_mounts
 
     volumes: dict[str, Any] = {volume.name: volume for volume in pod.spec.volumes}
-    assert list(volumes) == [BEDROCK_SIDECAR_TOKEN_VOLUME_NAME]
-    assert [mount.name for mount in sidecar.volume_mounts] == [BEDROCK_SIDECAR_TOKEN_VOLUME_NAME]
+    assert list(volumes) == [BEDROCK_SIDECAR_TOKEN_VOLUME_NAME, EGRESS_RELAY_CLIENT_TLS_VOLUME_NAME]
+    assert [mount.name for mount in sidecar.volume_mounts] == [
+        BEDROCK_SIDECAR_TOKEN_VOLUME_NAME,
+        EGRESS_RELAY_CLIENT_TLS_VOLUME_NAME,
+    ]
     sidecar_env = {env_var.name: env_var.value for env_var in sidecar.env}
     assert sidecar_env["BEDROCK_SIDECAR_LISTEN_PORT"] == "19191"
     assert sidecar_env["BEDROCK_SIDECAR_REGION"] == "us-west-2"
@@ -3239,7 +3251,12 @@ def test_create_player_pod_with_bedrock_sidecar_inverts_bedrock_access(monkeypat
     assert sidecar_env["BEDROCK_SIDECAR_PRICING_JSON"] == '{"claude-sonnet-4-6":[3.0,15.0,0.3,3.75]}'
     assert "BEDROCK_SIDECAR_LLM_PROVIDER" not in sidecar_env
     assert "BEDROCK_SIDECAR_OPENROUTER_API_KEY" not in sidecar_env
-    assert sidecar_env["BEDROCK_SIDECAR_EGRESS_RELAY_URL"] == "http://egress-relay.jobs.svc.cluster.local:3128"
+    # Relay client keys are mounted only into the trusted sidecar, and the connection
+    # uses TLS so the sibling player cannot sniff or replay its authentication.
+    assert sidecar_env["BEDROCK_SIDECAR_EGRESS_RELAY_URL"] == "https://egress-relay.jobs.svc.cluster.local:3128"
+    assert sidecar_env["BEDROCK_SIDECAR_EGRESS_RELAY_CLIENT_CERT_FILE"] == EGRESS_RELAY_CLIENT_CERT_FILE
+    assert sidecar_env["BEDROCK_SIDECAR_EGRESS_RELAY_CLIENT_KEY_FILE"] == EGRESS_RELAY_CLIENT_KEY_FILE
+    assert sidecar_env["BEDROCK_SIDECAR_EGRESS_RELAY_CA_FILE"] == EGRESS_RELAY_CA_FILE
     # Self-provisioned IRSA on the sidecar (not webhook-dependent).
     assert sidecar_env["AWS_ROLE_ARN"] == "arn:aws:iam::583928386201:role/episode-runner-bedrock"
     assert sidecar_env["AWS_WEB_IDENTITY_TOKEN_FILE"] == BEDROCK_SIDECAR_TOKEN_FILE
@@ -3378,7 +3395,7 @@ def test_create_player_pod_forwards_artifact_upload_url_for_its_slot(monkeypatch
     )
     monkeypatch.delenv("COWORLD_EGRESS_RELAY_URL", raising=False)
     if relay_enabled:
-        monkeypatch.setenv("COWORLD_EGRESS_RELAY_URL", "http://egress-relay.jobs.svc.cluster.local:3128")
+        monkeypatch.setenv("COWORLD_EGRESS_RELAY_URL", "https://egress-relay.jobs.svc.cluster.local:3128")
     player = PlayerLaunchSpec(image="paintbot:latest", run=(), env={})
 
     kubernetes_runner._create_player_pod(

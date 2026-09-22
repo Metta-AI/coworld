@@ -16,7 +16,15 @@ BEDROCK_SIDECAR_HEALTH_PATH = f"/healthz/{BEDROCK_SIDECAR_CONTRACT_VERSION}"
 BEDROCK_PROMPT_PREFIX_CONTROL_CONFIG_MAP_NAME = "bedrock-prompt-prefix-measurement"
 BEDROCK_PROMPT_PREFIX_ENABLED_PATH = f"{BEDROCK_SIDECAR_TOKEN_MOUNT_PATH}/prompt-prefix-measurement-enabled"
 BEDROCK_RUNTIME_ENDPOINT_TEMPLATE = "https://bedrock-runtime.{region}.amazonaws.com"
+EGRESS_RELAY_CLIENT_TLS_SECRET_NAME = "egress-relay-client-tls"
+EGRESS_RELAY_CLIENT_TLS_VOLUME_NAME = "egress-relay-client-tls"
+EGRESS_RELAY_CLIENT_TLS_MOUNT_PATH = "/var/run/secrets/egress-relay"
+EGRESS_RELAY_CLIENT_CERT_FILE = f"{EGRESS_RELAY_CLIENT_TLS_MOUNT_PATH}/tls.crt"
+EGRESS_RELAY_CLIENT_KEY_FILE = f"{EGRESS_RELAY_CLIENT_TLS_MOUNT_PATH}/tls.key"
+EGRESS_RELAY_CA_FILE = f"{EGRESS_RELAY_CLIENT_TLS_MOUNT_PATH}/ca.crt"
 COWORLD_EGRESS_ENFORCED_LABEL = "coworld-egress-enforced"
+COWORLD_EGRESS_RELAY_MODE_LABEL = "coworld-egress-relay-mode"
+GAME_EGRESS_PROXY_PORT = 3129
 
 # Non-functional placeholder credentials for the app container's AWS SDK. The SDK needs creds to
 # sign before it sends to the localhost sidecar, which then re-signs with the real IRSA identity
@@ -49,8 +57,19 @@ def resolve_image_attribution_key(image: str) -> str:
     return image
 
 
-def egress_relay_env(url: str, *, prefix: str) -> list[client.V1EnvVar]:
-    return [client.V1EnvVar(name=f"{prefix}_EGRESS_RELAY_URL", value=url)]
+def egress_relay_client_env(url: str, *, prefix: str) -> list[client.V1EnvVar]:
+    return [
+        client.V1EnvVar(name=f"{prefix}_EGRESS_RELAY_URL", value=url),
+        *(
+            [
+                client.V1EnvVar(name=f"{prefix}_EGRESS_RELAY_CLIENT_CERT_FILE", value=EGRESS_RELAY_CLIENT_CERT_FILE),
+                client.V1EnvVar(name=f"{prefix}_EGRESS_RELAY_CLIENT_KEY_FILE", value=EGRESS_RELAY_CLIENT_KEY_FILE),
+                client.V1EnvVar(name=f"{prefix}_EGRESS_RELAY_CA_FILE", value=EGRESS_RELAY_CA_FILE),
+            ]
+            if url.startswith("https://")
+            else []
+        ),
+    ]
 
 
 def build_bedrock_sidecar(
@@ -210,7 +229,9 @@ def build_bedrock_sidecar(
             *openrouter_storage_env,
             *prompt_prefix_measurement_env,
             *openrouter_routing_env,
-            *(egress_relay_env(egress_relay_url, prefix="BEDROCK_SIDECAR") if egress_relay_url else []),
+            # The client certificate is mounted only into this trusted container. TLS
+            # protects it from a sibling container sniffing the shared pod network.
+            *(egress_relay_client_env(egress_relay_url, prefix="BEDROCK_SIDECAR") if egress_relay_url else []),
             client.V1EnvVar(
                 name="POD_NAME",
                 value_from=client.V1EnvVarSource(field_ref=client.V1ObjectFieldSelector(field_path="metadata.name")),
@@ -250,7 +271,18 @@ def build_bedrock_sidecar(
                 name=BEDROCK_SIDECAR_TOKEN_VOLUME_NAME,
                 mount_path=BEDROCK_SIDECAR_TOKEN_MOUNT_PATH,
                 read_only=True,
-            )
+            ),
+            *(
+                [
+                    client.V1VolumeMount(
+                        name=EGRESS_RELAY_CLIENT_TLS_VOLUME_NAME,
+                        mount_path=EGRESS_RELAY_CLIENT_TLS_MOUNT_PATH,
+                        read_only=True,
+                    )
+                ]
+                if egress_relay_url and egress_relay_url.startswith("https://")
+                else []
+            ),
         ],
     )
 
@@ -319,4 +351,11 @@ def bedrock_sidecar_token_volume(
                 ),
             ]
         ),
+    )
+
+
+def egress_relay_client_tls_volume() -> client.V1Volume:
+    return client.V1Volume(
+        name=EGRESS_RELAY_CLIENT_TLS_VOLUME_NAME,
+        secret=client.V1SecretVolumeSource(secret_name=EGRESS_RELAY_CLIENT_TLS_SECRET_NAME),
     )
