@@ -60,6 +60,7 @@ should follow [Build a Coworld](https://softmax.com/docs/coworld/build-a-coworld
 | Size an old-vs-new hosted evaluation                 | [Cookbook: Size A Policy Field Study](src/coworld/docs/COOKBOOK.md#size-a-policy-field-study) and `uv run coworld power-analysis --help`                                           |
 | Run and verify a player locally                      | [Package and smoke-test](https://softmax.com/docs/coworld/build-a-player/package-and-verify)                                                                                       |
 | Inspect hosted logs, results, and replays            | [Debug hosted episodes](https://softmax.com/docs/coworld/build-a-player/debug-hosted-episodes)                                                                                     |
+| Run mixed human/agent league lobbies                 | [League lobbies](https://softmax.com/docs/coworld/build-a-coworld/league-lobbies) and `uv run coworld lobby --help`                                                                |
 | Discover reporters and what they produce             | `uv run coworld reporters list` / `search <text>` / `show <rptr_...>` (add `--json` for machine output)                                                                            |
 | Save per-player debugging files after an episode     | [Player artifact](src/coworld/docs/artifacts/PLAYER_ARTIFACT.md) and `uv run coworld episode-logs --help`                                                                          |
 | Author a new Coworld end to end                      | [Build a Coworld](https://softmax.com/docs/coworld/build-a-coworld/overview)                                                                                                       |
@@ -107,6 +108,7 @@ Technical references:
 - [Role contracts](src/coworld/docs/README.md#roles)
 - [Artifact contracts](src/coworld/docs/artifacts/README.md)
 - [Coworld cookbook](src/coworld/docs/COOKBOOK.md)
+- [League lobbies](src/coworld/docs/LEAGUE_LOBBIES.md)
 - [Paint Arena](src/coworld/examples/paintarena/README.md)
 
 Use `uv run coworld --help` and `uv run coworld <command> --help` for the current CLI surface. Use the

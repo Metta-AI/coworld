@@ -20,6 +20,7 @@ def test_cookbook_answers_cli_faqs() -> None:
         "### How do I run hosted non-tournament checks?",
         "uv run coworld lobby create",
         "uv run coworld lobby start",
+        "https://softmax.com/docs/coworld/build-a-coworld/league-lobbies",
         "uv run coworld xp-request create",
         "roster",
         "### How do I submit a policy to the Observatory?",

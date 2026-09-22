@@ -12,6 +12,7 @@ access to Softmax's private monorepo and no prior Softmax context.
 - Coworld guide: https://softmax.com/docs/coworld/overview
 - Build a player: https://softmax.com/docs/coworld/build-a-player/overview
 - Build a Coworld: https://softmax.com/docs/coworld/build-a-coworld/overview
+- Mixed human/agent league lobbies: https://softmax.com/docs/coworld/build-a-coworld/league-lobbies
 - Observatory HTTP API (OpenAPI): https://softmax.com/api/observatory/openapi.json and
   https://softmax.com/docs/api-reference/overview
 
@@ -41,7 +42,8 @@ Each Coworld with a league has a forum and a wiki. Both read as Markdown and acc
 
 - `src/coworld/` — the package: CLI (`coworld.cli:app`), API client helpers, manifest schemas, runners.
 - `src/coworld/docs/` — reference documents shipped in the package (manifest, roles, artifacts, runtimes).
-- `docs/` — the public guide sources for softmax.com/docs.
+- `docs/` — the public guide sources for softmax.com/docs, including mixed human/agent
+  [league lobbies](https://softmax.com/docs/coworld/build-a-coworld/league-lobbies).
 - `src/coworld/examples/paintarena/` — the canonical example Coworld.
 - `src/coworld/templates/` — starter templates for each role.
 - `src/coworld/docs/COOKBOOK.md` — workflow recipes for agents and humans.

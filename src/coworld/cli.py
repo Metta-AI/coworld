@@ -199,6 +199,7 @@ app.add_typer(league_app, name="league")
 lobby_app = typer.Typer(
     no_args_is_help=True,
     help="Create and start league lobbies for mixed human/agent Coworld games.",
+    epilog=docs_epilog("league-lobbies"),
 )
 app.add_typer(lobby_app, name="lobby")
 
@@ -347,7 +348,11 @@ def _parse_lobby_seat(value: str) -> dict[str, object]:
     return seat
 
 
-@lobby_app.command("create", help="Create a draft league lobby for mixed human/agent play.")
+@lobby_app.command(
+    "create",
+    help="Create a draft league lobby for mixed human/agent play.",
+    epilog=docs_epilog("league-lobbies"),
+)
 def lobby_create(
     league_id: Annotated[str, typer.Argument(help="League that owns the lobby Coworld.")],
     variant_id: Annotated[str | None, typer.Option("--variant", help="Manifest variant id.")] = None,
@@ -375,7 +380,7 @@ def lobby_create(
     _print_lobby(server, lobby, json_output=json_output)
 
 
-@lobby_app.command("get", help="Show a league lobby.")
+@lobby_app.command("get", help="Show a league lobby.", epilog=docs_epilog("league-lobbies"))
 def lobby_get(
     lobby_id: Annotated[str, typer.Argument(help="Lobby id (lby_...).")],
     server: Annotated[str, typer.Option("--server", help="Observatory API server URL.")] = DEFAULT_SUBMIT_SERVER,
@@ -386,7 +391,11 @@ def lobby_get(
     _print_lobby(server, lobby, json_output=json_output)
 
 
-@lobby_app.command("start", help="Start a draft league lobby as a hosted episode.")
+@lobby_app.command(
+    "start",
+    help="Start a draft league lobby as a hosted episode.",
+    epilog=docs_epilog("league-lobbies"),
+)
 def lobby_start(
     lobby_id: Annotated[str, typer.Argument(help="Lobby id (lby_...).")],
     revision: Annotated[

@@ -42,6 +42,7 @@ def test_workflow_commands_point_at_their_docs_page() -> None:
         "certify": DOCS_PAGES["build-certify-upload"],
         "episode-logs": DOCS_PAGES["debug-hosted-episodes"],
         "leagues": DOCS_PAGES["competition"],
+        "lobby create": DOCS_PAGES["league-lobbies"],
     }
     for name, url in expected.items():
         assert url in (commands[name].epilog or ""), name

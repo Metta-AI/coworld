@@ -10,10 +10,10 @@ exact references behind it. For browser-only replay bundles and their Coworld bu
 [Paint Arena](../examples/paintarena/README.md) as its canonical example. Installable starter templates for every role
 ship under `coworld/templates`. When rebuilding an existing Coworld after the June 2026 repo consolidation, use
 [Rebuilding Coworlds After The Role Repo Move](REBUILDING_COWORLDS.md). For mixed human/agent league games with the same
-logs and LLM sidecar as other hosted episodes, use `coworld lobby create` / `POST /v2/leagues/{league_id}/lobbies`. For
-league bracket tournaments (`tour_…` objects, waves, and how to read their episodes), use
-[Bracket Tournaments](TOURNAMENTS.md). For how the platform ladder deals entrants onto game seats — the per-strategy
-slot→entrant formulas a team-structured game must check before requesting a seed — use
+logs and LLM sidecar as other hosted episodes, use [League Lobbies](LEAGUE_LOBBIES.md) (`coworld lobby create` /
+`POST /v2/leagues/{league_id}/lobbies`). For league bracket tournaments (`tour_…` objects, waves, and how to read their
+episodes), use [Bracket Tournaments](TOURNAMENTS.md). For how the platform ladder deals entrants onto game seats — the
+per-strategy slot→entrant formulas a team-structured game must check before requesting a seed — use
 [Platform Ladder Seating](LADDER_SEATING.md).
 
 ## What Is A Complete Coworld?
@@ -220,6 +220,7 @@ For a new Coworld, start with [Choose a Player Runtime](PLAYER_RUNTIMES.md). Com
 - Coworld authoring entry point: [AUTHORING.md](AUTHORING.md).
 - Static replay-viewer authoring guide: [STATIC_REPLAY_VIEWERS.md](STATIC_REPLAY_VIEWERS.md).
 - Workflow recipes: [Coworld cookbook](COOKBOOK.md).
+- Mixed human/agent league lobbies: [LEAGUE_LOBBIES.md](LEAGUE_LOBBIES.md).
 - Rebuild/source ownership guide: [REBUILDING_COWORLDS.md](REBUILDING_COWORLDS.md).
 - Platform ladder leagues: [PLATFORM_LADDER_LEAGUE.md](PLATFORM_LADDER_LEAGUE.md).
 - Migrate off a container commissioner: [MIGRATE_TO_PLATFORM_COMMISSIONER.md](MIGRATE_TO_PLATFORM_COMMISSIONER.md).
