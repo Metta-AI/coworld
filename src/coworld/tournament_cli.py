@@ -744,16 +744,19 @@ def register_tournament_commands(app: typer.Typer) -> None:
                     console.print(f"[red]Agent {agent} is not controlled by one of your matched policies.[/red]")
                     raise typer.Exit(1)
                 content = _download_policy_log(client, episode, agent)
-                if download_dir is None:
+                if output is not None:
+                    output_path = output
+                elif download_dir is not None:
+                    output_path = download_dir / f"{episode_request_id}-policy_agent_{agent}.log"
+                else:
                     typer.echo(content)
                     if agent in artifact_indices:
                         _print_artifact_hint(episode_request_id, [agent])
                     return
-                output_path = download_dir / f"{episode_request_id}-policy_agent_{agent}.log"
                 output_path.parent.mkdir(parents=True, exist_ok=True)
                 output_path.write_text(content, encoding="utf-8")
                 console.print(f"[green]Log saved to {output_path}[/green]")
-                if agent in artifact_indices:
+                if download_dir is not None and agent in artifact_indices:
                     _download_agent_artifact(client, episode, agent, download_dir)
                 return
             if download_dir is not None:
