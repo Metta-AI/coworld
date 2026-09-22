@@ -392,9 +392,11 @@ def test_episode_logs_downloads_only_my_policy_agents(
     assert not (tmp_path / f"{EPISODE_REQUEST_ID}-policy_agent_1.zip").exists()
 
 
-def test_episode_logs_agent_download_dir_fetches_both_log_and_artifact(
+@pytest.mark.parametrize("destination", ["directory", "file", "both"])
+def test_episode_logs_agent_download_destinations(
     httpserver: HTTPServer,
     tmp_path: Path,
+    destination: str,
 ) -> None:
     episode_request = _episode_request(episode_request_id=EPISODE_REQUEST_ID, replay_url=None)
     del episode_request["assignments"]
@@ -418,6 +420,12 @@ def test_episode_logs_agent_download_dir_fetches_both_log_and_artifact(
         method="GET",
     ).respond_with_data(b"PK\x03\x04agent0 zip", content_type="application/zip")
 
+    output_path = tmp_path / "nested" / "agent.log"
+    destination_args = {
+        "directory": ["--download-dir", str(tmp_path)],
+        "file": ["--output", str(output_path)],
+        "both": ["--download-dir", str(tmp_path), "--output", str(output_path)],
+    }[destination]
     result = CliRunner().invoke(
         app,
         [
@@ -425,16 +433,24 @@ def test_episode_logs_agent_download_dir_fetches_both_log_and_artifact(
             EPISODE_REQUEST_ID,
             "--agent",
             "0",
-            "--download-dir",
-            str(tmp_path),
+            *destination_args,
             "--server",
             httpserver.url_for(""),
         ],
     )
 
     assert result.exit_code == 0, result.output
-    assert (tmp_path / f"{EPISODE_REQUEST_ID}-policy_agent_0.log").read_text() == "agent0 log\n"
-    assert (tmp_path / f"{EPISODE_REQUEST_ID}-policy_agent_0.zip").read_bytes() == b"PK\x03\x04agent0 zip"
+    default_log_path = tmp_path / f"{EPISODE_REQUEST_ID}-policy_agent_0.log"
+    saved_path = default_log_path if destination == "directory" else output_path
+    assert saved_path.read_text() == "agent0 log\n"
+    if destination != "directory":
+        assert not default_log_path.exists()
+    artifact_path = tmp_path / f"{EPISODE_REQUEST_ID}-policy_agent_0.zip"
+    if destination == "file":
+        assert not artifact_path.exists()
+        assert not any(request.path.endswith("/policy-artifact/0") for request, _ in httpserver.log)
+    else:
+        assert artifact_path.read_bytes() == b"PK\x03\x04agent0 zip"
 
 
 def test_episode_logs_agent_view_prints_artifact_hint(
