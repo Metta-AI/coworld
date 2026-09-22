@@ -475,10 +475,12 @@ def test_episode_logs_agent_view_prints_artifact_hint(
     assert not any(request.path.endswith("/policy-artifact/0") for request, _ in httpserver.log)
 
 
+@pytest.mark.parametrize("destination", ["directory", "file", "stdout"])
 def test_episode_logs_downloads_game_log(
     httpserver: HTTPServer,
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
+    destination: str,
 ) -> None:
     httpserver.expect_request(
         f"/observatory/v2/episode-requests/{EPISODE_REQUEST_ID}",
@@ -491,21 +493,31 @@ def test_episode_logs_downloads_game_log(
         headers={"Authorization": "Bearer token"},
     ).respond_with_data("game log\n", content_type="text/plain")
 
+    output_path = tmp_path / "nested" / "game.log"
+    destination_args = {
+        "directory": ["--download-dir", str(tmp_path)],
+        "file": ["--output", str(output_path)],
+        "stdout": [],
+    }[destination]
     result = CliRunner().invoke(
         app,
         [
             "episode-logs",
             EPISODE_REQUEST_ID,
             "--game",
-            "--download-dir",
-            str(tmp_path),
+            *destination_args,
             "--server",
             httpserver.url_for(""),
         ],
     )
 
     assert result.exit_code == 0, result.output
-    assert (tmp_path / f"{EPISODE_REQUEST_ID}-game.log").read_text() == "game log\n"
+    if destination == "stdout":
+        assert "game log\n" in result.output
+        assert not list(tmp_path.iterdir())
+    else:
+        saved_path = output_path if destination == "file" else tmp_path / f"{EPISODE_REQUEST_ID}-game.log"
+        assert saved_path.read_text() == "game log\n"
 
 
 def test_episode_logs_downloads_player_artifact(
