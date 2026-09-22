@@ -135,6 +135,7 @@ class CoworldUploadResponse(BaseModel):
     id: str
     name: str
     version: str
+    visibility: Literal["public", "private"]
     manifest: dict[str, Any]
     manifest_hash: str
     size_bytes: int
@@ -236,6 +237,7 @@ class CoworldListEntry(BaseModel):
     id: str
     name: str
     version: str
+    visibility: Literal["public", "private"]
     manifest_summary: CoworldManifestSummary
     manifest_hash: str
     size_bytes: int
@@ -503,11 +505,13 @@ class CoworldUploadClient:
             headers["X-Use-Elevated-Privileges"] = "true"
         return headers
 
-    def upload_manifest(self, manifest: dict[str, object]) -> CoworldUploadResponse:
+    def upload_manifest(
+        self, manifest: dict[str, object], *, visibility: Literal["public", "private"] | None = None
+    ) -> CoworldUploadResponse:
         response = self._http_client.post(
             "/v2/coworlds/upload",
             headers=self._headers(),
-            json={"manifest": manifest},
+            json={"manifest": manifest, **({"visibility": visibility} if visibility is not None else {})},
             timeout=120.0,
         )
         _raise_for_status(response)
@@ -1205,6 +1209,7 @@ def upload_coworld(
     *,
     server: str = DEFAULT_SUBMIT_SERVER,
     timeout_seconds: float = 60.0,
+    visibility: Literal["public", "private"] | None = None,
     wait_for_hosted_smoke: bool = False,
     hosted_smoke_timeout_seconds: float = 1800.0,
     hosted_smoke_poll_seconds: float = 5.0,
@@ -1226,7 +1231,7 @@ def upload_coworld(
             upload_manifest = _submit_player_files(client, upload_manifest, manifest_path.parent)
             upload_manifest = _submit_wasm_reporters(client, upload_manifest, manifest_path.parent)
             upload_manifest = _submit_replay_viewer_bundle(client, upload_manifest, manifest_path.parent)
-            response = client.upload_manifest(upload_manifest)
+            response = client.upload_manifest(upload_manifest, visibility=visibility)
             if wait_for_hosted_smoke:
                 status = get_coworld_status(
                     client,
@@ -1255,6 +1260,7 @@ def upload_coworld_update(
     coworld_ref: str,
     *,
     server: str = DEFAULT_SUBMIT_SERVER,
+    visibility: Literal["public", "private"] | None = None,
     version: str | None = None,
     patch_update: str | None = None,
     image_updates: list[str] | None = None,
@@ -1273,7 +1279,7 @@ def upload_coworld_update(
         _validate_manifest_document(manifest)
         _reject_mutable_registry_image_refs(manifest)
         upload_manifest = _manifest_with_softmax_image_ids(client, manifest)
-        response = client.upload_manifest(upload_manifest)
+        response = client.upload_manifest(upload_manifest, visibility=visibility)
         if wait_for_hosted_smoke:
             status = get_coworld_status(
                 client,
@@ -1623,6 +1629,7 @@ def upload_coworld_cmd(
     *,
     base_coworld: str | None = None,
     server: str = DEFAULT_SUBMIT_SERVER,
+    visibility: Literal["public", "private"] | None = None,
     timeout_seconds: float = 60.0,
     version: str | None = None,
     patch_update: str | None = None,
@@ -1639,6 +1646,7 @@ def upload_coworld_cmd(
         result = upload_coworld_update(
             base_coworld,
             server=server,
+            visibility=visibility,
             version=version,
             patch_update=patch_update,
             image_updates=image_updates,
@@ -1655,6 +1663,7 @@ def upload_coworld_cmd(
         result = upload_coworld(
             manifest_path,
             server=server,
+            visibility=visibility,
             timeout_seconds=timeout_seconds,
             wait_for_hosted_smoke=wait_for_hosted_smoke,
             hosted_smoke_timeout_seconds=hosted_smoke_timeout_seconds,

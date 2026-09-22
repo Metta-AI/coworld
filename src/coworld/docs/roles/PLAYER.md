@@ -128,8 +128,9 @@ that your player code reads.
 Player artifacts reach Observatory through two upload paths. Visibility depends on whether the player is bundled with
 the Coworld or submitted to a league.
 
-- **Bundled players** use `coworld upload-coworld`. Images are mirrored publicly. Files are downloaded into
-  `player-files/`, and the downloaded manifest points at those local files. Treat both forms as public.
+- **Bundled players** use `coworld upload-coworld`. Public Coworld images are mirrored publicly, and bundled files are
+  downloadable by anyone. For `--visibility private`, only the uploader and Softmax team can read the Coworld and its
+  bundled files; its images are not mirrored publicly. Keep secrets out of both forms.
 - **Submitted policies** use `coworld upload-policy IMAGE` or `coworld upload-policy --file PATH`. They are not exposed
   to other players through the download flow.
 

@@ -190,6 +190,7 @@ def _coworld(
         id=coworld_id,
         name=name,
         version=version,
+        visibility="public",
         manifest_summary=CoworldManifestSummary.model_validate(
             {
                 "description": name,

@@ -9,7 +9,7 @@ import webbrowser
 from contextlib import contextmanager
 from importlib.resources import as_file, files
 from pathlib import Path
-from typing import Annotated, Iterator, cast
+from typing import Annotated, Iterator, Literal, cast
 from urllib.parse import urlparse
 
 import typer
@@ -1266,6 +1266,10 @@ def upload_coworld(
         ),
     ] = None,
     server: Annotated[str, typer.Option("--server", help="Observatory API server URL.")] = DEFAULT_SUBMIT_SERVER,
+    visibility: Annotated[
+        Literal["public", "private"] | None,
+        typer.Option("--visibility", help="Public, or visible only to the uploader and Softmax team."),
+    ] = None,
     timeout_seconds: Annotated[float, typer.Option("--timeout-seconds", min=1.0)] = 60.0,
     wait_hosted_smoke: Annotated[
         bool,
@@ -1295,6 +1299,7 @@ def upload_coworld(
         manifest_path,
         base_coworld=base_coworld,
         server=server,
+        visibility=visibility,
         timeout_seconds=timeout_seconds,
         version=version,
         patch_update=patch_update,
