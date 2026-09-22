@@ -39,6 +39,7 @@ def _coworld_entry(index: int, *, name: str | None = None) -> dict[str, Any]:
         "size_bytes": 1,
         "created_at": "2026-08-20T12:00:00Z",
         "canonical": False,
+        "visibility": "public",
     }
 
 

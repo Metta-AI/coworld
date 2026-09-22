@@ -9,7 +9,7 @@ import tracemalloc
 import zipfile
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import cast
+from typing import Literal, cast
 
 import httpx
 import pytest
@@ -77,7 +77,9 @@ class _FakeCoworldUploadClient:
     def __exit__(self, *_exc: object) -> None:
         return None
 
-    def upload_manifest(self, manifest: dict[str, object]) -> CoworldUploadResponse:
+    def upload_manifest(
+        self, manifest: dict[str, object], *, visibility: Literal["public", "private"] | None = None
+    ) -> CoworldUploadResponse:
         self.uploads.append(manifest)
         return CoworldUploadResponse.model_validate(
             _coworld_entry("cow_00000000-0000-0000-0000-000000000999", manifest, version="0.1.0", canonical=True)
@@ -2900,6 +2902,7 @@ def _coworld_entry(
         "id": coworld_id,
         "name": name,
         "version": version,
+        "visibility": "public",
         "manifest": manifest,
         "manifest_summary": _manifest_summary(manifest),
         "manifest_hash": "sha256:manifest-hash",
