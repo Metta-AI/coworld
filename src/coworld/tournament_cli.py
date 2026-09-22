@@ -668,7 +668,9 @@ def register_tournament_commands(app: typer.Typer) -> None:
         ] = None,
         output: Annotated[
             Path | None,
-            typer.Option("--output", "-o", help="Download a single agent's artifact/log to this exact file."),
+            typer.Option(
+                "--output", "-o", help="Download the game log or a single agent's artifact/log to this exact file."
+            ),
         ] = None,
         server: Annotated[str, typer.Option("--server", help="Observatory API server URL.")] = DEFAULT_SUBMIT_SERVER,
     ) -> None:
@@ -679,10 +681,13 @@ def register_tournament_commands(app: typer.Typer) -> None:
                     console.print("[red]--artifact does not apply to --game logs.[/red]")
                     raise typer.Exit(1)
                 content = client.get_episode_request_artifact_text(episode_request_id, "logs")
-                if download_dir is None:
+                if output is not None:
+                    output_path = output
+                elif download_dir is not None:
+                    output_path = download_dir / f"{episode_request_id}-game.log"
+                else:
                     typer.echo(content)
                     return
-                output_path = download_dir / f"{episode_request_id}-game.log"
                 output_path.parent.mkdir(parents=True, exist_ok=True)
                 output_path.write_text(content, encoding="utf-8")
                 console.print(f"[green]Log saved to {output_path}[/green]")
