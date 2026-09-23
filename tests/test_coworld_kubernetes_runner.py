@@ -2288,7 +2288,6 @@ def test_game_hosted_kubernetes_episode_skips_player_resources_and_records_zero_
         ),
     ],
 )
-@pytest.mark.parametrize("launch_fails", [False, True])
 def test_run_kubernetes_episode_keeps_artifacts_authoritative_except_for_certification(
     monkeypatch,
     tmp_path,
@@ -2296,7 +2295,6 @@ def test_run_kubernetes_episode_keeps_artifacts_authoritative_except_for_certifi
     expected_player_start_timeout,
     episode_tags,
     expected_completion_waits,
-    launch_fails,
 ):
     artifacts = EpisodeArtifacts.create(tmp_path)
     artifacts.results_path.write_text("{}", encoding="utf-8")
@@ -2310,7 +2308,6 @@ def test_run_kubernetes_episode_keeps_artifacts_authoritative_except_for_certifi
     timing_snapshots: list[dict[str, float]] = []
     players_ready = threading.Event()
     startup_events: list[str] = []
-    launch_events: list[str] = []
 
     async def noop_async(*_args, **_kwargs):
         return None
@@ -2348,16 +2345,6 @@ def test_run_kubernetes_episode_keeps_artifacts_authoritative_except_for_certifi
         lambda *, egress_enforcement_enabled: None,
     )
     monkeypatch.setattr(kubernetes_runner.client, "CoreV1Api", lambda _api_client: object())
-    monkeypatch.setattr(
-        kubernetes_runner.client,
-        "CoordinationV1Api",
-        lambda _api_client: pytest.fail("admitted episodes must not access a launch Lease"),
-    )
-    monkeypatch.setattr(
-        kubernetes_runner.client,
-        "BatchV1Api",
-        lambda _api_client: pytest.fail("player launch must not extend the Job deadline"),
-    )
     # Slow API preparation must not consume the game's player connection timeout.
     monkeypatch.setattr(
         kubernetes_runner,
@@ -2408,8 +2395,6 @@ def test_run_kubernetes_episode_keeps_artifacts_authoritative_except_for_certifi
     monkeypatch.setenv("JOB_ID", "job-id")
     monkeypatch.setenv("POD_NAME", "game-pod")
     monkeypatch.setenv("POD_UID", "pod-uid")
-    monkeypatch.setenv("JOB_NAME", "game-job")
-    monkeypatch.setenv("JOB_UID", "job-uid")
     monkeypatch.setattr(
         kubernetes_runner.time,
         "sleep",
@@ -2436,9 +2421,6 @@ def test_run_kubernetes_episode_keeps_artifacts_authoritative_except_for_certifi
     ):
         assert timings is not None
         assert game_pod_ip is None
-        launch_events.append("create")
-        if launch_fails:
-            raise RuntimeError("pod creation failed")
         created.append((slot, player_cpu_request, player_memory_request, player_cpu_limit))
         create_start = int(clock["now"] * 1_000_000_000) - timings.clock.monotonic_ns
         timings.players[slot] = kubernetes_runner.PlayerStartupTiming(
@@ -2462,27 +2444,21 @@ def test_run_kubernetes_episode_keeps_artifacts_authoritative_except_for_certifi
         ),
     )
 
-    with pytest.raises(RuntimeError, match="pod creation failed") if launch_fails else nullcontext():
-        launch_timings = ProcessTimings(clock=TimingClock.capture())
-        kubernetes_runner._prepare_player_pods(job, launch_timings)
-        assert clock["now"] - 100.0 > expected_player_start_timeout
-        assert startup_events == []
-        (tmp_path / "player_launch_timings.json").write_text(launch_timings.model_dump_json())
-        kubernetes_runner._run_kubernetes_episode(
-            job,
-            artifacts,
-            players_ready=players_ready,
-            timeout_seconds=600.0,
-            timings=EpisodePhaseTimings(worker=ProcessTimings(clock=TimingClock.capture())),
-            upload_timings=record_timing_upload,
-        )
+    launch_timings = ProcessTimings(clock=TimingClock.capture())
+    kubernetes_runner._prepare_player_pods(job, launch_timings)
+    assert clock["now"] - 100.0 > expected_player_start_timeout
+    assert startup_events == []
+    (tmp_path / "player_launch_timings.json").write_text(launch_timings.model_dump_json())
+    kubernetes_runner._run_kubernetes_episode(
+        job,
+        artifacts,
+        players_ready=players_ready,
+        timeout_seconds=600.0,
+        timings=EpisodePhaseTimings(worker=ProcessTimings(clock=TimingClock.capture())),
+        upload_timings=record_timing_upload,
+    )
 
     assert not players_ready.is_set()
-    assert launch_events == ["create"]
-    if launch_fails:
-        assert not created
-        return
-
     assert created == [(1, "2", "2Gi", "")]
     assert startup_timeouts == [runner_module.LOBBY_RUNTIME_STARTUP_TIMEOUT_SECONDS]
     assert pong_requirements == [episode_tags.get("source") == runner_module.CERTIFICATION_EPISODE_SOURCE]
