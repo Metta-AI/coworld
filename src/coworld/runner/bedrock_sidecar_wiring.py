@@ -23,7 +23,6 @@ EGRESS_RELAY_CLIENT_CERT_FILE = f"{EGRESS_RELAY_CLIENT_TLS_MOUNT_PATH}/tls.crt"
 EGRESS_RELAY_CLIENT_KEY_FILE = f"{EGRESS_RELAY_CLIENT_TLS_MOUNT_PATH}/tls.key"
 EGRESS_RELAY_CA_FILE = f"{EGRESS_RELAY_CLIENT_TLS_MOUNT_PATH}/ca.crt"
 COWORLD_EGRESS_ENFORCED_LABEL = "coworld-egress-enforced"
-COWORLD_EGRESS_RELAY_MODE_LABEL = "coworld-egress-relay-mode"
 GAME_EGRESS_PROXY_PORT = 3129
 
 # Non-functional placeholder credentials for the app container's AWS SDK. The SDK needs creds to
@@ -60,15 +59,9 @@ def resolve_image_attribution_key(image: str) -> str:
 def egress_relay_client_env(url: str, *, prefix: str) -> list[client.V1EnvVar]:
     return [
         client.V1EnvVar(name=f"{prefix}_EGRESS_RELAY_URL", value=url),
-        *(
-            [
-                client.V1EnvVar(name=f"{prefix}_EGRESS_RELAY_CLIENT_CERT_FILE", value=EGRESS_RELAY_CLIENT_CERT_FILE),
-                client.V1EnvVar(name=f"{prefix}_EGRESS_RELAY_CLIENT_KEY_FILE", value=EGRESS_RELAY_CLIENT_KEY_FILE),
-                client.V1EnvVar(name=f"{prefix}_EGRESS_RELAY_CA_FILE", value=EGRESS_RELAY_CA_FILE),
-            ]
-            if url.startswith("https://")
-            else []
-        ),
+        client.V1EnvVar(name=f"{prefix}_EGRESS_RELAY_CLIENT_CERT_FILE", value=EGRESS_RELAY_CLIENT_CERT_FILE),
+        client.V1EnvVar(name=f"{prefix}_EGRESS_RELAY_CLIENT_KEY_FILE", value=EGRESS_RELAY_CLIENT_KEY_FILE),
+        client.V1EnvVar(name=f"{prefix}_EGRESS_RELAY_CA_FILE", value=EGRESS_RELAY_CA_FILE),
     ]
 
 
@@ -280,7 +273,7 @@ def build_bedrock_sidecar(
                         read_only=True,
                     )
                 ]
-                if egress_relay_url and egress_relay_url.startswith("https://")
+                if egress_relay_url
                 else []
             ),
         ],

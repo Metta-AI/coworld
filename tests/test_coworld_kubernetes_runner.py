@@ -124,7 +124,7 @@ def test_enforced_incluster_config_keeps_relay_hostname_after_token_refresh(monk
         cast(Any, configuration).refresh_api_key_hook = sdk_refresh
 
     cast(Any, loaded).refresh_api_key_hook = sdk_refresh
-    monkeypatch.setenv("COWORLD_EGRESS_RELAY_URL", "https://egress-relay.jobs.svc.cluster.local:3128")
+    monkeypatch.setenv("COWORLD_EGRESS_RELAY_URL", "https://egress-relay-mtls.jobs.svc.cluster.local:3128")
     monkeypatch.setenv("COWORLD_EGRESS_RELAY_CA_FILE", "/tls/ca.crt")
     monkeypatch.setenv("COWORLD_EGRESS_RELAY_CLIENT_CERT_FILE", "/tls/client.crt")
     monkeypatch.setenv("COWORLD_EGRESS_RELAY_CLIENT_KEY_FILE", "/tls/client.key")
@@ -2572,7 +2572,7 @@ def test_create_game_service_exposes_internal_artifact_upload(monkeypatch, relay
     monkeypatch.setenv("PLAYER_ARTIFACT_UPLOAD_URLS", '{"0":"https://s3.example/artifact"}')
     monkeypatch.delenv("COWORLD_EGRESS_RELAY_URL", raising=False)
     if relay_enabled:
-        monkeypatch.setenv("COWORLD_EGRESS_RELAY_URL", "https://egress-relay.jobs.svc.cluster.local:3128")
+        monkeypatch.setenv("COWORLD_EGRESS_RELAY_URL", "https://egress-relay-mtls.jobs.svc.cluster.local:3128")
 
     kubernetes_runner._create_game_service(core_v1, "jobs", "game-service", "job-id", [])
 
@@ -2863,7 +2863,6 @@ def test_create_player_pod_enforcement_removes_dns_and_uses_secure_pool(monkeypa
 
     pod = created["body"]
     assert pod.metadata.labels["coworld-egress-enforced"] == "true"
-    assert pod.metadata.labels["coworld-egress-relay-mode"] == "mtls"
     assert pod.spec.node_selector == {"workload-type": "coworld-egress-jobs"}
     assert pod.spec.tolerations[0].value == "coworld-egress-jobs"
     assert [(alias.ip, alias.hostnames) for alias in pod.spec.host_aliases] == [
@@ -3141,7 +3140,7 @@ def test_create_player_pod_with_bedrock_sidecar_inverts_bedrock_access(monkeypat
     monkeypatch.setenv("BEDROCK_SIDECAR_UPSTREAM_ENDPOINT", "http://bedrock.local")
     monkeypatch.setenv("BEDROCK_SIDECAR_SPEND_LIMIT_USD", "1.5")
     monkeypatch.setenv("BEDROCK_SIDECAR_PRICING_JSON", '{"claude-sonnet-4-6":[3.0,15.0,0.3,3.75]}')
-    monkeypatch.setenv("BEDROCK_SIDECAR_EGRESS_RELAY_URL", "https://egress-relay.jobs.svc.cluster.local:3128")
+    monkeypatch.setenv("BEDROCK_SIDECAR_EGRESS_RELAY_URL", "https://egress-relay-mtls.jobs.svc.cluster.local:3128")
     player = PlayerLaunchSpec(
         image="ghcr.io/metta-ai/players/paintbot@sha256:player123",
         run=(),
@@ -3253,7 +3252,7 @@ def test_create_player_pod_with_bedrock_sidecar_inverts_bedrock_access(monkeypat
     assert "BEDROCK_SIDECAR_OPENROUTER_API_KEY" not in sidecar_env
     # Relay client keys are mounted only into the trusted sidecar, and the connection
     # uses TLS so the sibling player cannot sniff or replay its authentication.
-    assert sidecar_env["BEDROCK_SIDECAR_EGRESS_RELAY_URL"] == "https://egress-relay.jobs.svc.cluster.local:3128"
+    assert sidecar_env["BEDROCK_SIDECAR_EGRESS_RELAY_URL"] == "https://egress-relay-mtls.jobs.svc.cluster.local:3128"
     assert sidecar_env["BEDROCK_SIDECAR_EGRESS_RELAY_CLIENT_CERT_FILE"] == EGRESS_RELAY_CLIENT_CERT_FILE
     assert sidecar_env["BEDROCK_SIDECAR_EGRESS_RELAY_CLIENT_KEY_FILE"] == EGRESS_RELAY_CLIENT_KEY_FILE
     assert sidecar_env["BEDROCK_SIDECAR_EGRESS_RELAY_CA_FILE"] == EGRESS_RELAY_CA_FILE
@@ -3395,7 +3394,7 @@ def test_create_player_pod_forwards_artifact_upload_url_for_its_slot(monkeypatch
     )
     monkeypatch.delenv("COWORLD_EGRESS_RELAY_URL", raising=False)
     if relay_enabled:
-        monkeypatch.setenv("COWORLD_EGRESS_RELAY_URL", "https://egress-relay.jobs.svc.cluster.local:3128")
+        monkeypatch.setenv("COWORLD_EGRESS_RELAY_URL", "https://egress-relay-mtls.jobs.svc.cluster.local:3128")
     player = PlayerLaunchSpec(image="paintbot:latest", run=(), env={})
 
     kubernetes_runner._create_player_pod(

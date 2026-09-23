@@ -86,7 +86,7 @@ def test_upload_data_does_not_retry_client_errors(monkeypatch: pytest.MonkeyPatc
 
 
 def test_relay_routed_read_requires_https(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setenv("COWORLD_EGRESS_RELAY_URL", "http://relay.test:3128")
+    monkeypatch.setenv("COWORLD_EGRESS_RELAY_URL", "https://relay.test:3128")
 
     with pytest.raises(ValueError, match="require an https URI"):
         runner_io.read_data("http://example.test/job.json")
@@ -102,7 +102,7 @@ def test_relay_routed_read_retries_transient_transport_errors(monkeypatch: pytes
             raise httpx.ConnectError("relay connection failed")
         return _httpx_response(200, method=method, content=b"job spec")
 
-    monkeypatch.setenv("COWORLD_EGRESS_RELAY_URL", "http://relay.test:3128")
+    monkeypatch.setenv("COWORLD_EGRESS_RELAY_URL", "https://relay.test:3128")
     monkeypatch.setattr(runner_io, "_relay_http_client", lambda relay_url: _RelayClient(request))
     monkeypatch.setattr(runner_io.time, "sleep", sleeps.append)
 
@@ -123,7 +123,7 @@ def test_relay_routed_read_retries_transient_statuses(monkeypatch: pytest.Monkey
         status_code = 503 if len(calls) == 1 else 200
         return _httpx_response(status_code, method=method, content=b"job spec")
 
-    monkeypatch.setenv("COWORLD_EGRESS_RELAY_URL", "http://relay.test:3128")
+    monkeypatch.setenv("COWORLD_EGRESS_RELAY_URL", "https://relay.test:3128")
     monkeypatch.setattr(runner_io, "_relay_http_client", lambda relay_url: _RelayClient(request))
     monkeypatch.setattr(runner_io.time, "sleep", sleeps.append)
 
@@ -144,7 +144,7 @@ def test_relay_routed_upload_data_retries_transient_transport_errors(
             raise httpx.ConnectError("relay connection failed")
         return _httpx_response(200, method=method)
 
-    monkeypatch.setenv("COWORLD_EGRESS_RELAY_URL", "http://relay.test:3128")
+    monkeypatch.setenv("COWORLD_EGRESS_RELAY_URL", "https://relay.test:3128")
     monkeypatch.setattr(runner_io, "_relay_http_client", lambda relay_url: _RelayClient(request))
     monkeypatch.setattr(runner_io.time, "sleep", sleeps.append)
     caplog.set_level(logging.WARNING, logger=runner_io.__name__)
@@ -170,7 +170,7 @@ def test_relay_retry_log_redacts_presigned_url(
         response = httpx.Response(503 if calls == 1 else 200, request=httpx.Request(method, uri), content=b"player")
         return response
 
-    monkeypatch.setenv("COWORLD_EGRESS_RELAY_URL", "http://relay.test:3128")
+    monkeypatch.setenv("COWORLD_EGRESS_RELAY_URL", "https://relay.test:3128")
     monkeypatch.setattr(runner_io, "_relay_http_client", lambda relay_url: _RelayClient(request))
     monkeypatch.setattr(runner_io.time, "sleep", lambda _delay: None)
     caplog.set_level(logging.WARNING, logger=runner_io.__name__)
@@ -189,7 +189,7 @@ def test_relay_routed_upload_data_reraises_after_transport_retries(monkeypatch: 
         calls.append((method, uri, kwargs))
         raise errors[len(calls) - 1]
 
-    monkeypatch.setenv("COWORLD_EGRESS_RELAY_URL", "http://relay.test:3128")
+    monkeypatch.setenv("COWORLD_EGRESS_RELAY_URL", "https://relay.test:3128")
     monkeypatch.setattr(runner_io, "_relay_http_client", lambda relay_url: _RelayClient(request))
     monkeypatch.setattr(runner_io.time, "sleep", sleeps.append)
 
@@ -211,7 +211,7 @@ def test_relay_routed_upload_file_rewinds_after_transport_error(monkeypatch: pyt
             raise httpx.WriteError("relay write failed")
         return _httpx_response(200, method=method)
 
-    monkeypatch.setenv("COWORLD_EGRESS_RELAY_URL", "http://relay.test:3128")
+    monkeypatch.setenv("COWORLD_EGRESS_RELAY_URL", "https://relay.test:3128")
     monkeypatch.setattr(runner_io, "_relay_http_client", lambda relay_url: _RelayClient(request))
     monkeypatch.setattr(runner_io.time, "sleep", sleeps.append)
 
@@ -289,7 +289,7 @@ def test_relay_routed_upload_data_does_not_retry_client_errors(monkeypatch: pyte
         calls.append((method, uri, kwargs))
         return _httpx_response(400, method=method)
 
-    monkeypatch.setenv("COWORLD_EGRESS_RELAY_URL", "http://relay.test:3128")
+    monkeypatch.setenv("COWORLD_EGRESS_RELAY_URL", "https://relay.test:3128")
     monkeypatch.setattr(runner_io, "_relay_http_client", lambda relay_url: _RelayClient(request))
     monkeypatch.setattr(runner_io.time, "sleep", sleeps.append)
 
@@ -323,22 +323,6 @@ def test_relay_http_client_follows_redirects(monkeypatch: pytest.MonkeyPatch) ->
     assert runner_io._relay_http_client("https://relay.test:3128") is sentinel
     assert kwargs == {
         "proxy": ("https://relay.test:3128", tls_context),
-        "timeout": 60.0,
-        "follow_redirects": True,
-    }
-
-
-def test_relay_http_client_keeps_deployed_http_proxy_without_tls_files(monkeypatch: pytest.MonkeyPatch) -> None:
-    kwargs = {}
-    monkeypatch.delenv("COWORLD_EGRESS_RELAY_CLIENT_CERT_FILE", raising=False)
-    monkeypatch.delenv("COWORLD_EGRESS_RELAY_CLIENT_KEY_FILE", raising=False)
-    monkeypatch.delenv("COWORLD_EGRESS_RELAY_CA_FILE", raising=False)
-    monkeypatch.setattr(runner_io.httpx, "Client", lambda **values: kwargs.update(values))
-
-    runner_io._relay_http_client("http://egress-relay.jobs.svc.cluster.local:3128")
-
-    assert kwargs == {
-        "proxy": "http://egress-relay.jobs.svc.cluster.local:3128",
         "timeout": 60.0,
         "follow_redirects": True,
     }

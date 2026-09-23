@@ -14,8 +14,6 @@ def egress_relay_ssl_context(*, ca_file: str, cert_file: str, key_file: str) -> 
 
 
 def relay_http_client(relay_url: str) -> httpx.Client:
-    if relay_url.startswith("http://"):
-        return httpx.Client(proxy=relay_url, timeout=60.0, follow_redirects=True)
     context = egress_relay_ssl_context(
         ca_file=os.environ["COWORLD_EGRESS_RELAY_CA_FILE"],
         cert_file=os.environ["COWORLD_EGRESS_RELAY_CLIENT_CERT_FILE"],
