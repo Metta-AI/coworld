@@ -50,7 +50,6 @@ from coworld.runner.bedrock_metadata import CoworldEpisodeBedrockMetadata, seria
 from coworld.runner.bedrock_sidecar_wiring import (
     BEDROCK_SIDECAR_CONTAINER_NAME,
     COWORLD_EGRESS_ENFORCED_LABEL,
-    COWORLD_EGRESS_RELAY_MODE_LABEL,
     RESERVED_SIDECAR_APP_ENV,
     bedrock_app_endpoint_env,
     bedrock_sidecar_token_volume,
@@ -1124,14 +1123,10 @@ def _load_incluster_config(*, egress_enforcement_enabled: bool) -> client.ApiCli
     api_client = client.ApiClient(default)
     if egress_enforcement_enabled:
         relay_url = os.environ["COWORLD_EGRESS_RELAY_URL"]
-        relay_context = (
-            egress_relay_ssl_context(
-                ca_file=os.environ["COWORLD_EGRESS_RELAY_CA_FILE"],
-                cert_file=os.environ["COWORLD_EGRESS_RELAY_CLIENT_CERT_FILE"],
-                key_file=os.environ["COWORLD_EGRESS_RELAY_CLIENT_KEY_FILE"],
-            )
-            if relay_url.startswith("https://")
-            else None
+        relay_context = egress_relay_ssl_context(
+            ca_file=os.environ["COWORLD_EGRESS_RELAY_CA_FILE"],
+            cert_file=os.environ["COWORLD_EGRESS_RELAY_CLIENT_CERT_FILE"],
+            key_file=os.environ["COWORLD_EGRESS_RELAY_CLIENT_KEY_FILE"],
         )
         api_client.rest_client.pool_manager = urllib3.ProxyManager(
             proxy_url=relay_url,
@@ -1323,7 +1318,7 @@ def _create_player_pod(
         prompt_prefix_sample_rate = float(os.environ.get("BEDROCK_SIDECAR_PROMPT_PREFIX_SAMPLE_RATE", "0"))
         egress_relay_url = os.environ.get("BEDROCK_SIDECAR_EGRESS_RELAY_URL") or None
         pod_volumes = [bedrock_sidecar_token_volume(prompt_prefix_measurement=prompt_prefix_sample_rate > 0)]
-        if egress_relay_url is not None and egress_relay_url.startswith("https://"):
+        if egress_relay_url is not None:
             pod_volumes.append(egress_relay_client_tls_volume())
         init_containers.append(
             build_bedrock_sidecar(
@@ -1408,11 +1403,6 @@ def _create_player_pod(
                 "coworld-component": "player",
                 "coworld-player-slot": str(slot),
                 **({COWORLD_EGRESS_ENFORCED_LABEL: "true"} if enforced else {}),
-                **(
-                    {COWORLD_EGRESS_RELAY_MODE_LABEL: "mtls"}
-                    if enforced and os.environ["COWORLD_EGRESS_RELAY_URL"].startswith("https://")
-                    else {}
-                ),
                 # coworld-id / league-id / coworld-source are AWS cost-attribution labels, forwarded by the
                 # dispatcher through the worker env so player pods carry the same identity
                 # as the game pod. League-less episodes get no COWORLD_LEAGUE_ID.
