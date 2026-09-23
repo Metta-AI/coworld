@@ -20,7 +20,7 @@ from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
 from types import TracebackType
-from typing import Any, Literal, Self
+from typing import Any, BinaryIO, Literal, Self
 from urllib.parse import quote, urlparse
 
 import httpx
@@ -1685,8 +1685,6 @@ def upload_coworld_cmd(
     with CoworldUploadClient.from_login(server_url=server) as client:
         if not wait_certification:
             state = client.get_coworld_certification(result.id).state
-            if state == "never_run":
-                state = "not queued (no current certifier registered)"
             typer.echo(f"Hosted certification: {state}")
             typer.echo(f"Status: uv run coworld status {result.id}")
             return
@@ -2069,6 +2067,11 @@ def _manifest_with_local_images(
 
 
 def _upload_container_image(client: CoworldUploadClient, image: str) -> ContainerImageResponse:
+    if (
+        is_digest_pinned_image_ref(image)
+        and subprocess.run(["docker", "image", "inspect", image], capture_output=True, check=False).returncode != 0
+    ):
+        pull_and_tag_image(image, f"coworld-upload:{image.rsplit(':', 1)[1][:16]}")
     assert_docker_image_reachable(image, require_linux_amd64=True)
     client_hash = _local_image_client_hash(image)
     response = client.request_image_upload(name=_image_upload_name(image), client_hash=client_hash)
@@ -2305,9 +2308,16 @@ class _OciImageIndex(BaseModel):
 
 class _OciImageManifest(BaseModel):
     schema_version: Literal[2] = Field(alias="schemaVersion")
-    media_type: Literal["application/vnd.oci.image.manifest.v1+json"] = Field(alias="mediaType")
+    media_type: Literal[
+        "application/vnd.oci.image.manifest.v1+json",
+        "application/vnd.docker.distribution.manifest.v2+json",
+    ] = Field(alias="mediaType")
     config: _OciDescriptor
     layers: list[_OciDescriptor]
+
+
+class _RegistryBearerToken(BaseModel):
+    token: str
 
 
 def _push_container_image(source_image: str, push_info: EcrPushInfo) -> None:
@@ -2326,10 +2336,10 @@ def _push_container_image(source_image: str, push_info: EcrPushInfo) -> None:
     with tempfile.TemporaryFile() as archive:
         subprocess.run(["docker", "image", "save", source_image], check=True, stdout=archive)
         archive.seek(0)
-        _push_archive_to_registry(archive, base_url, push_info.tag, auth_header)
+        _push_archive_to_registry(archive, base_url, push_info.tag, auth_header, source_image)
 
 
-def _push_archive_to_registry(archive: Any, base_url: str, tag: str, auth_header: str) -> None:
+def _push_archive_to_registry(archive: Any, base_url: str, tag: str, auth_header: str, source_image: str) -> None:
     """Push a docker-save tar archive to a registry via the OCI distribution API."""
     headers = {"Authorization": f"Basic {auth_header}"}
 
@@ -2348,31 +2358,23 @@ def _push_archive_to_registry(archive: Any, base_url: str, tag: str, auth_header
             if resp.status_code != 404:
                 resp.raise_for_status()
 
-            layer_name = _archive_blob_name(descriptor.digest)
-            layer = tar.getmember(layer_name)
-            if layer.size != descriptor.size:
-                raise RuntimeError(f"Docker archive layer size does not match {descriptor.digest}")
-            layer_file = tar.extractfile(layer)
-            if layer_file is None:
-                raise RuntimeError(f"Docker image archive is missing {layer_name}")
-            _push_streaming_blob(
-                client,
-                base_url,
-                headers,
-                layer_file,
-                size=descriptor.size,
-                expected_digest=descriptor.digest,
-            )
+            with _archive_or_registry_blob(tar, descriptor, source_image, client) as layer_file:
+                _push_streaming_blob(
+                    client,
+                    base_url,
+                    headers,
+                    layer_file,
+                    size=descriptor.size,
+                    expected_digest=descriptor.digest,
+                )
             _logger.info("Pushed layer %s (%d bytes)", descriptor.digest, descriptor.size)
 
         resp = client.head(f"{base_url}/blobs/{manifest.config.digest}", headers=headers)
         if resp.status_code == 200:
             _logger.info("Reused config %s", manifest.config.digest)
         elif resp.status_code == 404:
-            config_file = tar.extractfile(_archive_blob_name(manifest.config.digest))
-            if config_file is None:
-                raise RuntimeError(f"Docker image archive is missing config {manifest.config.digest}")
-            config_bytes = config_file.read()
+            with _archive_or_registry_blob(tar, manifest.config, source_image, client) as config_file:
+                config_bytes = config_file.read()
             config_descriptor = _push_blob(client, base_url, headers, config_bytes, manifest.config.media_type)
             if (
                 config_descriptor["digest"] != manifest.config.digest
@@ -2391,6 +2393,57 @@ def _push_archive_to_registry(archive: Any, base_url: str, tag: str, auth_header
         )
         resp.raise_for_status()
         _logger.info("Pushed manifest tagged %s", tag)
+
+
+@contextmanager
+def _archive_or_registry_blob(
+    tar: tarfile.TarFile, descriptor: _OciDescriptor, source_image: str, client: httpx.Client
+) -> Iterator[BinaryIO]:
+    blob_name = _archive_blob_name(descriptor.digest)
+    if blob_name in tar.getnames():
+        blob = tar.extractfile(blob_name)
+        if blob is None:
+            raise RuntimeError(f"Docker image archive is missing {blob_name}")
+        if tar.getmember(blob_name).size != descriptor.size:
+            raise RuntimeError(f"Docker archive blob size does not match {descriptor.digest}")
+        with blob:
+            yield blob
+        return
+
+    if not is_digest_pinned_image_ref(source_image):
+        raise RuntimeError(f"Docker image archive is missing {blob_name}; source image is not digest pinned")
+    registry, _, repository = source_image.split("@", 1)[0].partition("/")
+    scheme = "http" if registry.startswith(("localhost:", "127.0.0.1:")) else "https"
+    blob_url = f"{scheme}://{registry}/v2/{repository}/blobs/{descriptor.digest}"
+    challenge = client.head(blob_url, follow_redirects=False)
+    source_headers: dict[str, str] = {}
+    if challenge.status_code == 401:
+        auth = challenge.headers["WWW-Authenticate"]
+        if not auth.startswith("Bearer "):
+            challenge.raise_for_status()
+        fields = dict(re.findall(r'(\w+)="([^"]*)"', auth))
+        token_response = client.get(
+            fields["realm"], params={key: fields[key] for key in ("service", "scope") if key in fields}
+        )
+        token_response.raise_for_status()
+        token = _RegistryBearerToken.model_validate(token_response.json()).token
+        source_headers["Authorization"] = f"Bearer {token}"
+    else:
+        challenge.raise_for_status()
+
+    with tempfile.TemporaryFile() as blob:
+        with client.stream("GET", blob_url, headers=source_headers, follow_redirects=True) as response:
+            response.raise_for_status()
+            content_hash = hashlib.sha256()
+            size = 0
+            for chunk in response.iter_bytes():
+                blob.write(chunk)
+                content_hash.update(chunk)
+                size += len(chunk)
+        if size != descriptor.size or f"sha256:{content_hash.hexdigest()}" != descriptor.digest:
+            raise RuntimeError(f"Registry blob does not match {descriptor.digest}")
+        blob.seek(0)
+        yield blob
 
 
 def _select_oci_image_manifest(tar: tarfile.TarFile, index: _OciImageIndex) -> tuple[bytes, _OciImageManifest]:
@@ -2426,7 +2479,10 @@ def _oci_image_manifest_candidates(
                 _OciImageIndex.model_validate_json(content),
                 platform,
             )
-        elif descriptor.media_type == "application/vnd.oci.image.manifest.v1+json":
+        elif descriptor.media_type in (
+            "application/vnd.oci.image.manifest.v1+json",
+            "application/vnd.docker.distribution.manifest.v2+json",
+        ):
             yield platform, content, _OciImageManifest.model_validate_json(content)
         else:
             raise RuntimeError(f"Unsupported OCI manifest media type: {descriptor.media_type}")

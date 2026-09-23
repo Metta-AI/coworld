@@ -281,6 +281,8 @@ def test_upload_coworld_posts_standalone_manifest(
     monkeypatch.setattr("coworld.upload.certify_coworld", fake_certify)
     monkeypatch.setattr("coworld.upload.assert_docker_image_reachable", lambda *_args, **_kwargs: None)
     monkeypatch.setattr("coworld.upload._local_image_client_hash", fake_hash)
+    pulled_images: list[tuple[str, str]] = []
+    monkeypatch.setattr("coworld.upload.pull_and_tag_image", lambda image, tag: pulled_images.append((image, tag)))
     monkeypatch.setattr(
         "coworld.upload._push_container_image",
         lambda source_image, push_info: pushed_images.append((source_image, push_info.image_uri)),
@@ -381,6 +383,7 @@ def test_upload_coworld_posts_standalone_manifest(
         "ghcr.io/metta-ai/graders-default@sha256:graderdigest",
         "unit-test-runtime:latest",
     ]
+    assert pulled_images == [("ghcr.io/metta-ai/graders-default@sha256:graderdigest", "coworld-upload:graderdigest")]
     assert pushed_images == [
         (
             "unit-test-runtime:latest",
@@ -419,6 +422,7 @@ def test_upload_coworld_command_certifies_before_uploading(
     )
     monkeypatch.setattr("coworld.upload.assert_docker_image_reachable", lambda *_args, **_kwargs: None)
     monkeypatch.setattr("coworld.upload._local_image_client_hash", lambda image: "sha256:client-hash")
+    monkeypatch.setattr("coworld.upload.pull_and_tag_image", lambda image, tag: None)
     monkeypatch.setattr("coworld.upload._push_container_image", lambda source_image, push_info: None)
     httpserver.expect_request(
         "/observatory/v2/container_images/upload",
@@ -1300,7 +1304,7 @@ def test_patch_commissioner_command_uploads_image_and_patches(
     )
 
     assert result.exit_code == 0, result.output
-    assert inspected_images == [resolved_image]
+    assert inspected_images == [resolved_image, resolved_image]
     assert hashed_images == [resolved_image]
     assert f"Resolved image: {resolved_image}" in result.output
     assert "Patched commissioner: crewrift:0.1.23" in result.output
@@ -1348,6 +1352,7 @@ def test_upload_coworld_surfaces_server_error_detail(
     monkeypatch.setattr("coworld.upload.certify_coworld", lambda manifest_path, *, workspace, timeout_seconds: None)
     monkeypatch.setattr("coworld.upload.assert_docker_image_reachable", lambda *_args, **_kwargs: None)
     monkeypatch.setattr("coworld.upload._local_image_client_hash", lambda image: "sha256:client-hash")
+    monkeypatch.setattr("coworld.upload.pull_and_tag_image", lambda image, tag: None)
     monkeypatch.setattr("coworld.upload._push_container_image", lambda source_image, push_info: None)
     httpserver.expect_request("/observatory/v2/container_images/upload", method="POST").respond_with_json(
         {
@@ -2672,11 +2677,19 @@ def test_local_image_client_hash_uses_content_addressed_docker_image_id(
     assert calls == [["docker", "image", "inspect", "--format", "{{.Id}}", "unit-test-runtime:latest"]]
 
 
-def test_push_archive_to_registry_reuses_layers_and_preserves_oci_manifest(httpserver: HTTPServer) -> None:
+@pytest.mark.parametrize(
+    "manifest_media_type",
+    ["application/vnd.oci.image.manifest.v1+json", "application/vnd.docker.distribution.manifest.v2+json"],
+)
+def test_push_archive_to_registry_reuses_layers_and_preserves_oci_manifest(
+    httpserver: HTTPServer, manifest_media_type: str
+) -> None:
     config = b'{"architecture":"amd64","os":"linux"}'
     reused_layer = b"existing-layer-content"
     new_layer = b"new-layer-content"
-    manifest_descriptor, blobs = _oci_image(config=config, layers=[reused_layer, new_layer])
+    manifest_descriptor, blobs = _oci_image(
+        config=config, layers=[reused_layer, new_layer], manifest_media_type=manifest_media_type
+    )
     archive_bytes = _oci_archive(_oci_index([manifest_descriptor]), blobs)
 
     reused_layer_digest = _sha256_digest(reused_layer)
@@ -2717,10 +2730,11 @@ def test_push_archive_to_registry_reuses_layers_and_preserves_oci_manifest(https
     httpserver.expect_request("/v2/repo/test/manifests/v1", method="PUT").respond_with_data("", status=201)
 
     base_url = httpserver.url_for("/v2/repo/test")
-    _push_archive_to_registry(io.BytesIO(archive_bytes), base_url, "v1", "dGVzdDp0ZXN0")
+    _push_archive_to_registry(io.BytesIO(archive_bytes), base_url, "v1", "dGVzdDp0ZXN0", "example.com/repo@sha256:abc")
 
     manifest_req = next(req for req, _ in httpserver.log if "/manifests/" in req.path)
     assert json.loads(manifest_req.data) == json.loads(blobs[_oci_blob_name(manifest_descriptor["digest"])])
+    assert manifest_req.headers["Content-Type"] == manifest_media_type
 
 
 def test_push_archive_to_registry_reuses_blobs_missing_from_sparse_archive(httpserver: HTTPServer) -> None:
@@ -2737,7 +2751,46 @@ def test_push_archive_to_registry_reuses_blobs_missing_from_sparse_archive(https
     httpserver.expect_request("/v2/repo/test/manifests/v1", method="PUT").respond_with_data("", status=201)
 
     base_url = httpserver.url_for("/v2/repo/test")
-    _push_archive_to_registry(io.BytesIO(archive_bytes), base_url, "v1", "dGVzdDp0ZXN0")
+    _push_archive_to_registry(io.BytesIO(archive_bytes), base_url, "v1", "dGVzdDp0ZXN0", "example.com/repo@sha256:abc")
+
+
+def test_push_archive_to_registry_fetches_missing_source_blob(httpserver: HTTPServer) -> None:
+    config = b'{"architecture":"amd64","os":"linux"}'
+    layer = b"source-layer-content"
+    manifest_descriptor, blobs = _oci_image(config=config, layers=[layer])
+    archive_bytes = _oci_archive(
+        _oci_index([manifest_descriptor]),
+        {name: content for name, content in blobs.items() if content != layer},
+    )
+    layer_digest = _sha256_digest(layer)
+    source_path = f"/v2/source/blobs/{layer_digest}"
+    httpserver.expect_request(source_path, method="HEAD").respond_with_data(
+        "",
+        status=401,
+        headers={"WWW-Authenticate": f'Bearer realm="{httpserver.url_for("/token")}",service="test",scope="pull"'},
+    )
+    httpserver.expect_request("/token", method="GET").respond_with_json({"token": "source-token"})
+    httpserver.expect_request(
+        source_path, method="GET", headers={"Authorization": "Bearer source-token"}
+    ).respond_with_data(layer)
+    httpserver.expect_request(f"/v2/repo/test/blobs/{layer_digest}", method="HEAD").respond_with_data("", status=404)
+    httpserver.expect_request(f"/v2/repo/test/blobs/{_sha256_digest(config)}", method="HEAD").respond_with_data(
+        "", status=200
+    )
+    upload_path = "/v2/repo/test/blobs/uploads/session"
+    httpserver.expect_request("/v2/repo/test/blobs/uploads/", method="POST").respond_with_data(
+        "", status=202, headers={"Location": httpserver.url_for(upload_path)}
+    )
+    httpserver.expect_request(upload_path, method="PATCH").respond_with_data(
+        "", status=202, headers={"Location": httpserver.url_for(upload_path)}
+    )
+    httpserver.expect_request(upload_path, method="PUT").respond_with_data("", status=201)
+    httpserver.expect_request("/v2/repo/test/manifests/v1", method="PUT").respond_with_data("", status=201)
+
+    source_image = httpserver.url_for("/").removeprefix("http://").rstrip("/") + "/source@sha256:abc"
+    _push_archive_to_registry(
+        io.BytesIO(archive_bytes), httpserver.url_for("/v2/repo/test"), "v1", "dGVzdDp0ZXN0", source_image
+    )
 
 
 @pytest.mark.parametrize("nested_index", [False, True], ids=["direct-index", "nested-index"])
@@ -2821,19 +2874,38 @@ def test_manifest_image_helpers_substitute_role_images() -> None:
     assert graders[0]["image"] == "img_grader"
 
 
-def _oci_image(*, config: bytes, layers: list[bytes]) -> tuple[dict[str, object], dict[str, bytes]]:
-    config_descriptor = _oci_descriptor(config, "application/vnd.oci.image.config.v1+json")
-    layer_descriptors = [_oci_descriptor(layer, "application/vnd.oci.image.layer.v1.tar") for layer in layers]
+def _oci_image(
+    *,
+    config: bytes,
+    layers: list[bytes],
+    manifest_media_type: str = "application/vnd.oci.image.manifest.v1+json",
+) -> tuple[dict[str, object], dict[str, bytes]]:
+    docker_manifest = manifest_media_type == "application/vnd.docker.distribution.manifest.v2+json"
+    config_descriptor = _oci_descriptor(
+        config,
+        "application/vnd.docker.container.image.v1+json"
+        if docker_manifest
+        else "application/vnd.oci.image.config.v1+json",
+    )
+    layer_descriptors = [
+        _oci_descriptor(
+            layer,
+            "application/vnd.docker.image.rootfs.diff.tar.gzip"
+            if docker_manifest
+            else "application/vnd.oci.image.layer.v1.tar",
+        )
+        for layer in layers
+    ]
     image_manifest = json.dumps(
         {
             "schemaVersion": 2,
-            "mediaType": "application/vnd.oci.image.manifest.v1+json",
+            "mediaType": manifest_media_type,
             "config": config_descriptor,
             "layers": layer_descriptors,
         },
         separators=(",", ":"),
     ).encode()
-    manifest_descriptor = _oci_descriptor(image_manifest, "application/vnd.oci.image.manifest.v1+json")
+    manifest_descriptor = _oci_descriptor(image_manifest, manifest_media_type)
     return manifest_descriptor, {
         _oci_blob_name(config_descriptor["digest"]): config,
         _oci_blob_name(manifest_descriptor["digest"]): image_manifest,
