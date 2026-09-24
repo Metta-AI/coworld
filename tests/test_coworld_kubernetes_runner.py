@@ -436,13 +436,14 @@ def test_init_config_maps_player_file_read_failure_to_structured_error(monkeypat
     assert json.loads(error_path.read_text(encoding="utf-8"))["error_type"] == "player_file_unavailable"
 
 
-def test_init_config_redacts_presigned_spec_download_error(monkeypatch, tmp_path):
+@pytest.mark.parametrize("status,expected_type", [(403, "config_error"), (503, "artifact_transport_error")])
+def test_init_config_redacts_presigned_spec_download_error(monkeypatch, tmp_path, status, expected_type):
     job = _game_hosted_job([b"player"])
     error_path = _configure_init_env(monkeypatch, tmp_path, job, {})
     signed_url = "https://example.test/spec?X-Amz-Signature=secret&X-Amz-Credential=credential"
     monkeypatch.setenv("JOB_SPEC_URI", signed_url)
     request = httpx.Request("GET", signed_url)
-    response = httpx.Response(403, request=request)
+    response = httpx.Response(status, request=request)
     download_error = httpx.HTTPStatusError(f"download failed: {signed_url}", request=request, response=response)
 
     def fail_download(_uri: str) -> bytes:
@@ -455,17 +456,18 @@ def test_init_config_redacts_presigned_spec_download_error(monkeypatch, tmp_path
 
     assert exc_info.value is download_error
     error_info = json.loads(error_path.read_text(encoding="utf-8"))
-    assert error_info["error_type"] == "config_error"
-    assert error_info["message"] == "HTTPStatusError (HTTP status 403)"
+    assert error_info["error_type"] == expected_type
+    assert error_info["message"] == f"HTTPStatusError (HTTP status {status})"
     assert "X-Amz-" not in error_path.read_text(encoding="utf-8")
 
 
-def test_init_config_redacts_presigned_player_file_download_error(monkeypatch, tmp_path):
+@pytest.mark.parametrize("status,expected_type", [(403, "player_file_unavailable"), (503, "artifact_transport_error")])
+def test_init_config_redacts_presigned_player_file_download_error(monkeypatch, tmp_path, status, expected_type):
     job = _game_hosted_job([b"player"])
     signed_url = "https://example.test/player?X-Amz-Signature=secret&X-Amz-Credential=credential"
     error_path = _configure_init_env(monkeypatch, tmp_path, job, {"0": signed_url})
     request = httpx.Request("GET", signed_url)
-    response = httpx.Response(403, request=request)
+    response = httpx.Response(status, request=request)
     download_error = httpx.HTTPStatusError("download failed", request=request, response=response)
 
     def fail_download(_uri: str) -> bytes:
@@ -478,7 +480,11 @@ def test_init_config_redacts_presigned_player_file_download_error(monkeypatch, t
         init_config.init_config_from_env()
 
     error_info = error_path.read_text(encoding="utf-8")
-    assert str(exc_info.value) == "Player file for slot 0 could not be downloaded: HTTPStatusError (HTTP status 403)"
+    assert (
+        str(exc_info.value) == f"Player file for slot 0 could not be downloaded: HTTPStatusError (HTTP status {status})"
+    )
+    assert exc_info.value.error_type == expected_type
+    assert json.loads(error_info)["error_type"] == expected_type
     assert exc_info.value.__suppress_context__
     assert "X-Amz-" not in str(exc_info.value)
     assert "X-Amz-" not in error_info
@@ -4378,3 +4384,18 @@ def test_zip_logs_rejects_symlinked_directories(tmp_path, ancestor):
 
     with zipfile.ZipFile(io.BytesIO(kubernetes_runner._zip_logs(logs_dir))) as archive:
         assert archive.namelist() == []
+
+
+def test_transport_failure_survives_error_artifact_upload_failure(monkeypatch, tmp_path):
+    termination_path = tmp_path / "termination-log"
+    monkeypatch.setenv("COWORLD_ERROR_TYPE_PATH", str(termination_path))
+    monkeypatch.setenv("ERROR_INFO_URI", "https://example.test/error.json?secret=hidden")
+
+    def fail_upload(*args, **kwargs):
+        raise httpx.ConnectError("relay is saturated")
+
+    monkeypatch.setattr(bootstrap, "upload_data", fail_upload)
+    with pytest.raises(httpx.ConnectError):
+        bootstrap.write_error_info(httpx.ConnectError("TLS EOF"), default_error_type="config_error")
+
+    assert termination_path.read_text() == "artifact_transport_error"

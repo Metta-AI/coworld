@@ -14,6 +14,7 @@ from coworld.runner.io import (
     RunnerError,
     RunnerErrorType,
     exception_summary,
+    is_retryable_relay_error,
     read_data,
     upload_data,
 )
@@ -63,18 +64,22 @@ def read_job_spec(timings: ProcessTimings) -> tuple[CoworldEpisodeJobSpec, bytes
 
 def write_error_info(exc: Exception, *, default_error_type: RunnerErrorType = "crash") -> None:
     error_info_uri = os.environ.get("ERROR_INFO_URI")
-    if error_info_uri is None:
-        return
     if isinstance(exc, RunnerEpisodeError):
         runner_error = RunnerError(
             error_type=cast(RunnerErrorType, exc.error_type),
             message=str(exc)[:2000],
             failed_policy_index=exc.failed_policy_index,
         )
+    elif is_retryable_relay_error(exc):
+        runner_error = RunnerError(error_type="artifact_transport_error", message=exception_summary(exc))
     elif isinstance(exc, ValidationError):
         runner_error = RunnerError(
             error_type="config_error", message=str(exc.errors(include_input=False, include_context=False))[:2000]
         )
     else:
         runner_error = RunnerError(error_type=default_error_type, message=exception_summary(exc))
-    upload_data(error_info_uri, runner_error.model_dump_json(), content_type="application/json")
+    error_type_path = os.environ.get("COWORLD_ERROR_TYPE_PATH")
+    if error_type_path is not None:
+        Path(error_type_path).write_text(runner_error.error_type, encoding="utf-8")
+    if error_info_uri is not None:
+        upload_data(error_info_uri, runner_error.model_dump_json(), content_type="application/json")

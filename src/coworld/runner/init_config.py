@@ -18,7 +18,7 @@ from pydantic import TypeAdapter
 from coworld.runner.bootstrap import COORDINATOR_SPEC_PATH, STATE_PATH, WORKDIR, process_timings
 from coworld.runner.bootstrap import read_job_spec as _read_job_spec
 from coworld.runner.bootstrap import write_error_info as _write_error_info
-from coworld.runner.io import RunnerEpisodeError, exception_summary, read_data, upload_data
+from coworld.runner.io import RunnerEpisodeError, exception_summary, is_retryable_relay_error, read_data, upload_data
 from coworld.runner.phase_timings import PlayerFileStageTiming, TimingClock
 from coworld.runner.runner import EpisodeArtifacts, coworld_game_config, episode_player_tokens, stage_player_files
 from coworld.types import CoworldPlayerFileSpec
@@ -65,7 +65,9 @@ def init_config_from_env() -> None:
                 except Exception as exc:
                     raise RunnerEpisodeError(
                         f"Player file for slot {slot} could not be downloaded: {exception_summary(exc)}",
-                        error_type="player_file_unavailable",
+                        error_type="artifact_transport_error"
+                        if is_retryable_relay_error(exc)
+                        else "player_file_unavailable",
                     ) from None
 
             artifacts = EpisodeArtifacts.create(WORKDIR, prefix="coworld-job-")
