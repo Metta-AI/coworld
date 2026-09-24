@@ -4065,7 +4065,15 @@ def _upload_env(monkeypatch, **overrides: str | None) -> list[tuple[str, bytes, 
         "upload_data",
         lambda uri, data, *, content_type: uploads.append((uri, data, content_type)),
     )
-    for name in ("RESULTS_URI", "REPLAY_URI", "EVENTS_URI", "PLAYER_STATUS_URI", "DEBUG_URI", "POLICY_LOG_URLS"):
+    for name in (
+        "RESULTS_URI",
+        "REPLAY_URI",
+        "EVENTS_URI",
+        "TRAJECTORY_URI",
+        "PLAYER_STATUS_URI",
+        "DEBUG_URI",
+        "POLICY_LOG_URLS",
+    ):
         monkeypatch.delenv(name, raising=False)
     for name, value in overrides.items():
         if value is not None:
@@ -4099,6 +4107,17 @@ def test_upload_outputs_skips_the_event_stream_when_the_game_wrote_none(tmp_path
     _upload_outputs(artifacts)
 
     assert uploads == []
+
+
+def test_upload_outputs_uploads_private_trajectory(tmp_path, monkeypatch):
+    artifacts = EpisodeArtifacts.create(tmp_path)
+    payload = b'{"episode":{"status":"completed"},"decisions":[]}\n'
+    artifacts.trajectory_path.write_bytes(payload)
+    uploads = _upload_env(monkeypatch, TRAJECTORY_URI="file:///tmp/trajectory.jsonl")
+
+    _upload_outputs(artifacts)
+
+    assert uploads == [("file:///tmp/trajectory.jsonl", payload, "application/x-ndjson")]
 
 
 def test_upload_outputs_uploads_player_status(tmp_path, monkeypatch):

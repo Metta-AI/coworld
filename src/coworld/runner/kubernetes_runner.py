@@ -642,6 +642,12 @@ def _upload_outputs(artifacts: EpisodeArtifacts) -> None:
         if contents is not None:
             upload_data(events_uri, contents, content_type="application/json")
 
+    trajectory_uri = os.environ.get("TRAJECTORY_URI")
+    if trajectory_uri is not None:
+        contents = _read_game_authored_file(artifacts.trajectory_path, None)
+        if contents is not None:
+            upload_data(trajectory_uri, contents, content_type="application/x-ndjson")
+
     debug_uri = os.environ.get("DEBUG_URI")
     if debug_uri is not None:
         upload_data(debug_uri, _zip_logs(artifacts.logs_dir), content_type="application/zip")
