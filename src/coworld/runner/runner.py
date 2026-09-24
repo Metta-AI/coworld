@@ -105,6 +105,7 @@ class EpisodeArtifacts:
     results_path: Path
     replay_path: Path
     events_path: Path
+    trajectory_path: Path
     player_status_path: Path
     player_seats_path: Path
     player_failure_path: Path
@@ -124,6 +125,7 @@ class EpisodeArtifacts:
             results_path=workspace / "results.json",
             replay_path=workspace / "replay",
             events_path=workspace / "events.json",
+            trajectory_path=workspace / "trajectory.jsonl",
             player_status_path=workspace / "player_status.json",
             player_seats_path=workspace / "player_seats.json",
             player_failure_path=workspace / "player_failure.json",
