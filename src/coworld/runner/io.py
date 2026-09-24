@@ -24,7 +24,10 @@ _RETRYABLE_STATUS_CODES = {429, 500, 502, 503, 504}
 logger = logging.getLogger(__name__)
 
 RunnerErrorType = Literal[
+    "platform_error",
+    "episode_inconclusive",
     "player_error",
+    "players_missing",
     "player_never_started",
     "node_disruption",
     "game_unhealthy",
@@ -41,6 +44,22 @@ RunnerErrorType = Literal[
     "player_file_unavailable",
     "player_file_mismatch",
 ]
+
+# These failures do not establish an author fault, even when a certification step failed.
+PLATFORM_RUNNER_ERROR_TYPES = frozenset[RunnerErrorType](
+    {
+        "platform_error",
+        "player_never_started",
+        "node_disruption",
+        "worker_error",
+        "config_error",
+        "artifact_transport_error",
+        "player_file_unavailable",
+        "player_file_mismatch",
+    }
+)
+INCONCLUSIVE_RUNNER_ERROR_TYPES = frozenset[RunnerErrorType]({"episode_inconclusive"})
+RETRYABLE_RUNNER_ERROR_TYPES = PLATFORM_RUNNER_ERROR_TYPES | INCONCLUSIVE_RUNNER_ERROR_TYPES
 
 
 class RunnerError(BaseModel):

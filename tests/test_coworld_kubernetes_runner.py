@@ -4386,6 +4386,64 @@ def test_zip_logs_rejects_symlinked_directories(tmp_path, ancestor):
         assert archive.namelist() == []
 
 
+@pytest.mark.parametrize(
+    ("statuses", "expected_error"),
+    [
+        ([_container_status("player", running=True)], "episode_inconclusive"),
+        (None, "episode_inconclusive"),
+    ],
+)
+def test_certification_noncompletion_does_not_blame_player(statuses, expected_error):
+    core_v1 = _FakeGateCoreV1(reads={"job-player-0": [statuses]})
+    with pytest.raises(runner_io.RunnerEpisodeError) as exc_info:
+        kubernetes_runner._wait_for_players_to_complete(core_v1, "default", ["job-player-0"], timeout_seconds=0.0)
+    assert exc_info.value.error_type == expected_error
+    assert exc_info.value.failed_policy_index is None
+
+
+def test_certification_completion_timeout_preserves_all_pending_slots(monkeypatch):
+    clock = iter([0.0, 30.0])
+    monkeypatch.setattr(kubernetes_runner.time, "monotonic", clock.__next__)
+    core_v1 = _FakeGateCoreV1(
+        reads={
+            "job-player-0": [[_container_status("player", running=True)]],
+            "job-player-1": [[_container_status("player", exit_code=0)]],
+            "job-player-2": [[_container_status("player", running=True)]],
+        }
+    )
+    with pytest.raises(runner_io.RunnerEpisodeError) as exc_info:
+        kubernetes_runner._wait_for_players_to_complete(
+            core_v1, "default", ["job-player-0", "job-player-1", "job-player-2"], timeout_seconds=30.0
+        )
+    detail = str(exc_info.value)
+    assert "valid results" in detail
+    assert "30s" in detail
+    assert "slot 0 (job-player-0)" in detail
+    assert "slot 2 (job-player-2)" in detail
+    assert "slot 1" not in detail
+    assert exc_info.value.error_type == "episode_inconclusive"
+
+
+def test_certification_completion_accepts_clean_last_termination():
+    core_v1 = _FakeGateCoreV1(
+        reads={
+            "job-player-0": [[_container_status("player", waiting=True, last_exit_code=0, reason="Completed")]],
+        }
+    )
+    kubernetes_runner._wait_for_players_to_complete(core_v1, "default", ["job-player-0"], timeout_seconds=0.0)
+
+
+def test_certification_post_start_temporary_exit_is_player_failure():
+    core_v1 = _FakeGateCoreV1(
+        reads={
+            "job-player-0": [[_container_status("player", exit_code=75, reason="Error")]],
+        }
+    )
+    with pytest.raises(kubernetes_runner.PlayerPodFailure) as exc_info:
+        kubernetes_runner._wait_for_players_to_complete(core_v1, "default", ["job-player-0"], timeout_seconds=0.0)
+    assert exc_info.value.failed_policy_index == 0
+
+
 def test_transport_failure_survives_error_artifact_upload_failure(monkeypatch, tmp_path):
     termination_path = tmp_path / "termination-log"
     monkeypatch.setenv("COWORLD_ERROR_TYPE_PATH", str(termination_path))
@@ -4399,3 +4457,66 @@ def test_transport_failure_survives_error_artifact_upload_failure(monkeypatch, t
         bootstrap.write_error_info(httpx.ConnectError("TLS EOF"), default_error_type="config_error")
 
     assert termination_path.read_text() == "artifact_transport_error"
+
+
+def test_certification_does_not_repoll_completed_pod(monkeypatch):
+    monkeypatch.setattr(kubernetes_runner.time, "sleep", lambda _: None)
+    calls: list[str] = []
+
+    class CoreV1:
+        def read_namespaced_pod(self, *, name, namespace):
+            calls.append(name)
+            if name == "job-player-0":
+                if calls.count(name) > 1:
+                    raise kubernetes_runner.ApiException(status=404)
+                return _player_pod(container_status=_container_status("player", exit_code=0))
+            return _player_pod(
+                container_status=_container_status(
+                    "player", running=calls.count(name) == 1, exit_code=0 if calls.count(name) > 1 else None
+                )
+            )
+
+    kubernetes_runner._wait_for_players_to_complete(
+        CoreV1(), "default", ["job-player-0", "job-player-1"], timeout_seconds=5
+    )
+    assert calls == ["job-player-0", "job-player-1", "job-player-1"]
+
+
+@pytest.mark.parametrize("last_exit", [False, True])
+@pytest.mark.parametrize("phase,reason", [("Succeeded", None), ("Unknown", "NodeLost")])
+def test_certification_clean_exit_precedes_disruption(last_exit, phase, reason):
+    pod = _player_pod(
+        phase=phase,
+        reason=reason,
+        container_status=_container_status(
+            "player", exit_code=None if last_exit else 0, last_exit_code=0 if last_exit else None
+        ),
+    )
+    pod.status.conditions = [SimpleNamespace(type="DisruptionTarget", status="True", reason="EvictionByEvictionAPI")]
+    core_v1 = SimpleNamespace(read_namespaced_pod=lambda **_: pod)
+    kubernetes_runner._wait_for_players_to_complete(core_v1, "default", ["job-player-0"], timeout_seconds=0)
+
+
+def test_local_player_exit_timeout_is_inconclusive(tmp_path):
+    class HangingPlayer:
+        def wait(self, *, timeout):
+            raise subprocess.TimeoutExpired("player", timeout)
+
+    with pytest.raises(runner_io.RunnerEpisodeError) as excinfo:
+        runner_module._wait_for_player_exit(
+            HangingPlayer(), tmp_path / "stderr", failed_policy_index=2, timeout_seconds=30
+        )
+    assert excinfo.value.error_type == "episode_inconclusive"
+    assert excinfo.value.failed_policy_index is None
+    assert "slot 2" in str(excinfo.value)
+    assert "30s" in str(excinfo.value)
+    assert "valid results" in str(excinfo.value)
+
+
+@pytest.mark.parametrize("exit_code", [1, 75])
+def test_local_player_nonzero_exit_keeps_player_blame(tmp_path, exit_code):
+    player = SimpleNamespace(wait=lambda **_: exit_code)
+    with pytest.raises(runner_io.RunnerEpisodeError) as excinfo:
+        runner_module._wait_for_player_exit(player, tmp_path / "stderr", failed_policy_index=2)
+    assert excinfo.value.error_type == "player_error"
+    assert excinfo.value.failed_policy_index == 2

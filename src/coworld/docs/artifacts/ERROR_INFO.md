@@ -38,7 +38,10 @@ Fields:
 
 | Type                      | Meaning                                                                                                                                                                                                                                                                                           |
 | ------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `platform_error`          | A known platform execution failure prevented a verdict. Retry without changing the game or player.                                                                                                                                                                                                |
+| `episode_inconclusive`    | The episode did not complete, but available evidence does not establish the cause. Carries no policy blame; certification may be retried.                                                                                                                                                         |
 | `player_error`            | A terminal game-declared player failure, or a player startup/execution failure where the runner attributes a seat. Carries `failed_policy_index` when the runner can identify the slot.                                                                                                           |
+| `players_missing`         | A certification player file is invalid or a game-hosted player left no real seat log. This is an author fault.                                                                                                                                                                                    |
 | `player_never_started`    | Kubernetes did not start every scheduled player process within the game's player-connect window, even after recreating stuck pods. This is infrastructure failure evidence and never identifies or blames a policy slot.                                                                          |
 | `game_unhealthy`          | The game process itself failed: it never served `/healthz`, or the game container exited non-zero before or during the episode. The message includes the exit code when available.                                                                                                                |
 | `game_contract_violation` | The game became healthy but failed a route, WebSocket, or auth contract check such as `/client/player`, bad-token rejection, `/client/global`, or `/global`.                                                                                                                                      |
@@ -70,3 +73,16 @@ Error info can be consumed directly from hosted artifact routes or through the [
 
 - [Lifecycle](../LIFECYCLE.md) for hosted failure handling.
 - [Episode bundle](EPISODE_BUNDLE.md) for bundled failure artifacts.
+
+Certification distinguishes process failure from non-completion. A disrupted pod is `node_disruption`; a missing pod or
+a still-running player at the completion deadline is `episode_inconclusive`, not proof of a player defect. These
+failures remain eligible for retry without telling authors to fix their game. Automatic retries are unchanged: only
+`player_never_started` retries, up to three attempts. Completion timeouts list every pending slot, the exit-wait
+duration, and that game results validated. Platform and inconclusive failures are excluded from competitive losses and
+policy failure streaks. This classification does not infer a provider outage from a timeout alone; provider attribution
+requires separate evidence.
+
+Known backend game exits (`game_error`, game-container `oom`) map to `game_unhealthy` during certification. Existing
+`crash` and runner `episode_timeout` verdicts remain author-attributed and competitive. A hosted request polling timeout
+is `episode_inconclusive`: that deadline includes queue time and does not prove the game ran. Post-results player exit
+timeouts use `episode_inconclusive` in both Docker and Kubernetes runners.

@@ -1154,9 +1154,9 @@ def _wait_for_player_exit(
         return_code = player_process.wait(timeout=timeout_seconds)
     except subprocess.TimeoutExpired as exc:
         raise RunnerEpisodeError(
-            f"Timed out waiting for player container to exit.\n{_tail(stderr_path)}",
-            error_type="player_error",
-            failed_policy_index=failed_policy_index,
+            f"The game produced valid results, but player slot {failed_policy_index} did not exit "
+            f"within {timeout_seconds:g}s; cause undetermined.\n{_tail(stderr_path)}",
+            error_type="episode_inconclusive",
         ) from exc
     if return_code != 0:
         raise RunnerEpisodeError(

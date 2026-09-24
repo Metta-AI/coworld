@@ -36,7 +36,7 @@ from coworld.manifest_validation import (
     infer_token_count_for_game_config,
     validate_coworld_manifest_game_configs,
 )
-from coworld.player_files import player_file_bytes
+from coworld.player_files import InvalidPlayerFile, player_file_bytes
 from coworld.runner.io import RunnerEpisodeError
 from coworld.runner.runner import (
     CERTIFICATION_EPISODE_SOURCE,
@@ -764,6 +764,10 @@ def _step_failure_reason(step_id: str, exc: Exception) -> str:
         return "commissioner_protocol_failed"
     if isinstance(exc, RunnerEpisodeError):
         return exc.error_type
+    if isinstance(exc, InvalidPlayerFile):
+        return "players_missing"
+    if step_id == "smoke-episode":
+        return "platform_error"
     if step_id == "results-conform":
         if isinstance(exc, FileNotFoundError):
             return "results_missing"
@@ -1147,7 +1151,7 @@ def certification_player_file_paths(package: CoworldPackage, slot_count: int) ->
     """
     files = [cast(str, player.file) for player in _certification_player_selection(package)]
     if any(file.startswith("sha256:") for file in files):
-        raise ValueError("local certification needs package-relative player files; use `coworld download` first")
+        raise InvalidPlayerFile("local certification needs package-relative player files; use `coworld download` first")
     fixture_paths = [package.manifest_path.parent / file for file in files]
     return [fixture_paths[index % len(fixture_paths)] for index in range(slot_count)]
 
