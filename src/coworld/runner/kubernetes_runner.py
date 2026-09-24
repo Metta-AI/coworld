@@ -1711,9 +1711,7 @@ def _ensure_player_pods_started(
                 for status in player_pod.status.container_statuses or []:
                     if status.name != "player":
                         continue
-                    state = status.state.running or status.state.terminated
-                    if state is None and status.last_state is not None:
-                        state = status.last_state.terminated
+                    state = status.state.running or _container_terminated_state(player_pod, "player")
                     if state is not None and state.started_at is not None:
                         observation.container_started_wall_ns = int(state.started_at.timestamp() * 1_000_000_000)
             if failure is not None:
@@ -1784,15 +1782,20 @@ def _raise_if_player_pod_failed(core_v1, namespace: str, player_pod_names: tuple
             raise PlayerPodFailure(slot, failure[1])
 
 
+def _container_terminated_state(pod, container_name: str) -> client.V1ContainerStateTerminated | None:
+    for status in pod.status.container_statuses or []:
+        if status.name == container_name:
+            return status.state.terminated or (status.last_state.terminated if status.last_state is not None else None)
+    return None
+
+
 def _player_container_failure(player_pod, player_pod_name: str, slot: int) -> tuple[PlayerRuntimeStatus, str] | None:
     """Detect a failed player container: (runtime status, human-readable message), or None."""
     for status in player_pod.status.container_statuses or []:
         if status.name != "player":
             continue
         state = status.state
-        terminated = state.terminated
-        if terminated is None and status.last_state is not None:
-            terminated = status.last_state.terminated
+        terminated = _container_terminated_state(player_pod, "player")
         if terminated is not None:
             if terminated.exit_code == 0:
                 continue
@@ -1829,40 +1832,45 @@ def _wait_for_players_to_complete(
     timeout_seconds: float,
 ) -> None:
     deadline = time.monotonic() + timeout_seconds
+    completed: set[str] = set()
     while True:
         pending: list[tuple[int, str]] = []
         for player_pod_name in player_pod_names:
+            if player_pod_name in completed:
+                continue
             slot = _player_pod_slot(player_pod_name)
             try:
                 player_pod = core_v1.read_namespaced_pod(name=player_pod_name, namespace=namespace)
             except ApiException as exc:
                 if exc.status == 404:
-                    raise PlayerPodFailure(
-                        slot,
-                        f"Player pod {player_pod_name} for slot {slot} disappeared before completing certification",
+                    raise RunnerEpisodeError(
+                        f"The game produced valid results, but player pod {player_pod_name} for slot {slot} "
+                        "disappeared before its exit could be observed; cause undetermined",
+                        error_type="episode_inconclusive",
                     ) from exc
                 raise
-            player_status = next(
-                (status for status in player_pod.status.container_statuses or [] if status.name == "player"),
-                None,
-            )
-            terminated = player_status.state.terminated if player_status is not None else None
-            if terminated is None:
-                pending.append((slot, player_pod_name))
+            terminated = _container_terminated_state(player_pod, "player")
+            if terminated is not None and terminated.exit_code == 0:
+                completed.add(player_pod_name)
                 continue
-            if terminated.exit_code != 0:
-                parts = [
-                    f"Player pod {player_pod_name} for slot {slot} terminated with exit code {terminated.exit_code}"
-                ]
-                parts.extend(part for part in (terminated.reason, terminated.message) if part)
-                raise PlayerPodFailure(slot, ": ".join(parts))
+            failure = _player_container_failure(player_pod, player_pod_name, slot)
+            disruption = _player_pod_disruption(player_pod, has_player_failure=failure is not None)
+            if disruption is not None:
+                raise RunnerEpisodeError(
+                    f"Kubernetes reported {disruption} for player pod {player_pod_name}",
+                    error_type="node_disruption",
+                )
+            if failure is not None:
+                raise PlayerPodFailure(slot, failure[1])
+            pending.append((slot, player_pod_name))
         if not pending:
             return
         if time.monotonic() >= deadline:
-            slot, player_pod_name = pending[0]
-            raise PlayerPodFailure(
-                slot,
-                f"Timed out waiting for player pod {player_pod_name} for slot {slot} to complete certification",
+            raise RunnerEpisodeError(
+                f"The game produced valid results, but players did not exit within {timeout_seconds:g}s: "
+                + ", ".join(f"slot {slot} ({name})" for slot, name in pending)
+                + "; cause undetermined",
+                error_type="episode_inconclusive",
             )
         time.sleep(_ARTIFACT_POLL_SECONDS)
 
@@ -2013,11 +2021,7 @@ def _container_has_started(pod, container_name: str) -> bool:
     for status in pod.status.container_statuses or []:
         if status.name != container_name:
             continue
-        return (
-            status.state.running is not None
-            or status.state.terminated is not None
-            or (status.last_state is not None and status.last_state.terminated is not None)
-        )
+        return status.state.running is not None or _container_terminated_state(pod, container_name) is not None
     return False
 
 

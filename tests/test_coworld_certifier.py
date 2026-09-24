@@ -22,6 +22,7 @@ from pydantic import ValidationError as PydanticValidationError
 from websockets.exceptions import ConnectionClosedOK
 
 import coworld.certifier as certifier_module
+import coworld.player_files as player_files
 from coworld.certifier import (
     _image_references,
     _run_local_certifier_episode,
@@ -42,7 +43,7 @@ from coworld.certifier import (
 from coworld.commissioner.protocol import LeagueInfo, ScheduleRoundsRequest, ScheduleRoundsResponse
 from coworld.manifest_validation import game_config_with_tokens
 from coworld.play import BedrockAwsEnv, ReplaySession, build_play_links, play_coworld, replay_coworld
-from coworld.player_files import player_file_bytes
+from coworld.player_files import InvalidPlayerFile, player_file_bytes
 from coworld.runner.io import RunnerEpisodeError
 from coworld.runner.runner import (
     CONFIG_ENV_VAR,
@@ -1656,8 +1657,9 @@ def test_local_certifier_rejects_hash_only_game_hosted_fixture(tmp_path: Path) -
     package = load_coworld_package(manifest_path)
     job = build_manifest_episode_job_spec(package)
 
-    with pytest.raises(ValueError, match="local certification needs package-relative player files"):
+    with pytest.raises(InvalidPlayerFile, match="local certification needs package-relative player files") as excinfo:
         _run_local_certifier_episode(package, job, EpisodeArtifacts.create(tmp_path / "cert"), 12.0)
+    assert certifier_module._step_failure_reason("smoke-episode", excinfo.value) == "players_missing"
 
 
 def test_game_hosted_certification_requires_real_log_for_every_slot(tmp_path: Path) -> None:
@@ -3026,3 +3028,50 @@ def _env_value(command: list[str], key: str) -> str | None:
         if index > 0 and command[index - 1] == "-e" and value.startswith(prefix):
             return value.removeprefix(prefix)
     return None
+
+
+@pytest.mark.parametrize("status_code", [404, 429, 500, 502, 503])
+def test_smoke_episode_api_failure_is_not_an_author_verdict(status_code):
+    request = httpx.Request("POST", "https://platform.example/v2/episode-requests")
+    error = httpx.HTTPStatusError(
+        "Cannot dispatch episode", request=request, response=httpx.Response(status_code, request=request)
+    )
+    assert certifier_module._step_failure_reason("smoke-episode", error) == "platform_error"
+
+
+@pytest.mark.parametrize("error", [RuntimeError("stopped"), KeyError("artifact"), AssertionError("invalid state")])
+def test_smoke_episode_untyped_exception_is_platform_error(error):
+    assert certifier_module._step_failure_reason("smoke-episode", error) == "platform_error"
+
+
+def test_smoke_episode_typed_timeout_stays_inconclusive():
+    error = RunnerEpisodeError("Player did not exit", error_type="episode_inconclusive")
+    assert certifier_module._step_failure_reason("smoke-episode", error) == "episode_inconclusive"
+
+
+def test_smoke_episode_transport_failure_is_platform_error():
+    assert certifier_module._step_failure_reason("smoke-episode", httpx.ConnectError("offline")) == "platform_error"
+
+
+@pytest.mark.parametrize("invalid", ["missing", "symlink", "escape", "oversize", "nested_symlink"])
+def test_invalid_player_files_keep_author_attribution(tmp_path, monkeypatch, invalid):
+    root = tmp_path / "package"
+    root.mkdir()
+    source = root / "player.wasm"
+    if invalid != "missing":
+        source.write_bytes(b"player")
+    if invalid == "symlink":
+        source.unlink()
+        source.symlink_to(tmp_path / "outside")
+    elif invalid == "escape":
+        source = tmp_path / "outside"
+        source.write_bytes(b"player")
+    elif invalid == "oversize":
+        monkeypatch.setattr(player_files, "PLAYER_FILE_MAX_BYTES", 1)
+    elif invalid == "nested_symlink":
+        source.unlink()
+        source.mkdir()
+        (source / "linked").symlink_to(tmp_path / "outside")
+    with pytest.raises(InvalidPlayerFile) as excinfo:
+        player_files.player_file_bytes(source, package_root=root)
+    assert certifier_module._step_failure_reason("smoke-episode", excinfo.value) == "players_missing"
