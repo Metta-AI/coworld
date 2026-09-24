@@ -37,6 +37,7 @@ RunnerErrorType = Literal[
     "crash",
     "worker_error",
     "config_error",
+    "artifact_transport_error",
     "player_file_unavailable",
     "player_file_mismatch",
 ]
@@ -141,7 +142,7 @@ def exception_summary(error: BaseException) -> str:
     return f"{type(error).__name__} (HTTP status {status})"
 
 
-def _is_retryable_relay_error(error: BaseException) -> bool:
+def is_retryable_relay_error(error: BaseException) -> bool:
     return isinstance(error, httpx.TransportError) or (
         isinstance(error, httpx.HTTPStatusError) and error.response.status_code in _RETRYABLE_STATUS_CODES
     )
@@ -171,7 +172,7 @@ def _log_relay_retry(retry_state: RetryCallState) -> None:
 
 def _relay_request_attempts(attempts: int = len(_RETRY_DELAYS_SECONDS) + 1) -> Retrying:
     return Retrying(
-        retry=retry_if_exception(_is_retryable_relay_error),
+        retry=retry_if_exception(is_retryable_relay_error),
         stop=stop_after_attempt(attempts),
         wait=(
             wait_chain(*(wait_fixed(delay) for delay in _RETRY_DELAYS_SECONDS[: attempts - 1]))
