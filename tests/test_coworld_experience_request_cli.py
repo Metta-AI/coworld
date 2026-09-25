@@ -178,9 +178,23 @@ def test_xp_request_get_renders_detail_and_episodes(httpserver: HTTPServer) -> N
 
 
 def test_xp_request_episodes_renders_children(httpserver: HTTPServer) -> None:
-    httpserver.expect_request(
-        f"/observatory/v2/experience-requests/{XP_REQUEST_ID}/episodes", method="GET"
-    ).respond_with_json([_episode_request()])
+    httpserver.expect_request("/observatory/v2/episode-requests", method="GET").respond_with_json(
+        {
+            "entries": [
+                {
+                    "id": EPISODE_REQUEST_ID,
+                    "experience_request_id": XP_REQUEST_ID,
+                    "created_at": NOW,
+                    "status": "pending",
+                    "error_type": None,
+                    "evidence_state": "pending",
+                }
+            ],
+            "unavailable_ids": [],
+            "next_cursor": None,
+            "observed_at": NOW,
+        }
+    )
 
     result = CliRunner().invoke(
         app, ["xp-request", "episodes", XP_REQUEST_ID, "--server", httpserver.url_for("/")], env={"COLUMNS": "200"}
