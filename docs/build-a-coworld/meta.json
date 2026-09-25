@@ -1,0 +1,13 @@
+{
+  "title": "Publish a Coworld",
+  "pages": [
+    "overview",
+    "player-runtimes",
+    "design",
+    "game-and-baselines",
+    "manifest-and-variants",
+    "build-certify-upload",
+    "hosted-verification",
+    "league-lobbies"
+  ]
+}

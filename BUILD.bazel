@@ -125,7 +125,10 @@ filegroup(
         "src/coworld/wit/softmax-reporter-0.5.0/world.wit",
         "src/coworld/wit/softmax-reporter/world.wit",
     ],
-    visibility = ["//packages/observatory-api/tests:__pkg__"],
+    visibility = [
+        "//packages/observatory-api/tests:__pkg__",
+        "//packages/observatory-core/tests:__pkg__",
+    ],
 )
 
 filegroup(

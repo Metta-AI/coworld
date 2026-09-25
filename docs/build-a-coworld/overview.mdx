@@ -1,0 +1,117 @@
+---
+title: "Author a Coworld"
+description: "Design, package, test, and publish a game environment for players to improve against."
+---
+
+A Coworld turns a game into a repeatable player-improvement environment. It packages the game, its player protocol,
+baseline players, documentation, and a fixture that proves the whole system runs.
+
+This track is for people defining that environment. If you are improving a policy for an existing game, start with the
+[player guides](/docs/coworld/build-a-player/overview) instead.
+
+<Note>
+  These guides explain the authoring workflow. The exact runtime and manifest
+  contracts live with the [Coworld
+  package](https://github.com/Metta-AI/coworld/tree/main/src/coworld/docs). When
+  a guide and a contract differ, follow the contract and generated schema.
+</Note>
+
+These guides focus on bounded Coworlds, where an episode is both an execution and evidence boundary. Persistent
+Coworlds split those concerns; read the
+[lifecycle contract](https://github.com/Metta-AI/coworld/blob/main/src/coworld/docs/LIFECYCLE.md) before designing one.
+
+## Choose how players run
+
+Start with [Choose a player runtime](/docs/coworld/build-a-coworld/player-runtimes). Observatory-hosted (`platform-hosted`) players run in
+separate containers; `game-hosted` players are files executed by the game. The choice determines packaging, isolation,
+resource ownership, secrets, and supported play workflows.
+
+## What you will build
+
+- A game with clear rules, useful scores, and reproducible seeded episodes.
+- A game container that serves players and viewers, then writes results and replay data.
+- At least one bundled player that certification can run.
+- A `coworld_manifest.json` describing runnables, schemas, variants, documentation, and certification.
+- A browser experience for live play and replay inspection.
+- A hosted release that completes real episodes on the Softmax platform.
+
+## Build from fast checks to hosted runs
+
+Build upward from the cheapest feedback loop. Each rung catches problems that the previous rung cannot.
+
+<Steps>
+  <Step title="Test the game engine">
+    Prove the rules and seed behavior without starting containers.
+  </Step>
+  <Step title="Run a local episode">
+    Use `coworld run-episode` to test the game, bundled players, results,
+    replay, and logs together.
+  </Step>
+  <Step title="Play in a browser">
+    For platform-hosted players, use `coworld play` to inspect live clients. For
+    game-hosted players, inspect completed replays and test information
+    boundaries through game-owned checks.
+  </Step>
+  <Step title="Certify the package">
+    Use `coworld certify` to run the manifest's certification fixture and its
+    automated contract checks.
+  </Step>
+  <Step title="Upload the Coworld">
+    Use `coworld upload-coworld` to publish the certified manifest, images, and
+    any bundled player files.
+  </Step>
+  <Step title="Verify it hosted">
+    Confirm hosted episodes complete with plausible scores, useful logs, and a
+    replay you can watch.
+  </Step>
+</Steps>
+
+Do not treat container startup as proof. Read the results, inspect the logs, and watch the replay before moving upward.
+
+## Follow the track
+
+<CardGroup cols={2}>
+  <Card title="Design the game" href="/docs/coworld/build-a-coworld/design">
+    Decide the seat model, score, information boundaries, failure behavior, and
+    seed contract.
+  </Card>
+  <Card
+    title="Build the game and baselines"
+    href="/docs/coworld/build-a-coworld/game-and-baselines"
+  >
+    Implement the authoritative game container and the players shipped with it.
+  </Card>
+  <Card
+    title="Write the manifest"
+    href="/docs/coworld/build-a-coworld/manifest-and-variants"
+  >
+    Describe the package, its variants, and the certification fixture.
+  </Card>
+  <Card
+    title="Build, certify, and upload"
+    href="/docs/coworld/build-a-coworld/build-certify-upload"
+  >
+    Move from committed source to a published Coworld release.
+  </Card>
+  <Card
+    title="Verify hosted execution"
+    href="/docs/coworld/build-a-coworld/hosted-verification"
+  >
+    Check the deployed runtime and the evidence it produces.
+  </Card>
+  <Card
+    title="Run mixed human/agent lobbies"
+    href="/docs/coworld/build-a-coworld/league-lobbies"
+  >
+    Create league lobbies so humans and uploaded agents play one persisted
+    episode with logs and the LLM sidecar.
+  </Card>
+</CardGroup>
+
+## Use Paint Arena as the reference
+
+[Paint Arena](https://github.com/Metta-AI/coworld/tree/main/src/coworld/examples/paintarena) is the smallest complete
+example shipped with Coworld. It includes a game server, browser clients, a bundled player, protocols, Docker files,
+and a manifest template.
+
+Read it beside these guides. It demonstrates platform-hosted players. Reuse its game contracts; follow the runtime guide for game-hosted file execution.

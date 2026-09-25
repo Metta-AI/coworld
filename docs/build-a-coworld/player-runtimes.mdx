@@ -1,0 +1,102 @@
+---
+title: "Choose a player runtime"
+description: "Compare platform-hosted containers with game-hosted files, then follow the matching author and player contracts."
+---
+
+Choose `game.player_runtime` before building the game/player interface. Both modes run hosted episodes on Observatory.
+The manifest calls Observatory-hosted players **`platform-hosted`**, which is the default.
+
+|                     | `platform-hosted`                                                                        | `game-hosted`                                                                                |
+| ------------------- | ---------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------- |
+| Player submission   | Docker image                                                                             | File or directory packed as a zip                                                            |
+| Packaging           | Build a `linux/amd64` player image; 512 MiB bundled image cap; 5 GiB submitted image cap | Prepare a game-defined file or directory; 100 MiB packed cap for bundled and submitted files |
+| Startup             | Pull an image and start a container per seat within the player connection deadline       | Stage and verify seat files before starting the game; game owns player initialization        |
+| Bundled player      | `player[].image`                                                                         | `player[].file`                                                                              |
+| Who runs it         | Platform starts a container per seat                                                     | Game executes each seat inside its own container                                             |
+| Interface           | `COWORLD_PLAYER_WS_URL` and the game WebSocket protocol                                  | Game-defined file format and execution interface                                             |
+| Resource control    | Platform provisions separate player pods                                                 | Game resources cover every seat; author owns isolation and execution limits                  |
+| Policy secrets      | Policy-scoped environment supported                                                      | No policy environment or secrets                                                             |
+| Failure attribution | Runner identifies startup failures; game can declare seat failures                       | Game declares seat failures; game-container out-of-memory blames the Coworld                 |
+| Trust               | Game does not receive the player image bytes                                             | Game can read and copy submitted files                                                       |
+| Workflows           | Episodes, human seats, lobbies, hosted play sessions, persistent player runtimes         | Episodes; human and persistent player workflows unavailable                                  |
+
+## Match the runtime to the game
+
+Choose based on the interface and responsibilities you want to support:
+
+| Requirement                                                                      | Fit                                                                                         |
+| -------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------- |
+| Submitters bring their own language runtime or dependencies                      | `platform-hosted`: each player packages its environment in an image.                        |
+| Players need policy-scoped secrets, human play, or persistent player runtimes    | `platform-hosted`: these use existing platform workflows.                                   |
+| Submitters should upload player files without building or pushing a player image | `game-hosted`: simpler player packaging, within the game-provided runtime and dependencies. |
+| The game accepts a defined artifact, such as a ruleset, script, or model weights | `game-hosted`: the game supplies the loader and execution environment.                      |
+| Player actions need direct in-game execution instead of a WebSocket exchange     | `game-hosted`: the game controls invocation and scheduling.                                 |
+
+Platform-hosted authors implement the WebSocket protocol and handle container startup, connection deadlines, and
+per-seat resource needs. Game-hosted authors implement file validation and execution budgets, and enforce isolation
+where artifacts execute untrusted code. Neither choice guarantees better performance; measure the relevant workload.
+Changing the mode does not convert existing policies.
+
+## Follow the complete contract
+
+The canonical [player runtime guide](https://github.com/Metta-AI/coworld/blob/main/src/coworld/docs/PLAYER_RUNTIMES.md)
+covers implementation, commands, limits, privacy, and failure attribution. Read it with:
+
+- [Manifest pairing](https://github.com/Metta-AI/coworld/blob/main/src/coworld/docs/COWORLD_MANIFEST.md#player-runtime-and-artifact-pairing)
+  for exactly one `image` or `file`, paired with the game's runtime.
+- [Game role](https://github.com/Metta-AI/coworld/blob/main/src/coworld/docs/roles/GAME.md) for routes, health, config,
+  results, replay, and terminal player failures in both modes.
+- [Player role](https://github.com/Metta-AI/coworld/blob/main/src/coworld/docs/roles/PLAYER.md) for container and file contracts.
+- [Player seats](https://github.com/Metta-AI/coworld/blob/main/src/coworld/docs/artifacts/PLAYER_SEATS.md) for the
+  `COGAME_PLAYER_SEATS_URI` handoff and per-seat output destinations.
+
+Both modes require a game image. Local episodes require Docker. Hosted platform-hosted player pods request
+250m CPU / 256Mi memory by default; game-hosted seats share the game's allocation. These are scheduling requests,
+not hard limits. See the [resource contract](https://github.com/Metta-AI/coworld/blob/main/src/coworld/runner/KUBERNETES_RUNNER_README.md#hosted-resource-baseline).
+
+## Platform-hosted author checklist
+
+- Specify observations, actions, connection deadlines, and failure behavior in `game.protocols.player`.
+- Package bundled players as images and configure their entrypoints and dependencies.
+- Follow the [player contract](https://github.com/Metta-AI/coworld/blob/main/src/coworld/docs/roles/PLAYER.md#platform-hosted-players)
+  for WebSocket configuration, environment, logs, and artifact uploads.
+- Seat every bundled player in certification; test complete episodes and any supported human-play flow.
+
+## Game-hosted author checklist
+
+- Specify the file format, entrypoint, dependencies, observations, actions, and execution limits in the game's public docs.
+- Define and test isolation between untrusted players, the game, and other seats.
+- Read the seats document and use its slot numbers and URIs. Do not infer a language from the staged filename.
+- Create every seat log, even if empty. Keep private output out of public game logs.
+- Finish replay, logs, optional artifacts, and optional status before publishing results, the completion marker.
+- Keep the game HTTP/WebSocket routes and Ping/Pong contract; certification still probes them.
+- Declare terminal seat failures with `GamePlayerFailure` at `COGAME_PLAYER_FAILURE_URI`; optional status does not replace this declaration.
+  See the [failure contract](https://github.com/Metta-AI/coworld/blob/main/src/coworld/docs/artifacts/ERROR_INFO.md).
+- Seat every bundled player in certification. Every fixture slot needs a real log, not the runner's missing-log marker.
+- Make model calls from the game with `X-Coworld-Player-Slot: N` for the relevant seat.
+
+Game-hosted inputs are capped at 100 MiB of packed bytes. The game must also bound archive extraction and execution.
+Hosted seat logs truncate at 10 MiB, optional artifacts above 200 MiB are skipped, and invalid or oversized status
+above 1 MiB is discarded. Optional status is diagnostic; it does not assign blame or change results.
+
+## Choose the matching workflow
+
+Both modes use `coworld build`, `coworld run-episode`, `coworld certify`, and `coworld upload-coworld`.
+For game-hosted players, build copies package-relative player files, upload stores their hashes, and download restores
+bundled files for local use. `coworld play` is unsupported; validate with headless episodes and inspect replays.
+
+Player builders should read the target manifest before packaging:
+
+```bash
+# Platform-hosted: upload the player image.
+uv run coworld upload-policy my-player:local --name my-player
+
+# Game-hosted: upload the game-defined file or directory.
+uv run coworld upload-policy --file ./my-player --name my-player
+```
+
+File uploads cannot use player `--run`, `--secret-env`, `--use-bedrock`, or `--bedrock-model` flags.
+The uploaded policy kind must match the target Coworld; changing the runtime does not convert policies.
+Both use the normal [hosted evaluation](/docs/coworld/build-a-player/upload-and-evaluate) and league submission workflows.
+
+Next, [design the game](/docs/coworld/build-a-coworld/design) and [implement its game and baseline contracts](/docs/coworld/build-a-coworld/game-and-baselines).

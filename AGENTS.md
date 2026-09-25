@@ -1,193 +1,63 @@
 # AGENTS.md - coworld
 
-Public CLI and Python package for Softmax v2 tournaments ("Coworlds"). This package owns the user-facing `coworld`
-entrypoint, local episode/play tooling, Coworld uploads, policy uploads/submission helpers, the Paint Arena reference
-Coworld, and the public Coworld docs shipped with the package. It depends on `softmax-cli` for auth-backed commands.
+You are reading the public `Metta-AI/coworld` repository: the `coworld` Python package and CLI that players and Coworld
+authors use with the Softmax platform. This file is written for coding agents working outside Softmax. It assumes no
+access to Softmax's private monorepo and no prior Softmax context.
 
-## ⚠️ Building a player that calls an LLM? Read [`src/coworld/docs/HOSTED_LLM.md`](src/coworld/docs/HOSTED_LLM.md) FIRST.
+## Start here
 
-The one rule: in a hosted episode, **send every model call to the `AWS_ENDPOINT_URL_BEDROCK_RUNTIME` endpoint** (the
-per-pod sidecar that forwards to OpenRouter with the platform's key; the variable name is historical). Calling a public
-provider host instead fails authentication because the pod holds no real key. Point the Anthropic or OpenAI SDK at that
-base URL with a placeholder API key; hand-rolled HTTP must read it. The sidecar serves `/v1/messages` and
-`/v1/chat/completions`, non-streaming only. Full contract, examples, and troubleshooting:
-[`HOSTED_LLM.md`](src/coworld/docs/HOSTED_LLM.md).
+- Documentation index for agents: https://softmax.com/docs/llms.txt
+- Agent skill (Softmax workflows, CLI quick reference, request shapes): https://softmax.com/docs/skill.md
+- Platform hub: https://softmax.com/llms.txt
+- Coworld guide: https://softmax.com/docs/coworld/overview
+- Build a player: https://softmax.com/docs/coworld/build-a-player/overview
+- Build a Coworld: https://softmax.com/docs/coworld/build-a-coworld/overview
+- Mixed human/agent league lobbies: https://softmax.com/docs/coworld/build-a-coworld/league-lobbies
+- Observatory HTTP API (OpenAPI): https://softmax.com/api/observatory/openapi.json and
+  https://softmax.com/docs/api-reference/overview
 
-## Choose the player runtime first
+To enter a league, start from its participation guide. The current Game of the Week guide is
+https://softmax.com/play.md; every public league's guide is listed next to its Coworld in
+https://softmax.com/coworlds/llms.txt.
 
-Read [PLAYER_RUNTIMES.md](src/coworld/docs/PLAYER_RUNTIMES.md) before designing a new game or player.
-`game.player_runtime` selects Observatory-hosted (`platform-hosted`, default) containers or `game-hosted` files. Both
-use hosted Kubernetes episodes. File execution, isolation, per-seat output, and model-call attribution belong to the
-game in game-hosted mode. Paint Arena is a platform-hosted example, not the only supported runtime.
-
-## Coworlds Expert Agent
-
-A distributable Claude Code agent for coworld developers is available at
-[`agents/coworlds-expert-agent/`](agents/coworlds-expert-agent/). It knows coworld design principles (the derivation
-chain, grader philosophy, player policy design, schema contracts) and can be installed into any coworld project's
-`.claude/agents/` directory. See its [README](agents/coworlds-expert-agent/README.md) for install instructions.
-
-## Before Editing
-
-- Read this file, `LESSONS.md`, the package [README](README.md), and the [Coworld docs map](src/coworld/docs/README.md)
-  before changing user-facing Coworld behavior or docs.
-- Keep package docs public-package-facing. Avoid private Metta backend paths unless the document is intentionally
-  explaining a platform integration boundary.
-- Treat Paint Arena under `src/coworld/examples/paintarena/` as the canonical in-tree example.
-- This file is monorepo contributor guidance and never reaches the public `Metta-AI/coworld` repo. The sync
-  (`devops/git/push_child_repo.py`) replaces it with [`AGENTS.external.md`](AGENTS.external.md), written for coding
-  agents outside Softmax. Keep that twin free of monorepo commands and private paths.
-
-## CLI
-
-The package installs the Typer app at `coworld.cli:app`:
+## Install and sign in
 
 ```bash
+uv add "coworld[auth]"      # inside a uv project (or: uv tool install "coworld[auth]")
+uv run softmax login        # browser sign-in; use --no-browser in a headless session
 uv run coworld --help
-uv run coworld leagues
-uv run coworld download <coworld-name-or-id> --output-dir ./coworld
-uv run coworld run-episode <manifest-or-id> [request.json|image...] [-n N]
-uv run coworld scrimmage <manifest-or-id> <policy-image>
-uv run coworld play <manifest.json> [image|request.json]
-uv run coworld xp-request create <body.json|-> / list / get / episodes
-uv run coworld reporters list [-q TEXT] [--type T] [--mode hosted|external] / search <text> / show <rptr_...>
-uv run coworld build / certify / upload-coworld
-uv run coworld upload-policy / submit
-uv run coworld league create / update / list
-uv run coworld lobby create / get / seat / claim / start / cancel / end
-uv run coworld campaign board / history / conversation / prompt / set-prompt / full-prompt / perks / set-perks
-uv run coworld player list / use <player-id> / unset
+uv run coworld <command> --help
 ```
 
-Auth-backed commands require `uv run softmax login` first. The `auth` extra pulls in `softmax-cli`.
+`uv run softmax status` shows the active identity. Auth-backed `coworld` commands need the login first.
 
-`coworld player` is softmax-cli's player subapp mounted for discoverability (player identity is a Softmax-platform
-concept; `softmax player ...` is the same thing, implemented in `packages/softmax-cli/src/softmax/players.py`).
-`player use <player-id>` mints (or reuses) a 24h player session and stores it as the active player in
-`~/.softmax/credentials.yaml` (`player_sessions`). Every identity-bearing command then acts as that player, because they
-all resolve their token through `softmax.auth.load_current_token`. `player unset` clears the active pointer, reverting
-to your main user credential.
+## Community
 
-## Validation
+Each Coworld with a league has a forum and a wiki. Both read as Markdown and accept writes with your token:
 
-Use the narrowest check that covers the touched surface, then broaden when changing shared contracts:
+- Forum: `https://softmax.com/api/observatory/v2/forums/<coworld-name>.md` or `softmax forum --help`
+- Wiki: `https://softmax.com/api/observatory/v2/wikis/<coworld-name>/pages.md` or `softmax wiki --help`
 
-```bash
-uv run metta pytest packages/coworld/tests/test_types.py -v
-uv run metta pytest packages/coworld/tests -v
-uv run metta pytest --changed
-./bazel/fix_lint.sh
-```
+## Repository map
 
-When changing manifest Pydantic models or generated schema files, update `types.py` first and regenerate the checked-in
-schema JSON:
+- `src/coworld/` — the package: CLI (`coworld.cli:app`), API client helpers, manifest schemas, runners.
+- `src/coworld/docs/` — reference documents shipped in the package (manifest, roles, artifacts, runtimes).
+- `docs/` — the public guide sources for softmax.com/docs, including mixed human/agent
+  [league lobbies](https://softmax.com/docs/coworld/build-a-coworld/league-lobbies).
+- `src/coworld/examples/paintarena/` — the canonical example Coworld.
+- `src/coworld/templates/` — starter templates for each role.
+- `src/coworld/docs/COOKBOOK.md` — workflow recipes for agents and humans.
 
-```bash
-uv run --project packages/coworld python packages/coworld/scripts/generate_coworld_schemas.py
-uv run metta pytest packages/coworld/tests/test_types.py -v
-```
+## Reporting problems
 
-Every generated Coworld manifest schema change also requires one append-only declaration and one fixture that exercises
-the changed surface. The CI command is:
+When docs, commands, runtime behavior, logs, or replays disagree, keep the evidence and file an issue at
+https://github.com/Metta-AI/coworld/issues with the command, league and Coworld ids, and the smallest reproduction.
 
-```bash
-uv run coworld manifest-schema check --against origin/main
-```
+## Automatic project guidance
 
-The checker compares against the schema committed on the base ref. Ensure that ref is fetched before running it. Edit
-the active version's `src/coworld/manifest/v*/declarations.yaml`, add the referenced fixture under
-`tests/manifest_versions/v*/`, update that version's converter when runtime semantics change, regenerate schemas, and
-run the version/checker tests. A breaking or semantically uncertain change requires a new `apiVersion`, reader,
-converter, declaration, and fixtures; do not modify an older reader to reinterpret already-stored documents.
+Automatic updates require a `.coworld-project` file containing `player` or `coworld`. `coworld init player` creates it;
+add it by hand to opt an existing project in. Manifest files alone do not qualify. The managed block points to the
+current [Softmax agent guide](https://softmax.com/agents.md).
 
-V0 and `RuntimeManifest` deliberately alias today's `CoworldManifest`. On the first change that must not apply to v0,
-copy only the affected class or classes into `src/coworld/manifest/v0/model.py` and freeze them there. All backend reads
-of stored Coworld rows must go through `Coworld.runtime_manifest()`; all strict upload parsing must go through
-`validate_upload_manifest()`. Directly validating `coworld.manifest` against today's model defeats versioning.
-
-Schema changes must also preserve validation and runner serialization for the exhaustive and minimal golden manifests:
-
-```bash
-uv run metta pytest packages/coworld/tests/test_manifest_compatibility.py -v
-```
-
-The test is hermetic and runs on every PR. Update the exhaustive fixture when adding a field, and preserve the minimal
-fixture's omission of optional fields. Do not weaken compatibility coverage merely to make a schema change pass. Migrate
-affected stored manifests or enforce a new requirement at certification/upload boundaries instead of making historical
-data unreadable.
-
-Do not hand-edit `src/coworld/coworld_manifest_schema.json` or `src/coworld/runner/episode_request_schema.json` as the
-source of truth. They are generated docs and `$schema` targets; `test_types.py` checks that they match `types.py`.
-
-## Source Layout
-
-- `src/coworld/cli.py`, `tournament_cli.py` - Typer command surface for local episodes, uploads, leagues, and hosted
-  tournament inspection.
-- `src/coworld/cli_support.py`, `api_client.py` - shared CLI helpers and the Softmax/Coworld API client.
-- `src/coworld/config.py` - server default and `DOCS_PAGES` + `docs_epilog()` (the docs page each command's help names).
-  The docs index/skill URLs, error rendering, agent detection, and the `coworld/<version> (<agent>)` User-Agent come
-  from `softmax-cli` (`softmax.docs`, `softmax.http_errors.AgentFriendlyGroup`, `softmax.agent`).
-- `src/coworld/certifier.py` - `coworld certify` smoke-test pipeline (episode + declared-reporter certification).
-- `src/coworld/manifest_validation.py`, `schema_validation.py`, `manifest_uri.py` - manifest and schema validation.
-- `src/coworld/report.py` - the safe-render-profile checker `coworld certify` enforces on commissioner round reports.
-  (The reporter report-zip role was retired by spec 0061; the wasm reporter's emit-time render check lives in
-  `packages/observatory-api/src/observatory_api/reporters/render_check.py`.)
-- `src/coworld/bundle.py` - `coworld build`: hydrates a manifest template from a Docker Compose build.
-- `src/coworld/play.py`, `src/coworld/runner/` - local play, local episode runner, and hosted-runner contracts.
-- `src/coworld/commissioner/`, `submit.py`, `upload.py` - league round-running, submission, and upload support.
-- `src/coworld/examples/paintarena/` - smallest complete Coworld and reference implementation.
-
-## Documentation Map
-
-- [README.md](README.md) - package landing page, player-first orientation, and navigation.
-- [src/coworld/docs/COOKBOOK.md](src/coworld/docs/COOKBOOK.md) - task recipes for local play, policy upload/submission,
-  tournament results, and Coworld upload.
-- [docs/](docs/) - public guide sources, published at https://softmax.com/docs. This path symlinks to
-  `web/softmax.com/content/docs/coworld/`.
-- [src/coworld/docs/README.md](src/coworld/docs/README.md) - Coworld concept map, role statuses, artifact flow, and
-  cross-links.
-- [src/coworld/docs/AUTHORING.md](src/coworld/docs/AUTHORING.md) - stable pointer from older links to the public Coworld
-  authoring track and its exact technical references.
-- [src/coworld/docs/STATIC_REPLAY_VIEWERS.md](src/coworld/docs/STATIC_REPLAY_VIEWERS.md) - static replay bundle,
-  manifest, Coworld build-hook, source-sharing, and browser-verification contract.
-- [src/coworld/docs/COWORLD_MANIFEST.md](src/coworld/docs/COWORLD_MANIFEST.md) - manifest semantics and schema source of
-  truth.
-- [src/coworld/docs/HOSTED_LLM.md](src/coworld/docs/HOSTED_LLM.md) - **how a player calls an LLM at runtime** (the
-  `AWS_ENDPOINT_URL_BEDROCK_RUNTIME` sidecar endpoint, supported wire formats, model naming, troubleshooting), the
-  hosted upload contract, and robustness to rate limits. Required reading before building an LLM player.
-- [src/coworld/docs/LIFECYCLE.md](src/coworld/docs/LIFECYCLE.md) - local and hosted episode lifecycle.
-- [src/coworld/docs/LEAGUE_LOBBIES.md](src/coworld/docs/LEAGUE_LOBBIES.md) - mixed human/agent league lobbies (CLI,
-  REST, seat kinds, artifact grants).
-- [src/coworld/docs/TOURNAMENTS.md](src/coworld/docs/TOURNAMENTS.md) - league bracket tournaments (`tour_...` objects,
-  waves, bracket matches) and how to read their episodes via the v2 API.
-- [src/coworld/docs/PLATFORM_LADDER_LEAGUE.md](src/coworld/docs/PLATFORM_LADDER_LEAGUE.md) - create/maintain platform
-  ladder leagues (public; syncs to `Metta-AI/coworld`).
-- [src/coworld/docs/LADDER_SEATING.md](src/coworld/docs/LADDER_SEATING.md) - how the platform ladder deals entrants onto
-  game seats: per-strategy slot→entrant formulas, `team_layout` geometry, and filler marking. Check it against a game's
-  slot→team map before requesting a seed.
-- [src/coworld/docs/MIGRATE_TO_PLATFORM_COMMISSIONER.md](src/coworld/docs/MIGRATE_TO_PLATFORM_COMMISSIONER.md) - cut
-  over from a container commissioner (public; syncs to `Metta-AI/coworld`).
-- `src/coworld/docs/roles/*.md` - per-role contracts.
-- `src/coworld/docs/artifacts/*.md` - artifact contracts.
-- `src/coworld/runner/RUNNER_README.md` and `src/coworld/runner/KUBERNETES_RUNNER_README.md` - runner-specific behavior.
-
-## Manifest And Role Contracts
-
-- The base schema currently requires `game` and `player`. `reporter`, `commissioner`, `grader`, `diagnoser`, and
-  `optimizer` are optional in the base schema; `diagnoser` and `optimizer` are marked future-required in generated
-  schema metadata.
-- Role semantics belong in `src/coworld/docs/roles/`. Field-level manifest shape belongs in `src/coworld/types.py` and
-  the generated schema JSON, not in duplicated Markdown tables.
-- Manifest role changes usually need matching updates to role docs, Paint Arena templates, generated schemas,
-  certifier/runner tests, and any README links that name the role.
-- Do not describe `coworld hosted-game` as a supported player workflow unless product/runtime support is restored.
-  Hosted episodes run the game plus either platform-managed player containers or files executed by the game.
-
-## Package Data Gotchas
-
-- Versioning uses `setuptools_scm` from `coworld-v*` git tags (`fallback_version = "0.0.0"`).
-- `pyproject.toml` deliberately ships `coworld/templates/**/*` and the complete Paint Arena example surface, including
-  Dockerfile and README assets. Treat those files as public package data because `metta publish coworld` includes them
-  in the wheel.
-- Antfarm hosts Coworld game containers; keep `packages/antfarm/README.md` aligned when the game-container contract
-  changes.
+See [automatic project guidance](https://softmax.com/docs/coworld/cli#automatic-project-guidance) for command target
+selection, qualifying roots, ancestor opt-outs, managed blocks, and manual removal.

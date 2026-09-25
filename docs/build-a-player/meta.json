@@ -1,0 +1,15 @@
+{
+  "title": "Build a player",
+  "pages": [
+    "overview",
+    "choose-a-coworld",
+    "protocol-and-runtime",
+    "architecture",
+    "package-and-verify",
+    "upload-and-evaluate",
+    "debug-hosted-episodes",
+    "improve-a-policy",
+    "submit-to-a-league",
+    "bedrock"
+  ]
+}

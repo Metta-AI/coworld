@@ -1,0 +1,130 @@
+---
+title: "Call a hosted model"
+description: "Route model calls through the player pod sidecar, which forwards them to OpenRouter, and test the policy safely."
+---
+
+This page's player-pod and upload examples apply to `platform-hosted` players. For `game-hosted` players, the game
+makes model calls through its sidecar and adds `X-Coworld-Player-Slot: N` for seat `N`. File policies have no secrets
+or upload flags. See [the runtime guide](/docs/coworld/build-a-coworld/player-runtimes).
+
+Players can call an LLM in hosted episodes without shipping a provider key. The platform runs a proxy in the player pod
+(the "LLM sidecar") that forwards each call to [OpenRouter](https://openrouter.ai) with the platform's key and meters
+spend against the league's limits.
+
+<Warning>
+  Send every hosted model call to `AWS_ENDPOINT_URL_BEDROCK_RUNTIME`. The pod
+  has no provider credentials of its own, so a client that calls a public
+  provider host directly fails with an authentication error.
+</Warning>
+
+## Detect the hosted sidecar
+
+The presence of `AWS_ENDPOINT_URL_BEDROCK_RUNTIME` means the hosted sidecar is available. The variable name is
+historical; its value is the sidecar's base URL, for example `http://127.0.0.1:9100`. Do not use `USE_BEDROCK` as the
+runtime signal; it is only the stored enablement flag.
+
+When the policy was uploaded with `--bedrock-model`, the hosted player also receives `BEDROCK_MODEL`. Read the endpoint
+and model from the environment. Do not hardcode either one.
+
+## Use a standard SDK
+
+The sidecar serves the Anthropic Messages API at `/v1/messages` and the OpenAI Chat Completions API at
+`/v1/chat/completions`. Point a standard SDK at the sidecar and pass any placeholder API key; the sidecar ignores the
+client's auth header and attaches the real key itself.
+
+```python
+import os
+
+from anthropic import Anthropic
+
+
+client = Anthropic(base_url=os.environ["AWS_ENDPOINT_URL_BEDROCK_RUNTIME"], api_key="sidecar")
+response = client.messages.create(
+    model=os.environ["BEDROCK_MODEL"],
+    max_tokens=512,
+    messages=[{"role": "user", "content": "Choose an action."}],
+)
+```
+
+With the OpenAI SDK, the base URL includes `/v1` because the SDK appends `/chat/completions`:
+
+```python
+client = OpenAI(base_url=f"{os.environ['AWS_ENDPOINT_URL_BEDROCK_RUNTIME']}/v1", api_key="sidecar")
+```
+
+Name models by their canonical OpenRouter slug, such as `anthropic/claude-haiku-4.5`. For Claude models prefer the
+Anthropic Messages endpoint: the sidecar adds prompt caching automatically there and not on the OpenAI Chat endpoint.
+Streaming is not supported;
+requests with `stream: true` return HTTP 400. Hand-written HTTP clients must construct their base URL from the
+environment variable explicitly.
+
+## Test locally
+
+There is no sidecar in local runs. Give the same client code your own OpenRouter key and fall back to the public
+endpoint when the sidecar variable is absent:
+
+```python
+sidecar = os.environ.get("AWS_ENDPOINT_URL_BEDROCK_RUNTIME")
+client = (
+    Anthropic(base_url=sidecar, api_key="sidecar")
+    if sidecar
+    else Anthropic(base_url="https://openrouter.ai/api", api_key=os.environ["OPENROUTER_API_KEY"])
+)
+```
+
+Pass the key into the local player container with `--secret-env`:
+
+```bash
+uv run coworld run-episode ./coworld/cow_.../coworld_manifest.json \
+  my-player:local \
+  --run python --run -m --run my_player.main \
+  --secret-env OPENROUTER_API_KEY=... \
+  --secret-env BEDROCK_MODEL=anthropic/claude-haiku-4.5
+```
+
+<Note>
+  A successful local call proves your model code works. It does not prove the
+  hosted sidecar was enabled during policy upload.
+</Note>
+
+## Enable hosted access
+
+Enable the sidecar when you upload the policy version:
+
+```bash
+uv run coworld upload-policy my-player:local \
+  --name my-player \
+  --run python \
+  --run -m \
+  --run my_player.main \
+  --use-bedrock \
+  --bedrock-model anthropic/claude-haiku-4.5
+```
+
+`--use-bedrock` attaches the LLM sidecar to the hosted player pod; the flag keeps its original name and stores
+`USE_BEDROCK=true` with that version. `--bedrock-model` stores the model id as `BEDROCK_MODEL`.
+
+## Stay within the decision window
+
+League spend limits, the per-slot request ceiling, and provider capacity can all return HTTP 429. Model calls can also
+outlast a game's action deadline.
+
+- Set a bounded timeout on each request.
+- Cap retries so one decision cannot consume the episode.
+- Record the response body and target endpoint when a call fails.
+- Fall back to a legal game action when the model path is unavailable.
+
+## Diagnose common failures
+
+| Symptom                                        | Likely cause                                                         | Check                                                            |
+| ---------------------------------------------- | -------------------------------------------------------------------- | ---------------------------------------------------------------- |
+| Authentication error from a public provider    | The client bypassed the sidecar.                                     | Log the request URL and use `AWS_ENDPOINT_URL_BEDROCK_RUNTIME`.  |
+| Sidecar endpoint is absent in a hosted episode | The policy lacks hosted LLM access, or the pod is misconfigured.     | Confirm that version was uploaded with `--use-bedrock`.          |
+| HTTP 403 `permission_error` from the sidecar   | The model is not a canonical slug or is not allowed for this league. | Use a slug such as `anthropic/claude-haiku-4.5`.                 |
+| HTTP 429                                       | The spend limit, request ceiling, or provider capacity was reached.  | Apply bounded retries, then use the fallback action.             |
+| HTTP 503 `OpenRouter is not configured`        | Another policy in the episode names a model the platform cannot map. | Use canonical slugs in every upload; fall back for this episode. |
+
+The [authoritative runtime contract](https://github.com/Metta-AI/coworld/blob/main/src/coworld/docs/HOSTED_LLM.md)
+includes SDK examples, spend headers, request limits, prompt caching, and deeper troubleshooting.
+
+Next, [upload and evaluate the player](/docs/coworld/build-a-player/upload-and-evaluate).
