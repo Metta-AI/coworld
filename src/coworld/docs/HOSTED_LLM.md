@@ -180,8 +180,72 @@ curl -sS "$AWS_ENDPOINT_URL_BEDROCK_RUNTIME/healthz/core-v1" # expect: ok
 | HTTP 400 `invalid_request_error` mentioning `stream`            | The request set `stream: true`                                                                                              | Disable streaming in the client.                                                                                                                                       |
 | 0 completed episodes / silent non-LLM baseline in hosted rounds | A failing model call is being swallowed and you fall back                                                                   | Log the **response body** and the **endpoint URL** before anything else; it's almost always a routing or model-name issue above.                                       |
 
-When debugging, **log the response body, not just the status code** — the error body names the exact failure (route,
-model, spend, or provider). A bot that logs only `HTTP 403` hides which one it is.
+### Error categories and retries
+
+OpenRouter-backed endpoints keep protocol-shaped errors and add `softmax_error` diagnostics.
+`X-Softmax-Llm-Error-Category` and `X-Softmax-Llm-Retryable` expose the same classification to SDK callers. Read
+`X-Softmax-Llm-Call-Id` from the response headers when reporting a failed call. This classification covers native
+endpoints and translated Bedrock calls; direct AWS Bedrock responses retain their native errors.
+
+| Category               | What to do                                                                                  |
+| ---------------------- | ------------------------------------------------------------------------------------------- |
+| `invalid_request`      | Correct the request shape, parameters, or context length.                                   |
+| `routing_parameters`   | Remove unsupported controls or choose a compatible model. Retrying unchanged will not help. |
+| `model_unavailable`    | Check the model slug and available routes. A routing restriction can also cause this.       |
+| `model_denied`         | Use a model allowed by the episode.                                                         |
+| `spend_limit`          | Use a legal fallback for the rest of the episode. Waiting will not restore its budget.      |
+| `request_rate_limit`   | Honor `Retry-After`; retry only if the decision deadline allows it.                         |
+| `provider_rate_limit`  | Honor `Retry-After` and use bounded backoff.                                                |
+| `provider_unavailable` | Retry with bounded backoff within the decision deadline.                                    |
+| `provider_access`      | Send Softmax the call ID. The provider rejected access to this request.                     |
+| `provider_credits`     | Send Softmax the call ID. The hosted provider account needs attention.                      |
+| `provider_error`       | Use a legal fallback and report the call ID; the provider returned an unclassified failure. |
+| `provider_transport`   | Report the call ID. Completion and billing may be unknown; avoid blind retries.             |
+| `provider_response`    | Report the call ID. The provider response could not be validated or translated.             |
+| `platform_error`       | Report the call ID and episode. Softmax must investigate the sidecar failure.               |
+
+`retryable: true` means a bounded retry may help. It does not guarantee success, remaining budget, or enough time. The
+sidecar does not automatically retry failed calls. The OpenAI and Anthropic SDKs also receive `x-should-retry`. Other
+clients, including Bedrock SDKs, may retry from HTTP status alone. Configure their automatic retries for the game's
+deadline. Both spend exhaustion and throttling use HTTP 429, so branch on the category instead of the status alone.
+
+A request rejected during OpenRouter's parameter filtering returns `routing_parameters`. The message lists supplied
+controls to inspect, without claiming which one caused the rejection. An unsupported control can fail routing even when
+disabled, such as `reasoning: {"enabled": false}`. Keep request settings per model; omitting an unsupported parameter
+differs from setting it to zero or false. Check the model's current supported parameters before including temperature,
+reasoning, tools, or structured-output settings.
+
+For example, an OpenAI-shaped routing error contains:
+
+```json
+{
+  "error": {
+    "type": "invalid_request_error",
+    "code": "routing_parameters",
+    "message": "No provider supports this model with the requested parameter combination. Check temperature ..."
+  },
+  "softmax_error": {
+    "category": "routing_parameters",
+    "retryable": false,
+    "upstream_status": 404,
+    "call_id": "<Softmax call ID>"
+  }
+}
+```
+
+Native error diagnostics retain provider detail. Bedrock errors retain sanitized guidance and categories; raw provider
+detail stays in the existing debug archive when capture is enabled. A top-level provider error or a choice with
+`finish_reason: "error"` becomes a failed HTTP response, even if upstream returned 200. Reported usage and charges still
+count. Output truncation (`length`) and content filtering are separate model outcomes.
+
+Log the episode, model, timestamp, endpoint, HTTP status, category, retryability, call ID, and generation ID when
+available. Include the error body, but keep prompts, credentials, and private provider detail out of shared bug reports.
+Rate-ceiling rejections have a call ID header but remain aggregated in rate-limit telemetry rather than creating
+per-call database rows. For older sidecars without categories, preserve the full response and call ID rather than
+classifying from message substrings.
+
+A successful model call can still produce an illegal game action, invalid JSON, or overlong text. Those are
+player/output-validation failures, not provider errors. Record the game validation reason separately.
 
 ## Enable hosted access at upload time
 
