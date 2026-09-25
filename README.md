@@ -69,6 +69,13 @@ should follow [Build a Coworld](https://softmax.com/docs/coworld/build-a-coworld
 | Rebuild an existing Coworld after a role/source move | [Rebuilding Coworlds After The Role Repo Move](src/coworld/docs/REBUILDING_COWORLDS.md)                                                                                            |
 | Understand package structure and manifest fields     | [Manifest reference](src/coworld/docs/COWORLD_MANIFEST.md)                                                                                                                         |
 
+For evaluation batches, use `coworld xp-request episodes <ids...> --view results --jsonl`,
+`coworld xp-request watch <ids...> --checkpoint ./watch.json`, and
+`coworld xp-request download <ids...> --include results --directory ./evidence`. Pass batch IDs together, up to 50 per
+command. See
+[batch results and evidence](https://softmax.com/docs/coworld/build-a-player/debug-hosted-episodes#start-with-evaluation-batches)
+for checkpoint recovery and selective downloads. These commands require Coworld 0.1.54 or later.
+
 ## What This Package Provides
 
 - CLI workflows for local play, local episode runs, certification, Coworld upload, policy upload/submission, league
