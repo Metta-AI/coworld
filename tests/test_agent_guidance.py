@@ -44,7 +44,6 @@ def test_non_git_qualification_and_home_rejection(tmp_path, monkeypatch):
     child.mkdir()
     (tmp_path / ".coworld-project").write_text("coworld")
     assert find_project_root(child) == tmp_path
-    (child / "Dockerfile").touch()
     (child / ".coworld-project").write_text("not-player")
     assert find_project_root(child) == tmp_path
     (child / ".coworld-project").write_text("player")

@@ -24,23 +24,19 @@ REPAIR = "Repair the guidance file or set COWORLD_AGENT_GUIDANCE=0 to opt out."
 
 def find_project_root(cwd: Path) -> Path | None:
     cwd = cwd.resolve()
-    ancestors = (cwd, *cwd.parents)
     stops = {Path.home().resolve(), Path(cwd.anchor)}
-    # Both checkout directories and worktree .git files establish the boundary.
-    boundary = next(path for path in ancestors if path in stops or (path / ".git").exists())
-    ancestors = ancestors[: ancestors.index(boundary) + 1]
     root = None
-    for path in ancestors:
+    for path in (cwd, *cwd.parents):
         if path in stops:
             break
         marker = path / ".coworld-project"
-        if marker.is_file() and marker.read_text().strip() in {"player", "coworld"}:
+        if root is None and marker.is_file() and marker.read_text().strip() in {"player", "coworld"}:
             root = path
+        if root is not None and (path / ".coworld-no-agent-guidance").is_file():
+            return None
+        # Both checkout directories and worktree .git files establish the boundary.
+        if (path / ".git").exists():
             break
-    if root is None:
-        return None
-    if any((path / ".coworld-no-agent-guidance").is_file() for path in ancestors[ancestors.index(root) :]):
-        return None
     return root
 
 
