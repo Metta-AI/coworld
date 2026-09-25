@@ -22,6 +22,7 @@ from coworld.api_client import (
     CoworldApiClient,
     DivisionLadderEntryPublic,
     DivisionPublic,
+    EpisodeArtifactCategory,
     EpisodeRequestSummaryPage,
     EpisodeStatsResponse,
     ExperienceRequestDetail,
@@ -40,6 +41,8 @@ from coworld.api_client import (
 )
 from coworld.cli_support import console, emit_json, print_replay_session
 from coworld.config import DEFAULT_SUBMIT_SERVER, docs_epilog, participation_guide_url
+from coworld.episode_downloads import DownloadResult, download_episodes
+from coworld.episode_workflows import register_episode_workflows
 from coworld.manifest import read_downloaded_manifest
 from coworld.manifest_uri import materialized_replay_path
 from coworld.play import ReplaySession, replay_coworld
@@ -234,18 +237,7 @@ def register_tournament_commands(app: typer.Typer) -> None:
             return
         _print_experience_request_detail(detail)
 
-    @xp_request_app.command("episodes", help="List the episodes of an Experience Request.")
-    def xp_request_episodes(
-        experience_request_id: Annotated[str, typer.Argument(help="Experience Request ID (prefix xreq_).")],
-        server: Annotated[str, typer.Option("--server", help="Observatory API server URL.")] = DEFAULT_SUBMIT_SERVER,
-        json_output: Annotated[bool, typer.Option("--json", help="Print raw JSON.")] = False,
-    ) -> None:
-        with CoworldApiClient.from_login(server_url=server) as client:
-            rows = client.list_experience_request_episodes(experience_request_id)
-        if json_output:
-            emit_json(_dump_models(rows))
-            return
-        _print_episodes(rows)
+    register_episode_workflows(xp_request_app)
 
     reporters_app = typer.Typer(
         no_args_is_help=True,
@@ -674,17 +666,51 @@ def register_tournament_commands(app: typer.Typer) -> None:
         ] = None,
         server: Annotated[str, typer.Option("--server", help="Observatory API server URL.")] = DEFAULT_SUBMIT_SERVER,
     ) -> None:
+        if game and artifact:
+            raise typer.BadParameter("--artifact does not apply to --game logs")
+        if download_dir is not None:
+            if output is not None and not game and agent is None:
+                raise typer.BadParameter("Use --agent N with --output to pick one file")
+            with CoworldApiClient.from_login(server_url=server) as client:
+                agents = None if agent is None else [agent]
+                if mine and not game:
+                    episode = client.get_episode_request(episode_request_id)
+                    allowed = _agent_indices_for_policies(episode, _mine_policy_version_ids(client, division_id=None))
+                    agents = sorted(allowed if agents is None else allowed.intersection(agents))
+                    if not agents:
+                        raise typer.BadParameter("No selected agents are controlled by your memberships")
+                include: list[EpisodeArtifactCategory] = (
+                    ["game_logs"] if game else ["player_artifact"] if artifact else ["player_logs", "player_artifact"]
+                )
+                receipts = download_dir / ".downloads"
+
+                def save_file(result: DownloadResult) -> None:
+                    if result.state != "completed":
+                        return
+                    assert result.path is not None
+                    name = result.filename.replace("policy_artifact_", "policy_agent_")
+                    name = "game.log" if game else name
+                    selected_output = output if game or artifact or name.endswith(".log") else None
+                    target = selected_output or download_dir / f"{episode_request_id}-{name}"
+                    target.parent.mkdir(parents=True, exist_ok=True)
+                    shutil.copyfile(receipts / result.path, target)
+
+                complete = download_episodes(
+                    client,
+                    [episode_request_id],
+                    include=include,
+                    agents=agents,
+                    directory=receipts,
+                    on_result=save_file,
+                )
+            console.print(f"Downloaded selected evidence to {download_dir}; receipts: {receipts / 'manifest.jsonl'}")
+            raise typer.Exit(0 if complete else 2)
         with CoworldApiClient.from_login(server_url=server) as client:
             episode = client.get_episode_request(episode_request_id)
             if game:
-                if artifact:
-                    console.print("[red]--artifact does not apply to --game logs.[/red]")
-                    raise typer.Exit(1)
                 content = client.get_episode_request_artifact_text(episode_request_id, "logs")
                 if output is not None:
                     output_path = output
-                elif download_dir is not None:
-                    output_path = download_dir / f"{episode_request_id}-game.log"
                 else:
                     typer.echo(content)
                     return
@@ -721,16 +747,6 @@ def register_tournament_commands(app: typer.Typer) -> None:
                 if output is not None:
                     console.print("[red]Use --agent N with --output to pick which artifact to write.[/red]")
                     raise typer.Exit(1)
-                if download_dir is not None:
-                    written: list[Path] = []
-                    for agent_idx in artifact_indices:
-                        content = _download_policy_artifact(client, episode, agent_idx)
-                        output_path = download_dir / f"{episode_request_id}-policy_agent_{agent_idx}.zip"
-                        output_path.parent.mkdir(parents=True, exist_ok=True)
-                        output_path.write_bytes(content)
-                        written.append(output_path)
-                    console.print(f"[green]Downloaded {len(written)} artifact file(s) to {download_dir}[/green]")
-                    return
                 if list_logs or agent is None:
                     _print_policy_artifacts(artifact_indices)
                 return
@@ -746,8 +762,6 @@ def register_tournament_commands(app: typer.Typer) -> None:
                 content = _download_policy_log(client, episode, agent)
                 if output is not None:
                     output_path = output
-                elif download_dir is not None:
-                    output_path = download_dir / f"{episode_request_id}-policy_agent_{agent}.log"
                 else:
                     typer.echo(content)
                     if agent in artifact_indices:
@@ -756,21 +770,6 @@ def register_tournament_commands(app: typer.Typer) -> None:
                 output_path.parent.mkdir(parents=True, exist_ok=True)
                 output_path.write_text(content, encoding="utf-8")
                 console.print(f"[green]Log saved to {output_path}[/green]")
-                if download_dir is not None and agent in artifact_indices:
-                    _download_agent_artifact(client, episode, agent, download_dir)
-                return
-            if download_dir is not None:
-                written: list[Path] = []
-                for agent_idx in agent_indices:
-                    content = _download_policy_log(client, episode, agent_idx)
-                    output_path = download_dir / f"{episode_request_id}-policy_agent_{agent_idx}.log"
-                    output_path.parent.mkdir(parents=True, exist_ok=True)
-                    output_path.write_text(content, encoding="utf-8")
-                    written.append(output_path)
-                console.print(f"[green]Downloaded {len(written)} log file(s) to {download_dir}[/green]")
-                for agent_idx in artifact_indices:
-                    if agent_idx in agent_indices:
-                        _download_agent_artifact(client, episode, agent_idx, download_dir)
                 return
         if list_logs or agent is None:
             _print_policy_logs(agent_indices)
@@ -1335,19 +1334,6 @@ def _download_policy_log(
     """Fetch one agent's policy log via the ownership-scoped v2 episode-request route."""
     policy_version_id = _policy_version_id_for_agent(episode, agent_idx)
     return client.get_episode_request_policy_log(episode.id, policy_version_id, agent_idx)
-
-
-def _download_agent_artifact(
-    client: CoworldApiClient,
-    episode: V2EpisodeRequestRow,
-    agent_idx: int,
-    download_dir: Path,
-) -> None:
-    content = _download_policy_artifact(client, episode, agent_idx)
-    output_path = download_dir / f"{episode.id}-policy_agent_{agent_idx}.zip"
-    output_path.parent.mkdir(parents=True, exist_ok=True)
-    output_path.write_bytes(content)
-    console.print(f"[green]Artifact saved to {output_path}[/green]")
 
 
 def _print_artifact_hint(episode_request_id: str, agent_indices: list[int]) -> None:

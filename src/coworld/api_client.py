@@ -602,6 +602,87 @@ class EpisodeRequestSummaryPage(CoworldAPIModel):
     next_cursor: str | None
 
 
+EpisodeView = Literal["progress", "results"]
+EpisodeArtifactCategory = Literal[
+    "results", "replay", "events", "error_info", "game_logs", "player_logs", "player_artifact"
+]
+
+
+class BulkEpisodeEntry(CoworldAPIModel):
+    id: str
+    experience_request_id: str | None
+    created_at: datetime
+    status: str
+    error_type: str | None
+    evidence_state: Literal["pending", "sealed"]
+    scores: list[EpisodeRequestScore] | None = None
+    participants: list[V2EpisodeRequestParticipant] | None = None
+    replay_url: str | None = None
+    error: str | None = None
+
+
+class BulkEpisodePage(CoworldAPIModel):
+    entries: list[BulkEpisodeEntry]
+    unavailable_ids: list[str]
+    next_cursor: str | None
+    observed_at: datetime
+
+
+class EpisodeChangeEntry(CoworldAPIModel):
+    id: str
+    experience_request_id: str
+    revision: int
+    removed: bool
+    episode: BulkEpisodeEntry | None
+
+
+class EpisodeBatchProgress(CoworldAPIModel):
+    id: str
+    status: str
+    episode_count: int
+
+
+class EpisodeChangePage(CoworldAPIModel):
+    batches: list[EpisodeBatchProgress]
+    phase: Literal["snapshot", "changes"]
+    entries: list[EpisodeChangeEntry]
+    next_cursor: str
+    has_more: bool
+    poll_after_seconds: int
+    expires_at: datetime
+
+
+class EpisodeFeedRetry(CoworldAPIModel):
+    retry_after_seconds: float
+
+
+class EpisodeFeedRestart(CoworldAPIModel):
+    status_code: Literal[404, 409, 410]
+
+
+class EpisodeDownloadEntry(CoworldAPIModel):
+    episode_request_id: str
+    category: EpisodeArtifactCategory
+    position: int | None
+    artifact_id: str
+    version: str | None
+    filename: str
+    state: Literal["pending", "ready", "not_produced", "unavailable"]
+    media_type: str
+    encoding: str = "identity"
+    size: int | None = None
+    etag: str | None = None
+    url: str | None = None
+    expires_at: datetime | None = None
+    inline_json: dict[str, Any] | None = None
+
+
+class EpisodeDownloadPage(CoworldAPIModel):
+    entries: list[EpisodeDownloadEntry]
+    unavailable_ids: list[str]
+    next_cursor: str | None
+
+
 class ExperienceRequestRow(CoworldAPIModel):
     id: str
     requester_user_id: str
@@ -1227,6 +1308,62 @@ class CoworldApiClient:
 
     def get_experience_request(self, experience_request_id: str) -> ExperienceRequestDetail:
         return self._get(f"/v2/experience-requests/{experience_request_id}", ExperienceRequestDetail)
+
+    def list_bulk_episodes(
+        self,
+        ids: list[str],
+        *,
+        view: EpisodeView = "progress",
+        statuses: list[str] | None = None,
+        limit: int = 200,
+        cursor: str | None = None,
+    ) -> BulkEpisodePage:
+        return self._get(
+            "/v2/episode-requests",
+            BulkEpisodePage,
+            params=_query_params(ids=ids, view=view, status=statuses, limit=limit, cursor=cursor),
+        )
+
+    def episode_changes(
+        self,
+        ids: list[str],
+        *,
+        view: EpisodeView = "progress",
+        limit: int = 200,
+        cursor: str | None = None,
+    ) -> EpisodeChangePage | EpisodeFeedRetry | EpisodeFeedRestart:
+        response = self._http_client.get(
+            "/v2/episode-requests/changes",
+            headers=self._headers(),
+            params=_query_params(ids=ids, view=view, limit=limit, cursor=cursor),
+        )
+        if response.status_code == 429 and response.headers.get("Retry-After", "").isdigit():
+            return EpisodeFeedRetry(retry_after_seconds=int(response.headers["Retry-After"]))
+        if response.status_code in (404, 409, 410):
+            return EpisodeFeedRestart(status_code=response.status_code)
+        _raise_for_status(response)
+        return EpisodeChangePage.model_validate(response.json())
+
+    def episode_download_manifest(
+        self,
+        ids: list[str],
+        *,
+        include: list[EpisodeArtifactCategory],
+        agents: list[int] | None = None,
+        limit: int = 200,
+        cursor: str | None = None,
+    ) -> EpisodeDownloadPage:
+        return self._get(
+            "/v2/episode-requests/download-manifest",
+            EpisodeDownloadPage,
+            params=_query_params(
+                ids=ids,
+                include=[str(category) for category in include],
+                agent=None if agents is None else [str(a) for a in agents],
+                limit=limit,
+                cursor=cursor,
+            ),
+        )
 
     def list_experience_request_episodes(self, experience_request_id: str) -> list[V2EpisodeRequestRow]:
         return self._get(

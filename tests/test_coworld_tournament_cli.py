@@ -6,6 +6,7 @@ from typing import Any, Callable
 import pytest
 from pytest_httpserver import HTTPServer
 from typer.testing import CliRunner
+from werkzeug.wrappers import Response
 
 from coworld.api_client import CoworldApiClient
 from coworld.cli import app
@@ -340,6 +341,42 @@ def test_retire_membership_posts_reason_json(
     assert payload["substatus"] == "inactive"
 
 
+def _expect_bulk_download(httpserver: HTTPServer, files: dict[str, bytes], *, game: bool = False) -> None:
+    entries = []
+    for filename, body in files.items():
+        category = "game_logs" if game else "player_artifact" if filename.endswith(".zip") else "player_logs"
+        entries.append(
+            {
+                "episode_request_id": EPISODE_REQUEST_ID,
+                "category": category,
+                "position": None if game else 0,
+                "artifact_id": filename,
+                "version": "v1",
+                "filename": filename,
+                "state": "ready",
+                "media_type": "application/octet-stream",
+                "size": len(body),
+                "etag": '"v1"',
+                "url": httpserver.url_for(f"/storage/{filename}"),
+            }
+        )
+
+        def storage(request, content=body):
+            assert "Authorization" not in request.headers
+            return Response(content)
+
+        httpserver.expect_request(f"/storage/{filename}").respond_with_handler(storage)
+
+    def manifest(request):
+        if not game:
+            assert request.args.getlist("agent") == ["0"]
+        return Response(
+            json.dumps({"entries": entries, "unavailable_ids": [], "next_cursor": None}), mimetype="application/json"
+        )
+
+    httpserver.expect_request("/observatory/v2/episode-requests/download-manifest").respond_with_handler(manifest)
+
+
 def test_episode_logs_downloads_only_my_policy_agents(
     httpserver: HTTPServer,
     monkeypatch: pytest.MonkeyPatch,
@@ -370,6 +407,10 @@ def test_episode_logs_downloads_only_my_policy_agents(
         method="GET",
         headers={"Authorization": "Bearer token"},
     ).respond_with_data(b"PK\x03\x04mine zip", content_type="application/zip")
+
+    _expect_bulk_download(
+        httpserver, {"policy_agent_0.log": b"mine log\n", "policy_artifact_0.zip": b"PK\x03\x04mine zip"}
+    )
 
     result = CliRunner().invoke(
         app,
@@ -426,6 +467,11 @@ def test_episode_logs_agent_download_destinations(
         "file": ["--output", str(output_path)],
         "both": ["--download-dir", str(tmp_path), "--output", str(output_path)],
     }[destination]
+    if destination != "file":
+        _expect_bulk_download(
+            httpserver, {"policy_agent_0.log": b"agent0 log\n", "policy_artifact_0.zip": b"PK\x03\x04agent0 zip"}
+        )
+
     result = CliRunner().invoke(
         app,
         [
@@ -515,6 +561,9 @@ def test_episode_logs_downloads_game_log(
         "file": ["--output", str(output_path)],
         "stdout": [],
     }[destination]
+    if destination == "directory":
+        _expect_bulk_download(httpserver, {"logs.txt": b"game log\n"}, game=True)
+
     result = CliRunner().invoke(
         app,
         [
@@ -558,6 +607,8 @@ def test_episode_logs_downloads_player_artifact(
         headers={"Authorization": "Bearer token"},
     ).respond_with_data(b"PK\x03\x04artifact zip", content_type="application/zip")
 
+    _expect_bulk_download(httpserver, {"policy_artifact_0.zip": b"PK\x03\x04artifact zip"})
+
     result = CliRunner().invoke(
         app,
         [
@@ -596,6 +647,10 @@ def test_episode_logs_artifact_403_surfaces_error(
         f"/observatory/v2/episode-requests/{EPISODE_REQUEST_ID}/{MY_POLICY_VERSION_ID}/policy-artifact/0",
         method="GET",
     ).respond_with_data("denied", status=403)
+
+    httpserver.expect_request("/observatory/v2/episode-requests/download-manifest").respond_with_data(
+        "denied", status=403
+    )
 
     result = CliRunner().invoke(
         app,
