@@ -1004,15 +1004,15 @@ def _run_kubernetes_episode(
             raise RunnerEpisodeError("results.json is not a regular file", error_type="results_malformed")
         _validate_results_file(artifacts.results_path, job.results_schema, contents=results)
         worker_timings.record("results_validate", validation_start)
-        if job.episode_tags.get("source") == CERTIFICATION_EPISODE_SOURCE:
-            completion_start = time.monotonic_ns()
-            _wait_for_players_to_complete(
-                core_v1,
-                namespace,
-                child_names,
-                timeout_seconds=DEFAULT_PLAYER_EXIT_TIMEOUT_SECONDS,
-            )
-            worker_timings.record("players_complete", completion_start)
+        completion_start = time.monotonic_ns()
+        _wait_for_players_to_complete(
+            core_v1,
+            namespace,
+            child_names,
+            timeout_seconds=DEFAULT_PLAYER_EXIT_TIMEOUT_SECONDS,
+            require_clean_exit=job.episode_tags.get("source") == CERTIFICATION_EPISODE_SOURCE,
+        )
+        worker_timings.record("players_complete", completion_start)
     finally:
         players_ready.clear()
         logs_start = time.monotonic_ns()
@@ -1836,9 +1836,11 @@ def _wait_for_players_to_complete(
     player_pod_names: tuple[str, ...] | list[str],
     *,
     timeout_seconds: float,
+    require_clean_exit: bool = True,
 ) -> None:
     deadline = time.monotonic() + timeout_seconds
     completed: set[str] = set()
+    reported_failures: set[str] = set()
     while True:
         pending: list[tuple[int, str]] = []
         for player_pod_name in player_pod_names:
@@ -1849,11 +1851,25 @@ def _wait_for_players_to_complete(
                 player_pod = core_v1.read_namespaced_pod(name=player_pod_name, namespace=namespace)
             except ApiException as exc:
                 if exc.status == 404:
-                    raise RunnerEpisodeError(
-                        f"The game produced valid results, but player pod {player_pod_name} for slot {slot} "
-                        "disappeared before its exit could be observed; cause undetermined",
-                        error_type="episode_inconclusive",
-                    ) from exc
+                    if require_clean_exit:
+                        raise RunnerEpisodeError(
+                            f"The game produced valid results, but player pod {player_pod_name} for slot {slot} "
+                            "disappeared before its exit could be observed; cause undetermined",
+                            error_type="episode_inconclusive",
+                        ) from exc
+                    if player_pod_name not in reported_failures:
+                        logger.warning("Player pod %s disappeared before artifact finalization", player_pod_name)
+                        reported_failures.add(player_pod_name)
+                    completed.add(player_pod_name)
+                    continue
+                if not require_clean_exit:
+                    if player_pod_name not in reported_failures:
+                        logger.warning(
+                            "Could not read player pod %s during artifact finalization: %s", player_pod_name, exc
+                        )
+                        reported_failures.add(player_pod_name)
+                    pending.append((slot, player_pod_name))
+                    continue
                 raise
             terminated = _container_terminated_state(player_pod, "player")
             if terminated is not None and terminated.exit_code == 0:
@@ -1862,22 +1878,39 @@ def _wait_for_players_to_complete(
             failure = _player_container_failure(player_pod, player_pod_name, slot)
             disruption = _player_pod_disruption(player_pod, has_player_failure=failure is not None)
             if disruption is not None:
-                raise RunnerEpisodeError(
-                    f"Kubernetes reported {disruption} for player pod {player_pod_name}",
-                    error_type="node_disruption",
-                )
+                if require_clean_exit:
+                    raise RunnerEpisodeError(
+                        f"Kubernetes reported {disruption} for player pod {player_pod_name}",
+                        error_type="node_disruption",
+                    )
+                if player_pod_name not in reported_failures:
+                    logger.warning(
+                        "Kubernetes reported %s for player pod %s after game completion", disruption, player_pod_name
+                    )
+                    reported_failures.add(player_pod_name)
+                completed.add(player_pod_name)
+                continue
             if failure is not None:
-                raise PlayerPodFailure(slot, failure[1])
+                if require_clean_exit:
+                    raise PlayerPodFailure(slot, failure[1])
+                if player_pod_name not in reported_failures:
+                    logger.warning("%s", failure[1])
+                    reported_failures.add(player_pod_name)
+                completed.add(player_pod_name)
+                continue
             pending.append((slot, player_pod_name))
         if not pending:
             return
         if time.monotonic() >= deadline:
-            raise RunnerEpisodeError(
-                f"The game produced valid results, but players did not exit within {timeout_seconds:g}s: "
-                + ", ".join(f"slot {slot} ({name})" for slot, name in pending)
-                + "; cause undetermined",
-                error_type="episode_inconclusive",
-            )
+            if require_clean_exit:
+                raise RunnerEpisodeError(
+                    f"The game produced valid results, but players did not exit within {timeout_seconds:g}s: "
+                    + ", ".join(f"slot {slot} ({name})" for slot, name in pending)
+                    + "; cause undetermined",
+                    error_type="episode_inconclusive",
+                )
+            logger.warning("Timed out waiting for player pods to finish artifact upload: %s", pending)
+            return
         time.sleep(_ARTIFACT_POLL_SECONDS)
 
 

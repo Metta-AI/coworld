@@ -1809,6 +1809,82 @@ def test_wait_for_players_to_complete_rejects_late_player_crash():
     assert exc_info.value.failed_policy_index == 0
 
 
+def test_wait_for_players_to_complete_preserves_ordinary_game_result_after_player_crash(caplog):
+    class CoreV1:
+        def read_namespaced_pod(self, *, name: str, namespace: str):
+            return SimpleNamespace(
+                status=SimpleNamespace(container_statuses=[_container_status("player", exit_code=1, reason="Error")])
+            )
+
+    kubernetes_runner._wait_for_players_to_complete(
+        CoreV1(),
+        "default",
+        ["job-player-0"],
+        timeout_seconds=1.0,
+        require_clean_exit=False,
+    )
+    assert "terminated with exit code 1" in caplog.text
+
+
+def test_wait_for_players_to_complete_bounds_ordinary_game_artifact_wait(caplog):
+    class CoreV1:
+        def read_namespaced_pod(self, *, name: str, namespace: str):
+            return SimpleNamespace(
+                status=SimpleNamespace(container_statuses=[_container_status("player", running=True)])
+            )
+
+    kubernetes_runner._wait_for_players_to_complete(
+        CoreV1(),
+        "default",
+        ["job-player-0"],
+        timeout_seconds=0,
+        require_clean_exit=False,
+    )
+    assert "Timed out waiting for player pods to finish artifact upload" in caplog.text
+
+
+@pytest.mark.parametrize("status", [429, 500])
+def test_wait_for_players_to_complete_retries_optional_kubernetes_read(status, caplog):
+    class CoreV1:
+        reads = 0
+
+        def read_namespaced_pod(self, *, name: str, namespace: str):
+            self.reads += 1
+            if self.reads == 1:
+                raise ApiException(status=status)
+            return SimpleNamespace(
+                status=SimpleNamespace(
+                    container_statuses=[_container_status("player", exit_code=0, reason="Completed")]
+                )
+            )
+
+    core_v1 = CoreV1()
+    kubernetes_runner._wait_for_players_to_complete(
+        core_v1,
+        "default",
+        ["job-player-0"],
+        timeout_seconds=1.0,
+        require_clean_exit=False,
+    )
+    assert core_v1.reads == 2
+    assert "Could not read player pod job-player-0" in caplog.text
+
+    with pytest.raises(ApiException) as exc_info:
+        kubernetes_runner._wait_for_players_to_complete(CoreV1(), "default", ["job-player-0"], timeout_seconds=1.0)
+    assert exc_info.value.status == status
+
+
+def test_wait_for_players_to_complete_preserves_result_after_persistent_read_error(caplog):
+    class CoreV1:
+        def read_namespaced_pod(self, *, name: str, namespace: str):
+            raise ApiException(status=500)
+
+    kubernetes_runner._wait_for_players_to_complete(
+        CoreV1(), "default", ["job-player-0"], timeout_seconds=0, require_clean_exit=False
+    )
+    assert "Timed out waiting for player pods to finish artifact upload" in caplog.text
+
+
 def test_post_artifact_player_check_treats_missing_pod_as_inconclusive():
     core_v1 = _FakeGateCoreV1(reads={"job-player-0": [None]})
 
@@ -2285,16 +2361,21 @@ def test_game_hosted_kubernetes_episode_skips_player_resources_and_records_zero_
 @pytest.mark.parametrize(
     ("game_config", "expected_player_start_timeout", "episode_tags", "expected_completion_waits"),
     [
-        ({}, kubernetes_runner.DEFAULT_PLAYER_CONNECT_TIMEOUT_SECONDS, {}, []),
+        (
+            {},
+            kubernetes_runner.DEFAULT_PLAYER_CONNECT_TIMEOUT_SECONDS,
+            {},
+            [("jobs", ["game-service-player-1"], runner_module.DEFAULT_PLAYER_EXIT_TIMEOUT_SECONDS, False)],
+        ),
         (
             {"player_connect_timeout_seconds": 45},
             45.0,
             {"source": runner_module.CERTIFICATION_EPISODE_SOURCE},
-            [("jobs", ["game-service-player-1"], runner_module.DEFAULT_PLAYER_EXIT_TIMEOUT_SECONDS)],
+            [("jobs", ["game-service-player-1"], runner_module.DEFAULT_PLAYER_EXIT_TIMEOUT_SECONDS, True)],
         ),
     ],
 )
-def test_run_kubernetes_episode_keeps_artifacts_authoritative_except_for_certification(
+def test_run_kubernetes_episode_waits_for_player_artifact_finalization(
     monkeypatch,
     tmp_path,
     game_config,
@@ -2309,7 +2390,7 @@ def test_run_kubernetes_episode_keeps_artifacts_authoritative_except_for_certifi
     created: list[tuple[int, str, str, str]] = []
     startup_timeouts: list[float] = []
     player_start_timeouts: list[float] = []
-    completion_waits: list[tuple[str, list[str], float]] = []
+    completion_waits: list[tuple[str, list[str], float, bool]] = []
     pong_requirements: list[bool] = []
     timing_snapshots: list[dict[str, float]] = []
     players_ready = threading.Event()
@@ -2374,19 +2455,23 @@ def test_run_kubernetes_episode_keeps_artifacts_authoritative_except_for_certifi
         "_raise_if_player_pod_failed",
         lambda *_args: pytest.fail("ordinary episode completion re-read player pod state after artifacts"),
     )
-    monkeypatch.setattr(
-        kubernetes_runner,
-        "_wait_for_players_to_complete",
-        lambda _core_v1, namespace, pod_names, *, timeout_seconds: completion_waits.append(
-            (namespace, pod_names, timeout_seconds)
-        ),
-    )
+
+    def finish_player(_core_v1, namespace, pod_names, *, timeout_seconds, require_clean_exit):
+        completion_waits.append((namespace, pod_names, timeout_seconds, require_clean_exit))
+        artifacts.policy_artifact_path(1).write_bytes(b"player trace")
+        startup_events.append("players complete")
+
+    def collect_logs(*_args, **_kwargs):
+        assert artifacts.policy_artifact_path(1).read_bytes() == b"player trace"
+        startup_events.append("logs collected")
+
+    monkeypatch.setattr(kubernetes_runner, "_wait_for_players_to_complete", finish_player)
     monkeypatch.setattr(
         kubernetes_runner,
         "_ensure_player_pods_started",
         record_player_start,
     )
-    monkeypatch.setattr(kubernetes_runner, "_collect_logs", lambda *_args, **_kwargs: None)
+    monkeypatch.setattr(kubernetes_runner, "_collect_logs", collect_logs)
     monkeypatch.setattr(kubernetes_runner, "_delete_child_resources", lambda *_args: None)
     monkeypatch.setattr(kubernetes_runner, "_policy_secrets_from_env", lambda: {})
     monkeypatch.setattr(
@@ -2477,6 +2562,8 @@ def test_run_kubernetes_episode_keeps_artifacts_authoritative_except_for_certifi
         "players started",
         "queued first_step",
         "queued gameplay",
+        "players complete",
+        "logs collected",
     ]
     assert timing_snapshots == [
         {"game_boot": 20.0},

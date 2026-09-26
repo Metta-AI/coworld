@@ -86,10 +86,12 @@ rather than path-based. The worker reaches the game locally for health checks an
 pods can connect back to the game. On exit — success or failure — the worker writes runner error info, collects logs,
 and deletes any child player pods and Service. Because the worker holds a TCP health port open for its whole lifetime
 and the game container liveness-probes that port, the kubelet stops the non-restarting game container whenever the
-worker exits (timeout, crash, or OOM); the app backend deletes the parent Job. Failure diagnostics after error info are
-best-effort, so a log, player-artifact, or timing upload failure cannot replace the episode failure. This couples the
-game's lifetime to the worker without restarting the game on its own crash or exposing worker environment variables
-through a shared process namespace.
+worker exits (timeout, crash, or OOM); the app backend deletes the parent Job. After game results arrive, the worker
+gives platform-hosted players up to 30 seconds to finish artifact uploads before collecting logs and deleting their
+pods. Late player failures do not replace ordinary game results; certification still requires clean player exits.
+Failure diagnostics after error info are best-effort, so a log, player-artifact, or timing upload failure cannot replace
+the episode failure. This couples the game's lifetime to the worker without restarting the game on its own crash or
+exposing worker environment variables through a shared process namespace.
 
 ## Commands
 
