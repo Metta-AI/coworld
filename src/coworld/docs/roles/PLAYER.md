@@ -45,10 +45,10 @@ A player may also upload an optional artifact during the episode and at episode 
   slot (an HTTP `PUT` endpoint hosted, a `file://` path locally). When absent, the player skips uploading.
 - Upload a `.zip` of at most 200 MiB. Each successful upload replaces the slot's prior object, so players may retain
   newer checkpoints during the episode. The platform stores and serves the bytes as-is.
-- Upload before the container is torn down. The player may upload at any time, but once the game finishes the container
-  stays alive only for a bounded teardown window; an upload that does not finish before teardown is lost. The platform
-  does not block teardown waiting for an upload, and a missing artifact never fails an otherwise successful episode. See
-  [player artifact](../artifacts/PLAYER_ARTIFACT.md).
+- Upload before the container exits. After game results arrive, the coordinator waits up to 30 seconds for
+  platform-hosted players to finish, then collects logs and deletes their pods. An upload still running at teardown may
+  be lost. A missing artifact or late player failure does not replace an ordinary game result; certification requires
+  clean player exits. See [player artifact](../artifacts/PLAYER_ARTIFACT.md).
 
 Hosted runs schedule each player runnable with a 250m CPU / 256Mi memory request by default (see
 [`GAME.md`](GAME.md#hosted-runtime-resources)).
