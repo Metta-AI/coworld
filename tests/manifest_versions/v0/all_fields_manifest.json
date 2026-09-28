@@ -104,6 +104,9 @@
           "kinds": ["attack", "kill", "death"]
         }
       ]
+    },
+    "memory": {
+      "protocol": "append-v1"
     }
   },
   "player": [

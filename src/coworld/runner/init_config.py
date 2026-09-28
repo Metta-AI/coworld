@@ -80,6 +80,9 @@ def init_config_from_env() -> None:
                 ).model_dump_json(),
                 encoding="utf-8",
             )
+        scratchpad_uri = os.environ.get("SCRATCHPAD_INPUT_URI")
+        if scratchpad_uri is not None:
+            (WORKDIR / "memory-input.json").write_bytes(read_data(scratchpad_uri))
         config_start = time.monotonic_ns()
         tokens = episode_player_tokens(job)
         upload_data(

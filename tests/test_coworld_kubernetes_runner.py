@@ -4626,3 +4626,44 @@ def test_local_player_nonzero_exit_keeps_player_blame(tmp_path, exit_code):
         runner_module._wait_for_player_exit(player, tmp_path / "stderr", failed_policy_index=2)
     assert excinfo.value.error_type == "player_error"
     assert excinfo.value.failed_policy_index == 2
+
+
+@pytest.mark.parametrize(
+    "note",
+    [
+        None,
+        b'{"protocol":"append-v1","notes":{}}',
+        json.dumps(
+            {"protocol": "append-v1", "notes": {f"sha256:{index:064x}": "\x00" * 16384 for index in range(128)}}
+        ).encode(),
+    ],
+)
+def test_private_memory_upload_precedes_results(tmp_path, monkeypatch, note):
+    artifacts = EpisodeArtifacts.create(tmp_path)
+    artifacts.results_path.write_text("{}")
+    if note is not None:
+        (artifacts.workspace / "memory-output.json").write_bytes(note)
+    monkeypatch.setenv("SCRATCHPAD_OUTPUT_URI", "file:///private/memory.json")
+    monkeypatch.setenv("RESULTS_URI", "file:///public/results.json")
+    monkeypatch.delenv("REPLAY_URI", raising=False)
+    uploads = []
+    monkeypatch.setattr(kubernetes_runner, "upload_data", lambda uri, data, **kw: uploads.append((uri, data)))
+    _upload_outputs(artifacts)
+    assert uploads[0][0] == "file:///private/memory.json"
+    assert json.loads(uploads[0][1]) == (
+        json.loads(note) if note is not None else {"protocol": "append-v1", "notes": {}}
+    )
+    assert uploads[1][0] == "file:///public/results.json"
+
+
+def test_init_stages_private_memory_before_game_config(monkeypatch, tmp_path):
+    content = b"policy"
+    source = tmp_path / "policy"
+    source.write_bytes(content)
+    _configure_init_env(monkeypatch, tmp_path, _game_hosted_job([content]), {"0": source.as_uri()})
+    memory = tmp_path / "source-memory.json"
+    memory.write_text('{"protocol":"append-v1","namespace":"private","policies":{}}')
+    monkeypatch.setenv("SCRATCHPAD_INPUT_URI", memory.as_uri())
+    init_config.init_config_from_env()
+    assert (tmp_path / "memory-input.json").read_bytes() == memory.read_bytes()
+    assert "private" not in (tmp_path / "config.json").read_text()

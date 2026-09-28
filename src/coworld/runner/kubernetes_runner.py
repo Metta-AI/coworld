@@ -624,6 +624,17 @@ def _upload_outputs(artifacts: EpisodeArtifacts) -> None:
 
     _upload_player_status(artifacts)
 
+    scratchpad_uri = os.environ.get("SCRATCHPAD_OUTPUT_URI")
+    if scratchpad_uri is not None:
+        contents = _read_game_authored_file(artifacts.workspace / "memory-output.json", 16 * 1024 * 1024)
+        # Missing output is an explicit no-contribution episode. Publish even the empty
+        # document before results so successful jobs always have a private output object.
+        upload_data(
+            scratchpad_uri,
+            contents if contents is not None else b'{"protocol":"append-v1","notes":{}}',
+            content_type="application/json",
+        )
+
     results_uri = os.environ.get("RESULTS_URI")
     if results_uri is not None:
         contents = _read_game_authored_file(artifacts.results_path, None)
