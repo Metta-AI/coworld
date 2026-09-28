@@ -227,6 +227,18 @@
           "title": "Owner",
           "type": "string"
         },
+        "memory": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/CoworldMemory"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Opt in to platform-managed private policy memory."
+        },
         "player_runtime": {
           "default": "platform-hosted",
           "description": "Owner of player execution: the platform or the game process.",
@@ -637,6 +649,20 @@
       },
       "required": ["type", "id", "name", "description"],
       "title": "CoworldManifestRoleSpec",
+      "type": "object"
+    },
+    "CoworldMemory": {
+      "additionalProperties": false,
+      "properties": {
+        "protocol": {
+          "const": "append-v1",
+          "description": "Private append-only policy memory protocol.",
+          "title": "Protocol",
+          "type": "string"
+        }
+      },
+      "required": ["protocol"],
+      "title": "CoworldMemory",
       "type": "object"
     },
     "CoworldPlayerFileSpec": {

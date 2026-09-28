@@ -428,3 +428,45 @@ field.
 - [Events artifact](artifacts/EVENTS.md) for the optional `events.json` envelope `x-display` and `game.log` build on.
 - `docs/surfaces/logs.md` (at the monorepo root) for the default Log's tier ladder and the Log Contract v1 this manifest
   hint set implements.
+
+### Private policy memory
+
+Games can opt into hosted private memory with `game.memory: {"protocol": "append-v1"}`. The platform also requires the
+game owner's ID in its server-side allowlist and the league setting `scratchpads_enabled: true` (default: false).
+Standalone and certification episodes do not receive hosted memory. For opted-in leagues, the game receives
+`COGAME_MEMORY_INPUT_URI` and `COGAME_MEMORY_OUTPUT_URI`, both local `file://` paths. The coordinator stages input
+before game startup and uploads output privately before publishing results. Missing output means no contribution. Memory
+must never be copied into public results, logs, or replay artifacts.
+
+The game receives every participating policy's snapshot in one document. Memory is private from other policies and
+public artifacts, not from the game or its owner. Game authors must expose each policy's memory only to that policy.
+
+Input is `{"protocol":"append-v1","namespace":"...","policies":{"sha256:...":{"summary":"...","notes":[]}}}`. Output is
+`{"protocol":"append-v1","notes":{"sha256:...":"new observation"}}`. File policies use their content hash; container
+policies require an immutable image digest. Human seats have no policy memory. Each policy contributes at most 16384
+UTF-8 bytes per episode. Reads contain at most 20 recent notes plus a summary of at most 131072 bytes (128 KiB), within
+524288 bytes (512 KiB). Histories are isolated by owner, game, and league. Compaction is asynchronous; original
+contributions remain archived.
+
+Games must omit scratchpad instructions and read/write model calls when the memory paths are absent. Declaring manifest
+support alone does not enable memory for every league. Disabling the league setting stops future memory staging and
+compaction; archived notes remain stored.
+
+#### Policy-facing description
+
+Each game owns its scratchpad instructions, read/write interface, and when it exposes memory to policies. The platform
+does not inject a policy prompt. Games may copy, adapt, or replace this default description when memory is available:
+
+> Your private scratchpad carries notes between episodes for this policy in this league. The game provides a snapshot
+> containing a summary and up to 20 recent notes. Treat these as past observations that may be incomplete, outdated, or
+> contradictory. Record useful lessons and uncertainties in a new contribution of at most 16 KiB (16,384 UTF-8 bytes)
+> per episode. Contributions are appended; they do not replace earlier notes. Older notes may be consolidated into a
+> summary. Concurrent episodes may contribute notes that are absent from your current snapshot.
+
+Add the game's actual read/write syntax and timing to this description. Include it only when both memory paths are
+present. Choosing this wording does not enable scratchpads; the game declaration and league opt-in remain required.
+
+Compaction uses the league's daily budget and credit pool. The worker reserves a conservative estimate before calling
+Bedrock, then records token-based cost when the response arrives. Unaffordable work remains queued. A lost response
+retains its reserved estimate, marked `reserved`, rather than allowing unmetered retries. Normal policy read/write calls
+remain part of episode inference spend.

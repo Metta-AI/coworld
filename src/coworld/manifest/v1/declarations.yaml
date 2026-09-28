@@ -28,3 +28,7 @@
   summary: Add the optional game.log block (Log Contract v1 hints - agent_label_field, team_field,
     objective, panels) that raises coworld certify's Log richness tier to 2.
   fixture: packages/coworld/tests/manifest_versions/v1/log_contract_manifest.json
+- schema_hash: af0e4efd951fa70c21607302e2f4d66321324fbddd6e06a301ed3e6d72f70fdc
+  kind: compatible
+  summary: Optional game.memory opt-in for private append-only policy notes.
+  fixture: packages/coworld/tests/manifest_versions/v1/memory_manifest.json

@@ -500,6 +500,12 @@ class CoworldGameLog(BaseModel):
     )
 
 
+class CoworldMemory(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    protocol: Literal["append-v1"] = Field(description="Private append-only policy memory protocol.")
+
+
 class CoworldGameManifest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -510,6 +516,7 @@ class CoworldGameManifest(BaseModel):
     )
     description: str = Field(min_length=1, description="Human-readable game description surfaced by product UIs.")
     owner: str = Field(min_length=1, description="Maintainer email or handle.")
+    memory: CoworldMemory | None = Field(default=None, description="Opt in to platform-managed private policy memory.")
     player_runtime: CoworldPlayerRuntime = Field(
         default="platform-hosted",
         description="Owner of player execution: the platform or the game process.",
