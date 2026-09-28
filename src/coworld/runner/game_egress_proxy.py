@@ -15,6 +15,8 @@ from coworld.runner.bedrock_sidecar_wiring import (
 )
 from coworld.runner.relay_client import egress_relay_ssl_context
 
+_MAX_CONCURRENT_TUNNELS = 32
+
 
 async def _pump(source: asyncio.StreamReader, destination: asyncio.StreamWriter) -> None:
     while data := await source.read(65536):
@@ -94,7 +96,7 @@ async def _main() -> None:
         cert_file=EGRESS_RELAY_CLIENT_CERT_FILE,
         key_file=EGRESS_RELAY_CLIENT_KEY_FILE,
     )
-    connection_limit = asyncio.Semaphore(4)
+    connection_limit = asyncio.Semaphore(_MAX_CONCURRENT_TUNNELS)
     server = await asyncio.start_server(
         lambda reader, writer: _handle(
             reader,

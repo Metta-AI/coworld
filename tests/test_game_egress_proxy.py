@@ -72,6 +72,44 @@ async def test_connection_limit_is_acquired_before_reading_request() -> None:
 
 
 @pytest.mark.asyncio
+async def test_proxy_admits_twelve_concurrent_long_lived_tunnels(monkeypatch: pytest.MonkeyPatch) -> None:
+    relay_connections = 0
+    all_connected = asyncio.Event()
+
+    async def open_connection(*args: object, **kwargs: object) -> tuple[_Reader, _Writer]:
+        nonlocal relay_connections
+        relay_connections += 1
+        if relay_connections == 12:
+            all_connected.set()
+        return _Reader(b"HTTP/1.1 200 Connection Established\r\n\r\n"), _Writer("relay", [])
+
+    monkeypatch.setattr(game_egress_proxy.asyncio, "open_connection", open_connection)
+    connection_limit = asyncio.Semaphore(game_egress_proxy._MAX_CONCURRENT_TUNNELS)
+    game_writers = [_Writer("game", []) for _ in range(12)]
+    tasks = [
+        asyncio.create_task(
+            game_egress_proxy._handle(
+                _Reader(b"CONNECT cdn.test:443 HTTP/1.1\r\n\r\n"),  # type: ignore[arg-type]
+                game_writer,  # type: ignore[arg-type]
+                relay_host="relay.test",
+                relay_port=443,
+                allowed_targets=frozenset({"cdn.test:443"}),
+                tls_context=None,  # type: ignore[arg-type]
+                connection_limit=connection_limit,
+            )
+        )
+        for game_writer in game_writers
+    ]
+    try:
+        await asyncio.wait_for(all_connected.wait(), timeout=1)
+        assert all(writer.writes == [b"HTTP/1.1 200 Connection Established\r\n\r\n"] for writer in game_writers)
+    finally:
+        for task in tasks:
+            task.cancel()
+        await asyncio.gather(*tasks, return_exceptions=True)
+
+
+@pytest.mark.asyncio
 async def test_client_reset_closes_relay_before_awaiting_client_close(monkeypatch: pytest.MonkeyPatch) -> None:
     close_events: list[str] = []
     game_reader = _Reader(b"CONNECT cdn.test:443 HTTP/1.1\r\n\r\n", read_error=ConnectionResetError())
