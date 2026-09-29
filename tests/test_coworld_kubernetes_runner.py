@@ -1232,6 +1232,7 @@ def test_wait_for_episode_artifacts_skips_pod_status_after_results_when_replay_n
         "default",
         "game-pod",
         player_count=0,
+        dead_seat_statuses={},
         timeout_seconds=0.01,
         require_replay=False,
     )
@@ -1248,6 +1249,7 @@ def test_wait_for_episode_artifacts_returns_after_results_written_when_replay_no
         "default",
         "game-pod",
         player_count=0,
+        dead_seat_statuses={},
         timeout_seconds=1.0,
         require_replay=False,
     )
@@ -1267,6 +1269,7 @@ def test_wait_for_episode_artifacts_waits_for_replay_after_results(tmp_path, mon
         "default",
         "game-pod",
         player_count=0,
+        dead_seat_statuses={},
         timeout_seconds=1.0,
         require_replay=True,
     )
@@ -1293,6 +1296,7 @@ def test_wait_for_episode_artifacts_fails_when_game_exits_without_replay(tmp_pat
             "game-pod",
             ["job-player-0"],
             player_count=1,
+            dead_seat_statuses={},
             timeout_seconds=1.0,
             require_replay=True,
         )
@@ -1312,6 +1316,7 @@ def test_wait_for_episode_artifacts_reports_results_missing_when_game_exits_with
             "game-pod",
             [],
             player_count=0,
+            dead_seat_statuses={},
             timeout_seconds=1.0,
             require_replay=False,
         )
@@ -1349,6 +1354,7 @@ def test_wait_for_episode_artifacts_sees_failure_written_during_clean_game_exit(
             "game-pod",
             ["job-player-0"],
             player_count=1,
+            dead_seat_statuses={},
             timeout_seconds=1.0,
             require_replay=False,
         )
@@ -1388,6 +1394,7 @@ def test_game_declared_player_failure_uses_kubernetes_evidence(tmp_path, phase, 
             "default",
             ["job-player-0"],
             player_count=1,
+            dead_seat_statuses={},
         )
 
     assert exc_info.value.error_type == expected_error
@@ -1426,10 +1433,51 @@ def test_game_declared_player_failure_has_bounded_kubernetes_wait(
             "default",
             ["job-player-0"],
             player_count=1,
+            dead_seat_statuses={},
         )
 
     assert exc_info.value.error_type == expected_error
     assert clock["now"] == expected_seconds
+
+
+def test_game_declared_player_exit_survives_pod_deletion(tmp_path):
+    artifacts = EpisodeArtifacts.create(tmp_path)
+    _declare_game_player_failure(artifacts, slot=0, message="player websocket disconnected")
+    core_v1 = _FakeLogCoreV1(
+        {
+            "game-pod": [],
+            "job-player-0": [_container_status("player", exit_code=137, reason="OOMKilled")],
+        }
+    )
+    dead_seats = {}
+
+    with pytest.raises(runner_io.RunnerEpisodeError) as exc_info:
+        _wait_for_episode_artifacts(
+            artifacts,
+            core_v1,
+            "default",
+            "game-pod",
+            ["job-player-0"],
+            player_count=1,
+            dead_seat_statuses=dead_seats,
+            timeout_seconds=1.0,
+            require_replay=False,
+        )
+
+    assert exc_info.value.error_type == "player_error"
+    assert exc_info.value.failed_policy_index == 0
+    _collect_logs(
+        _FakeLogCoreV1({"game-pod": []}, missing_pods={"job-player-0"}),
+        "default",
+        "game-pod",
+        ["job-player-0"],
+        artifacts,
+        dead_seat_statuses=dead_seats,
+    )
+    statuses = runner_io.PlayerRuntimeStatuses.model_validate_json(artifacts.player_status_path.read_text())
+    assert statuses.players[0].state == "exited"
+    assert statuses.players[0].exit_code == 137
+    assert statuses.players[0].reason == "OOMKilled"
 
 
 def test_wait_for_episode_artifacts_reports_game_unhealthy_when_game_exits_nonzero(tmp_path):
@@ -1444,6 +1492,7 @@ def test_wait_for_episode_artifacts_reports_game_unhealthy_when_game_exits_nonze
             "game-pod",
             [],
             player_count=0,
+            dead_seat_statuses={},
             timeout_seconds=1.0,
             require_replay=False,
         )
@@ -1495,6 +1544,7 @@ def test_wait_for_episode_artifacts_reports_failed_player_on_timeout(tmp_path, p
             "game-pod",
             ["job-player-0"],
             player_count=1,
+            dead_seat_statuses={},
             timeout_seconds=0.01,
             require_replay=False,
         )
@@ -1907,6 +1957,7 @@ def test_wait_for_episode_artifacts_ignores_clean_player_exit_on_timeout(tmp_pat
             "game-pod",
             ["job-player-0"],
             player_count=1,
+            dead_seat_statuses={},
             timeout_seconds=0.01,
             require_replay=False,
         )
@@ -1933,6 +1984,7 @@ def test_wait_for_episode_artifacts_ignores_player_pods(tmp_path, monkeypatch):
         "game-pod",
         ["job-player-0"],
         player_count=1,
+        dead_seat_statuses={},
         timeout_seconds=1.0,
         require_replay=True,
     )
@@ -4419,6 +4471,7 @@ def test_artifact_wait_retains_late_game_start_without_extra_status_read(tmp_pat
         "default",
         "game-pod",
         player_count=0,
+        dead_seat_statuses={},
         timeout_seconds=1,
         require_replay=False,
         timings=timings,
