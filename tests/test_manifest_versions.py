@@ -140,3 +140,19 @@ def test_upload_still_rejects_pre_v0_shapes() -> None:
 
     with pytest.raises(ValidationError):
         validate_upload_manifest(document)
+
+
+@pytest.mark.parametrize("version", ["v0", "v1"])
+@pytest.mark.parametrize("memory_enabled", [False, True])
+def test_optional_memory_survives_author_and_stored_conversion(version: str, memory_enabled: bool) -> None:
+    document = _fixture(version, "memory_manifest.json" if memory_enabled else "minimal_manifest.json")
+    validated = validate_upload_manifest(document)
+    stored = to_runtime_manifest(validated.api_version, document)
+    for manifest in (validated.runtime_manifest, stored):
+        if memory_enabled:
+            assert manifest.game.memory is not None
+            assert manifest.game.memory.protocol == "append-v1"
+            assert manifest.model_dump(exclude_none=True)["game"]["memory"] == {"protocol": "append-v1"}
+        else:
+            assert manifest.game.memory is None
+            assert "memory" not in manifest.model_dump(exclude_none=True)["game"]

@@ -254,12 +254,18 @@ def test_upload_coworld_requires_built_replay_viewer_before_certification(
         upload_coworld(manifest_path)
 
 
+@pytest.mark.parametrize("memory_enabled", [False, True])
 def test_upload_coworld_posts_standalone_manifest(
     tmp_path: Path,
     httpserver: HTTPServer,
     monkeypatch: pytest.MonkeyPatch,
+    memory_enabled: bool,
 ) -> None:
     manifest_path = _write_manifest(tmp_path)
+    if memory_enabled:
+        document = json.loads(manifest_path.read_text())
+        document["game"]["memory"] = {"protocol": "append-v1"}
+        manifest_path.write_text(json.dumps(document))
     certification_calls: list[tuple[Path, float]] = []
     image_id = "img_00000000-0000-0000-0000-000000000010"
     grader_image_id = "img_00000000-0000-0000-0000-000000000011"
@@ -270,6 +276,10 @@ def test_upload_coworld_posts_standalone_manifest(
     def fake_certify(path: Path, *, workspace: Path, timeout_seconds: float) -> None:
         certification_calls.append((path, timeout_seconds))
         manifest = json.loads(path.read_text(encoding="utf-8"))
+        if memory_enabled:
+            assert manifest["game"]["memory"] == {"protocol": "append-v1"}
+        else:
+            assert "memory" not in manifest["game"]
         assert manifest["game"]["runnable"]["image"] == "unit-test-runtime:latest"
         assert manifest["player"][0]["image"] == "unit-test-runtime:latest"
         assert manifest["grader"][0]["image"] == "ghcr.io/metta-ai/graders-default@sha256:graderdigest"
@@ -278,9 +288,16 @@ def test_upload_coworld_posts_standalone_manifest(
         hashed_images.append(image)
         return "sha256:client-hash"
 
+    def fake_run(command: list[str], *, capture_output: bool, check: bool) -> subprocess.CompletedProcess[str]:
+        assert command == ["docker", "image", "inspect", "ghcr.io/metta-ai/graders-default@sha256:graderdigest"]
+        assert capture_output is True
+        assert check is False
+        return subprocess.CompletedProcess(command, 1)
+
     monkeypatch.setattr("coworld.upload.certify_coworld", fake_certify)
     monkeypatch.setattr("coworld.upload.assert_docker_image_reachable", lambda *_args, **_kwargs: None)
     monkeypatch.setattr("coworld.upload._local_image_client_hash", fake_hash)
+    monkeypatch.setattr("coworld.upload.subprocess.run", fake_run)
     pulled_images: list[tuple[str, str]] = []
     monkeypatch.setattr("coworld.upload.pull_and_tag_image", lambda image, tag: pulled_images.append((image, tag)))
     monkeypatch.setattr(
@@ -392,6 +409,10 @@ def test_upload_coworld_posts_standalone_manifest(
     ]
     upload_req = next(req for req, _ in httpserver.log if req.path == "/observatory/v2/coworlds/upload")
     uploaded_manifest = upload_req.get_json()["manifest"]
+    if memory_enabled:
+        assert uploaded_manifest["game"]["memory"] == {"protocol": "append-v1"}
+    else:
+        assert "memory" not in uploaded_manifest["game"]
     assert uploaded_manifest["game"]["runnable"]["image"] == image_id
     assert uploaded_manifest["player"][0]["image"] == image_id
     assert uploaded_manifest["grader"][0]["image"] == grader_image_id

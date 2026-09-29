@@ -24,8 +24,9 @@ def _owner_checkout(tmp_path: Path) -> None:
     _git(tmp_path, "update-ref", "refs/remotes/origin/main", head)
 
 
+@pytest.mark.parametrize("memory_enabled", [False, True])
 def test_build_coworld_manifest_runs_compose_and_writes_hydrated_manifest(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, memory_enabled: bool
 ) -> None:
     template_path = _write_manifest(
         tmp_path,
@@ -33,6 +34,10 @@ def test_build_coworld_manifest_runs_compose_and_writes_hydrated_manifest(
         player_image="{{PLAYER_IMAGE}}",
         include_version=False,
     )
+    if memory_enabled:
+        template = json.loads(template_path.read_text())
+        template["game"]["memory"] = {"protocol": "append-v1"}
+        template_path.write_text(json.dumps(template))
     output_path = tmp_path / "dist" / "coworld_manifest.json"
     (tmp_path / "compose.yaml").write_text("services: {}\n", encoding="utf-8")
     calls: list[tuple[list[str], dict[str, object]]] = []
@@ -63,6 +68,14 @@ def test_build_coworld_manifest_runs_compose_and_writes_hydrated_manifest(
     )
 
     built_manifest = json.loads(built_manifest_path.read_text(encoding="utf-8"))
+    package = load_coworld_package(built_manifest_path)
+    if memory_enabled:
+        assert built_manifest["game"]["memory"] == {"protocol": "append-v1"}
+        assert package.manifest.game.memory is not None
+        assert package.manifest.game.memory.protocol == "append-v1"
+    else:
+        assert "memory" not in built_manifest["game"]
+        assert package.manifest.game.memory is None
     assert built_manifest_path == output_path.resolve()
     assert built_manifest["game"]["version"] == "0.2.0"
     assert built_manifest["game"]["runnable"]["image"] == "game-runtime:coworld-111111111111"
