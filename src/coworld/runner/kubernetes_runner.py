@@ -1002,6 +1002,7 @@ def _run_kubernetes_episode(
             pod_name,
             child_names,
             player_count=len(job.players),
+            dead_seat_statuses=dead_seat_statuses,
             timeout_seconds=timeout_seconds,
             require_replay=os.environ.get("REPLAY_URI") is not None,
             timings=worker_timings,
@@ -1086,6 +1087,7 @@ def _run_game_hosted_episode(
             pod_name,
             [],
             player_count=len(job.players),
+            dead_seat_statuses={},
             timeout_seconds=timeout_seconds,
             require_replay=os.environ.get("REPLAY_URI") is not None,
             timings=worker_timings,
@@ -1518,6 +1520,7 @@ def _wait_for_episode_artifacts(
     player_pod_names: list[str] | None = None,
     *,
     player_count: int,
+    dead_seat_statuses: dict[int, PlayerRuntimeStatus],
     timeout_seconds: float,
     require_replay: bool,
     timings: ProcessTimings | None = None,
@@ -1540,6 +1543,7 @@ def _wait_for_episode_artifacts(
             namespace,
             player_pod_names,
             player_count=player_count,
+            dead_seat_statuses=dead_seat_statuses,
         )
 
     while time.monotonic() < deadline:
@@ -1599,6 +1603,7 @@ def _raise_if_game_declared_kubernetes_player_failure(
     player_pod_names: tuple[str, ...] | list[str],
     *,
     player_count: int,
+    dead_seat_statuses: dict[int, PlayerRuntimeStatus],
 ) -> None:
     failure = _read_game_declared_player_failure(
         artifacts,
@@ -1628,6 +1633,8 @@ def _raise_if_game_declared_kubernetes_player_failure(
             player_pod_name,
             failure.failed_policy_index,
         )
+        if container_failure is not None:
+            dead_seat_statuses[failure.failed_policy_index] = container_failure[0]
         disruption = _player_pod_disruption(player_pod, has_player_failure=container_failure is not None)
         if disruption is not None:
             raise RunnerEpisodeError(
