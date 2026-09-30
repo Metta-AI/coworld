@@ -1,8 +1,64 @@
 import asyncio
+import signal
+from unittest.mock import MagicMock
 
 import pytest
 
 from coworld.runner import game_egress_proxy
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("drain_completes", [True, False])
+async def test_signal_stops_accepting_and_drains_connections(monkeypatch, drain_completes):
+    handlers = {}
+    listening = asyncio.Event()
+    release = asyncio.Event()
+    finished = asyncio.Event()
+    server = MagicMock()
+
+    class Server:
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *args):
+            pass
+
+        def close(self):
+            server.close()
+
+        async def wait_closed(self):
+            await finished.wait()
+
+    async def tunnel(*args, **kwargs):
+        try:
+            await release.wait()
+        finally:
+            finished.set()
+
+    async def start_server(connected, **kwargs):
+        connected(None, None)
+        listening.set()
+        return Server()
+
+    monkeypatch.setenv("COWORLD_GAME_EGRESS_UPSTREAM_RELAY_URL", "https://relay.test:443")
+    monkeypatch.setenv("COWORLD_GAME_EGRESS_ALLOWED_UPSTREAMS", "cdn.test:443")
+    monkeypatch.setattr(game_egress_proxy, "egress_relay_ssl_context", lambda **kwargs: None)
+    monkeypatch.setattr(game_egress_proxy, "_handle", tunnel)
+    monkeypatch.setattr(game_egress_proxy, "_DRAIN_SECONDS", 0.05)
+    monkeypatch.setattr(game_egress_proxy.asyncio, "start_server", start_server)
+    monkeypatch.setattr(
+        asyncio.get_running_loop(), "add_signal_handler", lambda signum, fn: handlers.update({signum: fn})
+    )
+    task = asyncio.create_task(game_egress_proxy._main())
+    await listening.wait()
+    handlers[signal.SIGTERM]()
+    await asyncio.sleep(0)
+    server.close.assert_called_once()
+    assert not task.done()
+    if drain_completes:
+        release.set()
+    await asyncio.wait_for(task, 1)
+    assert finished.is_set()
 
 
 class _Reader:
@@ -30,6 +86,7 @@ class _Writer:
         self.close_events = close_events
         self.wait_error = wait_error
         self.writes: list[bytes] = []
+        self.transport = self
 
     def write(self, data: bytes) -> None:
         self.writes.append(data)
@@ -39,6 +96,9 @@ class _Writer:
 
     def close(self) -> None:
         self.close_events.append(f"{self.name}.close")
+
+    def abort(self) -> None:
+        self.close_events.append(f"{self.name}.abort")
 
     async def wait_closed(self) -> None:
         self.close_events.append(f"{self.name}.wait_closed")
@@ -161,3 +221,31 @@ async def test_game_close_reset_still_awaits_relay_close(monkeypatch: pytest.Mon
         )
 
     assert close_events == ["game.close", "relay.close", "game.wait_closed", "relay.wait_closed"]
+
+
+@pytest.mark.asyncio
+async def test_drain_cancellation_aborts_a_transport_already_closing():
+    closing = asyncio.Event()
+
+    class ClosingWriter(_Writer):
+        async def wait_closed(self):
+            closing.set()
+            await asyncio.Event().wait()
+
+    writer = ClosingWriter("game", [])
+    task = asyncio.create_task(
+        game_egress_proxy._handle(
+            _Reader(b"GET / HTTP/1.1\r\n\r\n"),  # type: ignore[arg-type]
+            writer,  # type: ignore[arg-type]
+            relay_host="relay.test",
+            relay_port=443,
+            allowed_targets=frozenset({"cdn.test:443"}),
+            tls_context=None,  # type: ignore[arg-type]
+            connection_limit=asyncio.Semaphore(1),
+        )
+    )
+    await asyncio.wait_for(closing.wait(), timeout=1)
+    task.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        await task
+    assert writer.close_events == ["game.close", "game.abort"]

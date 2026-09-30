@@ -5,6 +5,7 @@ import json
 import logging
 import os
 import secrets
+import signal
 import socket
 import socketserver
 import subprocess
@@ -32,10 +33,12 @@ from kubernetes.client import Configuration
 from kubernetes.client.rest import ApiException
 from pydantic import ValidationError
 from urllib3 import HTTPConnectionPool
+from urllib3.exceptions import HTTPError as Urllib3HTTPError
 from urllib3.exceptions import MaxRetryError, ResponseError
+from urllib3.response import HTTPResponse
 
 from coworld.manifest import validate_upload_manifest
-from coworld.runner import bootstrap, init_config, kubernetes_runner
+from coworld.runner import bootstrap, final_logs, init_config, kubernetes_runner
 from coworld.runner import io as runner_io
 from coworld.runner import runner as runner_module
 from coworld.runner.kubernetes_runner import (
@@ -612,14 +615,14 @@ def test_prepare_game_hosted_outputs_discards_oversized_player_status(monkeypatc
     assert "Discarding invalid game-hosted player status" in caplog.text
 
 
-def test_upload_outputs_skips_symlinked_results(tmp_path, monkeypatch, caplog):
+def test_upload_outputs_rejects_symlinked_results(tmp_path, monkeypatch, caplog):
     artifacts = EpisodeArtifacts.create(tmp_path / "work")
     secret = tmp_path / "service-account-token"
     secret.write_text("credential", encoding="utf-8")
     artifacts.results_path.symlink_to(secret)
     uploads = _upload_env(monkeypatch, RESULTS_URI="file:///tmp/results-out.json")
 
-    with caplog.at_level(logging.WARNING):
+    with caplog.at_level(logging.WARNING), pytest.raises(runner_io.RunnerEpisodeError, match="results disappeared"):
         _upload_outputs(artifacts)
 
     assert uploads == []
@@ -4063,6 +4066,23 @@ def test_run_from_env_recovers_from_an_intermediate_timing_upload_failure(monkey
     assert outputs_uploaded == [True]
 
 
+def test_worker_cannot_succeed_when_final_timing_publication_fails(monkeypatch):
+    monkeypatch.setattr(kubernetes_runner, "_start_worker_health_server", lambda port: None)
+    monkeypatch.setattr(kubernetes_runner, "_read_job_spec", lambda timings: (_runtime_job(), b"{}"))
+    monkeypatch.setattr(kubernetes_runner.EpisodeArtifacts, "create", lambda *args, **kwargs: object())
+    monkeypatch.setattr(kubernetes_runner, "_run_kubernetes_episode", lambda *args, **kwargs: None)
+    published = []
+    monkeypatch.setattr(kubernetes_runner, "_upload_outputs", lambda artifacts: published.append("results and replay"))
+
+    def fail_timings(timings):
+        raise OSError("final upload failed")
+
+    monkeypatch.setattr(kubernetes_runner, "_upload_timings", fail_timings)
+    with pytest.raises(OSError, match="final upload failed"):
+        kubernetes_runner.run_from_env()
+    assert published == ["results and replay"]
+
+
 def test_write_error_info_marks_failure_as_crash(monkeypatch, tmp_path):
     error_dest = tmp_path / "error_info.json"
     monkeypatch.setenv("ERROR_INFO_URI", error_dest.as_uri())
@@ -4740,6 +4760,72 @@ def test_init_stages_private_memory_before_game_config(monkeypatch, tmp_path):
     init_config.init_config_from_env()
     assert (tmp_path / "memory-input.json").read_bytes() == memory.read_bytes()
     assert "private" not in (tmp_path / "config.json").read_text()
+
+
+@pytest.mark.parametrize(
+    "failure,line_bytes",
+    [(None, 1000), ("api", 1000), ("timeout", 1000), ("stream", 1000), ("overflow", 1000), (None, 6000)],
+)
+def test_final_log_collector_preserves_inference_tail_and_reports_partial_coverage(
+    monkeypatch, tmp_path, failure, line_bytes
+):
+    core = MagicMock()
+    pod = core.read_namespaced_pod.return_value
+    pod.metadata.uid = "pod-uid"
+    pod.status.init_container_statuses = []
+    pod.status.container_statuses = [MagicMock(name="game"), MagicMock(name="llm-sidecar")]
+    for container, name in zip(pod.status.container_statuses, ["game", "llm-sidecar"], strict=True):
+        container.name = name
+        container.container_id = name
+        container.state.terminated.exit_code = 0
+    error = Urllib3HTTPError("read timed out") if failure == "timeout" else ApiException(status=400)
+    sidecar_tail = (b"llm_attempt " + b"x" * line_bytes + b"\n") * 3000 + b"FINAL_ACCOUNTING\n"
+    game_tail = (b"x" * (2 * 1024 * 1024) if failure == "overflow" else b"") + b"game done\n"
+    sidecar_response = HTTPResponse(body=BytesIO(sidecar_tail), preload_content=False)
+    if failure == "stream":
+        sidecar_response = MagicMock()
+        sidecar_response.stream.side_effect = Urllib3HTTPError("stream failed")
+    core.read_namespaced_pod_log.side_effect = [
+        error if failure in ("api", "timeout") else HTTPResponse(body=BytesIO(game_tail), preload_content=False),
+        sidecar_response,
+    ]
+    monkeypatch.setattr(final_logs, "_load_incluster_config", lambda **kwargs: None)
+    monkeypatch.setattr(final_logs.client, "CoreV1Api", lambda *_: core)
+    monkeypatch.setattr(final_logs.threading, "Event", MagicMock)
+    monkeypatch.setattr(final_logs.signal, "signal", MagicMock())
+    monkeypatch.setattr(final_logs, "FINAL_LOGS_READY_PATH", str(tmp_path / "ready"))
+    upload = MagicMock()
+    monkeypatch.setattr(final_logs, "upload_data", upload)
+    for key, value in {
+        "JOB_NAMESPACE": "test",
+        "POD_NAME": "pod",
+        "POD_UID": "pod-uid",
+        "FINAL_LOGS_URI": "file:///unused",
+    }.items():
+        monkeypatch.setenv(key, value)
+    final_logs.main()
+    receipt = runner_io.FinalLogCapture.model_validate_json(upload.call_args.args[1])
+    assert receipt.status == ("partial" if failure or line_bytes == 6000 else "complete")
+    if failure == "stream":
+        assert "llm-sidecar" not in receipt.logs  # A failed stream must not suppress the preliminary snapshot.
+    else:
+        assert receipt.logs["llm-sidecar"] == sidecar_tail[-16 * 1024 * 1024 :].decode()
+    assert ("game" in receipt.errors) == (failure in ("api", "timeout", "overflow"))
+    assert ("llm-sidecar" in receipt.errors) == (line_bytes == 6000 or failure == "stream")
+    if failure not in ("api", "timeout"):
+        assert receipt.logs["game"] == game_tail[-1024 * 1024 :].decode()
+
+
+def test_worker_sigterm_enters_existing_failure_cleanup(monkeypatch):
+    handlers = {}
+    monkeypatch.setattr(kubernetes_runner.signal, "signal", lambda signum, handler: handlers.update({signum: handler}))
+    monkeypatch.setattr(kubernetes_runner.sys, "argv", ["runner", "run-core-sidecars-v1"])
+    monkeypatch.setattr(
+        kubernetes_runner, "run_from_env", lambda **kwargs: handlers[signal.SIGTERM](signal.SIGTERM, None)
+    )
+    with pytest.raises(kubernetes_runner.RunnerEpisodeError, match="Worker received signal") as exc:
+        kubernetes_runner.main()
+    assert exc.value.error_type == "worker_error"
 
 
 @pytest.mark.parametrize("source,slot", [("coworld_play", 0), ("coworld_replay", 0), ("coworld_persistent", 1)])

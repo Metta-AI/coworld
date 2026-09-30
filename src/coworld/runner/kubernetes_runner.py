@@ -18,6 +18,7 @@ import json
 import logging
 import os
 import shutil
+import signal
 import socket
 import socketserver
 import ssl
@@ -462,9 +463,13 @@ def _start_player_artifact_upload_server(tokens: list[str]) -> _PlayerArtifactUp
 
 
 def run_from_env(*, prepare_players: bool = False) -> None:
-    # Hold a TCP port open for the worker's entire lifetime so the game container can liveness-probe it.
-    # When this process exits for any reason (timeout, crash, OOM) the kernel closes the socket, the
-    # game's probe fails, and the kubelet tears the game container down instead of leaving a hard zombie.
+    """Exit zero only after bounded episode publication, including the final timing upload.
+
+    ``prepare_players`` is the separate launch-players init container, never the named worker.
+    Optional player artifacts retain their existing best-effort upload semantics.
+    """
+    # Persistent runtimes probe this port; bounded episodes use explicit backend shutdown.
+    # The same server also exposes player readiness during startup.
     players_ready = _start_worker_health_server(HEALTH_PORT)
     artifacts = EpisodeArtifacts.create(WORKDIR, prefix="coworld-job-")
     timings = EpisodePhaseTimings()
@@ -568,9 +573,11 @@ def run_from_env(*, prepare_players: bool = False) -> None:
         if job.manifest.game.player_runtime == "game-hosted":
             timings.player_artifact_oversize_count = _upload_player_artifacts(artifacts)
         timings.artifact_upload_s = worker_timings.record("artifact_upload", upload_start)
+        logger.info("Required episode outputs durable")
         worker_timings.final_clock = TimingClock.capture()
         queue_timings_upload(timings)
         timing_uploads[-1].result()
+        logger.info("Worker publication complete")
 
 
 def _upload_debug_logs(artifacts: EpisodeArtifacts) -> None:
@@ -633,8 +640,9 @@ def _upload_outputs(artifacts: EpisodeArtifacts) -> None:
     results_uri = os.environ.get("RESULTS_URI")
     if results_uri is not None:
         contents = _read_game_authored_file(artifacts.results_path, None)
-        if contents is not None:
-            upload_data(results_uri, contents, content_type="application/json")
+        if contents is None:
+            raise RunnerEpisodeError("Required results disappeared before publication", error_type="results_missing")
+        upload_data(results_uri, contents, content_type="application/json")
 
     if replay_uri is not None and replay_contents is not None:
         upload_data(replay_uri, replay_contents, content_type="application/octet-stream")
@@ -1102,7 +1110,7 @@ def _run_game_hosted_episode(
         worker_timings.record("logs_collect", logs_start)
 
 
-def _load_incluster_config(*, egress_enforcement_enabled: bool) -> client.ApiClient:
+def _load_incluster_config(*, egress_enforcement_enabled: bool, retry_count: int = 5) -> client.ApiClient:
     # kubernetes>=36.0.2 stores the service-account token under the
     # 'BearerToken' api_key the generated client reads, and its refresh hook
     # keeps that key current across kubelet token rotations. Normalizing the
@@ -1115,7 +1123,7 @@ def _load_incluster_config(*, egress_enforcement_enabled: bool) -> client.ApiCli
     # internal deps (the backend applies the same policy via runtime.kubernetes.k8s_retry).
     default = client.Configuration.get_default_copy()
     default.retries = Retry(  # type: ignore[assignment]
-        total=5,
+        total=retry_count,
         backoff_factor=0.5,
         backoff_max=10.0,
         status_forcelist=(429, 500, 502, 503, 504),
@@ -2111,6 +2119,11 @@ def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("command", choices=("run-core-sidecars-v1", "prepare-players"))
     args = parser.parse_args()
+
+    def terminate_worker(signum, _frame):
+        raise RunnerEpisodeError(f"Worker received signal {signum}", error_type="worker_error")
+
+    signal.signal(signal.SIGTERM, terminate_worker)
     run_from_env(prepare_players=args.command == "prepare-players")
 
 

@@ -244,3 +244,10 @@ consume completed artifacts after the episode. See [`README.md`](../README.md) f
 - [`artifacts/REPLAY.md`](../artifacts/REPLAY.md) - replay artifact.
 - [`artifacts/GAME_LOGS.md`](../artifacts/GAME_LOGS.md) - diagnostic game logs.
 - [`README.md`](../README.md) - role status framework, runnable conventions, and artifact flow.
+
+## Hosted episode teardown
+
+A game may keep serving after writing results. The platform worker finishes validation, player finalization, and
+required publication before reporting success. The backend then gracefully deletes the owning Job. Game processes should
+handle SIGTERM within the existing termination grace. Results-object existence alone is not a shutdown signal. See
+[Kubernetes runner lifecycle](../../runner/KUBERNETES_RUNNER_README.md).
