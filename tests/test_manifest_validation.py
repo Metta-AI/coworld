@@ -10,6 +10,7 @@ from coworld.manifest_validation import (
     validate_authored_game_config,
     validate_coworld_manifest_game_configs,
 )
+from coworld.schema_validation import JsonSchema, json_schema_validation_errors
 from coworld.types import CoworldCertificationFixture, CoworldGameManifest, CoworldManifest, CoworldVariant
 
 NAMED_PLAYERS_SCHEMA = {
@@ -126,6 +127,100 @@ def test_game_config_with_named_players_leaves_noncanonical_name_shapes_unchange
 def test_game_config_with_named_players_rejects_existing_player_names() -> None:
     with pytest.raises(ValueError, match=r"game_config.player_names is not supported"):
         game_config_with_named_players({"player_names": ["stale"]}, ["alpha:v1"], NAMED_PLAYERS_SCHEMA)
+
+
+OWNER_PLAYERS_SCHEMA: JsonSchema = {
+    "type": "object",
+    "additionalProperties": False,
+    "properties": {
+        "players": {
+            "type": "array",
+            "items": {
+                "type": "object",
+                "additionalProperties": False,
+                "properties": {"name": {"type": "string"}, "owner": {"type": "string"}},
+            },
+        },
+    },
+}
+
+
+def test_game_config_with_named_players_sets_owner_when_schema_declares_it() -> None:
+    config = game_config_with_named_players(
+        {},
+        ["Alpha (David B)", "baseline", "Alpha (David B)"],
+        OWNER_PLAYERS_SCHEMA,
+        player_owners=["David B", None, "David B"],
+    )
+
+    assert config == {
+        "players": [
+            {"name": "Alpha (David B)", "owner": "David B"},
+            {"name": "baseline"},
+            {"name": "Alpha (David B) (2)", "owner": "David B"},
+        ]
+    }
+    assert json_schema_validation_errors(config, OWNER_PLAYERS_SCHEMA) == []
+
+
+def test_game_config_with_named_players_omits_owner_when_schema_does_not_declare_it() -> None:
+    config = game_config_with_named_players(
+        {}, ["Alpha (David B)", "baseline"], FIXED_NAMED_PLAYERS_SCHEMA, player_owners=["David B", None]
+    )
+
+    assert config == {"players": [{"name": "Alpha (David B)"}, {"name": "baseline"}]}
+
+
+def test_game_config_with_named_players_replaces_authored_owners() -> None:
+    config = game_config_with_named_players(
+        {"players": [{"owner": "Stale"}, {"owner": "Stale"}]},
+        ["Alpha (David B)", "baseline"],
+        OWNER_PLAYERS_SCHEMA,
+        player_owners=["David B", None],
+    )
+
+    assert config == {"players": [{"name": "Alpha (David B)", "owner": "David B"}, {"name": "baseline"}]}
+
+
+def test_game_config_with_named_players_rejects_mismatched_owner_count() -> None:
+    for schema in (OWNER_PLAYERS_SCHEMA, FIXED_NAMED_PLAYERS_SCHEMA):
+        with pytest.raises(ValueError, match="player_owners must match player_names"):
+            game_config_with_named_players({}, ["alpha", "beta"], schema, player_owners=["David B"])
+
+
+def _players_schema_with_owner(owner: dict) -> dict:
+    return {
+        "type": "object",
+        "properties": {
+            "players": {
+                "type": "array",
+                "items": {
+                    "type": "object",
+                    "properties": {"name": {"type": "string"}, "owner": owner},
+                },
+            },
+        },
+    }
+
+
+def test_game_config_with_named_players_writes_nullable_string_owner() -> None:
+    config = game_config_with_named_players(
+        {}, ["Alpha (David B)", "baseline"], _players_schema_with_owner({"type": ["string", "null"]}), ["David B", None]
+    )
+
+    assert config == {"players": [{"name": "Alpha (David B)", "owner": "David B"}, {"name": "baseline"}]}
+
+
+def test_game_config_with_named_players_drops_authored_owner_it_cannot_write() -> None:
+    for owner_schema in ({"type": "integer"}, {"$ref": "#/$defs/owner"}):
+        config = game_config_with_named_players(
+            {"players": [{"owner": 7}, {"owner": 7}]},
+            ["Alpha (David B)", "baseline"],
+            _players_schema_with_owner(owner_schema),
+            ["David B", None],
+        )
+
+        assert config == {"players": [{"name": "Alpha (David B)"}, {"name": "baseline"}]}
 
 
 def test_game_config_with_input_player_controls_rewrites_only_external_seats() -> None:
