@@ -691,6 +691,8 @@ class ExperienceRequestRow(CoworldAPIModel):
     coworld_name: str
     coworld_version: str
     variant_id: str | None = None
+    title: str | None = None
+    description: str | None = None
     status: str
     episode_count: int
     pending_count: int

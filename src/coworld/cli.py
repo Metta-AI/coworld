@@ -1404,6 +1404,26 @@ def upload_policy(
             help="Private tag for your own bookkeeping (KEY=VALUE, can be repeated), e.g. --tag purpose=test.",
         ),
     ] = None,
+    title: Annotated[
+        str | None,
+        typer.Option(
+            "--title",
+            help=(
+                "Writeup title for this policy version: what changed, one line, at most 50 characters "
+                "recommended. Stored as the 'title' tag."
+            ),
+        ),
+    ] = None,
+    description: Annotated[
+        str | None,
+        typer.Option(
+            "--description",
+            help=(
+                "Writeup for this policy version: what changed, why, and the expected result, at most 600 "
+                "characters recommended. Stored as the 'description' tag."
+            ),
+        ),
+    ] = None,
     use_bedrock: Annotated[
         bool,
         typer.Option(
@@ -1449,6 +1469,10 @@ def upload_policy(
         for kv in tag:
             key, val = _parse_secret_env(kv)
             parsed_tags[key] = val
+    if title is not None:
+        parsed_tags["title"] = title
+    if description is not None:
+        parsed_tags["description"] = description
 
     validate_run_argv(run)
     update_agent_guidance(Path.cwd())
