@@ -5,6 +5,9 @@ description: Use when compiling, validating, and uploading a notsus change as a 
 
 # Build and upload a notsus policy
 
+> Native migration prerequisite: external advisor code and previously published images must be rebuilt for the native hosted endpoint. These templates do not prove that an external image has migrated.
+
+
 Build the amd64 image yourself, validate it locally, then upload it with current
 `coworld upload-policy`. Keep the manual ECR `authorization_token` path below
 only as a legacy fallback for older pinned installs that still fail before
@@ -92,11 +95,11 @@ local rungs):
 `nim c -d:release -d:botHeadless -d:useMalloc --opt:speed --stackTrace:on
 --out:notsus players/notsus/notsus.nim`, Nim pinned **2.2.4**, nimby **0.1.26**.
 The run stage adds `libcurl4` (telemetry upload must use curly/libcurl, not
-std/httpclient), `python3` + `boto3` (for the LLM advisor reaching Bedrock), and
+std/httpclient), `python3` plus the native advisor SDK (for hosted inference), and
 copies in `advisor.py`.
 
 Before building, set
-`CREWRIFT_BEDROCK_MODEL=us.anthropic.claude-haiku-4-5-20251001-v1:0`. Haiku is
+`COWORLD_LLM_MODEL=anthropic/claude-haiku-4.5`. Haiku is
 mandatory for Crewrift; do not use Sonnet or Opus. Budget prompts, response limits, and call cadence
 so the whole policy episode stays below **1,800 quota-weighted tokens**
 (`input + cache-write + 5 × output`), then use the scripted floor for the remainder.
@@ -151,11 +154,11 @@ replay means the bot connected and played fine.
 understands the server's ECR `authorization_token` response. Upload with:
 
 ```bash
-uv run coworld upload-policy "$IMG" --name "$NAME" --use-bedrock \
-  --bedrock-model us.anthropic.claude-haiku-4-5-20251001-v1:0
+uv run coworld upload-policy "$IMG" --name "$NAME" --use-llm \
+  --llm-model anthropic/claude-haiku-4.5
 ```
 
-Omit `--use-bedrock` when the policy does not need Bedrock.
+Omit `--use-llm` when the policy does not need inference.
 `pre_signed_info: null` means the exact image hash was already pushed; it is not
 an error. An aliased policy (same image, new name) registers without a rebuild.
 
@@ -211,13 +214,13 @@ if presign is not None:
 client.complete_image_upload(image_id)
 
 # 5. Create the policy version pointing at this image.
-#    --use-bedrock == ONLY secret_env={"USE_BEDROCK":"true"} (the league supplies
-#    Bedrock creds at runtime). run=None.
+#    --use-llm == ONLY secret_env={"COWORLD_LLM_ENABLED":"true"} (the league supplies
+#    native SDK endpoint placeholders at runtime). run=None.
 result = client.complete_docker_image_policy(
     name=name,
     container_image_id=image_id,
     run=None,
-    secret_env={"USE_BEDROCK": "true"},
+    secret_env={"COWORLD_LLM_ENABLED": "true"},
 )
 print(result)   # returns <name>:vN + the pvid
 ```

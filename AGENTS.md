@@ -6,12 +6,11 @@ Coworld, and the public Coworld docs shipped with the package. It depends on `so
 
 ## ⚠️ Building a player that calls an LLM? Read [`src/coworld/docs/HOSTED_LLM.md`](src/coworld/docs/HOSTED_LLM.md) FIRST.
 
-The one rule: in a hosted episode, **send every model call to the `AWS_ENDPOINT_URL_BEDROCK_RUNTIME` endpoint** (the
-per-pod sidecar that forwards to OpenRouter with the platform's key; the variable name is historical). Calling a public
-provider host instead fails authentication because the pod holds no real key. Point the Anthropic or OpenAI SDK at that
-base URL with a placeholder API key; hand-rolled HTTP must read it. The sidecar serves `/v1/messages` and
-`/v1/chat/completions`, non-streaming only. Full contract, examples, and troubleshooting:
-[`HOSTED_LLM.md`](src/coworld/docs/HOSTED_LLM.md).
+The one rule: in a hosted episode, **send every model call to the `COWORLD_LLM_ENDPOINT` endpoint** (the per-pod sidecar
+that forwards to OpenRouter with the platform's key). Calling a public provider host instead fails authentication
+because the pod holds no real key. Point the Anthropic or OpenAI SDK at that base URL with a placeholder API key (OpenAI
+uses the `/v1` suffix); hand-rolled HTTP must read it. The sidecar serves `/v1/messages` and `/v1/chat/completions`,
+non-streaming only. Full contract, examples, and troubleshooting: [`HOSTED_LLM.md`](src/coworld/docs/HOSTED_LLM.md).
 
 ## Choose the player runtime first
 
@@ -153,8 +152,8 @@ source of truth. They are generated docs and `$schema` targets; `test_types.py` 
 - [src/coworld/docs/COWORLD_MANIFEST.md](src/coworld/docs/COWORLD_MANIFEST.md) - manifest semantics and schema source of
   truth.
 - [src/coworld/docs/HOSTED_LLM.md](src/coworld/docs/HOSTED_LLM.md) - **how a player calls an LLM at runtime** (the
-  `AWS_ENDPOINT_URL_BEDROCK_RUNTIME` sidecar endpoint, supported wire formats, model naming, troubleshooting), the
-  hosted upload contract, and robustness to rate limits. Required reading before building an LLM player.
+  `COWORLD_LLM_ENDPOINT` sidecar endpoint, supported wire formats, model naming, troubleshooting), the hosted upload
+  contract, and robustness to rate limits. Required reading before building an LLM player.
 - [src/coworld/docs/LIFECYCLE.md](src/coworld/docs/LIFECYCLE.md) - local and hosted episode lifecycle.
 - [src/coworld/docs/LEAGUE_LOBBIES.md](src/coworld/docs/LEAGUE_LOBBIES.md) - mixed human/agent league lobbies (CLI,
   REST, seat kinds, artifact grants).

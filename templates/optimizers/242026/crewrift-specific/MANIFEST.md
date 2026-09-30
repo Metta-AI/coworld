@@ -1,5 +1,8 @@
 # MANIFEST — crewrift-specific (project tier)
 
+> Native migration prerequisite: external advisor code and previously published images must be rebuilt for the native hosted endpoint. These templates do not prove that an external image has migrated.
+
+
 The irreducible crewrift residue of the three-tier player-optimization package. Every item here
 carries concrete crewrift facts (numbers, league/division IDs, `notsus.nim`/`sim.nim` line cites,
 the measured-dead levers, the actual commands). The general principle each item *applies* lives one
@@ -13,7 +16,7 @@ Tier map: **generic** (`../generic`) = pure software-optimization discipline · 
 
 | Item | What it carries (crewrift-specific) | General principle it applies (tier 2/3) |
 | --- | --- | --- |
-| `AGENTS.md` | The keep-loaded crewrift facts: 6/8 crew + parity win model + `sim.nim checkWinCondition` + ~58–60 league mean; champion=`is_champion` slot + Competition division ID + `get_division_leaderboard`; "most rival techniques already in `notsus.nim`"; Bedrock pin, current `upload-policy`, replay oracle, version-roll, Asana state, Monitor-not-Bash, roster body schema. | Win-model / slot-label / classify-before-porting / fail-loud → coworld-player AGENTS.md. Measurement & iteration discipline → generic AGENTS.md. |
+| `AGENTS.md` | The keep-loaded crewrift facts: 6/8 crew + parity win model + `sim.nim checkWinCondition` + ~58–60 league mean; champion=`is_champion` slot + Competition division ID + `get_division_leaderboard`; "most rival techniques already in `notsus.nim`"; native model pin, current `upload-policy`, replay oracle, version-roll, Asana state, Monitor-not-Bash, roster body schema. | Win-model / slot-label / classify-before-porting / fail-loud → coworld-player AGENTS.md. Measurement & iteration discipline → generic AGENTS.md. |
 | `LOOP.md` | The concrete crewrift working loop end-to-end: exact commands, source paths (`notsus.nim`, `sim.nim`, `server.nim`), failure-handling sub-loops, observed human steers, superseded eval rungs. | Generalized loop SHAPE → coworld-player `guides/coworld-optimization-loop.md`; measure/fail-loud rationale → generic AGENTS.md. |
 
 ## Performance ledger
@@ -42,7 +45,7 @@ Tier map: **generic** (`../generic`) = pure software-optimization discipline · 
 | `skills/resolve-live-roster-and-champion-state` | Resolve live pvids, audit the FULL roster, restore the `is_champion` flag before launch / after churn / on delist. | Re-resolve-live-state / slot-label-isn't-quality → coworld-player AGENTS.md. |
 | `skills/decode-replay-ground-truth` | Authoritative per-slot deaths/survival/movement/reward/role/tasks by re-simulating the S3 replay with `replay_mine`. | Terminal/ground-truth evidence over telemetry → coworld-player `guides/cross-coworld-craft.md`. |
 | `skills/generate-a-crux` | Hunt + Wilson-confirm a crewrift crux (config where a rival reproducibly out-scores you at a fixed role/seat), or rule it out as variance. | Reconstruct-before-you-believe / pool same-direction deficits → generic; crux construction → coworld-player. |
-| `skills/diagnose-llm-advisor-health` | Confirm the notsus Bedrock vote advisor is firing before trusting any advisor-sensitive result (silent skip-bot failure mode). | Distinguish infra failure from a real negative → generic AGENTS.md. |
+| `skills/diagnose-llm-advisor-health` | Confirm the notsus LLM vote advisor is firing before trusting any advisor-sensitive result (silent skip-bot failure mode). | Distinguish infra failure from a real negative → generic AGENTS.md. |
 | `skills/diagnose-stuck-or-failed-run` | Classify a dead/empty/wedged eval or zero-score round as infra vs real result (buffering, backend down, auth/route skew, wedged participant). | Distinguish infra failure from a real negative; named negative controls → generic / coworld-player. |
 | `skills/watch-and-monitor-with-poller` | The standing watch loop that survives turns — drive it with a persistent Monitor, NOT detached Bash + foreground sleep (dies silently). | Background-processes-die-silently / keep-loop-alive → generic AGENTS.md. |
 

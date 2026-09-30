@@ -347,7 +347,7 @@ real lever: crewborg's per-tick sqlite trace.db exposes its beliefs/suspicion/vo
 
 ## Policies (upload / resolve)
 
-- Upload: `uv run coworld upload-policy <img> --name <name> [--use-bedrock]` — image **MUST** be
+- Upload: `uv run coworld upload-policy <img> --name <name> [--use-llm]` — image **MUST** be
   `linux/amd64`. Current `coworld upload-policy` consumes the server's ECR `authorization_token`
   response. Use the manual path only as a fallback for older pinned installs that still fail before
   parsing the response. A null `pre_signed_info` means that exact image hash was already pushed —

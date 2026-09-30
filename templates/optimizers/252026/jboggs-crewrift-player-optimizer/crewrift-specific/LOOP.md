@@ -357,7 +357,7 @@ scarce, make them the primary testing path"):**
   --exclude-policy-name crewborg --out-json top7.json` pins the live roster.
 - Upload candidate + baseline with env baked identical to the prior champion so
   the A/B isolates the code change: `coworld upload-policy <img> --name crewborg`
-  → `crewborg:vN` (add `--use-bedrock` + `--secret-env <MODEL_ID>` for an LLM
+  → `crewborg:vN` (add `--use-llm` + `--secret-env <MODEL_ID>` for an LLM
   brain). **Do NOT submit to a league yet** (Step 12) — uploading is fine, but a
   submit auto-promotes to champion.
 - Fire matched batteries via the **`coworld-experience-requests` /
@@ -638,7 +638,7 @@ pool < 5.
   back:** pin the exact version id, grep policy stderr for the real emitted event
   names (`domain.meeting_llm_decision`, `meeting_llm_fallback`,
   `domain.meeting_llm_disabled`), read the exact exception to tell direct-Anthropic
-  (`404 Model use case details have not been submitted`) from a Bedrock fault, and
+  (`404 Model use case details have not been submitted`) from a historical inference fault, and
   confirm any fix with a fresh probe whose start time is *after* the runner image
   rebuild. Surface infra fixes for human review rather than silently patching prod.
 - **When a hosted run wedges (stuck "running"):** switch from polling to pod
@@ -707,7 +707,7 @@ the next session's self-contained handoff prompt (often human-requested).
   decision traces + the agent's own recorded frames (noop %, throughput, mode
   transitions); root-cause via the renderer's exact pixel coords/colors and the
   sim input handler; heavy reliance on a Nim reference impl as a parity oracle;
-  LLM control (Bedrock `us.anthropic.claude-...` inference-profile ids, ~48-tick
+  LLM control (native `anthropic/claude-haiku-4.5` model IDs, ~48-tick
   cooldown, cache by frame+request) only fires in the hosted tournament.
 - **Opaque-replay fallback (crewrift):** when the replay can't be decoded, drive
   the whole post-game analysis from `results.json` slot arrays + the `gameConfig`

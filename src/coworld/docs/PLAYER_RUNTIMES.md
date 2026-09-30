@@ -121,10 +121,10 @@ validation paths; use headless episodes, certification, and replay inspection. S
 full workflows, including file upload APIs.
 
 For submitted policies, upload with `--file` rather than an image. File uploads reject `--run`, `--secret-env`,
-`--use-bedrock`, and `--bedrock-model`. Submit the returned version through the normal league workflow. The target
-Coworld must accept the policy kind: league submission rejects mismatches; episode hydration records `hydration_failed`
-without launching a pod. Submitted policies are not exposed through Coworld downloads. Bundled players of either kind
-are distributed publicly; see the comparison's code-visibility row for what the game receives during execution.
+`--use-llm`, and `--llm-model`. Submit the returned version through the normal league workflow. The target Coworld must
+accept the policy kind: league submission rejects mismatches; episode hydration records `hydration_failed` without
+launching a pod. Submitted policies are not exposed through Coworld downloads. Bundled players of either kind are
+distributed publicly; see the comparison's code-visibility row for what the game receives during execution.
 
 ## Model calls and diagnostics
 

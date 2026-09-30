@@ -22,11 +22,11 @@ ordered by `seq`:
 {"seq":0,  "t_ms":0,     "kind":"lifecycle", "event":"run_started", "reporter_version":"rv_…", "subject":{"kind":"round","id":"round_…"}}
 {"seq":14, "t_ms":4210,  "kind":"tool_call", "tool":"episodes.results", "args":{"ereq":"ereq_…"},
            "ok":true, "result_digest":"sha256:c01a…", "result_bytes":18234, "duration_ms":142}
-{"seq":15, "t_ms":4480,  "kind":"tool_call", "tool":"llm.converse",
-           "args_digest":"sha256:9f2c…", "args_preview":{"model":"claude-sonnet-5","input_tokens":1892},
+{"seq":15, "t_ms":4480,  "kind":"tool_call", "tool":"llm.anthropic-messages",
+           "args_digest":"sha256:9f2c…", "args_preview":{"model":"anthropic/claude-sonnet-5","input_tokens":1892},
            "ok":true, "usage":{"input_tokens":1892,"output_tokens":412,"cost_usd":0.0113}, "duration_ms":2840}
-{"seq":16, "t_ms":7391,  "kind":"tool_call", "tool":"llm.converse", "ok":false,
-           "error":{"kind":"bedrock_throttled","code":"ThrottlingException"}, "duration_ms":310}
+{"seq":16, "t_ms":7391,  "kind":"tool_call", "tool":"llm.anthropic-messages", "ok":false,
+           "error":{"kind":"rate_limit_error","code":"429"}, "duration_ms":310}
 {"seq":17, "t_ms":8020,  "kind":"annotation", "level":"info", "msg":"drafting recap for division A"}
 {"seq":88, "t_ms":83102, "kind":"lifecycle", "event":"run_finished", "ok":true,
            "totals":{"tool_calls":74,"llm_cost_usd":0.61,"llm_errors":1,"bytes_read":48211003,"guest_wall_ms":9120}}
@@ -34,11 +34,11 @@ ordered by `seq`:
 
 Record kinds:
 
-| Kind         | Producer             | Contents                                                                                                                                                                                                                                                                                                                                                                                                                                    |
-| ------------ | -------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `lifecycle`  | host                 | `run_started` / `run_finished` with subject, reporter version, and usage totals                                                                                                                                                                                                                                                                                                                                                             |
-| `tool_call`  | host                 | Tool name, args (size-capped preview + digest), result digest/bytes, duration, `ok`/error kind. Data-tool calls (`episodes`, `platform`, `reports`) are authenticated HTTP requests to the public v2 API under the run-scoped token — the trace records the platform's side of those calls; `llm` calls are host-made model requests (native ones via OpenRouter, legacy `converse`/`invoke` via Bedrock) and add tokens, cost, and latency |
-| `annotation` | guest (`output.log`) | Free-form log lines, interleaved by time but marked guest-originated                                                                                                                                                                                                                                                                                                                                                                        |
+| Kind         | Producer             | Contents                                                                                                                                                                                                                                                                                                                                                                              |
+| ------------ | -------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `lifecycle`  | host                 | `run_started` / `run_finished` with subject, reporter version, and usage totals                                                                                                                                                                                                                                                                                                       |
+| `tool_call`  | host                 | Tool name, args (size-capped preview + digest), result digest/bytes, duration, `ok`/error kind. Data-tool calls (`episodes`, `platform`, `reports`) are authenticated HTTP requests to the public v2 API under the run-scoped token — the trace records the platform's side of those calls; `llm` calls are host-made model requests via OpenRouter and add tokens, cost, and latency |
+| `annotation` | guest (`output.log`) | Free-form log lines, interleaved by time but marked guest-originated                                                                                                                                                                                                                                                                                                                  |
 
 Arguments and results are **digested** with size-capped previews — the trace records what happened, not full payloads. A
 per-run `debug=true` flag (requester/team only) captures full LLM request/response bodies. `/scratch` filesystem I/O is

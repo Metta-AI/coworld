@@ -187,11 +187,9 @@ OpenRouter with the platform's key and serves the Anthropic Messages (`/v1/messa
 contract is in [`HOSTED_LLM.md`](../HOSTED_LLM.md). Add `X-Coworld-Player-Slot: N` when a call is made on behalf of seat
 `N` so spend and rate limits attribute to that seat.
 
-Your container is handed the sidecar's base URL in `AWS_ENDPOINT_URL_BEDROCK_RUNTIME` (the name is historical) plus
-placeholder credential variables. The env that selects the endpoint, credentials, and region
-(`AWS_ENDPOINT_URL_BEDROCK_RUNTIME`, `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, `AWS_SESSION_TOKEN`, `AWS_REGION`,
-`AWS_DEFAULT_REGION`, `AWS_BEARER_TOKEN_BEDROCK`, `AWS_BEARER_TOKEN_BEDROCK_FILE`) is **reserved**: setting any of it in
-`manifest.game.runnable.env` is silently dropped, because an override there would route around the sidecar.
+Your container receives the gateway base URL in `COWORLD_LLM_ENDPOINT`. This endpoint and the provider SDK endpoint/auth
+variables are reserved: values in `manifest.game.runnable.env` cannot override platform routing or inject provider keys.
+Read the injected endpoint and construct a native SDK client with placeholder authentication.
 
 This is hosted-runtime only. Local `coworld play` / `coworld run-episode` provide no sidecar and no provider
 credentials. For local platform-hosted player testing, pass your own provider key with `--secret-env`; see

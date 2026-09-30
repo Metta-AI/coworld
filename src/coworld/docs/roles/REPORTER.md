@@ -39,7 +39,7 @@ A platform-hosted reporter is a **WebAssembly component** uploaded against the r
 - **Written in your language.** Compile to a component targeting the published `softmax:reporter` WIT world — the
   authoritative interface definition (exported `run`, the `types`/`episodes`/`platform`/`reports`/`llm`/`output` tool
   interfaces, and the `tool-error` variant) lives at
-  [`packages/coworld/src/coworld/wit/softmax-reporter-0.5.0/world.wit`](../../wit/softmax-reporter-0.5.0/world.wit).
+  [`packages/coworld/src/coworld/wit/softmax-reporter-0.6.0/world.wit`](../../wit/softmax-reporter-0.6.0/world.wit).
   Toolchains: Python via `componentize-py`, JavaScript/TypeScript via `jco`, Rust via `cargo-component`, Go via TinyGo.
   SDKs wrap the raw WIT imports in idiomatic APIs — Python first, JavaScript second; Rust/Go target the WIT directly.
 - **Capability-scoped.** The component exports one function, `run(request)`, and imports only the platform tool belt
@@ -76,7 +76,7 @@ same contract; hosted versions additionally declare the sandbox limits they need
 ```json
 {
   "purpose": "narrative",
-  "world": "softmax:reporter@0.5.0",
+  "world": "softmax:reporter@0.6.0",
   "outputs": [
     {
       "name": "recap",
@@ -135,8 +135,8 @@ Reporters are no longer bundled in coworld manifests — the manifest's optional
   `description` are **optional**: omit them and `coworld upload-coworld` falls back to a humanized `id` (e.g. `recap` →
   `Recap`) and `attributes.purpose` respectively.
 
-The section is optional. There are **no default reporters** — nothing is injected, and a coworld with no reporters
-certifies unchanged.
+The section is optional; a coworld can certify without author-declared reporters. The separately configured platform Log
+reporter is a default Log binding and must also be upgraded during a runtime cutover.
 
 ## The run contract
 
@@ -157,29 +157,31 @@ as `not-found`; otherwise it can let the generated binding's error propagate and
 message. Reporters that reject a run directly return an appropriate typed case such as `invalid(message)` or
 `internal(message)`, not an untyped string.
 
-Worlds `0.1.0` through `0.3.0` remain supported for already-built components. To adopt `0.4.0`, copy the current WIT and
-regenerate your language bindings before rebuilding. It uses the same synchronous host and tool surface as `0.3.0`; the
-source-level migration is for reporters that directly returned `err(string)`, which must return a `tool-error` case
-instead. Reporters that only return `run-summary` on success and let imported tool errors propagate need no logic
-change.
+Earlier WIT worlds remain immutable historical records; the current runtime executes only `0.6.0`.
 
-New builds should target `0.5.0`. Its `episodes.events` returns a successful `present(bytes)` or `absent(explanation)`
+New builds should target `0.6.0`. Its `episodes.events` returns a successful `present(bytes)` or `absent(explanation)`
 case. An empty file is still present. Reporters branch on these cases to render recorded results or consult another data
 source when events are absent. Unknown episodes, forbidden reads, and failed downloads remain tool errors and propagate.
-Regenerate bindings and replace event `not-found` handlers with the absent case. Deploy a host supporting `0.5.0` before
-publishing components targeting it; earlier worlds remain immutable.
+Regenerate bindings and replace event `not-found` handlers with the absent case. The old API rejects 0.6 uploads, so
+publication cannot precede native API activation. During an owner-operated maintenance window, block new launches, stop
+producers, drain old work and disable reporter workers with `reporterRunner.enabled=false`. Activate the native
+API/coordinator/sidecar, publish all 0.6 reporters, then update subscriptions, dependencies and the platform Log
+binding. Only then restore workers for controlled acceptance; reopen general admission after it passes. The API has no
+global pause flag and starts its dispatcher, so the external admission barrier and empty launch queue are prerequisites.
+See the
+[coordinated rollout](../../../../../../docs/ai/onboarding/services/observatory/llm-usage.md#native-inference-deployment).
 
 The data tools are thin clients of the **public platform API** — every `episodes`, `platform`, and `reports` call is an
 authenticated HTTP request to the same `/v2` routes any user could hit, presenting a short-lived run-scoped token. Only
 `llm` talks to a non-API backend.
 
-| Tool family | What it gives you                                                                                                                                                                                                                                                            |
-| ----------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `episodes`  | Episode artifacts by episode-request id: results, first-party event stream, replay, game logs, per-player logs, error info — typed sugar over the public episode routes                                                                                                      |
-| `platform`  | `get(path, query)` over an allowlisted subset of public platform read APIs: leagues, rounds, standings, players, coworlds, experience requests                                                                                                                               |
-| `reports`   | Declared direct dependencies via `dependencies()`, plus described output listings and fetches by run id. Dependency entries are concrete completed runs selected by the platform graph, not guest-side search results.                                                       |
-| `llm`       | Native Anthropic/OpenAI requests (`anthropic-messages`/`openai-chat`) forwarded to OpenRouter, plus legacy Bedrock-shaped calls (`converse`/`invoke`) that the host still signs and sends to Bedrock — both metered against your run's budget, billed to the run's requester |
-| `output`    | `emit(name, part-value)` for each declared output — submitted through the same outputs API external reporters use, authenticated by the run context; `progress(pct, note)`; `log(level, msg)`                                                                                |
+| Tool family | What it gives you                                                                                                                                                                                                      |
+| ----------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `episodes`  | Episode artifacts by episode-request id: results, first-party event stream, replay, game logs, per-player logs, error info — typed sugar over the public episode routes                                                |
+| `platform`  | `get(path, query)` over an allowlisted subset of public platform read APIs: leagues, rounds, standings, players, coworlds, experience requests                                                                         |
+| `reports`   | Declared direct dependencies via `dependencies()`, plus described output listings and fetches by run id. Dependency entries are concrete completed runs selected by the platform graph, not guest-side search results. |
+| `llm`       | Native Anthropic/OpenAI requests (`anthropic-messages`/`openai-chat`) forwarded to OpenRouter, metered against your run's budget and billed to its requester                                                           |
+| `output`    | `emit(name, part-value)` for each declared output — submitted through the same outputs API external reporters use, authenticated by the run context; `progress(pct, note)`; `log(level, msg)`                          |
 
 Key semantics:
 

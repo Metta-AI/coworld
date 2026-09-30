@@ -1,30 +1,12 @@
-# Dockerfile.llm — note
+# Dockerfile.llm — native migration note
 
-**What it does.** The two-stage container build for the notsus bot *with* the LLM
-voting advisor. Build stage (identical to `players/notsus/Dockerfile`): Debian
-bookworm-slim, installs nimby 0.1.26 for the dpkg arch (amd64/arm64), pins Nim
-2.2.4, syncs `nimby.lock`, and compiles `players/notsus/notsus.nim`
-(`-d:release -d:botHeadless -d:useMalloc --opt:speed --stackTrace:on`) to a
-`notsus` binary. Run stage: a fresh bookworm-slim with `ca-certificates`,
-`libcurl4` (for the curly/libcurl telemetry upload path), `python3` + `pip`, and
-`boto3` installed; it copies in the `notsus` binary and `advisor.py`, and runs
-`/bin/notsus`.
+The external notsus image packages the compiled Nim player, Python voting advisor, and telemetry runtime together.
+Preserve the existing native build and `libcurl4` requirement for telemetry uploads. Rebuild the advisor layer with its
+native SDK dependency; runtime AWS identity is not an inference credential.
 
-**Why it matters to the loop.** This is the image the submitted policy actually
-runs as. It is where the bot binary and the live LLM advisor are packaged
-together, and where the runtime gets `boto3` + `libcurl4` so the advisor can reach
-Bedrock and telemetry can upload. The advisor's model is selected at runtime by
-`CREWRIFT_BEDROCK_MODEL` (defaulted in `advisor.py`); this Dockerfile provides the
-boto3 + Python runtime that env relies on.
+The native advisor must consume `COWORLD_LLM_ENDPOINT`, `COWORLD_LLM_ENABLED`, and a canonical `COWORLD_LLM_MODEL`.
+Keep provider keys out of the hosted image. Opt into hosted inference when uploading the rebuilt policy with `--use-llm`.
+Retain the advisor's bounded vote deadline and episode token budget.
 
-For Crewrift builds, set
-`CREWRIFT_BEDROCK_MODEL=us.anthropic.claude-haiku-4-5-20251001-v1:0`; never ship
-Sonnet or Opus. Configure the advisor so cumulative episode usage remains below
-**1,800 quota-weighted tokens** (`input + cache-write + 5 × output`) per policy pod.
-
-**Status: CURRENT.** The amd64-capable build for the deployed notsus policy
-(arch-branching covers amd64 and arm64; league/k8s runs need the amd64 image).
-Relevant memory: `libcurl4` is required because telemetry upload must use curly/
-libcurl, not std/httpclient (`crewrift-nim-artifact-curl-ssl`); current `coworld
-upload-policy` is the default upload path, with manual ECR authorization-token
-steps only for older pinned installs (`crewrift-ecr-upload-authtoken`).
+This is a required migration for external source and published images, not evidence that either has already changed.
+Verify the target CPU architecture, offline fallback, and a real native call before comparing league performance.
