@@ -40,7 +40,7 @@ Do not build a commissioner Docker image. Use this guide instead. Holdouts →
 | `leagues.commissioner_key`    | `platform` (from reconcile)                                                                                                                  | `container`                                                                                         |
 | Round brain                   | `settings.ladder` + Temporal workflows                                                                                                       | Image from the Coworld manifest                                                                     |
 | Cadence                       | Continuous parent workflow; optional `settings.round_interval_minutes` paces rounds (1-minute Temporal Schedule is only a liveness backstop) | `commissioner_config.schedule_interval_minutes` (overridable via `settings.round_interval_minutes`) |
-| Standings                     | Platform Elo or `score` standing + published leaderboards                                                                                    | Opaque `commissioner_state` from the container                                                      |
+| Standings                     | Platform Elo, OpenSkill, or `score` standing + published leaderboards                                                                        | Opaque `commissioner_state` from the container                                                      |
 | Commissioner image / runnable | **Not required**                                                                                                                             | Required in the Coworld manifest                                                                    |
 
 `commissioner_key=platform` alone is not enough. Temporal only runs when `settings.ladder.enabled` is true. Writing a
@@ -52,7 +52,8 @@ Platform ladder is player-centric:
 
 - Each player contributes **exactly one champion** `PolicyVersion` per division round.
 - Benched / non-champion competing versions do **not** seat.
-- Ranking is `elo` (default) or `score` (EWMA / mean / max standing over round scores).
+- Ranking is `elo` (default), `openskill` (Plackett-Luce; MMR is `mu - 3 * sigma`), or `score` (EWMA / mean / max
+  standing over round scores).
 - Optional ladder-wide **qualification** is a self-play experience plus a boolean gate over episode evidence — not a
   separate Qualifiers division with its own container stage.
 - Optional `leader_slot_config` overlays the displayed first-place champion's seats (e.g. CTF crown skin) when the
@@ -140,13 +141,15 @@ changes and pause take effect within that window.
 
 ## Choose a ranking algorithm
 
-| Board you want                             | Config             | Notes                                                                            |
-| ------------------------------------------ | ------------------ | -------------------------------------------------------------------------------- |
-| Pairwise skill (win/loss / relative score) | `algorithm: elo`   | Default. `k_factor`, `initial_rating`, `round_scoring_rule: mean \| ewma`        |
-| Continuous score / ATH / glory             | `algorithm: score` | `standing_aggregation: ewma \| mean \| max`; `half_life_hours` required for EWMA |
+| Board you want                             | Config                 | Notes                                                                            |
+| ------------------------------------------ | ---------------------- | -------------------------------------------------------------------------------- |
+| Pairwise skill (win/loss / relative score) | `algorithm: elo`       | Default. `k_factor`, `initial_rating`, `round_scoring_rule: mean \| ewma`        |
+| Multi-player skill with uncertainty        | `algorithm: openskill` | `mu`, `sigma` (default 25, 25/3); no `elo_softmax` or dynamic handicaps          |
+| Continuous score / ATH / glory             | `algorithm: score`     | `standing_aggregation: ewma \| mean \| max`; `half_life_hours` required for EWMA |
 
-Movement rules gate on Elo rating thresholds or, for `score`, standing thresholds (`minimum_standing` /
-`maximum_standing`). Use the JSON examples in this guide as the working schema.
+Movement rules gate on rating thresholds (`minimum_rating` / `maximum_rating`: the Elo rating, or the OpenSkill
+`mu - 3 * sigma` ordinal) or, for `score`, standing thresholds (`minimum_standing` / `maximum_standing`). Use the JSON
+examples in this guide as the working schema.
 
 ## Preconditions
 

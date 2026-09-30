@@ -85,8 +85,9 @@ Platform ladder v1 is deliberately player-centric:
     is small.
   - `filler_policy` — fill from league filler versions (must be configured on the league).
   - `do_not_run` — skip the round until enough real champions exist.
-- Ranking is `elo` (default) or `score` (EWMA / mean / max standing). Container OpenSkill / EWMA standings do **not**
-  carry over automatically. Prefer fresh standings unless a separately reviewed one-off migration exists.
+- Ranking is `elo` (default), `openskill` (Plackett-Luce; MMR is `mu - 3 * sigma`), or `score` (EWMA / mean / max
+  standing). Container OpenSkill / EWMA standings do **not** carry over automatically. Prefer fresh standings unless a
+  separately reviewed one-off migration exists.
 - Legacy Qualifiers divisions are not ladder topology. Platform qualification is an optional ladder-wide self-play gate
   in `settings.ladder.qualification`. Archive unused Qualifiers / side divisions the way Crewrift archived Crew /
   Imposters / Qualifiers.
