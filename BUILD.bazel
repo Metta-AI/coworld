@@ -202,11 +202,23 @@ py_library(
 )
 
 py_library(
+    name = "llm_sidecar_wiring",
+    srcs = ["src/coworld/runner/llm_sidecar_wiring.py"],
+    imports = ["src"],
+    visibility = ["//visibility:public"],
+    deps = [
+        ":coworld_core",
+        "@pypi//kubernetes",
+    ],
+)
+
+py_library(
     name = "coworld",
     srcs = glob(
         ["src/coworld/**/*.py"],
         exclude = _CORE_SRCS + [
             "src/coworld/runner/bedrock_sidecar_wiring.py",
+            "src/coworld/runner/llm_sidecar_wiring.py",
             "src/coworld/templates/**/*.py",
         ],
     ),
@@ -230,6 +242,7 @@ py_library(
     visibility = ["//visibility:public"],
     deps = [
         ":bedrock_sidecar_wiring",
+        ":llm_sidecar_wiring",
         ":coworld_core",
         "//packages/softmax-cli:softmax",
         "@pypi//cogsguard",
