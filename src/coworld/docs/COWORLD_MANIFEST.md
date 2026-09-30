@@ -113,6 +113,12 @@ Games that need policy or player display names use `game_config.players[].name`,
 - If the game shows display names, each `players[]` item must be an object with required string field `name`.
 - Hosted dispatch overwrites `game_config.players[].name` with resolved, per-slot display names when the schema declares
   the field.
+- For a policy seat whose player a human owns, the hosted name is `Player (Owner)`, e.g. `Alpha (David B)` (first name
+  and last initial). Filler seats keep their league-configured name; coworld-owned players, human seats, and policies
+  without a player are unchanged. Repeated names get ` (2)`, ` (3)` suffixes.
+- To receive the owner as its own field, declare an optional string `owner` on the `players[]` items. Hosted dispatch
+  then writes `players[i].owner` for human-owned seats, omits it for every other seat, and replaces any authored
+  `owner`. Schemas that do not declare `owner` never receive it.
 - Local raw configs may set `players[].name` directly when a developer wants readable names without hosted dispatch.
 
 Game-specific `slots` config objects remain game-owned and can carry mechanics such as roles, colors, spawn settings, or

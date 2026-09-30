@@ -134,31 +134,44 @@ def game_config_with_named_players(
     game_config: dict[str, Any],
     player_names: list[str],
     config_schema: JsonSchema,
+    player_owners: list[str | None] | None = None,
 ) -> JsonObject:
+    """Write each seat's name into ``game_config.players[i].name`` when the schema declares named players.
+
+    Repeated names get " (2)", " (3)" suffixes; a schema without named players gets the config back unchanged.
+    ``player_owners`` optionally gives each seat's owner short name (``None`` for seats without a human owner) and
+    must match ``player_names`` in length (``ValueError`` otherwise). When the player items declare an ``owner``
+    property in any shape, resolved owners replace authored ones: every authored ``owner`` is dropped, and a seat's
+    resolved owner is written back only when ``owner`` is declared as a string (``"string"`` or a type list
+    containing it). Schemas that do not mention ``owner`` never receive it, since many forbid undeclared keys.
+    """
     if "player_names" in game_config:
         raise ValueError("game_config.player_names is not supported; use game_config.players[].name")
+    if player_owners is not None and len(player_owners) != len(player_names):
+        raise ValueError("player_owners must match player_names")
 
     named_config = copy.deepcopy(game_config)
     properties = config_schema.get("properties", {})
     if isinstance(properties, dict) and _declares_named_players(properties.get("players")):
-        names: list[str] = []
-        used_names: set[str] = set()
-        for player_name in player_names:
-            name = player_name
-            suffix = 2
-            while name in used_names:
-                name = f"{player_name} ({suffix})"
-                suffix += 1
-            used_names.add(name)
-            names.append(name)
+        names = _unique_player_names(player_names)
         players = named_config.get("players", [{} for _ in names])
         player_configs = _player_config_objects(players, "game_config.players")
         if len(player_configs) != len(names):
             raise ValueError("game_config.players must match resolved player count")
-        named_config["players"] = [
+        named_players = [
             {**player_config, "name": player_name}
             for player_config, player_name in zip(player_configs, names, strict=True)
         ]
+        owner_schema = properties["players"]["items"]["properties"].get("owner")
+        if player_owners is not None and owner_schema is not None:
+            # Resolved ownership replaces any authored owner: a seat without a human owner gets none.
+            owner_type = owner_schema.get("type") if isinstance(owner_schema, dict) else None
+            writes_owner = owner_type == "string" or (isinstance(owner_type, list) and "string" in owner_type)
+            for named_player, owner in zip(named_players, player_owners, strict=True):
+                named_player.pop("owner", None)
+                if writes_owner and owner is not None:
+                    named_player["owner"] = owner
+        named_config["players"] = named_players
         return cast(JsonObject, named_config)
 
     return cast(JsonObject, named_config)
