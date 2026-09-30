@@ -23,6 +23,7 @@ from websockets.exceptions import ConnectionClosedOK
 
 import coworld.certifier as certifier_module
 import coworld.player_files as player_files
+from coworld.bundle import build_coworld_manifest
 from coworld.certifier import (
     _image_references,
     _run_local_certifier_episode,
@@ -42,7 +43,7 @@ from coworld.certifier import (
 )
 from coworld.commissioner.protocol import LeagueInfo, ScheduleRoundsRequest, ScheduleRoundsResponse
 from coworld.manifest_validation import game_config_with_tokens
-from coworld.play import BedrockAwsEnv, ReplaySession, build_play_links, play_coworld, replay_coworld
+from coworld.play import ReplaySession, _resolve_local_llm_env, build_play_links, play_coworld, replay_coworld
 from coworld.player_files import InvalidPlayerFile, player_file_bytes
 from coworld.runner.io import RunnerEpisodeError
 from coworld.runner.runner import (
@@ -2122,11 +2123,9 @@ def test_play_coworld_adds_fixed_extra_local_ports_to_game_container(
     ]
 
 
-@pytest.mark.parametrize("session_token", ["session-token", None])
-def test_play_coworld_injects_bedrock_env_into_player_containers(
+def test_play_coworld_injects_llm_env_into_player_containers(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
-    session_token: str | None,
 ) -> None:
     coworld_manifest_path = _write_package_files(
         tmp_path,
@@ -2145,16 +2144,9 @@ def test_play_coworld_injects_bedrock_env_into_player_containers(
         def wait(self) -> int:
             return 0
 
-    def fake_resolve_bedrock_aws_env(*, aws_profile: str | None, aws_region: str | None) -> BedrockAwsEnv:
+    def fake_resolve_local_llm_env() -> dict[str, str]:
         events.append("resolve")
-        assert aws_profile == "bedrock-dev"
-        assert aws_region == "us-east-1"
-        return BedrockAwsEnv(
-            access_key_id="access-key",
-            secret_access_key="secret-key",
-            session_token=session_token,
-            region="us-east-1",
-        )
+        return {"COWORLD_LLM_ENABLED": "true", "OPENROUTER_API_KEY": "local-test-key"}
 
     def fake_popen(cmd, **kwargs):
         events.append("popen")
@@ -2176,7 +2168,7 @@ def test_play_coworld_injects_bedrock_env_into_player_containers(
     monkeypatch.setattr("coworld.play._wait_for_health", lambda *_args, **_kwargs: None)
     monkeypatch.setattr("coworld.play._wait_for_game_exit", lambda *_args, **_kwargs: None)
     monkeypatch.setattr("coworld.play._wait_for_player_exit", lambda *_args, **_kwargs: None)
-    monkeypatch.setattr("coworld.play._resolve_bedrock_aws_env", fake_resolve_bedrock_aws_env)
+    monkeypatch.setattr("coworld.play._resolve_local_llm_env", fake_resolve_local_llm_env)
     monkeypatch.setattr("coworld.play.subprocess.Popen", fake_popen)
     monkeypatch.setattr("coworld.play.subprocess.run", fake_subprocess_run)
     monkeypatch.setattr("coworld.play.secrets.token_hex", lambda _bytes: "session-1")
@@ -2185,10 +2177,8 @@ def test_play_coworld_injects_bedrock_env_into_player_containers(
 
     play_coworld(
         coworld_manifest_path,
-        use_bedrock=True,
-        aws_profile="bedrock-dev",
-        aws_region="us-east-1",
-        workspace=tmp_path / f"play-workspace-{session_token or 'static'}",
+        use_llm=True,
+        workspace=tmp_path / "play-workspace-llm",
         on_ready=lambda _session: None,
     )
 
@@ -2198,31 +2188,20 @@ def test_play_coworld_injects_bedrock_env_into_player_containers(
     game_env, player_env = popen_envs
 
     assert game_env is None
-    assert not any(arg.startswith(("USE_BEDROCK", "AWS_")) for arg in game_command)
-
-    for key in ("USE_BEDROCK", "AWS_ACCESS_KEY_ID", "AWS_SECRET_ACCESS_KEY", "AWS_REGION", "AWS_DEFAULT_REGION"):
-        assert key in player_command
-    secret_value_prefixes = ("AWS_ACCESS_KEY_ID=", "AWS_SECRET_ACCESS_KEY=", "AWS_SESSION_TOKEN=")
-    assert not any(arg.startswith(secret_value_prefixes) for arg in player_command)
-
+    assert "COWORLD_LLM_ENABLED" not in game_command
+    assert "OPENROUTER_API_KEY" not in game_command
+    assert "COWORLD_LLM_ENABLED" in player_command
+    assert "OPENROUTER_API_KEY" in player_command
+    assert not any("local-test-key" in arg for arg in player_command)
     assert player_env is not None
-    assert player_env["USE_BEDROCK"] == "true"
-    assert player_env["AWS_ACCESS_KEY_ID"] == "access-key"
-    assert player_env["AWS_SECRET_ACCESS_KEY"] == "secret-key"
-    assert player_env["AWS_REGION"] == "us-east-1"
-    assert player_env["AWS_DEFAULT_REGION"] == "us-east-1"
-    if session_token is None:
-        assert "AWS_SESSION_TOKEN" not in player_env
-        assert "AWS_SESSION_TOKEN" not in player_command
-    else:
-        assert player_env["AWS_SESSION_TOKEN"] == "session-token"
-        assert "AWS_SESSION_TOKEN" in player_command
+    assert player_env["COWORLD_LLM_ENABLED"] == "true"
+    assert player_env["OPENROUTER_API_KEY"] == "local-test-key"
 
     assert ["docker", "rm", "-f", "coworld-play-player-session-1-0"] in rm_commands
     assert ["docker", "rm", "-f", "coworld-play-game-session-1"] in rm_commands
 
 
-def test_play_coworld_does_not_resolve_bedrock_env_when_docker_network_fails(
+def test_play_coworld_does_not_resolve_llm_env_when_docker_network_fails(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -2234,17 +2213,12 @@ def test_play_coworld_does_not_resolve_bedrock_env_when_docker_network_fails(
         },
         game_config={"difficulty": "watch"},
     )
-    resolve_calls: list[tuple[str | None, str | None]] = []
+    resolve_calls: list[str] = []
     popen_commands: list[list[str]] = []
 
-    def fake_resolve_bedrock_aws_env(*, aws_profile: str | None, aws_region: str | None) -> BedrockAwsEnv:
-        resolve_calls.append((aws_profile, aws_region))
-        return BedrockAwsEnv(
-            access_key_id="access-key",
-            secret_access_key="secret-key",
-            session_token=None,
-            region="us-east-1",
-        )
+    def fake_resolve_local_llm_env() -> dict[str, str]:
+        resolve_calls.append("resolve")
+        return {"COWORLD_LLM_ENABLED": "true", "OPENROUTER_API_KEY": "local-test-key"}
 
     def fake_ensure_local_docker_network() -> None:
         raise RuntimeError("Docker network unavailable")
@@ -2256,7 +2230,7 @@ def test_play_coworld_does_not_resolve_bedrock_env_when_docker_network_fails(
     monkeypatch.setattr("coworld.play.assert_episode_images_reachable", lambda _job: None)
     monkeypatch.setattr("coworld.play.ensure_local_docker_network", fake_ensure_local_docker_network)
     monkeypatch.setattr("coworld.play._free_local_port", lambda: 1234)
-    monkeypatch.setattr("coworld.play._resolve_bedrock_aws_env", fake_resolve_bedrock_aws_env)
+    monkeypatch.setattr("coworld.play._resolve_local_llm_env", fake_resolve_local_llm_env)
     monkeypatch.setattr("coworld.play.subprocess.Popen", fake_popen)
     monkeypatch.setattr("coworld.play.secrets.token_hex", lambda _bytes: "session-1")
     monkeypatch.setattr("coworld.runner.runner.secrets.token_urlsafe", lambda _bytes: "token-0")
@@ -2264,9 +2238,7 @@ def test_play_coworld_does_not_resolve_bedrock_env_when_docker_network_fails(
     with pytest.raises(RuntimeError, match="Docker network unavailable"):
         play_coworld(
             coworld_manifest_path,
-            use_bedrock=True,
-            aws_profile="bedrock-dev",
-            aws_region="us-east-1",
+            use_llm=True,
             workspace=tmp_path / "play-workspace-network-failure",
             on_ready=lambda _session: None,
         )
@@ -2772,19 +2744,18 @@ def _docker_available() -> bool:
 
 
 @pytest.mark.slow
-@pytest.mark.skip(reason="Docker certifier integration is too slow for CI")
 @pytest.mark.skipif(not _docker_available(), reason="Docker not available")
 def test_paintarena_example_certifies_with_docker(tmp_path: Path) -> None:
     example_root = _example_root()
-    subprocess.run(
-        ["docker", "build", "-t", "coworld-paintarena:latest", "."],
-        cwd=example_root,
-        check=True,
-        timeout=300,
+    manifest_path = build_coworld_manifest(
+        example_root / "compose.yaml",
+        example_root / "coworld_manifest_template.json",
+        "0.1.0",
+        tmp_path / "dist" / "coworld_manifest.json",
     )
 
     result = certify_coworld(
-        _materialized_template(tmp_path, _example_root() / "coworld_manifest_template.json"),
+        manifest_path,
         workspace=tmp_path / "cert",
         timeout_seconds=60,
     )
@@ -3075,3 +3046,21 @@ def test_invalid_player_files_keep_author_attribution(tmp_path, monkeypatch, inv
     with pytest.raises(InvalidPlayerFile) as excinfo:
         player_files.player_file_bytes(source, package_root=root)
     assert certifier_module._step_failure_reason("smoke-episode", excinfo.value) == "players_missing"
+
+
+def test_local_llm_env_uses_endpoint_without_forwarding_provider_key(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("COWORLD_LLM_ENDPOINT", "http://host.docker.internal:9100")
+    monkeypatch.setenv("OPENROUTER_API_KEY", "must-not-forward")
+    monkeypatch.setenv("COWORLD_LLM_MODEL", "anthropic/claude-haiku-4.5")
+    assert _resolve_local_llm_env() == {
+        "COWORLD_LLM_ENABLED": "true",
+        "COWORLD_LLM_ENDPOINT": "http://host.docker.internal:9100",
+        "COWORLD_LLM_MODEL": "anthropic/claude-haiku-4.5",
+    }
+
+
+def test_local_llm_env_requires_explicit_access(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.delenv("COWORLD_LLM_ENDPOINT", raising=False)
+    monkeypatch.delenv("OPENROUTER_API_KEY", raising=False)
+    with pytest.raises(RuntimeError, match="--use-llm requires"):
+        _resolve_local_llm_env()

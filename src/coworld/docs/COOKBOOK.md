@@ -57,8 +57,8 @@ uv run coworld xp-request episodes xreq_...
 divides it evenly across player seats and uses any stricter league limit. Enforcement is approximate: calls already in
 flight can exceed the cap. The cap does not include game or infrastructure costs.
 
-Use a league lobby for mixed human/agent games. Those episodes use the same LLM sidecar, game logs, player logs, and
-player artifacts as experience requests. Full walkthrough:
+Use a league lobby for mixed human/agent games. Those episodes use the same native LLM sidecar, game logs, player logs,
+and player artifacts as experience requests. Full walkthrough:
 https://softmax.com/docs/coworld/build-a-coworld/league-lobbies
 
 ```bash
@@ -126,10 +126,10 @@ uv run coworld submit game-hosted-player --league league_...
 ```
 
 The game defines the player-file format. Files and deterministic directory zips are capped at 100 MiB. `--file` cannot
-be combined with `--run`, `--secret-env`, `--use-bedrock`, or `--bedrock-model`.
+be combined with `--run`, `--secret-env`, `--use-llm`, or `--llm-model`.
 
-Add `--use-bedrock` (and `--bedrock-model MODEL`, which your player reads from `BEDROCK_MODEL`) during `upload-policy`
-when the hosted policy calls a model through the platform's LLM sidecar; see
+Add `--use-llm` (and `--llm-model MODEL`, which your player reads from `COWORLD_LLM_MODEL`) during `upload-policy` when
+the hosted policy calls a model through the platform's LLM sidecar; see
 [Hosted LLM calls for Coworld players](HOSTED_LLM.md). Add `--secret-env NAME=value` for other hosted provider
 credentials. For local model calls, pass your own provider key with `--secret-env`.
 
@@ -687,9 +687,9 @@ uv run coworld upload-policy --file ./player-a.py --name player-a
 ```
 
 `--file` accepts one regular file or directory. Directories become deterministic zip files. The CLI rejects symlinks,
-missing paths, inputs over 100 MiB (104,857,600 bytes), and combinations with `--run`, `--secret-env`, `--use-bedrock`,
-or `--bedrock-model`. The backend rechecks the size and SHA-256 digest before creating the policy. Uploading the same
-bytes again under the same policy name returns the existing version instead of creating a new one.
+missing paths, inputs over 100 MiB (104,857,600 bytes), and combinations with `--run`, `--secret-env`, `--use-llm`, or
+`--llm-model`. The backend rechecks the size and SHA-256 digest before creating the policy. Uploading the same bytes
+again under the same policy name returns the existing version instead of creating a new one.
 
 Submit the uploaded policy to a league:
 
@@ -715,20 +715,19 @@ If the policy needs secrets in hosted evaluation, provide them during `upload-po
 uv run coworld upload-policy paintarena-player:local --name paintarena-player \
   --run python --run -m --run coworld.examples.paintarena.player.player \
   --secret-env API_KEY=... \
-  --use-bedrock
+  --use-llm
 ```
 
 Image-based `upload-policy` requires Docker because it hashes and pushes the image before registration. File-based
-upload does not use Docker. Neither form needs local provider credentials. `--use-bedrock` stores `USE_BEDROCK=true`
+upload does not use Docker. Neither form needs local provider credentials. `--use-llm` stores `COWORLD_LLM_ENABLED=true`
 with the policy version; when a policy opts in, the hosted player pod gets an LLM sidecar that forwards model calls to
-OpenRouter with the platform's key, so the player does not need to bring its own API key. Add `--bedrock-model MODEL` to
-set `BEDROCK_MODEL`; your player must read its model from `BEDROCK_MODEL`. For a provider the sidecar does not serve,
-pass API keys with `--secret-env`; those secrets are stored in AWS Secrets Manager and injected only into that policy
-version's player pod.
+OpenRouter with the platform's key, so the player does not need to bring its own API key. Add `--llm-model MODEL` to set
+`COWORLD_LLM_MODEL`; your player must read its model from `COWORLD_LLM_MODEL`. Hosted model calls must use the injected
+gateway; do not upload provider credentials. Use `--secret-env` only for other secrets required by the player.
 
-An LLM player can pass local certification and still fail its first hosted rounds if it was uploaded without
-`--use-bedrock` or reads its model from the wrong variable. See [Hosted LLM calls for Coworld players](HOSTED_LLM.md),
-which also covers staying robust when shared model capacity rate-limits (blocked episodes time out and score as a loss).
+An LLM player can pass local certification and still fail its first hosted rounds if it was uploaded without `--use-llm`
+or reads its model from the wrong variable. See [Hosted LLM calls for Coworld players](HOSTED_LLM.md), which also covers
+staying robust when shared model capacity rate-limits (blocked episodes time out and score as a loss).
 
 Game-hosted policies cannot carry secret environment variables. The Coworld author's game receives the submitted file in
 clear and controls its execution. Do not submit sensitive source unless you accept that trust boundary. If a player
@@ -807,7 +806,7 @@ with CoworldUploadClient.from_login(server_url=server) as client:
         name="paintarena-player",
         container_image_id="img_...",
         run=["python", "-m", "coworld.examples.paintarena.player.player"],
-        secret_env={"USE_BEDROCK": "true"},
+        secret_env={"COWORLD_LLM_ENABLED": "true"},
     )
 
 with CoworldApiClient.from_login(server_url=server) as client:

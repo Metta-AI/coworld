@@ -93,7 +93,6 @@ _CORE_SRCS = [
     "src/coworld/player_files.py",
     "src/coworld/report.py",
     "src/coworld/runner/__init__.py",
-    "src/coworld/runner/bedrock_metadata.py",
     "src/coworld/runner/bootstrap.py",
     "src/coworld/runner/io.py",
     "src/coworld/runner/llm_metadata.py",
@@ -124,6 +123,7 @@ filegroup(
         "src/coworld/wit/softmax-reporter-0.3.0/world.wit",
         "src/coworld/wit/softmax-reporter-0.4.0/world.wit",
         "src/coworld/wit/softmax-reporter-0.5.0/world.wit",
+        "src/coworld/wit/softmax-reporter-0.6.0/world.wit",
         "src/coworld/wit/softmax-reporter/world.wit",
     ],
     visibility = [
@@ -191,17 +191,6 @@ py_library(
 )
 
 py_library(
-    name = "bedrock_sidecar_wiring",
-    srcs = ["src/coworld/runner/bedrock_sidecar_wiring.py"],
-    imports = ["src"],
-    visibility = ["//visibility:public"],
-    deps = [
-        ":coworld_core",
-        "@pypi//kubernetes",
-    ],
-)
-
-py_library(
     name = "llm_sidecar_wiring",
     srcs = ["src/coworld/runner/llm_sidecar_wiring.py"],
     imports = ["src"],
@@ -217,7 +206,6 @@ py_library(
     srcs = glob(
         ["src/coworld/**/*.py"],
         exclude = _CORE_SRCS + [
-            "src/coworld/runner/bedrock_sidecar_wiring.py",
             "src/coworld/runner/llm_sidecar_wiring.py",
             "src/coworld/templates/**/*.py",
         ],
@@ -241,7 +229,6 @@ py_library(
     imports = ["src"],
     visibility = ["//visibility:public"],
     deps = [
-        ":bedrock_sidecar_wiring",
         ":llm_sidecar_wiring",
         ":coworld_core",
         "//packages/softmax-cli:softmax",

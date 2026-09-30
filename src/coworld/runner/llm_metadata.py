@@ -29,6 +29,27 @@ class CoworldEpisodeLlmMetadata(BaseModel):
     image_digest: str = Field(min_length=1)
 
 
+class CoworldPersistentLlmMetadata(BaseModel):
+    """Immutable identity and credential lease for one persistent player generation."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    schema_version: Literal["1"]
+    source: Literal["coworld_persistent"]
+    metadata_origin: Literal["dispatcher", "coworld_runner", "llm_sidecar"]
+    runtime_id: UUID
+    runtime_generation: str = Field(pattern=r"^[1-9][0-9]*$")
+    league_id: str = Field(min_length=1)
+    player_id: str = Field(min_length=1)
+    policy_version_id: str = Field(min_length=1)
+    coworld_id: str = Field(min_length=1)
+    role: Literal["game", "player"]
+    slot: Literal["game", "0"]
+    image_digest: str = Field(min_length=1)
+    openrouter_lane: str | None = Field(default=None, min_length=1)
+    openrouter_lane_expires_at: AwareDatetime | None = None
+
+
 class CoworldPlayLlmMetadata(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
 
@@ -61,7 +82,7 @@ class CoworldReplayLlmMetadata(BaseModel):
 
 
 CoworldLlmMetadata: TypeAlias = Annotated[
-    CoworldEpisodeLlmMetadata | CoworldPlayLlmMetadata | CoworldReplayLlmMetadata,
+    CoworldEpisodeLlmMetadata | CoworldPersistentLlmMetadata | CoworldPlayLlmMetadata | CoworldReplayLlmMetadata,
     Field(discriminator="source"),
 ]
 _COWORLD_LLM_METADATA_ADAPTER = TypeAdapter(CoworldLlmMetadata)
@@ -108,6 +129,7 @@ class HostLlmMetadata(BaseModel):
 
 LlmRequestMetadata: TypeAlias = Annotated[
     CoworldEpisodeLlmMetadata
+    | CoworldPersistentLlmMetadata
     | CoworldPlayLlmMetadata
     | CoworldReplayLlmMetadata
     | ReporterRunLlmMetadata

@@ -45,18 +45,6 @@ from pydantic import TypeAdapter, ValidationError
 from urllib3.exceptions import HTTPError
 from urllib3.util import Retry
 
-from coworld.runner.bedrock_enablement import BedrockEnablement, resolve_player_bedrock
-from coworld.runner.bedrock_metadata import CoworldEpisodeBedrockMetadata, serialize_bedrock_request_metadata
-from coworld.runner.bedrock_sidecar_wiring import (
-    BEDROCK_SIDECAR_CONTAINER_NAME,
-    COWORLD_EGRESS_ENFORCED_LABEL,
-    RESERVED_SIDECAR_APP_ENV,
-    bedrock_app_endpoint_env,
-    bedrock_sidecar_token_volume,
-    build_bedrock_sidecar,
-    egress_relay_client_tls_volume,
-    resolve_image_attribution_key,
-)
 from coworld.runner.bootstrap import COORDINATOR_SPEC_PATH, STATE_PATH, WORKDIR, process_timings
 from coworld.runner.bootstrap import read_job_spec as _read_job_spec
 from coworld.runner.bootstrap import write_error_info as _write_error_info
@@ -69,6 +57,23 @@ from coworld.runner.io import (
     redact_uri,
     upload_data,
     upload_file,
+)
+from coworld.runner.llm_enablement import resolve_player_llm
+from coworld.runner.llm_metadata import (
+    CoworldEpisodeLlmMetadata,
+    CoworldPersistentLlmMetadata,
+    parse_coworld_llm_metadata,
+    serialize_llm_request_metadata,
+)
+from coworld.runner.llm_sidecar_wiring import (
+    COWORLD_EGRESS_ENFORCED_LABEL,
+    LLM_SIDECAR_CONTAINER_NAME,
+    RESERVED_SIDECAR_APP_ENV,
+    build_llm_sidecar,
+    egress_relay_client_tls_volume,
+    llm_app_endpoint_env,
+    llm_sidecar_token_volume,
+    resolve_image_attribution_key,
 )
 from coworld.runner.phase_timings import (
     EpisodePhaseTimings,
@@ -139,18 +144,8 @@ _PLAYER_ARTIFACT_MAX_BYTES = 200 * 1024 * 1024
 _PLAYER_ARTIFACT_HEADER_DEADLINE_SECONDS = 5.0
 _PLAYER_ARTIFACT_BODY_DEADLINE_SECONDS = 60.0
 _PLAYER_ARTIFACT_MAX_CONNECTIONS_PER_SOURCE = 1
-_BEDROCK_SERVICE_ACCOUNT = "episode-runner"
+_LLM_SERVICE_ACCOUNT = "episode-runner"
 _KUBERNETES_API_SERVICE_HOST = "kubernetes.default.svc"
-_DIRECT_BEDROCK_APP_ENV = {
-    "USE_BEDROCK",
-    "AWS_REGION",
-    "AWS_DEFAULT_REGION",
-    "AWS_ACCESS_KEY_ID",
-    "AWS_SECRET_ACCESS_KEY",
-    "AWS_SESSION_TOKEN",
-    "AWS_WEB_IDENTITY_TOKEN_FILE",
-    "AWS_ROLE_ARN",
-}
 DEFAULT_PLAYER_CPU_REQUEST = "2"
 DEFAULT_PLAYER_MEMORY_REQUEST = "2Gi"
 # Keep the process-start gate inside the game's all-connected-or-timeout start window.
@@ -1222,34 +1217,23 @@ def _create_player_pod(
     timings: ProcessTimings | None = None,
 ) -> None:
     command, args = _command_args(player.run)
-    bedrock_enablement = resolve_player_bedrock(policy_secret_env)
+    llm_enablement = resolve_player_llm(policy_secret_env)
     # A CPU limit caps compute but does NOT change what os.cpu_count()/nproc report (those read
     # the host's /proc/cpuinfo), so a policy that sizes its math-library thread pools off the CPU
     # count would still spawn one-per-node-core and thrash against the quota. Pin the standard
     # thread-pool env to the limit so the player behaves like an N-core box on any node size; the
     # author's own env still wins if they set these explicitly.
     player_env = _player_thread_pool_env(player_cpu_limit) | dict(player.env) | dict(policy_secret_env)
-    uses_bedrock = bedrock_enablement.enabled
-    uses_sidecar = uses_bedrock and os.environ.get("COWORLD_LOCAL_DEV") != "true"
+    uses_llm = llm_enablement.enabled
+    uses_sidecar = uses_llm and os.environ.get("COWORLD_LOCAL_DEV") != "true"
     if uses_sidecar:
-        bedrock_sidecar_port = int(os.environ["BEDROCK_SIDECAR_PORT"])
-        # Strip both the direct-access env and the reserved sidecar keys from the user's
-        # policy/secret env, then apply platform-owned Bedrock app env LAST so it wins.
-        # USE_BEDROCK remains as the public enablement contract (the name is historical);
-        # endpoint/credential env routes the actual call through the sidecar.
-        player_env = {
-            key: value
-            for key, value in player_env.items()
-            if key not in _DIRECT_BEDROCK_APP_ENV and key not in RESERVED_SIDECAR_APP_ENV
-        }
+        llm_sidecar_port = int(os.environ["LLM_SIDECAR_PORT"])
+        # Apply platform endpoints after policy env so saved credentials cannot bypass the sidecar.
+        player_env = {key: value for key, value in player_env.items() if key not in RESERVED_SIDECAR_APP_ENV}
         endpoint_env: dict[str, str] = {
-            cast(str, ev.name): cast(str, ev.value)
-            for ev in bedrock_app_endpoint_env(bedrock_sidecar_port, os.environ["COWORLD_BEDROCK_REGION"])
+            cast(str, ev.name): cast(str, ev.value) for ev in llm_app_endpoint_env(llm_sidecar_port)
         }
-        player_env = player_env | {"USE_BEDROCK": "true"} | endpoint_env
-    elif uses_bedrock:
-        bedrock_region = os.environ["COWORLD_BEDROCK_REGION"]
-        player_env = player_env | {"AWS_REGION": bedrock_region, "AWS_DEFAULT_REGION": bedrock_region}
+        player_env = player_env | endpoint_env
     player_ws_url = _player_service_ws_url(service_name, slot, token)
     player_artifact_upload_url = _player_artifact_upload_url(slot, service_name, token)
     artifact_env_vars = (
@@ -1261,10 +1245,12 @@ def _create_player_pod(
         artifact_env_vars.append(
             client.V1EnvVar(name="COWORLD_RUNTIME_SESSION_ID", value=os.environ["COWORLD_RUNTIME_SESSION_ID"])
         )
-    player_bedrock_metadata = CoworldEpisodeBedrockMetadata.model_validate_json(
-        os.environ["BEDROCK_REQUEST_METADATA"]
-    ).model_copy(
-        update={
+    runtime_llm_metadata = parse_coworld_llm_metadata(os.environ["LLM_REQUEST_METADATA"])
+    if not isinstance(runtime_llm_metadata, (CoworldEpisodeLlmMetadata, CoworldPersistentLlmMetadata)):
+        raise ValueError("Player pods require episode or persistent runtime metadata")
+    player_llm_metadata = type(runtime_llm_metadata).model_validate(
+        runtime_llm_metadata.model_dump()
+        | {
             "metadata_origin": "coworld_runner",
             "role": "player",
             "slot": str(slot),
@@ -1273,8 +1259,8 @@ def _create_player_pod(
     )
     metadata_env_vars = [
         client.V1EnvVar(
-            name="BEDROCK_REQUEST_METADATA",
-            value=serialize_bedrock_request_metadata(player_bedrock_metadata),
+            name="LLM_REQUEST_METADATA",
+            value=serialize_llm_request_metadata(player_llm_metadata),
         )
     ]
     pod_annotations = {"karpenter.sh/do-not-disrupt": "true"}
@@ -1333,58 +1319,43 @@ def _create_player_pod(
     if uses_sidecar:
         # Skip the player app AND the sidecar: the sidecar self-provides its full IRSA env, so
         # the webhook must not also inject a conflicting token path.
-        pod_annotations["eks.amazonaws.com/skip-containers"] = f"player,{BEDROCK_SIDECAR_CONTAINER_NAME}"
-        egress_relay_url = os.environ.get("BEDROCK_SIDECAR_EGRESS_RELAY_URL") or None
-        pod_volumes = [bedrock_sidecar_token_volume()]
+        pod_annotations["eks.amazonaws.com/skip-containers"] = f"player,{LLM_SIDECAR_CONTAINER_NAME}"
+        egress_relay_url = os.environ.get("LLM_SIDECAR_EGRESS_RELAY_URL") or None
+        pod_volumes = [llm_sidecar_token_volume()]
         if egress_relay_url is not None:
             pod_volumes.append(egress_relay_client_tls_volume())
         init_containers.append(
-            build_bedrock_sidecar(
-                metadata=player_bedrock_metadata.model_copy(update={"metadata_origin": "bedrock_sidecar"}),
-                region=os.environ["COWORLD_BEDROCK_REGION"],
-                listen_port=bedrock_sidecar_port,
-                upstream_endpoint=os.environ.get("BEDROCK_SIDECAR_UPSTREAM_ENDPOINT") or None,
-                image=os.environ["BEDROCK_SIDECAR_IMAGE"],
-                role_arn=os.environ["BEDROCK_SIDECAR_ROLE_ARN"],
-                # Player-side sidecars persist completion records to the same S3 sink as the
-                # game sidecar; the dispatcher forwards these into the worker env (which this
-                # runner inherits). Unset bucket keeps the sidecar log-only.
-                completions_bucket=os.environ.get("BEDROCK_SIDECAR_COMPLETIONS_BUCKET") or None,
-                completions_prefix=os.environ.get("BEDROCK_SIDECAR_COMPLETIONS_PREFIX", "sidecar-completions"),
-                flush_records=int(os.environ.get("BEDROCK_SIDECAR_FLUSH_RECORDS", "200")),
-                flush_seconds=float(os.environ.get("BEDROCK_SIDECAR_FLUSH_SECONDS", "30.0")),
-                # Set on every worker by the dispatcher. Defaulted rather than indexed
-                # because app_backend and the coordinator image roll out separately: in
-                # the window where an app_backend that predates this change dispatches a
-                # newer coordinator, a KeyError here would fail the whole episode. The
-                # default matches BedrockSidecarConfig.request_limit_per_minute, so a pod
-                # in that window is still bounded.
-                request_limit_per_minute=int(os.environ.get("BEDROCK_SIDECAR_REQUEST_LIMIT_PER_MINUTE", "30")),
-                llm_relay_s3_bucket=os.environ.get("BEDROCK_SIDECAR_LLM_RELAY_S3_BUCKET") or None,
-                llm_relay_s3_prefix=os.environ.get("BEDROCK_SIDECAR_LLM_RELAY_S3_PREFIX", "llm-relay"),
-                llm_debug_body_s3_bucket=os.environ.get("BEDROCK_SIDECAR_LLM_DEBUG_BODY_S3_BUCKET") or None,
+            build_llm_sidecar(
+                metadata=player_llm_metadata.model_copy(update={"metadata_origin": "llm_sidecar"}),
+                listen_port=llm_sidecar_port,
+                region=os.environ["LLM_SIDECAR_REGION"],
+                image=os.environ["LLM_SIDECAR_IMAGE"],
+                role_arn=os.environ["LLM_SIDECAR_ROLE_ARN"],
+                flush_records=int(os.environ.get("LLM_SIDECAR_FLUSH_RECORDS", "200")),
+                flush_seconds=float(os.environ.get("LLM_SIDECAR_FLUSH_SECONDS", "30.0")),
+                request_limit_per_minute=int(os.environ["LLM_SIDECAR_REQUEST_LIMIT_PER_MINUTE"]),
+                llm_relay_s3_bucket=os.environ.get("LLM_SIDECAR_LLM_RELAY_S3_BUCKET") or None,
+                llm_relay_s3_prefix=os.environ.get("LLM_SIDECAR_LLM_RELAY_S3_PREFIX", "llm-relay"),
+                llm_debug_body_s3_bucket=os.environ.get("LLM_SIDECAR_LLM_DEBUG_BODY_S3_BUCKET") or None,
                 openrouter_capture_payloads=(
-                    os.environ.get("BEDROCK_SIDECAR_OPENROUTER_CAPTURE_PAYLOADS", "true") == "true"
+                    os.environ.get("LLM_SIDECAR_OPENROUTER_CAPTURE_PAYLOADS", "true") == "true"
                 ),
                 # League-configured per-episode per-player-pod LLM spend limit, forwarded
                 # by the dispatcher; the sidecar enforces it.
-                spend_limit_usd=os.environ.get("BEDROCK_SIDECAR_SPEND_LIMIT_USD") or None,
-                # Server-snapshotted per-model USD rates, forwarded by the dispatcher so
-                # the sidecar meters spend with the same rates the server reports.
-                pricing_json=os.environ.get("BEDROCK_SIDECAR_PRICING_JSON") or None,
-                openrouter_key_secret_name=os.environ.get("COWORLD_OPENROUTER_KEY_SECRET_NAME"),
+                spend_limit_usd=os.environ.get("LLM_SIDECAR_SPEND_LIMIT_USD") or None,
+                openrouter_key_secret_name=os.environ["COWORLD_OPENROUTER_KEY_SECRET_NAME"],
                 openrouter_model_allowlist=(
                     json.loads(os.environ["COWORLD_OPENROUTER_MODEL_ALLOWLIST"])
                     if "COWORLD_OPENROUTER_MODEL_ALLOWLIST" in os.environ
                     else None
                 ),
-                openrouter_model_aliases=(
-                    json.loads(os.environ["COWORLD_OPENROUTER_MODEL_ALIASES"])
-                    if "COWORLD_OPENROUTER_MODEL_ALIASES" in os.environ
-                    else None
-                ),
                 openrouter_allowlist_version=os.environ.get("COWORLD_OPENROUTER_ALLOWLIST_VERSION"),
                 egress_relay_url=egress_relay_url,
+                runtime_deadline=(
+                    os.environ["LLM_SIDECAR_RUNTIME_DEADLINE"]
+                    if isinstance(player_llm_metadata, CoworldPersistentLlmMetadata)
+                    else None
+                ),
             )
         )
     enforced = os.environ.get("COWORLD_EGRESS_ENFORCEMENT_ENABLED") == "true"
@@ -1437,7 +1408,7 @@ def _create_player_pod(
         ),
         spec=client.V1PodSpec(
             restart_policy="Never",
-            service_account_name=_player_service_account_name(bedrock_enablement),
+            service_account_name=_LLM_SERVICE_ACCOUNT if uses_sidecar else None,
             automount_service_account_token=False,
             host_aliases=host_aliases,
             node_selector=_workload_node_selector(),
@@ -1477,12 +1448,6 @@ def _player_artifact_upload_url(slot: int, service_name: str, token: str) -> str
     if not raw.startswith("file://") and str(slot) not in json.loads(raw):
         return None
     return f"http://{service_name}:{PLAYER_ARTIFACT_PORT}/player-artifact/{slot}/{token}"
-
-
-def _player_service_account_name(bedrock_enablement: BedrockEnablement) -> str | None:
-    if bedrock_enablement.enabled:
-        return _BEDROCK_SERVICE_ACCOUNT
-    return None
 
 
 def _policy_secrets_from_env() -> dict[int, dict[str, str]]:

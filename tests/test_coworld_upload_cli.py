@@ -254,12 +254,22 @@ def test_upload_coworld_requires_built_replay_viewer_before_certification(
         upload_coworld(manifest_path)
 
 
+@pytest.fixture
+def missing_default_grader_image(monkeypatch: pytest.MonkeyPatch) -> None:
+    def inspect_missing_image(command: list[str], **_kwargs: object) -> subprocess.CompletedProcess:
+        assert command == ["docker", "image", "inspect", "ghcr.io/metta-ai/graders-default@sha256:graderdigest"]
+        return subprocess.CompletedProcess(command, 1)
+
+    monkeypatch.setattr("coworld.upload.subprocess.run", inspect_missing_image)
+
+
 @pytest.mark.parametrize("memory_enabled", [False, True])
 def test_upload_coworld_posts_standalone_manifest(
     tmp_path: Path,
     httpserver: HTTPServer,
     monkeypatch: pytest.MonkeyPatch,
     memory_enabled: bool,
+    missing_default_grader_image: None,
 ) -> None:
     manifest_path = _write_manifest(tmp_path)
     if memory_enabled:
@@ -288,16 +298,10 @@ def test_upload_coworld_posts_standalone_manifest(
         hashed_images.append(image)
         return "sha256:client-hash"
 
-    def fake_run(command: list[str], *, capture_output: bool, check: bool) -> subprocess.CompletedProcess[str]:
-        assert command == ["docker", "image", "inspect", "ghcr.io/metta-ai/graders-default@sha256:graderdigest"]
-        assert capture_output is True
-        assert check is False
-        return subprocess.CompletedProcess(command, 1)
-
     monkeypatch.setattr("coworld.upload.certify_coworld", fake_certify)
     monkeypatch.setattr("coworld.upload.assert_docker_image_reachable", lambda *_args, **_kwargs: None)
     monkeypatch.setattr("coworld.upload._local_image_client_hash", fake_hash)
-    monkeypatch.setattr("coworld.upload.subprocess.run", fake_run)
+
     pulled_images: list[tuple[str, str]] = []
     monkeypatch.setattr("coworld.upload.pull_and_tag_image", lambda image, tag: pulled_images.append((image, tag)))
     monkeypatch.setattr(
@@ -430,6 +434,7 @@ def test_upload_coworld_command_certifies_before_uploading(
     tmp_path: Path,
     httpserver: HTTPServer,
     monkeypatch: pytest.MonkeyPatch,
+    missing_default_grader_image: None,
 ) -> None:
     manifest_path = _write_manifest(tmp_path)
     certification_calls: list[tuple[Path, float]] = []
@@ -1365,6 +1370,7 @@ def test_upload_coworld_surfaces_server_error_detail(
     tmp_path: Path,
     httpserver: HTTPServer,
     monkeypatch: pytest.MonkeyPatch,
+    missing_default_grader_image: None,
 ) -> None:
     manifest_path = _write_manifest(tmp_path)
     image_id = "img_00000000-0000-0000-0000-000000000040"
@@ -1654,8 +1660,8 @@ def test_upload_policy_command_requires_exactly_one_source(args: list[str]) -> N
     [
         ["--run", "python"],
         ["--secret-env", "TOKEN=value"],
-        ["--use-bedrock"],
-        ["--bedrock-model", "model-id"],
+        ["--use-llm"],
+        ["--llm-model", "model-id"],
     ],
 )
 def test_upload_policy_command_rejects_container_options_with_file(tmp_path: Path, forbidden_args: list[str]) -> None:
@@ -1839,8 +1845,8 @@ def test_upload_policy_command_sends_policy_secrets(
         headers={"Authorization": "Bearer token"},
         json={
             "policy_secret_env": {
-                "USE_BEDROCK": "true",
-                "BEDROCK_MODEL": "us.amazon.nova-micro-v1:0",
+                "COWORLD_LLM_ENABLED": "true",
+                "COWORLD_LLM_MODEL": "amazon/nova-micro-v1",
                 "ANTHROPIC_API_KEY": "sk-ant-test",
             },
         },
@@ -1872,9 +1878,9 @@ def test_upload_policy_command_sends_policy_secrets(
             "paintbot",
             "--server",
             httpserver.url_for(""),
-            "--use-bedrock",
-            "--bedrock-model",
-            "us.amazon.nova-micro-v1:0",
+            "--use-llm",
+            "--llm-model",
+            "amazon/nova-micro-v1",
             "--secret-env",
             "ANTHROPIC_API_KEY=sk-ant-test",
         ],
@@ -1949,7 +1955,7 @@ def test_upload_policy_command_sends_tags(
     assert "Upload complete: paintbot:v1" in result.output
 
 
-def test_upload_policy_command_requires_bedrock_for_bedrock_model() -> None:
+def test_upload_policy_command_requires_llm_for_llm_model() -> None:
     result = CliRunner().invoke(
         app,
         [
@@ -1957,13 +1963,13 @@ def test_upload_policy_command_requires_bedrock_for_bedrock_model() -> None:
             "unit-test-policy:latest",
             "--name",
             "paintbot",
-            "--bedrock-model",
-            "us.amazon.nova-micro-v1:0",
+            "--llm-model",
+            "amazon/nova-micro-v1",
         ],
     )
 
     assert result.exit_code != 0
-    assert "--bedrock-model requires --use-bedrock" in unstyle(result.output)
+    assert "--llm-model requires --use-llm" in unstyle(result.output)
 
 
 def test_upload_policy_command_rejects_run_as_single_quoted_string() -> None:
