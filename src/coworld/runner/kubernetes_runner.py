@@ -1334,9 +1334,8 @@ def _create_player_pod(
         # Skip the player app AND the sidecar: the sidecar self-provides its full IRSA env, so
         # the webhook must not also inject a conflicting token path.
         pod_annotations["eks.amazonaws.com/skip-containers"] = f"player,{BEDROCK_SIDECAR_CONTAINER_NAME}"
-        prompt_prefix_sample_rate = float(os.environ.get("BEDROCK_SIDECAR_PROMPT_PREFIX_SAMPLE_RATE", "0"))
         egress_relay_url = os.environ.get("BEDROCK_SIDECAR_EGRESS_RELAY_URL") or None
-        pod_volumes = [bedrock_sidecar_token_volume(prompt_prefix_measurement=prompt_prefix_sample_rate > 0)]
+        pod_volumes = [bedrock_sidecar_token_volume()]
         if egress_relay_url is not None:
             pod_volumes.append(egress_relay_client_tls_volume())
         init_containers.append(
@@ -1373,7 +1372,6 @@ def _create_player_pod(
                 # Server-snapshotted per-model USD rates, forwarded by the dispatcher so
                 # the sidecar meters spend with the same rates the server reports.
                 pricing_json=os.environ.get("BEDROCK_SIDECAR_PRICING_JSON") or None,
-                prompt_prefix_sample_rate=prompt_prefix_sample_rate,
                 openrouter_key_secret_name=os.environ.get("COWORLD_OPENROUTER_KEY_SECRET_NAME"),
                 openrouter_model_allowlist=(
                     json.loads(os.environ["COWORLD_OPENROUTER_MODEL_ALLOWLIST"])

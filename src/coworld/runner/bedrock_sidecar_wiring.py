@@ -13,8 +13,6 @@ BEDROCK_SIDECAR_TOKEN_PATH = "token"
 BEDROCK_SIDECAR_TOKEN_FILE = f"{BEDROCK_SIDECAR_TOKEN_MOUNT_PATH}/{BEDROCK_SIDECAR_TOKEN_PATH}"
 BEDROCK_SIDECAR_CONTRACT_VERSION = "core-v1"
 BEDROCK_SIDECAR_HEALTH_PATH = f"/healthz/{BEDROCK_SIDECAR_CONTRACT_VERSION}"
-BEDROCK_PROMPT_PREFIX_CONTROL_CONFIG_MAP_NAME = "bedrock-prompt-prefix-measurement"
-BEDROCK_PROMPT_PREFIX_ENABLED_PATH = f"{BEDROCK_SIDECAR_TOKEN_MOUNT_PATH}/prompt-prefix-measurement-enabled"
 BEDROCK_RUNTIME_ENDPOINT_TEMPLATE = "https://bedrock-runtime.{region}.amazonaws.com"
 EGRESS_RELAY_CLIENT_TLS_SECRET_NAME = "egress-relay-client-tls"
 EGRESS_RELAY_CLIENT_TLS_VOLUME_NAME = "egress-relay-client-tls"
@@ -86,7 +84,6 @@ def build_bedrock_sidecar(
     spend_limit_usd: str | None = None,
     player_slot_count: int | None = None,
     pricing_json: str | None = None,
-    prompt_prefix_sample_rate: float = 0.0,
     openrouter_key_secret_name: str | None = None,
     openrouter_model_allowlist: list[str] | None = None,
     openrouter_model_aliases: dict[str, str] | None = None,
@@ -143,20 +140,6 @@ def build_bedrock_sidecar(
             else []
         ),
     ]
-    prompt_prefix_measurement_env = (
-        [
-            client.V1EnvVar(
-                name="BEDROCK_SIDECAR_PROMPT_PREFIX_SAMPLE_RATE",
-                value=str(prompt_prefix_sample_rate),
-            ),
-            client.V1EnvVar(
-                name="BEDROCK_SIDECAR_PROMPT_PREFIX_ENABLED_PATH",
-                value=BEDROCK_PROMPT_PREFIX_ENABLED_PATH,
-            ),
-        ]
-        if prompt_prefix_sample_rate > 0
-        else []
-    )
     openrouter_routing_env = (
         [
             client.V1EnvVar(name="BEDROCK_SIDECAR_LLM_PROVIDER", value="openrouter"),
@@ -220,7 +203,6 @@ def build_bedrock_sidecar(
             *completion_env,
             *sink_tuning_env,
             *openrouter_storage_env,
-            *prompt_prefix_measurement_env,
             *openrouter_routing_env,
             # The client certificate is mounted only into this trusted container. TLS
             # protects it from a sibling container sniffing the shared pod network.
@@ -312,7 +294,6 @@ def bedrock_sidecar_token_volume(
     *,
     audience: str = "sts.amazonaws.com",
     expiration_seconds: int = 3600,
-    prompt_prefix_measurement: bool = False,
 ) -> client.V1Volume:
     return client.V1Volume(
         name=BEDROCK_SIDECAR_TOKEN_VOLUME_NAME,
@@ -324,23 +305,6 @@ def bedrock_sidecar_token_volume(
                         expiration_seconds=expiration_seconds,
                         path=BEDROCK_SIDECAR_TOKEN_PATH,
                     )
-                ),
-                *(
-                    [
-                        client.V1VolumeProjection(
-                            config_map=client.V1ConfigMapProjection(
-                                name=BEDROCK_PROMPT_PREFIX_CONTROL_CONFIG_MAP_NAME,
-                                items=[
-                                    client.V1KeyToPath(
-                                        key="enabled",
-                                        path="prompt-prefix-measurement-enabled",
-                                    )
-                                ],
-                            )
-                        )
-                    ]
-                    if prompt_prefix_measurement
-                    else []
                 ),
             ]
         ),

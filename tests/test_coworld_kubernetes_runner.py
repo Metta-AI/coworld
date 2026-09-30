@@ -39,8 +39,6 @@ from coworld.runner import bootstrap, init_config, kubernetes_runner
 from coworld.runner import io as runner_io
 from coworld.runner import runner as runner_module
 from coworld.runner.bedrock_sidecar_wiring import (
-    BEDROCK_PROMPT_PREFIX_CONTROL_CONFIG_MAP_NAME,
-    BEDROCK_PROMPT_PREFIX_ENABLED_PATH,
     BEDROCK_SIDECAR_CONTAINER_NAME,
     BEDROCK_SIDECAR_TOKEN_FILE,
     BEDROCK_SIDECAR_TOKEN_VOLUME_NAME,
@@ -3404,7 +3402,6 @@ def test_create_player_pod_sidecar_forwards_s3_sink_env(monkeypatch):
     monkeypatch.setenv("BEDROCK_SIDECAR_COMPLETIONS_PREFIX", "sidecar-completions")
     monkeypatch.setenv("BEDROCK_SIDECAR_FLUSH_RECORDS", "200")
     monkeypatch.setenv("BEDROCK_SIDECAR_FLUSH_SECONDS", "30.0")
-    monkeypatch.setenv("BEDROCK_SIDECAR_PROMPT_PREFIX_SAMPLE_RATE", "0.5")
 
     kubernetes_runner._create_player_pod(
         core_v1,
@@ -3436,12 +3433,8 @@ def test_create_player_pod_sidecar_forwards_s3_sink_env(monkeypatch):
     assert sidecar_values["BEDROCK_SIDECAR_LLM_RELAY_S3_PREFIX"] == "llm-relay/custom"
     assert sidecar_values["BEDROCK_SIDECAR_LLM_DEBUG_BODY_S3_BUCKET"] == "softmax-llm-records"
     assert sidecar_values["BEDROCK_SIDECAR_OPENROUTER_CAPTURE_PAYLOADS"] == "false"
-    assert sidecar_values["BEDROCK_SIDECAR_PROMPT_PREFIX_SAMPLE_RATE"] == "0.5"
-    assert sidecar_values["BEDROCK_SIDECAR_PROMPT_PREFIX_ENABLED_PATH"] == BEDROCK_PROMPT_PREFIX_ENABLED_PATH
     pod_name_env = next(env_var for env_var in sidecar.env if env_var.name == "POD_NAME")
     assert pod_name_env.value_from.field_ref.field_path == "metadata.name"
-    control_projection = created["body"].spec.volumes[0].projected.sources[1].config_map
-    assert control_projection.name == BEDROCK_PROMPT_PREFIX_CONTROL_CONFIG_MAP_NAME
 
 
 def test_create_player_pod_routes_every_sidecar_without_exposing_openrouter_key(monkeypatch) -> None:
