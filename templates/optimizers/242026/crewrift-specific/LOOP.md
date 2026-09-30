@@ -1,5 +1,8 @@
 # The Working Loop: Optimizing the notsus Bot for the Crewrift Coworld
 
+> Native migration prerequisite: external advisor code and previously published images must be rebuilt for the native hosted endpoint. These templates do not prove that an external image has migrated.
+
+
 > The generalized loop SHAPE (orient → lever → root-cause → edit → build/upload → server-side A/B →
 > verdict → ship/refute → record), stripped of any one game's specifics, lives in the coworld-player
 > tier: `../coworld-player-generic/guides/coworld-optimization-loop.md`. **This file is the concrete
@@ -187,7 +190,7 @@ action without the internal state that decides it?
   to a previously verified-good build proves byte-identical behavior — skip re-validation.
 - Stale-cache trap: a buildx compile error whose line number doesn't match the current file means
   a stale `COPY . .` layer — rebuild with `--no-cache`.
-- Bake `CREWRIFT_BEDROCK_MODEL=us.anthropic.claude-haiku-4-5-20251001-v1:0` into the image ENV;
+- Bake `COWORLD_LLM_MODEL=anthropic/claude-haiku-4.5` into the image ENV;
   Crewrift policies must not use Sonnet or Opus. Keep the whole policy episode below **1,800
   quota-weighted tokens** (`input + cache-write + 5 × output`), across every advisor call, and
   verify the model and token settings with `docker inspect`.
@@ -349,7 +352,7 @@ Then ship, with user approval:
 - Harness-repo changes ship by direct fast-forward push to main on the user's "merge to main"
   (no PR ceremony in this personal repo); run the pre-push gate first (tests via
   `uv run python -m unittest` from inside `_harness` with `CREWRIFT_MANIFEST` set, ruff,
-  `node --check` on generated JS where relevant), and an optional `vet-bedrock` review pass.
+  `node --check` on generated JS where relevant), and an optional native LLM contract review.
   Bot-repo changes commit on the bot repo's own branch — the two repos have different remotes and
   default branches; resolve the push target before touching remotes.
 
@@ -396,9 +399,9 @@ monitor running.
 rg for the added/removed symbols and git-diff the file to determine which edits landed, then
 finish only the remainder.
 
-**The advisor looks dead / the bot plays as a skip-bot.** Check in order: is `--use-bedrock` /
-USE_BEDROCK actually wired (locally `coworld run-episode --use-bedrock --aws-profile softmax-org`
-injects creds); is the configured Bedrock model id invokable from the execution account
+**The advisor looks dead / the bot plays as a skip-bot.** Check in order: is `--use-llm` /
+COWORLD_LLM_ENABLED actually wired (locally `coworld run-episode --use-llm`
+uses the configured native endpoint); is the configured canonical model allowed by the native gateway
 (pin the required Haiku profile via env); is concurrency degrading it (high per-box load drove
 84–100% invalid rates — run advisor-sensitive evals at low concurrency). Synthetic burst probes do
 NOT reproduce sustained in-game load failures. Local realtime runs CAN validate the advisor
@@ -443,7 +446,7 @@ The loop above is the end state. Two earlier eval rungs were built and then deli
 replaced — do not resurrect them:
 
 1. **Local docker A/B** (`_harness/dashboard.py` / `eval.py` paired scrimmages on the Mac,
-   phased arms, --bedrock for advisor work): retained only as a cheap mechanism-check lab; it
+   phased arms, with native advisor access configured): retained only as a cheap mechanism-check lab; it
    cannot measure deduction or league strength (weak-field ceiling ~97%, no real opponents).
 2. **dqueue** (Aurora Data API queue + CDK EC2 amd64 runner fleet + `_harness/queue_cli.py`,
    built 2026-06-08): solved native-amd64 throughput and produced the contested-gate methodology

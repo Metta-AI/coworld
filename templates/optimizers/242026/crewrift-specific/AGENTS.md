@@ -1,5 +1,8 @@
 # AGENTS.md — crewrift / notsus player optimization (always-on)
 
+> Native migration prerequisite: external advisor code and previously published images must be rebuilt for the native hosted endpoint. These templates do not prove that an external image has migrated.
+
+
 This is the **project tier** of a three-tier package — the irreducibly crewrift residue. It carries
 the concrete numbers, league/division IDs, `notsus.nim`/`sim.nim` line cites, the measured-dead
 levers, and the actual commands. The methodology that produced them lives one tier up:
@@ -71,7 +74,7 @@ a rival's entire 41%-vs-18% edge was a single button press).
   `guides/refuted-levers-do-not-rebuild.md` and `performance/LOG.md`. Both are crewrift-measured —
   check them before proposing any crew change.
 - **Haiku and episode budget are mandatory:** bake
-  `CREWRIFT_BEDROCK_MODEL=us.anthropic.claude-haiku-4-5-20251001-v1:0` into the image; never use
+  `COWORLD_LLM_MODEL=anthropic/claude-haiku-4.5` into the image; never use
   Sonnet or Opus for Crewrift. Across the entire policy episode, keep
   `input tokens + cache-write tokens + 5 × output tokens` below **1,800** (the token equivalent of
   the `$0.0018` per-policy, per-episode cap). Stop calling the advisor and use the scripted floor

@@ -17,7 +17,7 @@ platform-machine tokens the artifact download that ladder rounds and experience 
 - `game.player_runtime` must be `platform-hosted`. Game-hosted Coworlds return `unsupported_runtime` / HTTP 400.
 - Caller is a signed-in **user** who can see the league (`USER` auth + league visibility).
 - Policy seats must be competing champions in that league.
-- LLM access requires `--use-bedrock` on `upload-policy`. See [HOSTED_LLM.md](HOSTED_LLM.md).
+- LLM access requires `--use-llm` on `upload-policy`. See [HOSTED_LLM.md](HOSTED_LLM.md).
 - Draft TTL is one hour. Start refuses if the host already has a pending, dispatched, or running lobby episode.
 - Usage is credited to the host (`requester_user_id`).
 

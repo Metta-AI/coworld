@@ -5,19 +5,17 @@ For runtime selection, see [Choose a Player Runtime](PLAYER_RUNTIMES.md). The pl
 on every request for seat `N`. File policies have no environment, secrets, or player sidecar; see
 [the game contract](roles/GAME.md#hosted-llm-access).
 
-**Status:** live
-
 Players that call an LLM can do so in hosted tournaments **without shipping their own model credentials**. The platform
 runs a per-pod proxy (the "LLM sidecar") that holds the real provider key, forwards your calls to
 [OpenRouter](https://openrouter.ai), and meters spend against league and experience-request limits.
 
-> ## ⚠️ THE ONE RULE — send every model call to `AWS_ENDPOINT_URL_BEDROCK_RUNTIME`
+> ## ⚠️ THE ONE RULE — send every model call to `COWORLD_LLM_ENDPOINT`
 >
-> In a hosted episode your player pod is given the env var **`AWS_ENDPOINT_URL_BEDROCK_RUNTIME`** (e.g.
-> `http://127.0.0.1:9100`). The name is historical; the value is the sidecar's base URL. **Every model call must go to
-> that endpoint.** The pod has no provider credentials of its own, so a client that calls `api.anthropic.com`,
-> `api.openai.com`, `openrouter.ai`, or any AWS host directly fails with an authentication error. Whether the player
-> then falls back or breaks depends on the player implementation.
+> In a hosted episode your player pod is given the env var **`COWORLD_LLM_ENDPOINT`** (e.g. `http://127.0.0.1:9100`).
+> The value is the sidecar's base URL. **Every model call must go to that endpoint.** The pod has no provider
+> credentials of its own, so a client that calls `api.anthropic.com`, `api.openai.com`, `openrouter.ai`, or any AWS host
+> directly fails with an authentication error. Whether the player then falls back or breaks depends on the player
+> implementation.
 >
 > **Don't supply a real API key and don't worry about auth.** The sidecar ignores whatever auth header you send and
 > attaches the real key itself. Standard SDKs need a non-empty key to construct a client, so pass any placeholder. Never
@@ -27,33 +25,23 @@ runs a per-pod proxy (the "LLM sidecar") that holds the real provider key, forwa
 
 ### Detecting that you're behind the sidecar
 
-The presence of **`AWS_ENDPOINT_URL_BEDROCK_RUNTIME`** is the signal that the hosted sidecar is available. Gate on that
-env var, not on `USE_BEDROCK`, which is the stored enablement flag rather than a runtime signal.
-
-One exception: if any policy in the episode was uploaded with a `--bedrock-model` value the platform cannot map to an
-OpenRouter slug, the dispatcher keeps that whole episode on the legacy lane so those pods are not stranded. On such an
-episode the native endpoints below answer HTTP 503 `OpenRouter is not configured`. Naming a canonical slug (or a known
-alias) in your own upload keeps you off that path; the failure is caused by another pod's model name, not yours.
+The presence of **`COWORLD_LLM_ENDPOINT`** is the signal that the hosted sidecar is available. Gate on that env var, not
+on `COWORLD_LLM_ENABLED`, which is the stored enablement flag rather than a runtime signal.
 
 The platform adds the sidecar and injects this environment into a hosted player pod when its policy was uploaded with
-`--use-bedrock`:
+`--use-llm`:
 
-| Env var                            | Value in a hosted, sidecar-backed pod              | What you do with it                                              |
-| ---------------------------------- | -------------------------------------------------- | ---------------------------------------------------------------- |
-| `AWS_ENDPOINT_URL_BEDROCK_RUNTIME` | the sidecar, e.g. `http://127.0.0.1:9100`          | **Send all model calls here.** Read it; never hardcode.          |
-| `BEDROCK_MODEL`                    | the model id from `--bedrock-model`, when provided | Read your model from this when your policy uses the upload flag. |
-
-The pod also receives placeholder `AWS_*` credential and region variables. They exist so that legacy AWS-SDK clients can
-construct a request; they carry no access and are stripped by the sidecar.
+| Env var                | Value in a hosted, sidecar-backed pod          | What you do with it                                              |
+| ---------------------- | ---------------------------------------------- | ---------------------------------------------------------------- |
+| `COWORLD_LLM_ENDPOINT` | the sidecar, e.g. `http://127.0.0.1:9100`      | **Send all model calls here.** Read it; never hardcode.          |
+| `COWORLD_LLM_MODEL`    | the model id from `--llm-model`, when provided | Read your model from this when your policy uses the upload flag. |
 
 ### Which models you can name
 
 Name models by their canonical OpenRouter slug, for example `anthropic/claude-haiku-4.5`, `anthropic/claude-sonnet-4.6`,
-or `amazon/nova-micro-v1`. The sidecar also resolves a configured set of legacy aliases (short names such as
-`claude-haiku-4.5` and older provider-specific ids), but new players should use the slug. A model name that is neither a
-`provider/model` slug nor a known alias, or that the league does not allow, is rejected with HTTP 403 before any call
-leaves the pod. A well-formed slug the provider does not serve is forwarded and fails with the provider's own error
-(HTTP 404 or 400), so check the model exists on OpenRouter before you rely on it.
+or `amazon/nova-micro-v1`. Short aliases and provider-specific inference IDs are rejected; the gateway does not
+translate them. Models outside the league's allowed set are rejected before any call leaves the pod. A canonical slug
+the provider does not serve fails with the provider's error, so verify the model exists before relying on it.
 
 ### The endpoints the sidecar serves
 
@@ -74,9 +62,9 @@ Streaming is not supported: a request with `stream: true` is rejected with HTTP 
 import os
 from anthropic import Anthropic
 
-client = Anthropic(base_url=os.environ["AWS_ENDPOINT_URL_BEDROCK_RUNTIME"], api_key="sidecar")
+client = Anthropic(base_url=os.environ["COWORLD_LLM_ENDPOINT"], api_key="sidecar")
 resp = client.messages.create(
-    model=os.environ["BEDROCK_MODEL"],
+    model=os.environ["COWORLD_LLM_MODEL"],
     max_tokens=512,
     messages=[{"role": "user", "content": "..."}],
 )
@@ -87,9 +75,9 @@ resp = client.messages.create(
 import os
 from openai import OpenAI
 
-client = OpenAI(base_url=f"{os.environ['AWS_ENDPOINT_URL_BEDROCK_RUNTIME']}/v1", api_key="sidecar")
+client = OpenAI(base_url=f"{os.environ['COWORLD_LLM_ENDPOINT']}/v1", api_key="sidecar")
 resp = client.chat.completions.create(
-    model=os.environ["BEDROCK_MODEL"],
+    model=os.environ["COWORLD_LLM_MODEL"],
     max_tokens=512,
     messages=[{"role": "user", "content": "..."}],
 )
@@ -103,10 +91,10 @@ unchanged as `baseURL`; the OpenAI SDK needs `${endpoint}/v1`, as in the Python 
 Hand-rolled clients must build the URL from the endpoint environment variable. No auth header is needed:
 
 ```bash
-curl -sS -X POST "$AWS_ENDPOINT_URL_BEDROCK_RUNTIME/v1/messages" \
+curl -sS -X POST "$COWORLD_LLM_ENDPOINT/v1/messages" \
   -H "Content-Type: application/json" \
   -H "anthropic-version: 2023-06-01" \
-  -d "{\"model\":\"$BEDROCK_MODEL\",\"max_tokens\":512,
+  -d "{\"model\":\"$COWORLD_LLM_MODEL\",\"max_tokens\":512,
        \"messages\":[{\"role\":\"user\",\"content\":\"ping\"}]}"
 ```
 
@@ -125,9 +113,9 @@ against their own request bucket, at four times the chat ceiling (120 per minute
 Name the pinned slug `typesafe/jev-1.13`. The moving alias `~typesafe/jev-latest` is not a canonical slug, so the
 sidecar rejects it with HTTP 403. The league must also allow the model.
 
-The request is a JSON object with `model`, `state` (a string, an array, or an object; not a bare number, boolean, or
-null), and `questions` (a non-empty object keyed by your own question ids). Each question has a `type`, optional
-`instructions`, and `criteria` whose shape depends on the type:
+The request is a JSON object with `model`, a required `state` value, and `questions` (a non-empty object keyed by your
+own question ids). The sidecar forwards the state unchanged, including `null`; the provider validates its content. Each
+question has a `type`, optional `instructions`, and `criteria` whose shape depends on the type:
 
 | `type`   | Answers                                   | `criteria`                                                              |
 | -------- | ----------------------------------------- | ----------------------------------------------------------------------- |
@@ -140,7 +128,7 @@ empty `questions`. It does not validate question shapes: a `criteria` of the wro
 string for a `noul`) is forwarded and comes back as the provider's HTTP 400, which names the offending path.
 
 ```bash
-curl -sS -X POST "$AWS_ENDPOINT_URL_BEDROCK_RUNTIME/v1/systemone" \
+curl -sS -X POST "$COWORLD_LLM_ENDPOINT/v1/systemone" \
   -H "Content-Type: application/json" \
   -d '{"model": "typesafe/jev-1.13",
        "state": {"tick": 41, "paint": {"red": 12, "blue": 9}},
@@ -156,36 +144,34 @@ curl -sS -X POST "$AWS_ENDPOINT_URL_BEDROCK_RUNTIME/v1/systemone" \
 `answers` is keyed by the same ids as `questions`. Errors use OpenRouter's System One shape whether the sidecar or the
 provider raised them: `{"error": {"message": "...", "code": 400}}`, with `code` equal to the HTTP status. The sidecar's
 own statuses are 400 (malformed request), 403 (model not allowed), 429 (spend limit, or request ceiling with
-`Retry-After`), 503 (the provider answered, but with a body the sidecar could not hand back), and 500 (any other sidecar
-fault). The one exception is the plain-text HTTP 503 `OpenRouter is not configured` described above, which every native
-endpoint returns on a legacy-lane episode.
+`Retry-After`), 503 (a provider response the sidecar could not return in the System One format), and 500 (other sidecar
+faults). Malformed and non-JSON success responses return the same 503 recorded in attempt accounting.
 
 Use plain HTTP; there is no SDK path. The TypeSafe SDK's model listing does not work through OpenRouter.
 
 ### Verify it's reachable
 
 ```bash
-echo "$AWS_ENDPOINT_URL_BEDROCK_RUNTIME"                     # expect http://127.0.0.1:<port>; empty => no hosted sidecar
-curl -sS "$AWS_ENDPOINT_URL_BEDROCK_RUNTIME/healthz/core-v1" # expect: ok
+echo "$COWORLD_LLM_ENDPOINT"                     # expect http://127.0.0.1:<port>; empty => no hosted sidecar
+curl -sS "$COWORLD_LLM_ENDPOINT/healthz/core-v1" # expect: ok
 ```
 
 ## Troubleshooting
 
-| Symptom                                                         | Cause                                                                                                                       | Fix                                                                                                                                                                    |
-| --------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `401`/`403` authentication error from a public provider host    | You're hitting the provider directly instead of the sidecar                                                                 | Send to `$AWS_ENDPOINT_URL_BEDROCK_RUNTIME`. Log the exact URL you POST to.                                                                                            |
-| `AWS_ENDPOINT_URL_BEDROCK_RUNTIME` is empty/unset               | The policy was not uploaded with `--use-bedrock`, you're running locally, or hosted sidecar infrastructure is misconfigured | Locally, use your own provider key (below). For hosted, fix the upload (`--use-bedrock`); if it is already set, report the missing sidecar as an infrastructure fault. |
-| HTTP 403 `permission_error` from the sidecar                    | The model is not a `provider/model` slug, a known alias, or an allowed model for this league                                | Use a slug such as `anthropic/claude-haiku-4.5`. Read the error body; it names the model that was rejected.                                                            |
-| HTTP 503 `OpenRouter is not configured` on `/v1/messages`       | The episode was pinned to the legacy lane because a policy in it names an unmappable model                                  | Check every policy's `--bedrock-model`; use canonical slugs. Fall back to a legal action for this episode.                                                             |
-| HTTP 400 `invalid_request_error` mentioning `stream`            | The request set `stream: true`                                                                                              | Disable streaming in the client.                                                                                                                                       |
-| 0 completed episodes / silent non-LLM baseline in hosted rounds | A failing model call is being swallowed and you fall back                                                                   | Log the **response body** and the **endpoint URL** before anything else; it's almost always a routing or model-name issue above.                                       |
+| Symptom                                                         | Cause                                                                                                                   | Fix                                                                                                                                                                |
+| --------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `401`/`403` authentication error from a public provider host    | You're hitting the provider directly instead of the sidecar                                                             | Send to `$COWORLD_LLM_ENDPOINT`. Log the exact URL you POST to.                                                                                                    |
+| `COWORLD_LLM_ENDPOINT` is empty/unset                           | The policy was not uploaded with `--use-llm`, you're running locally, or hosted sidecar infrastructure is misconfigured | Locally, use your own provider key (below). For hosted, fix the upload (`--use-llm`); if it is already set, report the missing sidecar as an infrastructure fault. |
+| HTTP 403 `permission_error` from the sidecar                    | The model is not a canonical `provider/model` slug or an allowed model for this league                                  | Use a slug such as `anthropic/claude-haiku-4.5`. Read the error body; it names the model that was rejected.                                                        |
+| HTTP 400 `invalid_request_error` mentioning `stream`            | The request set `stream: true`                                                                                          | Disable streaming in the client.                                                                                                                                   |
+| 0 completed episodes / silent non-LLM baseline in hosted rounds | A failing model call is being swallowed and you fall back                                                               | Log the **response body** and the **endpoint URL** before anything else; it's almost always a routing or model-name issue above.                                   |
 
 ### Error categories and retries
 
 OpenRouter-backed endpoints keep protocol-shaped errors and add `softmax_error` diagnostics.
 `X-Softmax-Llm-Error-Category` and `X-Softmax-Llm-Retryable` expose the same classification to SDK callers. Read
 `X-Softmax-Llm-Call-Id` from the response headers when reporting a failed call. This classification covers native
-endpoints and translated Bedrock calls; direct AWS Bedrock responses retain their native errors.
+endpoints.
 
 | Category               | What to do                                                                                  |
 | ---------------------- | ------------------------------------------------------------------------------------------- |
@@ -206,8 +192,8 @@ endpoints and translated Bedrock calls; direct AWS Bedrock responses retain thei
 
 `retryable: true` means a bounded retry may help. It does not guarantee success, remaining budget, or enough time. The
 sidecar does not automatically retry failed calls. The OpenAI and Anthropic SDKs also receive `x-should-retry`. Other
-clients, including Bedrock SDKs, may retry from HTTP status alone. Configure their automatic retries for the game's
-deadline. Both spend exhaustion and throttling use HTTP 429, so branch on the category instead of the status alone.
+clients may retry from HTTP status alone. Configure their automatic retries for the game's deadline. Both spend
+exhaustion and throttling use HTTP 429, so branch on the category instead of the status alone.
 
 A request rejected during OpenRouter's parameter filtering returns `routing_parameters`. The message lists supplied
 controls to inspect, without claiming which one caused the rejection. An unsupported control can fail routing even when
@@ -233,10 +219,10 @@ For example, an OpenAI-shaped routing error contains:
 }
 ```
 
-Native error diagnostics retain provider detail. Bedrock errors retain sanitized guidance and categories; raw provider
-detail stays in the existing debug archive when capture is enabled. A top-level provider error or a choice with
-`finish_reason: "error"` becomes a failed HTTP response, even if upstream returned 200. Reported usage and charges still
-count. Output truncation (`length`) and content filtering are separate model outcomes.
+Native error diagnostics retain provider detail. Full payloads stay in the debug archive when capture is enabled. A
+top-level provider error or a choice with `finish_reason: "error"` becomes a failed HTTP response, even if upstream
+returned 200. Reported usage and charges still count. Output truncation (`length`) and content filtering are separate
+model outcomes.
 
 Log the episode, model, timestamp, endpoint, HTTP status, category, retryability, call ID, and generation ID when
 available. Include the error body, but keep prompts, credentials, and private provider detail out of shared bug reports.
@@ -254,49 +240,52 @@ Hosted LLM access is opt-in per submitted policy, set by upload flags — it is 
 ```bash
 uv run coworld upload-policy my-player:latest \
   --run python --run -m --run my_player.module \
-  --use-bedrock \
-  --bedrock-model anthropic/claude-haiku-4.5
+  --use-llm \
+  --llm-model anthropic/claude-haiku-4.5
 ```
 
 The policy name is derived from the active Softmax player's name and ID, making it globally unique. Without an active
 player session, it uses the account's default player. Pass `--name` to override the default or upload another version of
 an existing named policy.
 
-- `--use-bedrock` attaches the LLM sidecar to the hosted player pod so the player can call a model without its own API
-  key. The flag keeps its original name; it stores `USE_BEDROCK=true` with the policy version.
-- `--bedrock-model MODEL` stores the model id as `BEDROCK_MODEL`. Your player must read its model from `BEDROCK_MODEL` —
-  do not hardcode a model id or read a different variable name.
+- `--use-llm` attaches the LLM sidecar to the hosted player pod so the player can call a model without its own API key.
+  It stores `COWORLD_LLM_ENABLED=true` with the policy version.
+- `--llm-model MODEL` stores the model id as `COWORLD_LLM_MODEL`. Your player must read its model from
+  `COWORLD_LLM_MODEL` — do not hardcode a model id or read a different variable name.
 
 A player can pass local certification at full score and still be disqualified in its first hosted rounds if it was
-uploaded without `--use-bedrock`, reads its model from the wrong variable, or hardcodes a provider host instead of
-`AWS_ENDPOINT_URL_BEDROCK_RUNTIME`; those episodes produce no gameplay (0 completed episodes, no replay). Check the
-upload flags, `BEDROCK_MODEL`, and the endpoint first.
+uploaded without `--use-llm`, reads its model from the wrong variable, or hardcodes a provider host instead of
+`COWORLD_LLM_ENDPOINT`; those episodes produce no gameplay (0 completed episodes, no replay). Check the upload flags,
+`COWORLD_LLM_MODEL`, and the endpoint first.
 
 ## Test locally
 
-There is no sidecar in local `coworld run-episode` or `coworld play`. Give the same client code your own OpenRouter key
-and let it fall back to the public endpoint when the sidecar variable is absent:
+Local `coworld run-episode` and `coworld play` do not create a sidecar. Give the same client code your own OpenRouter
+key and let it fall back to the public endpoint when the sidecar variable is absent:
 
 ```python
 import os
 from anthropic import Anthropic
 
-sidecar = os.environ.get("AWS_ENDPOINT_URL_BEDROCK_RUNTIME")
+sidecar = os.environ.get("COWORLD_LLM_ENDPOINT")
 client = (
     Anthropic(base_url=sidecar, api_key="sidecar")
     if sidecar
-    else Anthropic(base_url="https://openrouter.ai/api", api_key=os.environ["OPENROUTER_API_KEY"])
+    else Anthropic(base_url="https://openrouter.ai/api", auth_token=os.environ["OPENROUTER_API_KEY"])
 )
 ```
 
-Pass the key into the local player container with `--secret-env`:
+With `OPENROUTER_API_KEY` set in your shell, forward it through the local container environment with `--use-llm`:
 
 ```bash
 uv run coworld run-episode ./coworld/cow_.../coworld_manifest.json my-player:local \
   --run python --run -m --run my_player.module \
-  --secret-env OPENROUTER_API_KEY=... \
-  --secret-env BEDROCK_MODEL=anthropic/claude-haiku-4.5
+  --use-llm \
+  --secret-env COWORLD_LLM_MODEL=anthropic/claude-haiku-4.5
 ```
+
+`--use-llm` forwards either `COWORLD_LLM_ENDPOINT` or `OPENROUTER_API_KEY`, plus `COWORLD_LLM_MODEL` when set. A
+configured endpoint must be reachable from inside Docker; a host-loopback URL is not a container-loopback URL.
 
 A successful local call proves your model code works. It does not prove the hosted sidecar was enabled during policy
 upload; only a hosted experience request proves that.
@@ -337,22 +326,25 @@ rejecting the first call. A blank limit leaves access unlimited. The league's li
 league — tournament rounds, league-bound experience requests, and lobbies alike. A requester limit also caps league-less
 experience requests.
 
+Hosted play and replay have no per-session spend cap. They use a separate capped key pool, so another session can
+exhaust the shared key without affecting episode keys. Persistent league runtimes use a third pool with 31-day keys and
+no key or session dollar cap. The persistent admission budget covers compute; it is not an LLM spend limit.
+
 You don't have to wait for the 429 — the sidecar tells you where you stand:
 
 - **Response headers** on every proxied call:
   - `X-Coworld-Spend-Usd` — the pod's running spend after that call.
   - `X-Coworld-Spend-Limit-Usd` — the effective per-player limit; absent when neither the league nor the experience
     requester set one.
-- **`GET $AWS_ENDPOINT_URL_BEDROCK_RUNTIME/spend`** — current totals as JSON:
+- **`GET $COWORLD_LLM_ENDPOINT/spend`** — current totals as JSON:
 
 ```bash
-curl -sS "$AWS_ENDPOINT_URL_BEDROCK_RUNTIME/spend"
+curl -sS "$COWORLD_LLM_ENDPOINT/spend"
 # {"spend_usd": 0.42, "spend_by_slot": {"3": 0.42},
 #  "spend_limit_usd": 1.5, "remaining_usd": 1.08,
 #  "rate_limited_requests": 0, "request_limit_per_minute": 30,
 #  "system_one_request_limit_per_minute": 120}
 # spend_limit_usd / remaining_usd are null when neither the league nor requester set a limit.
-# system_one_request_limit_per_minute is absent on a legacy-lane episode, where /v1/systemone is not served.
 ```
 
 `spend_usd`, the response headers, the two request limits, and `rate_limited_requests` describe the request's effective
@@ -374,9 +366,8 @@ minute.
 
 System One calls (`POST /v1/systemone`) have a separate bucket per slot at four times that ceiling —
 `system_one_request_limit_per_minute`, 120 by default, and `× player slots served` again for a game pod's own traffic. A
-Jev judgment takes a fraction of a second, costs a few thousandths of a cent, and is asked by a game host at the game's
-own cadence (up to one per second per seat), so the chat ceiling would throttle ordinary play. The two buckets share
-nothing: draining one never costs the other a call, and spend stays bounded by the spend limit either way.
+game host asking for one judgment per second per seat would exhaust the chat ceiling during ordinary play. The two
+buckets share nothing: draining one never costs the other a call, and spend stays bounded by the spend limit either way.
 
 Over-ceiling calls are rejected **before** reaching the provider, with the same `HTTP 429` `rate_limit_error` as a spend
 cutoff and a real upstream rate limit — again, no Softmax-specific exception type, so a player that handles rate limits
@@ -402,6 +393,12 @@ Assume capacity can run out and keep the player playing:
 - Bound each model call (timeout plus a retry cap) so one slow call cannot consume the episode.
 - On a rate limit or error, fall back to a valid default move instead of waiting.
 - Always submit a valid action before the episode timeout.
+
+## Hosted replay networking
+
+Replay artifact downloads retain direct network access, including stored external URLs. Model calls still use
+`COWORLD_LLM_ENDPOINT`; the native sidecar alone holds provider credentials and its authenticated relay certificates.
+This does not change existing network enforcement for episode game and player pods.
 
 ## See Also
 

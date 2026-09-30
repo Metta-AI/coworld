@@ -216,7 +216,7 @@ verdict. Two specific traps:
 Also sanity-check what you measured matches what you intended: forced role
 (`game_config_overrides.slots`), and — if the policy carries an LLM advisor — that
 the advisor actually fired (vote-accuracy / fire-rate via `metrics.py`), since
-there is no eval-time bedrock flag; behavior is whatever the uploaded image carries.
+there is no eval-time provider-specific flag; behavior is whatever the uploaded image carries.
 
 ---
 

@@ -181,7 +181,7 @@ container or a human at a seat:
 - lobbies (`/v2/leagues/{league_id}/lobbies`), hosted play sessions (`/v2/coworlds/play/session`), and local
   `coworld play`;
 - human player seats in episode requests, and persistent league player runtimes;
-- policy secret environments (`--secret-env`, `--use-bedrock`) on file policies;
+- policy secret environments (`--secret-env`, `--use-llm`) on file policies;
 - `coworld certify` and `coworld run-episode` image or `--run` overrides for players;
 - baseline image analysis for file-backed bundled players.
 

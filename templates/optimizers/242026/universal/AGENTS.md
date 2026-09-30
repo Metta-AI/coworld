@@ -1,5 +1,8 @@
 # AGENTS.md — crewrift player optimization (always-on)
 
+> Native migration prerequisite: external advisor code and previously published images must be rebuilt for the native hosted endpoint. These templates do not prove that an external image has migrated.
+
+
 This package is the standing knowledge base for optimizing the **notsus** scripted bot
 (`notsus.nim` + `advisor.py`) for the Crewrift Coworld league. Read this every session before
 touching the policy. The working loop — orient → pick lever → root-cause → edit Nim → build/upload →
@@ -12,8 +15,8 @@ guardrails that shape *every* hypothesis — keep it loaded; everything else is 
 
 ## Mandatory Crewrift LLM budget
 
-Any LLM-powered Crewrift policy must use the US Bedrock Haiku 4.5 profile
-`us.anthropic.claude-haiku-4-5-20251001-v1:0`; do not use Sonnet or Opus. Each policy pod must keep
+Any LLM-powered Crewrift policy must use the canonical OpenRouter Haiku 4.5 model
+`anthropic/claude-haiku-4.5`; do not use Sonnet or Opus. Each policy pod must keep
 its whole episode below **1,800 quota-weighted tokens**, calculated as
 `input tokens + cache-write tokens + 5 × output tokens`. This is the token equivalent of the
 `$0.0018` per-policy, per-episode cap. Track the cumulative total across calls and switch to the

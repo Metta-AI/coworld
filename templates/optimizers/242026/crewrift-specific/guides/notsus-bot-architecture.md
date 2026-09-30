@@ -1,5 +1,8 @@
 # notsus bot architecture — the already-implemented inventory and code map
 
+> Native migration prerequisite: external advisor code and previously published images must be rebuilt for the native hosted endpoint. These templates do not prove that an external image has migrated.
+
+
 Reference for the `notsus` crewrift bot — the live league reference policy
 (branch `daveey/crew-vote-gate`, crewrift 0.1.36). **Read this before proposing
 any behavior change.** Its whole purpose is to stop you re-porting layers that
@@ -403,21 +406,20 @@ at the start of a meeting. Source: `advisor.py` plus
 The Nim bot spawns `python3 /app/advisor.py` as a non-blocking subprocess, writes a
 JSON snapshot to its stdin, closes stdin, and **keeps reading game frames while the
 process runs**. It polls `peekExitCode` each tick and collects the result once the
-process exits. The frame loop is never blocked on Bedrock. Any failure (spawn
+process exits. The frame loop is never blocked on inference. Any failure (spawn
 error, non-zero exit, unparseable output) leaves `llmVoteColor = VoteUnknown`, so
 the scripted evidence floor (`crewVoteFloor`, §5) is used — **the game always plays
-even with no creds/Bedrock.**
+even with no inference access.**
 
-### Model + region (advisor.py:22)
+### Native advisor migration prerequisite
 
-Model id comes from env `CREWRIFT_BEDROCK_MODEL`. For Crewrift it must be
-`us.anthropic.claude-haiku-4-5-20251001-v1:0`; the source default is not a valid
-hosted configuration. **Pin Haiku via env injection without an image rebuild** and keep the
-whole episode below **1,800 quota-weighted tokens** (`input + cache-write + 5 × output`).
-Region:
-`AWS_REGION` / `AWS_DEFAULT_REGION` / `us-east-1`. boto3 client config:
-`read_timeout=5`, `connect_timeout=2`, `retries={max_attempts:4, mode:standard}` —
-bounded to stay inside the `LLMVoteDeadlineTicks = 150` (~6s @ 24fps) vote deadline.
+Rebuild the external advisor and publish a new policy version before using native inference.
+Environment changes alone cannot migrate an old client. The migrated advisor must use
+`COWORLD_LLM_ENDPOINT` and the canonical model `anthropic/claude-haiku-4.5`.
+Verify its model configuration against the rebuilt source and hosted traces.
+Keep the whole episode below **1,800 quota-weighted tokens** (`input + cache-write + 5 × output`).
+Bound request timeouts and retries to the `LLMVoteDeadlineTicks = 150` (~6s @ 24fps) vote deadline.
+These templates do not establish that the external advisor has been rebuilt.
 
 ### Role-conditioned prompt (advisor.py:48–90)
 

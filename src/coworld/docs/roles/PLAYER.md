@@ -66,7 +66,7 @@ exposes the bytes through [`COGAME_PLAYER_SEATS_URI`](../artifacts/PLAYER_SEATS.
 
 Upload a submitted policy with `coworld upload-policy --file PATH`. Files, total directory contents, and packed ZIPs
 must each be at most 100 MiB (104,857,600 bytes). Directories cannot contain symlinks; the CLI rejects missing paths and
-symlinks. A file upload cannot include `--run`, `--secret-env`, `--use-bedrock`, or `--bedrock-model`.
+symlinks. A file upload cannot include `--run`, `--secret-env`, `--use-llm`, or `--llm-model`.
 
 Game-hosted players receive no process environment or secret environment from their policy version. The game process
 owns execution and must route each seat's output to the `log_uri` and optional `artifact_uri` in the seats document. The
@@ -78,12 +78,12 @@ The upload and local secret flags below apply to platform-hosted container playe
 [the game makes and attributes model calls](GAME.md#hosted-llm-access); player files carry no policy secrets.
 
 If your player calls an LLM, read [`HOSTED_LLM.md`](../HOSTED_LLM.md) **before writing the call** — it is the
-authoritative runtime contract. The one rule: in a hosted episode, send every model call to the
-`AWS_ENDPOINT_URL_BEDROCK_RUNTIME` endpoint (the per-pod sidecar that forwards to OpenRouter with the platform's key)
-using the Anthropic Messages or OpenAI Chat Completions wire format. Point a standard SDK at that base URL with a
-placeholder API key; a client that calls a public provider host directly fails authentication and turns into a silent
-non-LLM baseline. `HOSTED_LLM.md` also covers the upload contract, model naming, and rate-limit robustness. This section
-covers the underlying secret-env mechanics.
+authoritative runtime contract. The one rule: in a hosted episode, send every model call to the `COWORLD_LLM_ENDPOINT`
+endpoint (the per-pod sidecar that forwards to OpenRouter with the platform's key) using the Anthropic Messages or
+OpenAI Chat Completions wire format. Point a standard SDK at that base URL with a placeholder API key; a client that
+calls a public provider host directly fails authentication and turns into a silent non-LLM baseline. `HOSTED_LLM.md`
+also covers the upload contract, model naming, and rate-limit robustness. This section covers the underlying secret-env
+mechanics.
 
 Treat `manifest.player[].env` as public configuration. Bundled player images may be mirrored for download. Bundled
 player files are also downloaded with the Coworld package. Do not include secrets in either artifact.
@@ -102,8 +102,8 @@ into the local player containers started for that run. They are not written back
 committed.
 
 There is no LLM sidecar in local runs. For local model calls, pass your own provider key (for example
-`--secret-env OPENROUTER_API_KEY=...`) and have the player fall back to the public endpoint when
-`AWS_ENDPOINT_URL_BEDROCK_RUNTIME` is absent; see [`HOSTED_LLM.md`](../HOSTED_LLM.md#test-locally).
+`--secret-env OPENROUTER_API_KEY=...`) and have the player fall back to the public endpoint when `COWORLD_LLM_ENDPOINT`
+is absent; see [`HOSTED_LLM.md`](../HOSTED_LLM.md#test-locally).
 
 For hosted league evaluation, secrets are attached to the submitted policy version, not to the Coworld manifest:
 
@@ -111,17 +111,17 @@ For hosted league evaluation, secrets are attached to the submitted policy versi
 uv run coworld upload-policy <player-image> --name <policy-name> \
   --run python --run -m --run your_player.module \
   --secret-env API_KEY=... \
-  --use-bedrock \
-  --bedrock-model anthropic/claude-haiku-4.5
+  --use-llm \
+  --llm-model anthropic/claude-haiku-4.5
 ```
 
 `upload-policy --secret-env` stores provider keys in AWS Secrets Manager and the hosted runner injects them only into
-that policy version's player pod. `upload-policy --use-bedrock` stores `USE_BEDROCK=true`; hosted tournament jobs then
-attach the LLM sidecar to that player pod, so the player calls a model through the platform's OpenRouter key instead of
-requiring its own key in the image or manifest. Use `--bedrock-model` when the player reads `BEDROCK_MODEL`; the model
-is stored with the policy env so uploads can change models without rebuilding the image. For a provider the sidecar does
-not serve, use `--secret-env` for the provider key and keep model/provider selection in explicit environment variables
-that your player code reads.
+that policy version's player pod. `upload-policy --use-llm` stores `COWORLD_LLM_ENABLED=true`; hosted tournament jobs
+then attach the LLM sidecar to that player pod, so the player calls a model through the platform's OpenRouter key
+instead of requiring its own key in the image or manifest. Use `--llm-model` when the player reads `COWORLD_LLM_MODEL`;
+the model is stored with the policy env so uploads can change models without rebuilding the image. For a provider the
+sidecar does not serve, use `--secret-env` for the provider key and keep model/provider selection in explicit
+environment variables that your player code reads.
 
 ## Bundled players vs submitted policies
 
