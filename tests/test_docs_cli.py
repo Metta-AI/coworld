@@ -52,3 +52,28 @@ def test_coworld_online_docs_use_shared_fetch(monkeypatch):
     result = CliRunner().invoke(app, ["docs", "coworld/cli"])
     assert result.exit_code == 0, result.output
     assert result.output == "# CLI\n"
+
+
+@pytest.mark.parametrize("name", ["GUIDE", "GUIDE.md"])
+def test_local_docs_accepts_declared_package_runfiles(monkeypatch, tmp_path, name):
+    installed = tmp_path / "installed" / "coworld"
+    (installed / "docs").mkdir(parents=True)
+    (installed / "__init__.py").write_text("")
+    (installed / "docs" / "GUIDE.md").write_text("# Installed guide\n")
+    (installed / "docs" / "undeclared.md").write_text("not declared")
+    runfiles = tmp_path / "runfiles" / "coworld"
+    (runfiles / "docs").mkdir(parents=True)
+    (runfiles / "__init__.py").symlink_to(installed / "__init__.py")
+    (runfiles / "docs" / "GUIDE.md").symlink_to(installed / "docs" / "GUIDE.md")
+    outside = tmp_path / "private.md"
+    outside.write_text("private")
+    (runfiles / "docs" / "escape.md").symlink_to(outside)
+    monkeypatch.setattr("coworld.cli.files", lambda _: runfiles)
+    result = CliRunner().invoke(app, ["docs", "--local", name])
+    assert result.exit_code == 0, result.output
+    assert result.output == "# Installed guide\n"
+    for forbidden in ("escape.md", "missing.md", "undeclared.md"):
+        result = CliRunner().invoke(app, ["docs", "--local", forbidden])
+        assert result.exit_code == 2
+        assert "private" not in result.output
+        assert "not declared" not in result.output

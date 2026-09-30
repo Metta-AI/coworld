@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import asyncio
-import json
 import os
 import secrets
 import subprocess
@@ -92,27 +91,6 @@ class ReplaySession:
     link: str
 
 
-@dataclass(frozen=True)
-class BedrockAwsEnv:
-    access_key_id: str
-    secret_access_key: str
-    session_token: str | None
-    region: str
-
-    @property
-    def container_env(self) -> dict[str, str]:
-        env = {
-            "USE_BEDROCK": "true",
-            "AWS_ACCESS_KEY_ID": self.access_key_id,
-            "AWS_SECRET_ACCESS_KEY": self.secret_access_key,
-            "AWS_REGION": self.region,
-            "AWS_DEFAULT_REGION": self.region,
-        }
-        if self.session_token is not None:
-            env["AWS_SESSION_TOKEN"] = self.session_token
-        return env
-
-
 def play_coworld(
     manifest_path: Path,
     *,
@@ -120,9 +98,7 @@ def play_coworld(
     episode_request_path: Path | None = None,
     player_images: list[str] | None = None,
     player_run: list[str] | None = None,
-    use_bedrock: bool = False,
-    aws_profile: str | None = None,
-    aws_region: str | None = None,
+    use_llm: bool = False,
     secret_env: Mapping[str, str] | None = None,
     workspace: Path | None = None,
     timeout_seconds: float = 3600.0,
@@ -174,12 +150,8 @@ def play_coworld(
     player_processes: list[tuple[subprocess.Popen[str], Path]] = []
     ensure_local_docker_network()
     try:
-        bedrock_container_env = (
-            _resolve_bedrock_aws_env(aws_profile=aws_profile, aws_region=aws_region).container_env
-            if use_bedrock
-            else {}
-        )
-        combined_secret_env = {**bedrock_container_env, **(secret_env or {})}
+        llm_container_env = _resolve_local_llm_env() if use_llm else {}
+        combined_secret_env = {**llm_container_env, **(secret_env or {})}
         secret_env_args = [arg for key in combined_secret_env for arg in ("-e", key)]
         player_subprocess_env = {**os.environ, **combined_secret_env} if combined_secret_env else None
         with ExitStack() as stack:
@@ -276,39 +248,20 @@ def play_coworld(
     return PlayResult(session=session, results=load_results(package, artifacts))
 
 
-def _resolve_bedrock_aws_env(*, aws_profile: str | None, aws_region: str | None) -> BedrockAwsEnv:
-    command = ["aws", "configure", "export-credentials", "--format", "process"]
-    if aws_profile is not None:
-        command.extend(["--profile", aws_profile])
-    result = subprocess.run(command, check=True, capture_output=True, text=True)
-    exported = json.loads(result.stdout)
-    if "AccessKeyId" not in exported or "SecretAccessKey" not in exported:
-        raise RuntimeError(
-            "aws configure export-credentials did not return AWS credentials. "
-            "Ensure your AWS profile is configured (try: aws sso login)."
-        )
-
-    region = _resolve_bedrock_aws_region(aws_profile=aws_profile, aws_region=aws_region)
-    return BedrockAwsEnv(
-        access_key_id=exported["AccessKeyId"],
-        secret_access_key=exported["SecretAccessKey"],
-        session_token=exported.get("SessionToken"),
-        region=region,
-    )
-
-
-def _resolve_bedrock_aws_region(*, aws_profile: str | None, aws_region: str | None) -> str:
-    region = aws_region or os.environ.get("AWS_REGION") or os.environ.get("AWS_DEFAULT_REGION")
-    if region:
-        return region
-
-    command = ["aws", "configure", "get", "region"]
-    if aws_profile is not None:
-        command.extend(["--profile", aws_profile])
-    result = subprocess.run(command, check=False, capture_output=True, text=True)
-    if region := result.stdout.strip():
-        return region
-    raise RuntimeError("AWS region required for --use-bedrock. Pass --aws-region or set AWS_REGION/AWS_DEFAULT_REGION.")
+def _resolve_local_llm_env() -> dict[str, str]:
+    """Forward local model access through inherited Docker environment, not argv."""
+    endpoint = os.environ.get("COWORLD_LLM_ENDPOINT")
+    api_key = os.environ.get("OPENROUTER_API_KEY")
+    if not endpoint and not api_key:
+        raise RuntimeError("--use-llm requires COWORLD_LLM_ENDPOINT or OPENROUTER_API_KEY in the host environment")
+    env = {"COWORLD_LLM_ENABLED": "true"}
+    if endpoint:
+        env["COWORLD_LLM_ENDPOINT"] = endpoint
+    else:
+        env["OPENROUTER_API_KEY"] = os.environ["OPENROUTER_API_KEY"]
+    if model := os.environ.get("COWORLD_LLM_MODEL"):
+        env["COWORLD_LLM_MODEL"] = model
+    return env
 
 
 def replay_coworld(

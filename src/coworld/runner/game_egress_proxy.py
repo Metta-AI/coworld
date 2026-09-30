@@ -7,7 +7,7 @@ import os
 import ssl
 from urllib.parse import urlsplit
 
-from coworld.runner.bedrock_sidecar_wiring import (
+from coworld.runner.llm_sidecar_wiring import (
     EGRESS_RELAY_CA_FILE,
     EGRESS_RELAY_CLIENT_CERT_FILE,
     EGRESS_RELAY_CLIENT_KEY_FILE,
@@ -86,7 +86,8 @@ async def _handle(
 
 async def _main() -> None:
     relay_url = urlsplit(os.environ["COWORLD_GAME_EGRESS_UPSTREAM_RELAY_URL"])
-    if relay_url.scheme != "https" or relay_url.hostname is None or relay_url.port is None:
+    relay_host, relay_port = relay_url.hostname, relay_url.port
+    if relay_url.scheme != "https" or relay_host is None or relay_port is None:
         raise ValueError("game egress upstream relay must be an https URL with host and port")
     allowed_targets = frozenset(os.environ["COWORLD_GAME_EGRESS_ALLOWED_UPSTREAMS"].split(","))
     if not allowed_targets or any(not target.endswith(":443") for target in allowed_targets):
@@ -101,8 +102,8 @@ async def _main() -> None:
         lambda reader, writer: _handle(
             reader,
             writer,
-            relay_host=relay_url.hostname,
-            relay_port=relay_url.port,
+            relay_host=relay_host,
+            relay_port=relay_port,
             allowed_targets=allowed_targets,
             tls_context=tls_context,
             connection_limit=connection_limit,

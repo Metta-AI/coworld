@@ -806,9 +806,7 @@ def test_run_episode_defaults_game_hosted_paths_to_certification_files(
     [
         ["--run", "python"],
         ["--secret-env", "TOKEN=value"],
-        ["--use-bedrock"],
-        ["--use-bedrock", "--aws-profile", "profile"],
-        ["--use-bedrock", "--aws-region", "us-west-2"],
+        ["--use-llm"],
     ],
 )
 def test_run_episode_rejects_image_options_for_game_hosted_manifest(

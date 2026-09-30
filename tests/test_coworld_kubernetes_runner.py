@@ -38,20 +38,20 @@ from coworld.manifest import validate_upload_manifest
 from coworld.runner import bootstrap, init_config, kubernetes_runner
 from coworld.runner import io as runner_io
 from coworld.runner import runner as runner_module
-from coworld.runner.bedrock_sidecar_wiring import (
-    BEDROCK_SIDECAR_CONTAINER_NAME,
-    BEDROCK_SIDECAR_TOKEN_FILE,
-    BEDROCK_SIDECAR_TOKEN_VOLUME_NAME,
-    EGRESS_RELAY_CA_FILE,
-    EGRESS_RELAY_CLIENT_CERT_FILE,
-    EGRESS_RELAY_CLIENT_KEY_FILE,
-    EGRESS_RELAY_CLIENT_TLS_VOLUME_NAME,
-)
 from coworld.runner.kubernetes_runner import (
     _collect_logs,
     _player_image_pull_policy,
     _upload_outputs,
     _wait_for_episode_artifacts,
+)
+from coworld.runner.llm_sidecar_wiring import (
+    EGRESS_RELAY_CA_FILE,
+    EGRESS_RELAY_CLIENT_CERT_FILE,
+    EGRESS_RELAY_CLIENT_KEY_FILE,
+    EGRESS_RELAY_CLIENT_TLS_VOLUME_NAME,
+    LLM_SIDECAR_CONTAINER_NAME,
+    LLM_SIDECAR_TOKEN_FILE,
+    LLM_SIDECAR_TOKEN_VOLUME_NAME,
 )
 from coworld.runner.phase_timings import EpisodePhaseTimings, ProcessTimings, TimingClock
 from coworld.runner.player_artifacts import ArtifactUploadTargets
@@ -70,9 +70,10 @@ def test_legacy_run_command_fails_closed(monkeypatch: pytest.MonkeyPatch) -> Non
 def _player_service_wait_env(monkeypatch):
     monkeypatch.delenv("COWORLD_PLAYER_IMAGE_PULL_POLICY", raising=False)
     monkeypatch.setenv("COWORLD_COORDINATOR_IMAGE", "coworld-coordinator:latest")
+    monkeypatch.setenv("COWORLD_OPENROUTER_KEY_SECRET_NAME", "episode-llm-key-test")
     monkeypatch.setenv("COWORLD_TIMEOUT_SECONDS", "60")
     monkeypatch.setenv(
-        "BEDROCK_REQUEST_METADATA",
+        "LLM_REQUEST_METADATA",
         '{"episode_request_id":"11111111-1111-1111-1111-111111111111","image_digest":"sha256:game",'
         '"job_request_id":"22222222-2222-2222-2222-222222222222","metadata_origin":"dispatcher",'
         '"role":"game","schema_version":"1","slot":"game","source":"coworld_episode"}',
@@ -2325,14 +2326,14 @@ def test_new_workspace_does_not_require_repo_depth(monkeypatch, tmp_path):
 def test_policy_secrets_from_env_loads_and_removes_uri(monkeypatch, tmp_path):
     bundle_path = tmp_path / "bundle.json"
     bundle_path.write_text(
-        json.dumps({"policies": {"0": {"ANTHROPIC_API_KEY": "sk-ant-test"}, "2": {"USE_BEDROCK": "true"}}}),
+        json.dumps({"policies": {"0": {"ANTHROPIC_API_KEY": "sk-ant-test"}, "2": {"COWORLD_LLM_ENABLED": "true"}}}),
         encoding="utf-8",
     )
     monkeypatch.setenv("POLICY_SECRETS_URI", bundle_path.as_uri())
 
     assert kubernetes_runner._policy_secrets_from_env() == {
         0: {"ANTHROPIC_API_KEY": "sk-ant-test"},
-        2: {"USE_BEDROCK": "true"},
+        2: {"COWORLD_LLM_ENABLED": "true"},
     }
     assert "POLICY_SECRETS_URI" not in os.environ
 
@@ -2879,7 +2880,7 @@ def test_create_player_pod_injects_policy_secret_env(monkeypatch):
     )
     monkeypatch.setenv("COWORLD_WORKLOAD_TYPE", "jobs")
     monkeypatch.setenv("COWORLD_CAPACITY_TYPE", "on-demand")
-    monkeypatch.setenv("COWORLD_BEDROCK_REGION", "us-east-1")
+    monkeypatch.setenv("LLM_SIDECAR_REGION", "us-east-1")
     monkeypatch.setenv("COWORLD_ID", "cow_11111111-1111-1111-1111-111111111111")
     monkeypatch.setenv("COWORLD_LEAGUE_ID", "league_44444444-4444-4444-4444-444444444444")
     monkeypatch.setenv("COWORLD_SOURCE", "xp_request")
@@ -2889,7 +2890,7 @@ def test_create_player_pod_injects_policy_secret_env(monkeypatch):
         env={
             "PUBLIC_SETTING": "visible",
             "ANTHROPIC_API_KEY": "placeholder",
-            "BEDROCK_MODEL": "us.anthropic.claude-haiku-4-5-20251001-v1:0",
+            "COWORLD_LLM_MODEL": "anthropic/claude-haiku-4.5",
         },
     )
 
@@ -2902,7 +2903,7 @@ def test_create_player_pod_injects_policy_secret_env(monkeypatch):
         player,
         {
             "ANTHROPIC_API_KEY": "sk-ant-test",
-            "BEDROCK_MODEL": "us.amazon.nova-micro-v1:0",
+            "COWORLD_LLM_MODEL": "amazon/nova-micro-v1",
         },
         "job-id",
         "game-service",
@@ -2918,8 +2919,8 @@ def test_create_player_pod_injects_policy_secret_env(monkeypatch):
     env = {env_var.name: env_var.value for env_var in container.env}
     assert env["PUBLIC_SETTING"] == "visible"
     assert env["ANTHROPIC_API_KEY"] == "sk-ant-test"
-    assert env["BEDROCK_MODEL"] == "us.amazon.nova-micro-v1:0"
-    assert "AWS_ENDPOINT_URL_BEDROCK_RUNTIME" not in env
+    assert env["COWORLD_LLM_MODEL"] == "amazon/nova-micro-v1"
+    assert "COWORLD_LLM_ENDPOINT" not in env
     assert env["COWORLD_PLAYER_WS_URL"] == "ws://game-service:8080/player?slot=0&token=slot-token"
     assert env["COGAMES_ENGINE_WS_URL"] == "ws://game-service:8080/player?slot=0&token=slot-token"
     # No PLAYER_ARTIFACT_UPLOAD_URLS set, so the player gets no artifact upload URL.
@@ -2961,7 +2962,7 @@ def test_create_player_pod_enforcement_removes_dns_and_uses_secure_pool(monkeypa
     monkeypatch.setenv("COWORLD_EGRESS_RELAY_IP", "172.20.10.20")
     monkeypatch.setenv("COWORLD_EGRESS_RELAY_URL", "https://egress-relay-mtls.jobs.svc.cluster.local:3128")
     monkeypatch.setenv("COWORLD_WORKLOAD_TYPE", "coworld-egress-jobs")
-    monkeypatch.setenv("COWORLD_BEDROCK_REGION", "us-east-1")
+    monkeypatch.setenv("LLM_SIDECAR_REGION", "us-east-1")
 
     kubernetes_runner._create_player_pod(
         core_v1,
@@ -2998,7 +2999,6 @@ def test_create_player_pod_omits_attribution_labels_without_forwarded_env(monkey
     core_v1 = SimpleNamespace(
         create_namespaced_pod=lambda *, namespace, body: created.update({"namespace": namespace, "body": body})
     )
-    monkeypatch.delenv("BEDROCK_SIDECAR_ENABLED", raising=False)
     monkeypatch.delenv("COWORLD_ID", raising=False)
     monkeypatch.delenv("COWORLD_LEAGUE_ID", raising=False)
     monkeypatch.delenv("COWORLD_SOURCE", raising=False)
@@ -3214,13 +3214,13 @@ def test_create_player_pod_without_cpu_limit_omits_limit_and_thread_env(monkeypa
     assert "MKL_NUM_THREADS" not in env
 
 
-def test_local_bedrock_player_uses_direct_access_without_sidecar_infrastructure(monkeypatch):
+def test_local_llm_player_preserves_supplied_endpoint_without_sidecar_infrastructure(monkeypatch):
     created: dict[str, Any] = {}
     core_v1 = SimpleNamespace(create_namespaced_pod=lambda *, namespace, body: created.update({"body": body}))
     monkeypatch.setenv("COWORLD_LOCAL_DEV", "true")
-    monkeypatch.setenv("COWORLD_BEDROCK_REGION", "us-west-2")
-    monkeypatch.delenv("BEDROCK_SIDECAR_IMAGE", raising=False)
-    monkeypatch.delenv("BEDROCK_SIDECAR_ROLE_ARN", raising=False)
+    monkeypatch.delenv("LLM_SIDECAR_IMAGE", raising=False)
+    monkeypatch.delenv("LLM_SIDECAR_ROLE_ARN", raising=False)
+    monkeypatch.delenv("COWORLD_OPENROUTER_KEY_SECRET_NAME", raising=False)
 
     kubernetes_runner._create_player_pod(
         core_v1,
@@ -3228,8 +3228,8 @@ def test_local_bedrock_player_uses_direct_access_without_sidecar_infrastructure(
         "job-player-0",
         0,
         "slot-token",
-        PlayerLaunchSpec(image="paintbot:latest", run=(), env={"AWS_REGION": "from-player-env"}),
-        {"USE_BEDROCK": "true", "AWS_DEFAULT_REGION": "from-policy-secret"},
+        PlayerLaunchSpec(image="paintbot:latest", run=(), env={"OPENAI_BASE_URL": "http://localhost:4000/v1"}),
+        {"COWORLD_LLM_ENABLED": "true", "OPENAI_API_KEY": "local-key"},
         "job-id",
         "game-service",
         "2",
@@ -3240,26 +3240,25 @@ def test_local_bedrock_player_uses_direct_access_without_sidecar_infrastructure(
 
     pod: Any = created["body"]
     env = {env_var.name: env_var.value for env_var in pod.spec.containers[0].env}
-    assert env["AWS_REGION"] == "us-west-2"
-    assert env["AWS_DEFAULT_REGION"] == "us-west-2"
-    assert "AWS_ENDPOINT_URL_BEDROCK_RUNTIME" not in env
+    assert env["OPENAI_BASE_URL"] == "http://localhost:4000/v1"
+    assert env["OPENAI_API_KEY"] == "local-key"
+    assert "COWORLD_LLM_ENDPOINT" not in env
     assert [container.name for container in pod.spec.init_containers] == ["wait-for-game-service"]
-    assert pod.spec.service_account_name == "episode-runner"
+    assert pod.spec.service_account_name is None
+    assert "eks.amazonaws.com/skip-containers" not in pod.metadata.annotations
     assert pod.spec.automount_service_account_token is False
 
 
-def test_create_player_pod_with_bedrock_sidecar_inverts_bedrock_access(monkeypatch):
+def test_create_player_pod_with_native_sidecar_overrides_provider_credentials(monkeypatch):
     created: dict[str, Any] = {}
     core_v1 = SimpleNamespace(create_namespaced_pod=lambda *, namespace, body: created.update({"body": body}))
-    monkeypatch.setenv("COWORLD_BEDROCK_REGION", "us-west-2")
-    monkeypatch.setenv("BEDROCK_SIDECAR_IMAGE", "ghcr.io/metta-ai/bedrock-sidecar:latest")
-    monkeypatch.setenv("BEDROCK_SIDECAR_ROLE_ARN", "arn:aws:iam::583928386201:role/episode-runner-bedrock")
-    monkeypatch.setenv("BEDROCK_SIDECAR_PORT", "19191")
-    monkeypatch.setenv("BEDROCK_SIDECAR_REQUEST_LIMIT_PER_MINUTE", "120")
-    monkeypatch.setenv("BEDROCK_SIDECAR_UPSTREAM_ENDPOINT", "http://bedrock.local")
-    monkeypatch.setenv("BEDROCK_SIDECAR_SPEND_LIMIT_USD", "1.5")
-    monkeypatch.setenv("BEDROCK_SIDECAR_PRICING_JSON", '{"claude-sonnet-4-6":[3.0,15.0,0.3,3.75]}')
-    monkeypatch.setenv("BEDROCK_SIDECAR_EGRESS_RELAY_URL", "https://egress-relay-mtls.jobs.svc.cluster.local:3128")
+    monkeypatch.setenv("LLM_SIDECAR_REGION", "us-west-2")
+    monkeypatch.setenv("LLM_SIDECAR_IMAGE", "ghcr.io/metta-ai/llm-sidecar:latest")
+    monkeypatch.setenv("LLM_SIDECAR_ROLE_ARN", "arn:aws:iam::583928386201:role/episode-runner-llm-records")
+    monkeypatch.setenv("LLM_SIDECAR_PORT", "19191")
+    monkeypatch.setenv("LLM_SIDECAR_REQUEST_LIMIT_PER_MINUTE", "120")
+    monkeypatch.setenv("LLM_SIDECAR_SPEND_LIMIT_USD", "1.5")
+    monkeypatch.setenv("LLM_SIDECAR_EGRESS_RELAY_URL", "https://egress-relay-mtls.jobs.svc.cluster.local:3128")
     player = PlayerLaunchSpec(
         image="ghcr.io/metta-ai/players/paintbot@sha256:player123",
         run=(),
@@ -3282,12 +3281,17 @@ def test_create_player_pod_with_bedrock_sidecar_inverts_bedrock_access(monkeypat
         "slot-token",
         player,
         {
-            "USE_BEDROCK": "true",
-            "BEDROCK_MODEL": "us.amazon.nova-micro-v1:0",
+            "COWORLD_LLM_ENABLED": "true",
+            "COWORLD_LLM_MODEL": "amazon/nova-micro-v1",
             "AWS_DEFAULT_REGION": "from-policy-secret",
             "AWS_SECRET_ACCESS_KEY": "from-policy-secret",
             "AWS_SESSION_TOKEN": "from-policy-secret",
-            "AWS_BEARER_TOKEN_BEDROCK": "from-policy-secret",
+            "ANTHROPIC_API_KEY": "from-policy-secret",
+            "ANTHROPIC_AUTH_TOKEN": "from-policy-secret",
+            "ANTHROPIC_BASE_URL": "https://direct.example",
+            "OPENAI_API_KEY": "from-policy-secret",
+            "OPENAI_BASE_URL": "https://direct.example/v1",
+            "OPENROUTER_API_KEY": "from-policy-secret",
             "AWS_WEB_IDENTITY_TOKEN_FILE": "/tmp/token",
             "AWS_ROLE_ARN": "arn:aws:iam::123456789012:role/direct",
         },
@@ -3302,7 +3306,7 @@ def test_create_player_pod_with_bedrock_sidecar_inverts_bedrock_access(monkeypat
     pod: Any = created["body"]
     assert pod.metadata.annotations == {
         "karpenter.sh/do-not-disrupt": "true",
-        "eks.amazonaws.com/skip-containers": "player,bedrock-sidecar",
+        "eks.amazonaws.com/skip-containers": "player,llm-sidecar",
     }
     assert pod.spec.service_account_name == "episode-runner"
     assert pod.spec.automount_service_account_token is False
@@ -3311,28 +3315,36 @@ def test_create_player_pod_with_bedrock_sidecar_inverts_bedrock_access(monkeypat
     assert [container.name for container in pod.spec.containers] == ["player"]
     assert [c.name for c in pod.spec.init_containers] == [
         "wait-for-game-service",
-        BEDROCK_SIDECAR_CONTAINER_NAME,
+        LLM_SIDECAR_CONTAINER_NAME,
     ]
     player_container: Any = pod.spec.containers[0]
     sidecar: Any = pod.spec.init_containers[1]
     assert sidecar.restart_policy == "Always"
+    assert sidecar.command == [
+        "uv",
+        "run",
+        "--no-sync",
+        "python",
+        "-m",
+        "observatory_execution.job_runner.llm_sidecar_app",
+    ]
 
     env = {env_var.name: env_var.value for env_var in player_container.env}
     assert env["PUBLIC_SETTING"] == "visible"
-    assert env["BEDROCK_MODEL"] == "us.amazon.nova-micro-v1:0"
-    # The reserved sidecar env wins over the policy's own values: the user set AWS_REGION /
-    # AWS_ACCESS_KEY_ID in their env, but they're overridden by the placeholder creds and the
-    # localhost endpoint — a policy cannot bypass or break the sidecar.
-    assert env["AWS_ENDPOINT_URL_BEDROCK_RUNTIME"] == "http://127.0.0.1:19191"
-    assert env["AWS_ACCESS_KEY_ID"] == "bedrock-sidecar"
-    assert env["AWS_SECRET_ACCESS_KEY"] == "bedrock-sidecar"
-    # Bearer-token (Bedrock API key) auth: the policy's own token is overridden by the placeholder.
-    assert env["AWS_BEARER_TOKEN_BEDROCK"] == "bedrock-sidecar"
-    assert env["AWS_REGION"] == "us-west-2"
-    assert env["AWS_DEFAULT_REGION"] == "us-west-2"
+    assert env["COWORLD_LLM_MODEL"] == "amazon/nova-micro-v1"
+    # Platform endpoints and placeholder credentials override saved provider access.
+    assert env["COWORLD_LLM_ENDPOINT"] == "http://127.0.0.1:19191"
+    assert env["ANTHROPIC_BASE_URL"] == "http://127.0.0.1:19191"
+    assert env["OPENAI_BASE_URL"] == "http://127.0.0.1:19191/v1"
+    assert env["ANTHROPIC_API_KEY"] == "sidecar"
+    assert env["ANTHROPIC_AUTH_TOKEN"] == "sidecar"
+    assert env["OPENAI_API_KEY"] == "sidecar"
+    assert "OPENROUTER_API_KEY" not in env
+    assert "AWS_ACCESS_KEY_ID" not in env
+    assert "AWS_SECRET_ACCESS_KEY" not in env
     # The public enablement flag remains readable for player SDKs, while real-identity keys
     # the policy supplied are stripped from the app entirely.
-    assert env["USE_BEDROCK"] == "true"
+    assert env["COWORLD_LLM_ENABLED"] == "true"
     assert "AWS_SESSION_TOKEN" not in env
     assert "AWS_WEB_IDENTITY_TOKEN_FILE" not in env
     assert "AWS_ROLE_ARN" not in env
@@ -3342,20 +3354,19 @@ def test_create_player_pod_with_bedrock_sidecar_inverts_bedrock_access(monkeypat
     assert not player_container.volume_mounts
 
     volumes: dict[str, Any] = {volume.name: volume for volume in pod.spec.volumes}
-    assert list(volumes) == [BEDROCK_SIDECAR_TOKEN_VOLUME_NAME, EGRESS_RELAY_CLIENT_TLS_VOLUME_NAME]
+    assert list(volumes) == [LLM_SIDECAR_TOKEN_VOLUME_NAME, EGRESS_RELAY_CLIENT_TLS_VOLUME_NAME]
     assert [mount.name for mount in sidecar.volume_mounts] == [
-        BEDROCK_SIDECAR_TOKEN_VOLUME_NAME,
+        LLM_SIDECAR_TOKEN_VOLUME_NAME,
         EGRESS_RELAY_CLIENT_TLS_VOLUME_NAME,
     ]
     sidecar_env = {env_var.name: env_var.value for env_var in sidecar.env}
-    assert sidecar_env["BEDROCK_SIDECAR_LISTEN_PORT"] == "19191"
-    assert sidecar_env["BEDROCK_SIDECAR_REGION"] == "us-west-2"
-    assert sidecar_env["BEDROCK_SIDECAR_UPSTREAM_ENDPOINT"] == "http://bedrock.local"
+    assert sidecar_env["LLM_SIDECAR_LISTEN_PORT"] == "19191"
+    assert sidecar_env["LLM_SIDECAR_REGION"] == "us-west-2"
     # The per-pod request ceiling has to survive the worker -> sidecar hop, or the deploy
     # knob is dead config and the only way to change it is a new sidecar image.
-    assert sidecar_env["BEDROCK_SIDECAR_REQUEST_LIMIT_PER_MINUTE"] == "120"
-    assert json.loads(sidecar_env["BEDROCK_SIDECAR_REQUEST_METADATA"]) == {
-        "metadata_origin": "bedrock_sidecar",
+    assert sidecar_env["LLM_SIDECAR_REQUEST_LIMIT_PER_MINUTE"] == "120"
+    assert json.loads(sidecar_env["LLM_SIDECAR_REQUEST_METADATA"]) == {
+        "metadata_origin": "llm_sidecar",
         "episode_request_id": "11111111-1111-1111-1111-111111111111",
         "image_digest": "sha256:player123",
         "job_request_id": "22222222-2222-2222-2222-222222222222",
@@ -3364,44 +3375,62 @@ def test_create_player_pod_with_bedrock_sidecar_inverts_bedrock_access(monkeypat
         "slot": "0",
         "source": "coworld_episode",
     }
-    # The dispatcher-forwarded league spend limit and server pricing snapshot reach the sidecar.
-    assert sidecar_env["BEDROCK_SIDECAR_SPEND_LIMIT_USD"] == "1.5"
-    assert sidecar_env["BEDROCK_SIDECAR_PRICING_JSON"] == '{"claude-sonnet-4-6":[3.0,15.0,0.3,3.75]}'
-    assert "BEDROCK_SIDECAR_LLM_PROVIDER" not in sidecar_env
-    assert "BEDROCK_SIDECAR_OPENROUTER_API_KEY" not in sidecar_env
-    # Relay client keys are mounted only into the trusted sidecar, and the connection
-    # uses TLS so the sibling player cannot sniff or replay its authentication.
-    assert sidecar_env["BEDROCK_SIDECAR_EGRESS_RELAY_URL"] == "https://egress-relay-mtls.jobs.svc.cluster.local:3128"
-    assert sidecar_env["BEDROCK_SIDECAR_EGRESS_RELAY_CLIENT_CERT_FILE"] == EGRESS_RELAY_CLIENT_CERT_FILE
-    assert sidecar_env["BEDROCK_SIDECAR_EGRESS_RELAY_CLIENT_KEY_FILE"] == EGRESS_RELAY_CLIENT_KEY_FILE
-    assert sidecar_env["BEDROCK_SIDECAR_EGRESS_RELAY_CA_FILE"] == EGRESS_RELAY_CA_FILE
+    # The dispatcher-forwarded league spend limit reaches the sidecar.
+    assert sidecar_env["LLM_SIDECAR_SPEND_LIMIT_USD"] == "1.5"
+    assert "LLM_SIDECAR_LLM_PROVIDER" not in sidecar_env
+    api_key_env = next(entry for entry in sidecar.env if entry.name == "LLM_SIDECAR_OPENROUTER_API_KEY")
+    assert api_key_env.value is None
+    assert api_key_env.value_from.secret_key_ref.name == "episode-llm-key-test"
+    assert api_key_env.value_from.secret_key_ref.key == "OPENROUTER_API_KEY"
+    assert sidecar_env["LLM_SIDECAR_EGRESS_RELAY_URL"] == "https://egress-relay-mtls.jobs.svc.cluster.local:3128"
+    assert sidecar_env["LLM_SIDECAR_EGRESS_RELAY_CLIENT_CERT_FILE"] == EGRESS_RELAY_CLIENT_CERT_FILE
+    assert sidecar_env["LLM_SIDECAR_EGRESS_RELAY_CLIENT_KEY_FILE"] == EGRESS_RELAY_CLIENT_KEY_FILE
+    assert sidecar_env["LLM_SIDECAR_EGRESS_RELAY_CA_FILE"] == EGRESS_RELAY_CA_FILE
     # Self-provisioned IRSA on the sidecar (not webhook-dependent).
-    assert sidecar_env["AWS_ROLE_ARN"] == "arn:aws:iam::583928386201:role/episode-runner-bedrock"
-    assert sidecar_env["AWS_WEB_IDENTITY_TOKEN_FILE"] == BEDROCK_SIDECAR_TOKEN_FILE
+    assert sidecar_env["AWS_ROLE_ARN"] == "arn:aws:iam::583928386201:role/episode-runner-llm-records"
+    assert sidecar_env["AWS_WEB_IDENTITY_TOKEN_FILE"] == LLM_SIDECAR_TOKEN_FILE
 
-    token_projection = volumes[BEDROCK_SIDECAR_TOKEN_VOLUME_NAME].projected.sources[0].service_account_token
+    token_projection = volumes[LLM_SIDECAR_TOKEN_VOLUME_NAME].projected.sources[0].service_account_token
+    assert len(volumes[LLM_SIDECAR_TOKEN_VOLUME_NAME].projected.sources) == 1
     assert token_projection.audience == "sts.amazonaws.com"
     assert token_projection.path == "token"
 
 
-def test_create_player_pod_sidecar_forwards_s3_sink_env(monkeypatch):
-    """The player sidecar inherits the dispatcher's completion, relay, and body stores."""
+@pytest.mark.parametrize("persistent", [False, True])
+def test_create_player_pod_sidecar_forwards_s3_sink_env(monkeypatch, persistent):
+    """The player sidecar inherits the dispatcher's relay and body stores."""
     created: dict[str, Any] = {}
     core_v1 = SimpleNamespace(create_namespaced_pod=lambda *, namespace, body: created.update({"body": body}))
-    monkeypatch.setenv("COWORLD_BEDROCK_REGION", "us-west-2")
-    monkeypatch.setenv("BEDROCK_SIDECAR_IMAGE", "ghcr.io/metta-ai/bedrock-sidecar:latest")
-    monkeypatch.setenv("BEDROCK_SIDECAR_ROLE_ARN", "arn:aws:iam::583928386201:role/episode-runner-bedrock")
-    monkeypatch.setenv("BEDROCK_SIDECAR_PORT", "19191")
-    monkeypatch.setenv("BEDROCK_SIDECAR_REQUEST_LIMIT_PER_MINUTE", "120")
-    monkeypatch.delenv("BEDROCK_SIDECAR_UPSTREAM_ENDPOINT", raising=False)
-    monkeypatch.setenv("BEDROCK_SIDECAR_COMPLETIONS_BUCKET", "softmax-bedrock-logs-583928386201")
-    monkeypatch.setenv("BEDROCK_SIDECAR_LLM_RELAY_S3_BUCKET", "softmax-llm-records")
-    monkeypatch.setenv("BEDROCK_SIDECAR_LLM_RELAY_S3_PREFIX", "llm-relay/custom")
-    monkeypatch.setenv("BEDROCK_SIDECAR_LLM_DEBUG_BODY_S3_BUCKET", "softmax-llm-records")
-    monkeypatch.setenv("BEDROCK_SIDECAR_OPENROUTER_CAPTURE_PAYLOADS", "false")
-    monkeypatch.setenv("BEDROCK_SIDECAR_COMPLETIONS_PREFIX", "sidecar-completions")
-    monkeypatch.setenv("BEDROCK_SIDECAR_FLUSH_RECORDS", "200")
-    monkeypatch.setenv("BEDROCK_SIDECAR_FLUSH_SECONDS", "30.0")
+    monkeypatch.setenv("LLM_SIDECAR_REGION", "us-west-2")
+    monkeypatch.setenv("LLM_SIDECAR_IMAGE", "ghcr.io/metta-ai/llm-sidecar:latest")
+    monkeypatch.setenv("LLM_SIDECAR_ROLE_ARN", "arn:aws:iam::583928386201:role/episode-runner-llm-records")
+    monkeypatch.setenv("LLM_SIDECAR_PORT", "19191")
+    monkeypatch.setenv("LLM_SIDECAR_REQUEST_LIMIT_PER_MINUTE", "120")
+    monkeypatch.setenv("LLM_SIDECAR_LLM_RELAY_S3_BUCKET", "softmax-llm-records")
+    monkeypatch.setenv("LLM_SIDECAR_LLM_RELAY_S3_PREFIX", "llm-relay/custom")
+    monkeypatch.setenv("LLM_SIDECAR_LLM_DEBUG_BODY_S3_BUCKET", "softmax-llm-records")
+    monkeypatch.setenv("LLM_SIDECAR_OPENROUTER_CAPTURE_PAYLOADS", "false")
+    monkeypatch.setenv("LLM_SIDECAR_FLUSH_RECORDS", "200")
+    monkeypatch.setenv("LLM_SIDECAR_FLUSH_SECONDS", "30.0")
+    persistent_identity = dict(
+        schema_version="1",
+        source="coworld_persistent",
+        metadata_origin="llm_sidecar",
+        runtime_id="22222222-2222-2222-2222-222222222222",
+        runtime_generation="7",
+        league_id="league_original",
+        player_id="player_original",
+        policy_version_id="33333333-3333-3333-3333-333333333333",
+        coworld_id="cw_original",
+        role="game",
+        slot="game",
+        image_digest="sha256:game",
+        openrouter_lane="persistent:7",
+        openrouter_lane_expires_at="2099-01-02T00:00:00Z",
+    )
+    if persistent:
+        monkeypatch.setenv("LLM_REQUEST_METADATA", json.dumps(persistent_identity))
+        monkeypatch.setenv("LLM_SIDECAR_RUNTIME_DEADLINE", "2099-01-01T00:00:00Z")
 
     kubernetes_runner._create_player_pod(
         core_v1,
@@ -3410,7 +3439,7 @@ def test_create_player_pod_sidecar_forwards_s3_sink_env(monkeypatch):
         0,
         "slot-token",
         PlayerLaunchSpec(image="ghcr.io/metta-ai/players/paintbot@sha256:player123", run=(), env={}),
-        {"USE_BEDROCK": "true"},
+        {"COWORLD_LLM_ENABLED": "true"},
         "job-id",
         "game-service",
         "2",
@@ -3420,38 +3449,39 @@ def test_create_player_pod_sidecar_forwards_s3_sink_env(monkeypatch):
     )
 
     sidecar: Any = next(
-        container
-        for container in created["body"].spec.init_containers
-        if container.name == BEDROCK_SIDECAR_CONTAINER_NAME
+        container for container in created["body"].spec.init_containers if container.name == LLM_SIDECAR_CONTAINER_NAME
     )
     sidecar_values = {env_var.name: env_var.value for env_var in sidecar.env}
-    assert sidecar_values["BEDROCK_SIDECAR_COMPLETIONS_BUCKET"] == "softmax-bedrock-logs-583928386201"
-    assert sidecar_values["BEDROCK_SIDECAR_COMPLETIONS_PREFIX"] == "sidecar-completions"
-    assert sidecar_values["BEDROCK_SIDECAR_FLUSH_RECORDS"] == "200"
-    assert sidecar_values["BEDROCK_SIDECAR_FLUSH_SECONDS"] == "30.0"
-    assert sidecar_values["BEDROCK_SIDECAR_LLM_RELAY_S3_BUCKET"] == "softmax-llm-records"
-    assert sidecar_values["BEDROCK_SIDECAR_LLM_RELAY_S3_PREFIX"] == "llm-relay/custom"
-    assert sidecar_values["BEDROCK_SIDECAR_LLM_DEBUG_BODY_S3_BUCKET"] == "softmax-llm-records"
-    assert sidecar_values["BEDROCK_SIDECAR_OPENROUTER_CAPTURE_PAYLOADS"] == "false"
+    assert sidecar_values["LLM_SIDECAR_FLUSH_RECORDS"] == "200"
+    assert sidecar_values["LLM_SIDECAR_FLUSH_SECONDS"] == "30.0"
+    assert sidecar_values["LLM_SIDECAR_LLM_RELAY_S3_BUCKET"] == "softmax-llm-records"
+    assert sidecar_values["LLM_SIDECAR_LLM_RELAY_S3_PREFIX"] == "llm-relay/custom"
+    assert sidecar_values["LLM_SIDECAR_LLM_DEBUG_BODY_S3_BUCKET"] == "softmax-llm-records"
+    assert sidecar_values["LLM_SIDECAR_OPENROUTER_CAPTURE_PAYLOADS"] == "false"
     pod_name_env = next(env_var for env_var in sidecar.env if env_var.name == "POD_NAME")
     assert pod_name_env.value_from.field_ref.field_path == "metadata.name"
+
+    if persistent:
+        assert sidecar_values["LLM_SIDECAR_RUNTIME_DEADLINE"] == "2099-01-01T00:00:00Z"
+        assert json.loads(sidecar_values["LLM_SIDECAR_REQUEST_METADATA"]) == persistent_identity | {
+            "role": "player",
+            "slot": "0",
+            "image_digest": "sha256:player123",
+        }
 
 
 def test_create_player_pod_routes_every_sidecar_without_exposing_openrouter_key(monkeypatch) -> None:
     created: list[Any] = []
     core_v1 = SimpleNamespace(create_namespaced_pod=lambda *, namespace, body: created.append(body))
-    monkeypatch.setenv("COWORLD_BEDROCK_REGION", "us-west-2")
-    monkeypatch.setenv("BEDROCK_SIDECAR_IMAGE", "ghcr.io/metta-ai/bedrock-sidecar:latest")
-    monkeypatch.setenv("BEDROCK_SIDECAR_ROLE_ARN", "arn:aws:iam::583928386201:role/episode-runner-bedrock")
-    monkeypatch.setenv("BEDROCK_SIDECAR_PORT", "19191")
-    monkeypatch.setenv("BEDROCK_SIDECAR_REQUEST_LIMIT_PER_MINUTE", "120")
+    monkeypatch.setenv("LLM_SIDECAR_REGION", "us-west-2")
+    monkeypatch.setenv("LLM_SIDECAR_IMAGE", "ghcr.io/metta-ai/llm-sidecar:latest")
+    monkeypatch.setenv("LLM_SIDECAR_ROLE_ARN", "arn:aws:iam::583928386201:role/episode-runner-llm-records")
+    monkeypatch.setenv("LLM_SIDECAR_PORT", "19191")
+    monkeypatch.setenv("LLM_SIDECAR_REQUEST_LIMIT_PER_MINUTE", "120")
     monkeypatch.setenv("COWORLD_OPENROUTER_KEY_SECRET_NAME", "episode-llm-key-episode-123")
     monkeypatch.setenv("COWORLD_OPENROUTER_API_KEY", "literal-key-must-not-appear")
     monkeypatch.setenv("COWORLD_OPENROUTER_MODEL_ALLOWLIST", '["anthropic/claude-sonnet-4.6"]')
-    monkeypatch.setenv(
-        "COWORLD_OPENROUTER_MODEL_ALIASES",
-        '{"us.anthropic.claude-sonnet-4-6":"anthropic/claude-sonnet-4.6"}',
-    )
+
     monkeypatch.setenv("COWORLD_OPENROUTER_ALLOWLIST_VERSION", "episode-v1")
     player = PlayerLaunchSpec(image="ghcr.io/metta-ai/players/paintbot@sha256:player123", run=(), env={})
 
@@ -3463,7 +3493,7 @@ def test_create_player_pod_routes_every_sidecar_without_exposing_openrouter_key(
             slot,
             "slot-token",
             player,
-            {"USE_BEDROCK": "true"},
+            {"COWORLD_LLM_ENABLED": "true"},
             "job-id",
             "game-service",
             "2",
@@ -3476,25 +3506,22 @@ def test_create_player_pod_routes_every_sidecar_without_exposing_openrouter_key(
     for pod in created:
         player_env = {entry.name: entry.value for entry in pod.spec.containers[0].env}
         sidecar = next(
-            container for container in pod.spec.init_containers if container.name == BEDROCK_SIDECAR_CONTAINER_NAME
+            container for container in pod.spec.init_containers if container.name == LLM_SIDECAR_CONTAINER_NAME
         )
         sidecar_env = {entry.name: entry.value for entry in sidecar.env}
         assert "COWORLD_OPENROUTER_KEY_SECRET_NAME" not in player_env
-        assert "BEDROCK_SIDECAR_OPENROUTER_API_KEY" not in player_env
-        assert sidecar_env["BEDROCK_SIDECAR_LLM_PROVIDER"] == "openrouter"
-        api_key_env = next(entry for entry in sidecar.env if entry.name == "BEDROCK_SIDECAR_OPENROUTER_API_KEY")
+        assert "LLM_SIDECAR_OPENROUTER_API_KEY" not in player_env
+        api_key_env = next(entry for entry in sidecar.env if entry.name == "LLM_SIDECAR_OPENROUTER_API_KEY")
         assert api_key_env.value is None
         assert api_key_env.value_from.secret_key_ref.name == "episode-llm-key-episode-123"
         assert api_key_env.value_from.secret_key_ref.key == "OPENROUTER_API_KEY"
-        assert sidecar_env["BEDROCK_SIDECAR_OPENROUTER_MODEL_ALLOWLIST"] == '["anthropic/claude-sonnet-4.6"]'
-        assert sidecar_env["BEDROCK_SIDECAR_OPENROUTER_MODEL_ALIASES"] == (
-            '{"us.anthropic.claude-sonnet-4-6":"anthropic/claude-sonnet-4.6"}'
-        )
-        assert sidecar_env["BEDROCK_SIDECAR_OPENROUTER_ALLOWLIST_VERSION"] == "episode-v1"
+        assert sidecar_env["LLM_SIDECAR_OPENROUTER_MODEL_ALLOWLIST"] == '["anthropic/claude-sonnet-4.6"]'
+
+        assert sidecar_env["LLM_SIDECAR_OPENROUTER_ALLOWLIST_VERSION"] == "episode-v1"
         for container in [*pod.spec.containers, *pod.spec.init_containers]:
             for env in container.env or []:
                 assert env.value != "literal-key-must-not-appear"
-                if env.name == "BEDROCK_SIDECAR_OPENROUTER_API_KEY":
+                if env.name == "LLM_SIDECAR_OPENROUTER_API_KEY":
                     assert env.value is None
 
 
@@ -3535,11 +3562,11 @@ def test_create_player_pod_forwards_artifact_upload_url_for_its_slot(monkeypatch
     assert player_security.seccomp_profile.type == "RuntimeDefault"
 
 
-def test_create_player_pod_tags_bedrock_request_metadata_with_slot(monkeypatch):
+def test_create_player_pod_tags_llm_request_metadata_with_slot(monkeypatch):
     created: dict[str, Any] = {}
     core_v1 = SimpleNamespace(create_namespaced_pod=lambda *, namespace, body: created.update({"body": body}))
     monkeypatch.setenv(
-        "BEDROCK_REQUEST_METADATA",
+        "LLM_REQUEST_METADATA",
         '{"episode_request_id":"11111111-1111-1111-1111-111111111111","image_digest":"sha256:game",'
         '"job_request_id":"22222222-2222-2222-2222-222222222222","metadata_origin":"dispatcher",'
         '"role":"game","schema_version":"1","slot":"game","source":"coworld_episode"}',
@@ -3551,7 +3578,7 @@ def test_create_player_pod_tags_bedrock_request_metadata_with_slot(monkeypatch):
     )
 
     env = {env_var.name: env_var.value for env_var in created["body"].spec.containers[0].env}
-    assert json.loads(env["BEDROCK_REQUEST_METADATA"]) == {
+    assert json.loads(env["LLM_REQUEST_METADATA"]) == {
         "metadata_origin": "coworld_runner",
         "episode_request_id": "11111111-1111-1111-1111-111111111111",
         "image_digest": "paintbot:latest",
@@ -3563,13 +3590,13 @@ def test_create_player_pod_tags_bedrock_request_metadata_with_slot(monkeypatch):
     }
 
 
-def test_create_player_pod_requires_dispatcher_bedrock_metadata(monkeypatch):
+def test_create_player_pod_requires_dispatcher_llm_metadata(monkeypatch):
     created: dict[str, Any] = {}
     core_v1 = SimpleNamespace(create_namespaced_pod=lambda *, namespace, body: created.update({"body": body}))
-    monkeypatch.delenv("BEDROCK_REQUEST_METADATA", raising=False)
+    monkeypatch.delenv("LLM_REQUEST_METADATA", raising=False)
     player = PlayerLaunchSpec(image="paintbot:latest", run=(), env={})
 
-    with pytest.raises(KeyError, match="BEDROCK_REQUEST_METADATA"):
+    with pytest.raises(KeyError, match="LLM_REQUEST_METADATA"):
         kubernetes_runner._create_player_pod(
             core_v1,
             "jobs",
@@ -4074,7 +4101,7 @@ def test_write_error_info_uses_typed_episode_error(monkeypatch, tmp_path):
     assert "Timed out waiting for game container" in error_info["message"]
 
 
-def test_create_player_pod_keeps_default_service_account_without_bedrock():
+def test_create_player_pod_keeps_default_service_account_without_llm():
     created: dict[str, Any] = {}
     core_v1 = SimpleNamespace(
         create_namespaced_pod=lambda *, namespace, body: created.update({"namespace": namespace, "body": body})
@@ -4713,3 +4740,46 @@ def test_init_stages_private_memory_before_game_config(monkeypatch, tmp_path):
     init_config.init_config_from_env()
     assert (tmp_path / "memory-input.json").read_bytes() == memory.read_bytes()
     assert "private" not in (tmp_path / "config.json").read_text()
+
+
+@pytest.mark.parametrize("source,slot", [("coworld_play", 0), ("coworld_replay", 0), ("coworld_persistent", 1)])
+def test_player_pod_rejects_wrong_runtime_identity(monkeypatch, source, slot):
+    metadata = dict(
+        schema_version="1",
+        source=source,
+        metadata_origin="llm_sidecar",
+        coworld_id="cow_test",
+        role="player",
+        slot="0",
+        image_digest="sha256:test",
+    )
+    if source == "coworld_play":
+        metadata["play_session_id"] = "play_test"
+    if source == "coworld_persistent":
+        metadata.update(
+            runtime_id="22222222-2222-2222-2222-222222222222",
+            runtime_generation="1",
+            league_id="league_test",
+            player_id="player_test",
+            policy_version_id="33333333-3333-3333-3333-333333333333",
+        )
+    monkeypatch.setenv("LLM_REQUEST_METADATA", json.dumps(metadata))
+    created = []
+    core_v1 = SimpleNamespace(create_namespaced_pod=lambda **kwargs: created.append(kwargs))
+    with pytest.raises(ValueError):
+        kubernetes_runner._create_player_pod(
+            core_v1,
+            "jobs",
+            "player",
+            slot,
+            "token",
+            PlayerLaunchSpec(image="registry/player@sha256:test", run=(), env={}),
+            {},
+            "job",
+            "game",
+            "2",
+            "2Gi",
+            "",
+            [],
+        )
+    assert created == []

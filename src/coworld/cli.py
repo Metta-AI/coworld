@@ -53,7 +53,7 @@ from coworld.deploy_audit import (
 from coworld.manifest.schema_check import check_manifest_schema
 from coworld.manifest_uri import materialized_manifest_path, materialized_replay_path
 from coworld.optimizer.runtime import OptimizerSetupError, run_optimizer_session
-from coworld.play import PlaySession, ReplaySession, _resolve_bedrock_aws_env, play_coworld, replay_coworld
+from coworld.play import PlaySession, ReplaySession, _resolve_local_llm_env, play_coworld, replay_coworld
 from coworld.runner.runner import DEFAULT_PLAYER_EXIT_TIMEOUT_SECONDS, EpisodeArtifacts, run_coworld_episode
 from coworld.submit import submit_policy_to_league_cmd
 from coworld.tournament_cli import register_tournament_commands
@@ -143,12 +143,16 @@ def docs_cmd(
     if path is not None:
         validate_docs_path(path)
         path = path.removesuffix(".md") + ".md"
-    with as_file(files("coworld").joinpath("docs")) as root:
+    with as_file(files("coworld")) as package_root:
+        root = package_root / "docs"
+        # Bazel exposes package files as individual runfiles symlinks. Anchor the
+        # containment check to the same installed package as its declared module.
+        installed_docs = (package_root / "__init__.py").resolve().parent / "docs"
         if path is None:
             typer.echo("\n".join(sorted(str(p.relative_to(root)) for p in root.rglob("*.md"))))
             return
         target = root.joinpath(path).resolve()
-        if not target.is_relative_to(root.resolve()) or not target.is_file():
+        if not target.is_relative_to(installed_docs.resolve()) or not target.is_file():
             raise typer.BadParameter("Choose an installed Markdown filename from `coworld docs --local`.")
         typer.echo(target.read_text(encoding="utf-8"), nl=False)
 
@@ -979,22 +983,13 @@ def play(
             help="Seconds to wait for player containers to exit after the game ends.",
         ),
     ] = DEFAULT_PLAYER_EXIT_TIMEOUT_SECONDS,
-    use_bedrock: Annotated[
+    use_llm: Annotated[
         bool,
         typer.Option(
-            "--use-bedrock",
-            hidden=True,
-            help="Enable AWS Bedrock access for player containers using host AWS credentials.",
+            "--use-llm",
+            help="Forward host COWORLD_LLM_ENDPOINT or OPENROUTER_API_KEY to local player containers.",
         ),
     ] = False,
-    aws_profile: Annotated[
-        str | None,
-        typer.Option("--aws-profile", hidden=True, help="AWS profile to use when resolving --use-bedrock credentials."),
-    ] = None,
-    aws_region: Annotated[
-        str | None,
-        typer.Option("--aws-region", hidden=True, help="AWS region to use for --use-bedrock player containers."),
-    ] = None,
     secret_env: Annotated[
         list[str] | None,
         typer.Option(
@@ -1007,8 +1002,6 @@ def play(
         typer.Option("--open-browser/--no-open-browser", help="Open the global viewer in a browser."),
     ] = True,
 ) -> None:
-    if not use_bedrock and (aws_profile is not None or aws_region is not None):
-        raise typer.BadParameter("--aws-profile and --aws-region require --use-bedrock")
     validate_run_argv(run)
     parsed_secret_env: dict[str, str] = {}
     if secret_env:
@@ -1033,9 +1026,7 @@ def play(
             player_images=player_images,
             player_run=run,
             workspace=output_dir.resolve() if output_dir is not None else None,
-            use_bedrock=use_bedrock,
-            aws_profile=aws_profile,
-            aws_region=aws_region,
+            use_llm=use_llm,
             secret_env=parsed_secret_env or None,
             timeout_seconds=timeout_seconds,
             player_exit_timeout_seconds=player_exit_timeout_seconds,
@@ -1424,24 +1415,23 @@ def upload_policy(
             ),
         ),
     ] = None,
-    use_bedrock: Annotated[
+    use_llm: Annotated[
         bool,
         typer.Option(
-            "--use-bedrock",
+            "--use-llm",
             help=(
                 "Attach the hosted LLM sidecar to this policy's player pod so it can call a model through the "
-                "platform's OpenRouter key. Sets USE_BEDROCK=true in the policy environment (the flag keeps its "
-                "original name)."
+                "platform's OpenRouter key. Sets COWORLD_LLM_ENABLED=true in the policy environment."
             ),
         ),
     ] = False,
-    bedrock_model: Annotated[
+    llm_model: Annotated[
         str | None,
         typer.Option(
-            "--bedrock-model",
+            "--llm-model",
             help=(
                 "Model for this policy as a canonical OpenRouter slug, e.g. anthropic/claude-haiku-4.5. "
-                "Requires --use-bedrock and sets BEDROCK_MODEL."
+                "Requires --use-llm and sets COWORLD_LLM_MODEL."
             ),
         ),
     ] = None,
@@ -1449,21 +1439,19 @@ def upload_policy(
 ) -> None:
     if (image is None) == (player_file is None):
         raise typer.BadParameter("Provide exactly one of IMAGE or --file")
-    if player_file is not None and (run or secret_env or use_bedrock or bedrock_model is not None):
-        raise typer.BadParameter(
-            "--file cannot be combined with --run, --secret-env, --use-bedrock, or --bedrock-model"
-        )
-    if bedrock_model is not None and not use_bedrock:
-        raise typer.BadParameter("--bedrock-model requires --use-bedrock")
+    if player_file is not None and (run or secret_env or use_llm or llm_model is not None):
+        raise typer.BadParameter("--file cannot be combined with --run, --secret-env, --use-llm, or --llm-model")
+    if llm_model is not None and not use_llm:
+        raise typer.BadParameter("--llm-model requires --use-llm")
     parsed_secret_env: dict[str, str] = {}
     if secret_env:
         for kv in secret_env:
             key, val = _parse_secret_env(kv)
             parsed_secret_env[key] = val
-    if use_bedrock:
-        parsed_secret_env["USE_BEDROCK"] = "true"
-    if bedrock_model is not None:
-        parsed_secret_env["BEDROCK_MODEL"] = bedrock_model
+    if use_llm:
+        parsed_secret_env["COWORLD_LLM_ENABLED"] = "true"
+    if llm_model is not None:
+        parsed_secret_env["COWORLD_LLM_MODEL"] = llm_model
     parsed_tags: dict[str, str] = {}
     if tag:
         for kv in tag:
@@ -1617,22 +1605,13 @@ def run_episode(
     ] = None,
     timeout_seconds: Annotated[float, typer.Option("--timeout-seconds", min=1.0)] = 3600.0,
     verify_replay: Annotated[bool, typer.Option("--verify-replay/--no-verify-replay")] = False,
-    use_bedrock: Annotated[
+    use_llm: Annotated[
         bool,
         typer.Option(
-            "--use-bedrock",
-            hidden=True,
-            help="Enable AWS Bedrock access for player containers using host AWS credentials.",
+            "--use-llm",
+            help="Forward host COWORLD_LLM_ENDPOINT or OPENROUTER_API_KEY to local player containers.",
         ),
     ] = False,
-    aws_profile: Annotated[
-        str | None,
-        typer.Option("--aws-profile", hidden=True, help="AWS profile to use when resolving --use-bedrock credentials."),
-    ] = None,
-    aws_region: Annotated[
-        str | None,
-        typer.Option("--aws-region", hidden=True, help="AWS region to use for --use-bedrock player containers."),
-    ] = None,
     secret_env: Annotated[
         list[str] | None,
         typer.Option(
@@ -1641,8 +1620,6 @@ def run_episode(
         ),
     ] = None,
 ) -> None:
-    if not use_bedrock and (aws_profile is not None or aws_region is not None):
-        raise typer.BadParameter("--aws-profile and --aws-region require --use-bedrock")
     validate_run_argv(run)
     parsed_secret_env: dict[str, str] = {}
     if secret_env:
@@ -1654,18 +1631,13 @@ def run_episode(
     with _materialized_manifest_path(manifest_uri, server=server) as manifest_path:
         package = load_coworld_package(manifest_path, tolerate_newer_fields=True)
         if package.manifest.game.player_runtime == "game-hosted":
-            if run or use_bedrock or aws_profile is not None or aws_region is not None or secret_env:
-                raise typer.BadParameter(
-                    "game-hosted Coworlds do not support --run, --use-bedrock, --aws-profile, "
-                    "--aws-region, or --secret-env"
-                )
+            if run or use_llm or secret_env:
+                raise typer.BadParameter("game-hosted Coworlds do not support --run, --use-llm, or --secret-env")
             episode_request_path = None
             player_images = None
         else:
-            if use_bedrock:
-                parsed_secret_env.update(
-                    _resolve_bedrock_aws_env(aws_profile=aws_profile, aws_region=aws_region).container_env
-                )
+            if use_llm:
+                parsed_secret_env.update(_resolve_local_llm_env())
             episode_request_path, player_images = _split_episode_request_and_player_images(
                 episode_request_or_player_images
             )
@@ -1780,22 +1752,13 @@ def scrimmage(
     ] = None,
     timeout_seconds: Annotated[float, typer.Option("--timeout-seconds", min=1.0)] = 3600.0,
     verify_replay: Annotated[bool, typer.Option("--verify-replay/--no-verify-replay")] = False,
-    use_bedrock: Annotated[
+    use_llm: Annotated[
         bool,
         typer.Option(
-            "--use-bedrock",
-            hidden=True,
-            help="Enable AWS Bedrock access for player containers using host AWS credentials.",
+            "--use-llm",
+            help="Forward host COWORLD_LLM_ENDPOINT or OPENROUTER_API_KEY to local player containers.",
         ),
     ] = False,
-    aws_profile: Annotated[
-        str | None,
-        typer.Option("--aws-profile", hidden=True, help="AWS profile to use when resolving --use-bedrock credentials."),
-    ] = None,
-    aws_region: Annotated[
-        str | None,
-        typer.Option("--aws-region", hidden=True, help="AWS region to use for --use-bedrock player containers."),
-    ] = None,
     secret_env: Annotated[
         list[str] | None,
         typer.Option(
@@ -1814,9 +1777,7 @@ def scrimmage(
         variant_id=variant_id,
         timeout_seconds=timeout_seconds,
         verify_replay=verify_replay,
-        use_bedrock=use_bedrock,
-        aws_profile=aws_profile,
-        aws_region=aws_region,
+        use_llm=use_llm,
         secret_env=secret_env,
     )
 

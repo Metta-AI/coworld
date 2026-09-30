@@ -6,6 +6,7 @@ from pydantic import ValidationError
 from coworld.runner.llm_metadata import (
     LLM_REQUEST_METADATA_MAX_ENTRIES,
     CoworldEpisodeLlmMetadata,
+    CoworldPersistentLlmMetadata,
     CoworldPlayLlmMetadata,
     CoworldReplayLlmMetadata,
     HostLlmMetadata,
@@ -53,19 +54,36 @@ def test_episode_metadata_serializes_to_stable_flat_strings(origin: LlmEpisodeMe
     assert len(llm_request_metadata(metadata)) <= LLM_REQUEST_METADATA_MAX_ENTRIES
 
 
-def test_persistent_runtime_metadata_omits_absent_episode_request_id() -> None:
-    metadata = CoworldEpisodeLlmMetadata(
+@pytest.mark.parametrize(("role", "slot"), [("game", "game"), ("player", "0")])
+def test_persistent_metadata_preserves_launch_identity_without_an_episode(role, slot) -> None:
+    metadata = CoworldPersistentLlmMetadata(
         schema_version="1",
-        source="coworld_episode",
-        metadata_origin="dispatcher",
-        job_request_id=JOB_REQUEST_ID,
-        role="game",
-        slot="game",
+        source="coworld_persistent",
+        metadata_origin="llm_sidecar",
+        runtime_id=JOB_REQUEST_ID,
+        runtime_generation="7",
+        league_id="league_original",
+        player_id="player_original",
+        policy_version_id=str(EPISODE_REQUEST_ID),
+        coworld_id="cw_original",
+        role=role,
+        slot=slot,
         image_digest="sha256:abc123",
+        openrouter_lane="persistent:7",
+        openrouter_lane_expires_at="2099-01-01T00:00:00Z",
     )
-
-    assert "episode_request_id" not in llm_request_metadata(metadata)
+    values = llm_request_metadata(metadata)
+    assert len(values) == 14
+    assert all(isinstance(value, str) for value in values.values())
     assert parse_llm_request_metadata(serialize_llm_request_metadata(metadata)) == metadata
+    for foreign in ("job_request_id", "episode_request_id", "play_session_id"):
+        with pytest.raises(ValidationError):
+            CoworldPersistentLlmMetadata.model_validate(values | {foreign: str(JOB_REQUEST_ID)})
+    for missing in ("runtime_id", "runtime_generation", "league_id", "player_id", "policy_version_id"):
+        with pytest.raises(ValidationError):
+            CoworldPersistentLlmMetadata.model_validate({k: v for k, v in values.items() if k != missing})
+    with pytest.raises(ValidationError):
+        CoworldPersistentLlmMetadata.model_validate(values | {"runtime_generation": "0"})
 
 
 def test_reporter_metadata_round_trips_as_reporter_variant() -> None:
