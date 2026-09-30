@@ -82,6 +82,8 @@ def test_xp_request_help_documents_request_shapes() -> None:
     assert "slot assignments" in result.output
     assert "coworld_id, roster, and num_episodes" in result.output
     assert "Compare the previous best and candidate" in result.output
+    assert "--title" in result.output
+    assert "--description" in result.output
 
 
 def test_xp_request_create_posts_body_and_prints_id(httpserver: HTTPServer) -> None:
@@ -109,6 +111,41 @@ def test_xp_request_create_posts_body_and_prints_id(httpserver: HTTPServer) -> N
     assert captured["body"] == body
     assert captured["auth"] == "Bearer token"
     assert XP_REQUEST_ID in result.output
+
+
+def test_xp_request_create_merges_title_and_description_into_body(httpserver: HTTPServer) -> None:
+    captured: dict[str, object] = {}
+
+    def handler(request: Request) -> Response:
+        captured["body"] = json.loads(request.get_data())
+        return Response(
+            json.dumps({**_experience_request_detail(), "title": "Wider radius", "description": "Expect more wins."}),
+            content_type="application/json",
+        )
+
+    httpserver.expect_request("/observatory/v2/experience-requests", method="POST").respond_with_handler(handler)
+
+    body = {"coworld_id": COWORLD_ID, "roster": [{"player": {"policy_ref": POLICY_VERSION_ID}, "slot": 0}]}
+    result = CliRunner().invoke(
+        app,
+        [
+            "xp-request",
+            "create",
+            "-",
+            "--title",
+            "Wider radius",
+            "--description",
+            "Expect more wins.",
+            "--server",
+            httpserver.url_for("/"),
+        ],
+        input=json.dumps(body),
+    )
+
+    assert result.exit_code == 0, result.output
+    assert captured["body"] == {**body, "title": "Wider radius", "description": "Expect more wins."}
+    assert "Title: Wider radius" in result.output
+    assert "Description: Expect more wins." in result.output
 
 
 def test_xp_request_create_reads_file(httpserver: HTTPServer, tmp_path) -> None:

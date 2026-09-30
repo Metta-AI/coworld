@@ -1565,6 +1565,51 @@ def test_upload_policy_command_updates_tags_for_existing_player_file_policy(
     assert "Upload complete: paintbot:v7" in result.output
 
 
+def test_upload_policy_command_stores_title_and_description_as_tags(httpserver: HTTPServer, tmp_path: Path) -> None:
+    player_file = tmp_path / "player.wasm"
+    contents = b"writeup-player"
+    player_file.write_bytes(contents)
+    content_hash = hashlib.sha256(contents).hexdigest()
+    tags = {"stage": "champion", "title": "Wider radius", "description": "Expect more wins."}
+    httpserver.expect_request(
+        "/observatory/stats/policies/files/upload",
+        method="POST",
+        json={"name": "paintbot", "content_hash": content_hash, "size_bytes": len(contents), "tags": tags},
+    ).respond_with_json(
+        {
+            "upload_url": None,
+            "existing_policy_version": {"id": "00000000-0000-0000-0000-000000000031", "name": "paintbot", "version": 8},
+        }
+    )
+    httpserver.expect_request(
+        "/observatory/stats/policies/files/complete",
+        method="POST",
+        json={"name": "paintbot", "content_hash": content_hash, "size_bytes": len(contents), "tags": tags},
+    ).respond_with_json({"id": "00000000-0000-0000-0000-000000000031", "name": "paintbot", "version": 8})
+
+    result = CliRunner().invoke(
+        app,
+        [
+            "upload-policy",
+            "--file",
+            str(player_file),
+            "--name",
+            "paintbot",
+            "--tag",
+            "stage=champion",
+            "--title",
+            "Wider radius",
+            "--description",
+            "Expect more wins.",
+            "--server",
+            httpserver.url_for(""),
+        ],
+    )
+
+    assert result.exit_code == 0, result.output
+    assert "Upload complete: paintbot:v8" in result.output
+
+
 def test_upload_policy_command_completes_already_stored_player_file(httpserver: HTTPServer, tmp_path: Path) -> None:
     player_file = tmp_path / "player.wasm"
     contents = b"shared-player"

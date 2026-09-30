@@ -58,7 +58,10 @@ _XP_REQUEST_HELP = (
     "For league-targeted A/B tests, the JSON body usually includes target.league_id, "
     "roster entries with policy_ref/top_n/random players, slot assignments, num_episodes, and notes. "
     "For direct Coworld runs, use coworld_id, roster, and num_episodes. "
-    "Compare the previous best and candidate with matching target, roster, episode count, and notes format."
+    "Compare the previous best and candidate with matching target, roster, episode count, and notes format. "
+    "Every request an agent creates carries a writeup: --title (what this request tests, one line, "
+    "at most 50 characters recommended) and --description (what changed, why, expected result, "
+    "at most 600 characters recommended). Both may also be set as title/description in the JSON body."
 )
 
 
@@ -195,11 +198,29 @@ def register_tournament_commands(app: typer.Typer) -> None:
             str,
             typer.Argument(help="Path to a V2CreateExperienceRequestRequest JSON body, or '-' to read stdin."),
         ],
+        title: Annotated[
+            str | None,
+            typer.Option(
+                "--title",
+                help="Writeup title: what this request tests, one line, at most 50 characters recommended.",
+            ),
+        ] = None,
+        description: Annotated[
+            str | None,
+            typer.Option(
+                "--description",
+                help="Writeup: what changed, why, and the expected result, at most 600 characters recommended.",
+            ),
+        ] = None,
         server: Annotated[str, typer.Option("--server", help="Observatory API server URL.")] = DEFAULT_SUBMIT_SERVER,
         json_output: Annotated[bool, typer.Option("--json", help="Print raw JSON.")] = False,
     ) -> None:
         raw = sys.stdin.read() if body == "-" else Path(body).read_text(encoding="utf-8")
         payload = json.loads(raw)
+        if title is not None:
+            payload["title"] = title
+        if description is not None:
+            payload["description"] = description
         with CoworldApiClient.from_login(server_url=server) as client:
             detail = client.create_experience_request(payload)
         if json_output:
@@ -1246,6 +1267,7 @@ def _print_episode_detail(row: V2EpisodeRequestRow) -> None:
 def _print_experience_requests(rows: list[ExperienceRequestRow]) -> None:
     table = Table(title="Experience Requests", box=box.SIMPLE_HEAVY, show_lines=False, pad_edge=False)
     table.add_column("ID")
+    table.add_column("Title")
     table.add_column("Status")
     table.add_column("Coworld")
     table.add_column("Variant")
@@ -1255,6 +1277,7 @@ def _print_experience_requests(rows: list[ExperienceRequestRow]) -> None:
     for row in rows:
         table.add_row(
             row.id,
+            row.title or "-",
             row.status,
             f"{row.coworld_name}:{row.coworld_version}",
             row.variant_id or "-",
@@ -1278,6 +1301,8 @@ def _experience_request_counts(row: ExperienceRequestRow) -> str:
 
 def _print_experience_request_detail(row: ExperienceRequestDetail) -> None:
     console.print(f"[bold]Experience request:[/bold] {row.id}")
+    console.print(f"Title: {row.title or '-'}")
+    console.print(f"Description: {row.description or '-'}")
     console.print(f"Status: {row.status}")
     console.print(f"Coworld: {row.coworld_name}:{row.coworld_version} ({row.coworld_id})")
     console.print(f"Variant: {row.variant_id or '-'}")
