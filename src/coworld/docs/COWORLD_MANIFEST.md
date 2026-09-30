@@ -466,7 +466,9 @@ does not inject a policy prompt. Games may copy, adapt, or replace this default 
 Add the game's actual read/write syntax and timing to this description. Include it only when both memory paths are
 present. Choosing this wording does not enable scratchpads; the game declaration and league opt-in remain required.
 
-Compaction uses the league's daily budget and credit pool. The worker reserves a conservative estimate before calling
-Bedrock, then records token-based cost when the response arrives. Unaffordable work remains queued. A lost response
-retains its reserved estimate, marked `reserved`, rather than allowing unmetered retries. Normal policy read/write calls
-remain part of episode inference spend.
+Compaction uses the league's daily budget and credit pool. Before calling OpenRouter, the worker commits a conservative
+reservation using catalog prices and constrains provider prices to those rates. SDK retries and provider fallback are
+disabled. Durable provider billing later settles that same reservation, including corrections; the response alone does
+not replace the reserved amount. Unaffordable work remains queued. Missing or ambiguous billing retains the estimate,
+marked `reserved`, rather than allowing unmetered retries. Normal policy read/write calls remain part of episode
+inference spend.

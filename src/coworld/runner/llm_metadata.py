@@ -82,6 +82,19 @@ class ReporterRunLlmMetadata(BaseModel):
     billed_user_id: str = Field(min_length=1)
 
 
+class CompactionLlmMetadata(BaseModel):
+    """One league-funded compaction, identified by its committed reservation lease."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    schema_version: Literal["1"] = "1"
+    source: Literal["scratchpad_compaction"] = "scratchpad_compaction"
+    metadata_origin: Literal["host_client"] = "host_client"
+    lease_token: UUID
+    league_id: str = Field(min_length=1)
+    coworld_name: str = Field(min_length=1)
+
+
 class HostLlmMetadata(BaseModel):
     """Platform-funded inference outside an episode or reporter run."""
 
@@ -98,7 +111,8 @@ LlmRequestMetadata: TypeAlias = Annotated[
     | CoworldPlayLlmMetadata
     | CoworldReplayLlmMetadata
     | ReporterRunLlmMetadata
-    | HostLlmMetadata,
+    | HostLlmMetadata
+    | CompactionLlmMetadata,
     Field(discriminator="source"),
 ]
 
