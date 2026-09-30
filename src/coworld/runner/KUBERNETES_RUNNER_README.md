@@ -72,9 +72,12 @@ The parent Job has:
   timeout. Player pods wait for game HTTP health in their own init containers; the owning Job bounds that wait and
   reclaims them on termination.
 - `game`: regular non-restarting container that runs `manifest.game.runnable.image`, listens on port `8080`, and has a
-  TCP liveness probe against the worker's health port (`9090`) so the kubelet stops it when the worker exits.
+  `/healthz` readiness probe. For bounded episodes, its lifetime ends through backend Job deletion. Persistent runtimes
+  retain their worker-health liveness probe.
 - `worker`: regular Job container that runs the Kubernetes coordinator and holds a TCP health port (`9090`) open for its
   whole lifetime.
+- `final-logs`: platform-owned native sidecar on bounded episodes. It starts before other native sidecars and terminates
+  last, uploading shutdown logs before runtime cleanup. It has no coordinator-spec or game-workdir mount.
 - `coworld-workdir`: an `emptyDir` volume mounted into all parent containers.
 - `coordinator-spec`: a separate `emptyDir` mounted at `/var/run/coworld-coordinator` only by initialization and the
   worker. The worker mount is read-only. Game, player, and sidecar containers cannot read the full specification through
@@ -84,14 +87,33 @@ The game receives URI-based artifact environment variables. Today the app backen
 `COWORLD_WORKDIR` so the worker can validate results and upload hosted artifacts, but the game contract is URI-based
 rather than path-based. The worker reaches the game locally for health checks and creates a ClusterIP Service so player
 pods can connect back to the game. On exit — success or failure — the worker writes runner error info, collects logs,
-and deletes any child player pods and Service. Because the worker holds a TCP health port open for its whole lifetime
-and the game container liveness-probes that port, the kubelet stops the non-restarting game container whenever the
-worker exits (timeout, crash, or OOM); the app backend deletes the parent Job. After game results arrive, the worker
-gives platform-hosted players up to 30 seconds to finish artifact uploads before collecting logs and deleting their
-pods. Late player failures do not replace ordinary game results; certification still requires clean player exits.
-Failure diagnostics after error info are best-effort, so a log, player-artifact, or timing upload failure cannot replace
-the episode failure. This couples the game's lifetime to the worker without restarting the game on its own crash or
-exposing worker environment variables through a shared process namespace.
+and deletes any child player pods and Service. After game results arrive, the worker gives platform-hosted players up to
+30 seconds to finish artifact uploads before collecting logs and deleting their pods. Late player failures do not
+replace ordinary game results; certification still requires clean player exits. Failure diagnostics after error info are
+best-effort, so a diagnostic upload failure cannot replace the episode failure.
+
+For bounded episodes, worker exit 0 means required publication, including final worker timings, finished. The
+`prepare-players` command runs in a separate init container and is not a completion signal. Results upload happens
+before other outputs, so results-object existence alone never proves completion.
+
+The backend completes bounded episodes on successful worker exit while the game still runs. The event processor checks
+the current Job UID and required results, replay, debug archive, and timing objects. It commits the terminal result,
+then gracefully deletes the owning Job with a UID precondition. Watch retries and reconciliation also clean up
+already-terminal episodes. Cancellation arbitrates under the job row lock; shutdown exits cannot overwrite a committed
+success. Persistent runtimes keep their existing lifecycle.
+
+A Pod finalizer retains cleanup responsibility across backend restarts. It does not retain container runtime logs. The
+final log sidecar uploads an execution-Job-UID-scoped `final_logs.json`; the backend verifies its Pod UID, updates
+`logs.txt`, then releases its finalizer. Collection retains up to 10,000 lines and 1 MiB per container, with a
+five-second read timeout. A collector that never starts or is killed produces an explicit incomplete-coverage receipt;
+any earlier log snapshot remains available. Malformed receipts record incomplete coverage. Confirmed Node removal
+permits cleanup despite stale running container status; a merely unreachable Node does not. Storage errors retry. Games
+exhausting the 120-second bounded-Pod termination grace can also exhaust the collector's budget; this is a cleanup
+defect, not an episode-result failure. Result availability and observed Pod deletion are separate events.
+
+The game egress proxy stops accepting connections on SIGTERM and drains existing tunnels for up to ten seconds.
+Inference sidecars retain their existing graceful request draining and accounting-sink flushes. Native sidecars
+terminate in reverse declaration order. The egress proxy drains game connections; inference uses the relay directly.
 
 ## Commands
 
@@ -374,8 +396,9 @@ The coordinator deletes any child player pods and the game Service in a `finally
 references pointing at the parent pod, so Kubernetes garbage collection can clean them up if the coordinator exits
 early.
 
-The parent Job has `ttlSecondsAfterFinished`, so completed and failed parent pods are cleaned up by the Kubernetes TTL
-controller.
+The backend gracefully deletes bounded episode Jobs after the terminal decision. The Pod finalizer remains until final
+log capture or an explicit coverage failure is durable. `ttlSecondsAfterFinished` provides Job cleanup as a fallback;
+the TTL controller cannot bypass the log finalizer.
 
 The private coordinator volume uses memory-backed `emptyDir`. Init copies the exact validated spec bytes there; the
 worker reads the same document. It counts against the Pod's memory rather than writing credentials to the node
@@ -416,3 +439,8 @@ orchestrator. A changed digest selects new content; an already cached digest avo
 
 The dispatcher sets `COWORLD_PLAYER_IMAGE_PULL_POLICY=IfNotPresent` for local development. This override covers player
 images and their coordinator wait-for-service container.
+
+Bounded game inference sidecars start graceful draining from a `preStop` hook, before native-sidecar ordering waits for
+the game. Missing or mismatched final-log receipts record incomplete coverage. Scratchpads retain their existing
+once-at-commit ingestion; cleanup does not repeat the potentially large read. Job deletion and finalizer release remain
+independent of ingestion failures.

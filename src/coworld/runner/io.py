@@ -62,6 +62,27 @@ INCONCLUSIVE_RUNNER_ERROR_TYPES = frozenset[RunnerErrorType]({"episode_inconclus
 RETRYABLE_RUNNER_ERROR_TYPES = PLATFORM_RUNNER_ERROR_TYPES | INCONCLUSIVE_RUNNER_ERROR_TYPES
 
 
+FINAL_LOGS_CONTAINER_NAME = "final-logs"
+FINAL_LOGS_READY_PATH = "/tmp/coworld-final-logs-ready"
+
+
+class FinalLogCapture(BaseModel):
+    pod_uid: str
+    captured_at: datetime
+    logs: dict[str, str]
+    status: Literal[
+        "complete",
+        "collector_not_started",
+        "collector_failed",
+        "receipt_missing",
+        "receipt_invalid",
+        "node_lost",
+        "partial",
+    ] = "complete"
+    container_exit_codes: dict[str, int] = Field(default_factory=dict)
+    errors: dict[str, str] = Field(default_factory=dict)
+
+
 class RunnerError(BaseModel):
     error_type: RunnerErrorType
     message: str

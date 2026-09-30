@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import os
+import signal
 import ssl
 from urllib.parse import urlsplit
 
@@ -16,6 +17,7 @@ from coworld.runner.llm_sidecar_wiring import (
 from coworld.runner.relay_client import egress_relay_ssl_context
 
 _MAX_CONCURRENT_TUNNELS = 32
+_DRAIN_SECONDS = 10.0
 
 
 async def _pump(source: asyncio.StreamReader, destination: asyncio.StreamWriter) -> None:
@@ -34,9 +36,9 @@ async def _handle(
     tls_context: ssl.SSLContext,
     connection_limit: asyncio.Semaphore,
 ) -> None:
-    async with connection_limit:
-        relay_writer: asyncio.StreamWriter | None = None
-        try:
+    relay_writer: asyncio.StreamWriter | None = None
+    try:
+        async with connection_limit:
             request = await asyncio.wait_for(game_reader.readuntil(b"\r\n\r\n"), timeout=5)
             line = request.split(b"\r\n", 1)[0]
             method, separator, rest = line.partition(b" ")
@@ -67,21 +69,32 @@ async def _handle(
                 asyncio.create_task(_pump(game_reader, relay_writer)),
                 asyncio.create_task(_pump(relay_reader, game_writer)),
             ]
-            done, pending = await asyncio.wait(tasks, return_when=asyncio.FIRST_COMPLETED)
-            for task in pending:
-                task.cancel()
-            await asyncio.gather(*pending, return_exceptions=True)
+            try:
+                done, _ = await asyncio.wait(tasks, return_when=asyncio.FIRST_COMPLETED)
+            finally:
+                for task in tasks:
+                    if not task.done():
+                        task.cancel()
+                await asyncio.gather(*tasks, return_exceptions=True)
             for task in done:
                 task.result()
-        finally:
-            game_writer.close()
-            if relay_writer is not None:
-                relay_writer.close()
-            try:
-                await game_writer.wait_closed()
-            finally:
+    finally:
+        game_writer.close()
+        if relay_writer is not None:
+            relay_writer.close()
+        task = asyncio.current_task()
+        assert task is not None
+        try:
+            if not task.cancelling():
+                closing = [game_writer.wait_closed()]
                 if relay_writer is not None:
-                    await relay_writer.wait_closed()
+                    closing.append(relay_writer.wait_closed())
+                await asyncio.gather(*closing)
+        finally:
+            if task.cancelling():
+                game_writer.transport.abort()
+                if relay_writer is not None:
+                    relay_writer.transport.abort()
 
 
 async def _main() -> None:
@@ -98,21 +111,41 @@ async def _main() -> None:
         key_file=EGRESS_RELAY_CLIENT_KEY_FILE,
     )
     connection_limit = asyncio.Semaphore(_MAX_CONCURRENT_TUNNELS)
+    stopped = asyncio.Event()
+    loop = asyncio.get_running_loop()
+    for signum in (signal.SIGTERM, signal.SIGINT):
+        loop.add_signal_handler(signum, stopped.set)
+    connections: set[asyncio.Task[None]] = set()
+
+    def connected(reader: asyncio.StreamReader, writer: asyncio.StreamWriter) -> None:
+        task = asyncio.create_task(
+            _handle(
+                reader,
+                writer,
+                relay_host=relay_host,
+                relay_port=relay_port,
+                allowed_targets=allowed_targets,
+                tls_context=tls_context,
+                connection_limit=connection_limit,
+            )
+        )
+        connections.add(task)
+        task.add_done_callback(connections.remove)
+
     server = await asyncio.start_server(
-        lambda reader, writer: _handle(
-            reader,
-            writer,
-            relay_host=relay_host,
-            relay_port=relay_port,
-            allowed_targets=allowed_targets,
-            tls_context=tls_context,
-            connection_limit=connection_limit,
-        ),
+        connected,
         host="127.0.0.1",
         port=GAME_EGRESS_PROXY_PORT,
     )
     async with server:
-        await server.serve_forever()
+        await stopped.wait()
+        server.close()
+        if connections:
+            _, pending = await asyncio.wait(connections, timeout=_DRAIN_SECONDS)
+            for task in pending:
+                task.cancel()
+            await asyncio.gather(*pending, return_exceptions=True)
+        await server.wait_closed()
 
 
 if __name__ == "__main__":
