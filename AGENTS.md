@@ -33,9 +33,11 @@ chain, grader philosophy, player policy design, schema contracts) and can be ins
 - Keep package docs public-package-facing. Avoid private Metta backend paths unless the document is intentionally
   explaining a platform integration boundary.
 - Treat Paint Arena under `src/coworld/examples/paintarena/` as the canonical in-tree example.
+- Read the [contract index](.contracts/index.md) before changing a manifest model in `src/coworld/types.py`, a reader or
+  converter in `src/coworld/manifest/`, or a fixture in `tests/manifest_versions/`.
 - This file is monorepo contributor guidance and never reaches the public `Metta-AI/coworld` repo. The sync
   (`devops/git/push_child_repo.py`) replaces it with [`AGENTS.external.md`](AGENTS.external.md), written for coding
-  agents outside Softmax. Keep that twin free of monorepo commands and private paths.
+  agents outside Softmax, and drops `.contracts/`. Keep that twin free of monorepo commands and private paths.
 
 ## CLI
 
@@ -111,9 +113,9 @@ uv run metta pytest packages/coworld/tests/test_manifest_compatibility.py -v
 ```
 
 The test is hermetic and runs on every PR. Update the exhaustive fixture when adding a field, and preserve the minimal
-fixture's omission of optional fields. Do not weaken compatibility coverage merely to make a schema change pass. Migrate
-affected stored manifests or enforce a new requirement at certification/upload boundaries instead of making historical
-data unreadable.
+fixture's omission of optional fields. Do not weaken compatibility coverage merely to make a schema change pass; follow
+the [stored manifests contract](.contracts/001-stored-manifests/CONTRACT.md) for a change that could reject a stored
+manifest.
 
 Do not hand-edit `src/coworld/coworld_manifest_schema.json` or `src/coworld/runner/episode_request_schema.json` as the
 source of truth. They are generated docs and `$schema` targets; `test_types.py` checks that they match `types.py`.
