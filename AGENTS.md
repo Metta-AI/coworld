@@ -37,7 +37,8 @@ chain, grader philosophy, player policy design, schema contracts) and can be ins
   converter in `src/coworld/manifest/`, or a fixture in `tests/manifest_versions/`.
 - This file is monorepo contributor guidance and never reaches the public `Metta-AI/coworld` repo. The sync
   (`devops/git/push_child_repo.py`) replaces it with [`AGENTS.external.md`](AGENTS.external.md), written for coding
-  agents outside Softmax, and drops `.contracts/`. Keep that twin free of monorepo commands and private paths.
+  agents outside Softmax, and drops `.contracts/` from every mirrored commit. Keep that twin free of monorepo commands
+  and private paths.
 
 ## CLI
 
