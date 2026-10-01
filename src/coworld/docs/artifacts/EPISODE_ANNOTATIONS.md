@@ -27,9 +27,12 @@ runtime can append events directly to that file, keeping each seat separate. Flu
 collection. Missing or empty files are ignored. Policies need a runtime binding to emit events; supplying a destination
 alone cannot add a language-level annotation API.
 
-Polyworld supplies `ANNOTATE(time, kind, function, args)` through the shared LLM host registration used by GoTA, Light
-vs Dark, and Call to Adventure. Each seat receives a callback bound to its own file; individual games need no
-annotation-specific code. The callback closes the file after each append, so no new finalization hook is required.
+Polyworld supplies `ANNOTATE(time, kind, function, args)` through its shared policy host, independently of LLM support.
+Invalid input, annotation limits, and output failures return status codes without disabling the policy VM. Each seat
+uses one buffered file handle, like policy logs, flushed and closed during existing episode cleanup. Desktop and WASM
+hosts expose the same API and return disabled without a destination. See
+[Polyworld's annotation contract](https://github.com/Metta-AI/polyworld/blob/main/coworld/integration.md#policy-annotations)
+for registration, status codes, buffering, and host coverage.
 
 The event schema, storage layout, and read API can also serve future platform-hosted producers. This implementation
 collects game-hosted files. There is no new completion handshake, log parser, or annotation service. Uploads retain
