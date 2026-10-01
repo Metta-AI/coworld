@@ -1417,6 +1417,10 @@ class CoworldApiClient:
     def get_episode_request_policy_log(self, episode_request_id: str, policy_version_id: UUID, agent_idx: int) -> str:
         return self.get_text(f"/v2/episode-requests/{episode_request_id}/{policy_version_id}/policy-logs/{agent_idx}")
 
+    def get_episode_request_policy_annotations(self, episode_request_id: str, policy_version_id: UUID) -> bytes:
+        """Download this policy's optional annotations as JSON Lines."""
+        return self.get_bytes(f"/v2/episode-requests/{episode_request_id}/{policy_version_id}/annotations")
+
     def get_episode_request_policy_artifact(
         self, episode_request_id: str, policy_version_id: UUID, agent_idx: int
     ) -> bytes:

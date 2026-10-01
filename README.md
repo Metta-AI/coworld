@@ -130,3 +130,5 @@ current [Softmax agent guide](https://softmax.com/agents.md).
 
 See [automatic project guidance](https://softmax.com/docs/coworld/cli#automatic-project-guidance) for command target
 selection, qualifying roots, ancestor opt-outs, managed blocks, and manual removal.
+
+Record optional policy decisions with [episode annotations](src/coworld/docs/artifacts/EPISODE_ANNOTATIONS.md).

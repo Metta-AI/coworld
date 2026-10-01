@@ -112,6 +112,7 @@ class EpisodeArtifacts:
     logs_dir: Path
     game_stdout_path: Path
     game_stderr_path: Path
+    policy_log_messages: dict[str, str] = field(default_factory=dict)
 
     @classmethod
     def create(cls, workspace: Path | None = None, *, prefix: str = "coworld-cert-") -> EpisodeArtifacts:
@@ -136,6 +137,9 @@ class EpisodeArtifacts:
 
     def policy_log_path(self, slot: int) -> Path:
         return self.logs_dir / f"policy_agent_{slot}.log"
+
+    def policy_annotations_path(self, slot: int) -> Path:
+        return self.workspace / f"policy_annotations_{slot}.jsonl"
 
     def policy_artifact_path(self, slot: int) -> Path:
         """Per-player artifact object the player may replace with a newer .zip.
@@ -399,6 +403,7 @@ def stage_player_files(
                 size_bytes=player.size_bytes,
                 log_uri=f"file://{CONTAINER_WORKDIR}/logs/policy_agent_{slot}.log",
                 artifact_uri=f"file://{CONTAINER_WORKDIR}/policy_artifact_{slot}.zip",
+                annotations_uri=f"file://{CONTAINER_WORKDIR}/policy_annotations_{slot}.jsonl",
             )
         )
     artifacts.player_seats_path.write_text(

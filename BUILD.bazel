@@ -75,6 +75,7 @@ echo "coworld-paintarena@$$iid" > $@
 # copies exist only as docs / `$schema` URLs referenced from READMEs.
 _CORE_SRCS = [
     "src/coworld/__init__.py",
+    "src/coworld/annotations.py",
     "src/coworld/certifier.py",
     "src/coworld/commissioner/__init__.py",
     "src/coworld/commissioner/protocol.py",
@@ -184,6 +185,7 @@ py_library(
         "@pypi//jsonschema",
         "@pypi//packaging",
         "@pypi//pydantic",
+        "@pypi//pydantic_core",
         "@pypi//referencing",
         "@pypi//tenacity",
         "@pypi//websockets",

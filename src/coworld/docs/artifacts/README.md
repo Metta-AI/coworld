@@ -33,3 +33,5 @@ consumes something; artifact pages describe the thing itself.
 | [Round decisions](ROUND_DECISIONS.md)     | Commissioner  | `round_complete` decisions recorded by the platform                                                                                 |
 
 See [README.md](../README.md) for the role model and artifact flow.
+
+Optional [episode annotations](EPISODE_ANNOTATIONS.md) explain policy decisions separately from logs and replays.

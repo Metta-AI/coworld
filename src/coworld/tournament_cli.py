@@ -650,6 +650,19 @@ def register_tournament_commands(app: typer.Typer) -> None:
         output.write_bytes(content)
         console.print(f"[green]Results saved to {output}[/green]")
 
+    @app.command("episode-annotations", help="Download a policy's optional episode annotations as JSON Lines.")
+    def episode_annotations(
+        episode_request_id: Annotated[str, typer.Argument(help="Episode request ID.")],
+        policy_version_id: Annotated[UUID, typer.Argument(help="Policy version ID.")],
+        output: Annotated[Path, typer.Option("--output", "-o", help="Destination JSON Lines file.")],
+        server: Annotated[str, typer.Option("--server", help="Observatory API server URL.")] = DEFAULT_SUBMIT_SERVER,
+    ) -> None:
+        with CoworldApiClient.from_login(server_url=server) as client:
+            content = client.get_episode_request_policy_annotations(episode_request_id, policy_version_id)
+        output.parent.mkdir(parents=True, exist_ok=True)
+        output.write_bytes(content)
+        console.print(f"[green]Annotations saved to {output}[/green]")
+
     @app.command(
         "episode-logs",
         help="Show or download the game and policy logs of an episode request.",

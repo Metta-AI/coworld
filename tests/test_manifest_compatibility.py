@@ -94,6 +94,7 @@ def test_game_hosted_contract_models_cover_every_field() -> None:
         "size_bytes": 123,
         "log_uri": "file:///coworld/logs/policy_agent_0.log",
         "artifact_uri": "file:///coworld/policy_artifact_0.zip",
+        "annotations_uri": "file:///coworld/policy_annotations_0.jsonl",
     }
     seats = {
         "schema": "coworld-player-seats/1",

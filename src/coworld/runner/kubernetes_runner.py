@@ -46,6 +46,12 @@ from pydantic import TypeAdapter, ValidationError
 from urllib3.exceptions import HTTPError
 from urllib3.util import Retry
 
+from coworld.annotations import (
+    ANNOTATIONS_MAX_BYTES,
+    ANNOTATIONS_MEDIA_TYPE,
+    ANNOTATIONS_TARGETS_ENV,
+    annotation_file_error,
+)
 from coworld.runner.bootstrap import COORDINATOR_SPEC_PATH, STATE_PATH, WORKDIR, process_timings
 from coworld.runner.bootstrap import read_job_spec as _read_job_spec
 from coworld.runner.bootstrap import write_error_info as _write_error_info
@@ -585,7 +591,9 @@ def _upload_debug_logs(artifacts: EpisodeArtifacts) -> None:
 
     debug_uri = os.environ.get("DEBUG_URI")
     if debug_uri is not None and artifacts.logs_dir.exists() and any(artifacts.logs_dir.iterdir()):
-        upload_data(debug_uri, _zip_logs(artifacts.logs_dir), content_type="application/zip")
+        upload_data(
+            debug_uri, _zip_logs(artifacts.logs_dir, artifacts.policy_log_messages), content_type="application/zip"
+        )
 
     policy_log_urls = os.environ.get("POLICY_LOG_URLS")
     if policy_log_urls is not None:
@@ -593,6 +601,7 @@ def _upload_debug_logs(artifacts: EpisodeArtifacts) -> None:
             log_path = artifacts.policy_log_path(int(slot))
             contents = _read_player_log(log_path)
             if contents is not None:
+                contents = artifacts.policy_log_messages.get(log_path.name, "").encode() + contents
                 upload_data(log_uri, contents, content_type="text/plain")
 
 
@@ -664,7 +673,9 @@ def _upload_outputs(artifacts: EpisodeArtifacts) -> None:
 
     debug_uri = os.environ.get("DEBUG_URI")
     if debug_uri is not None:
-        upload_data(debug_uri, _zip_logs(artifacts.logs_dir), content_type="application/zip")
+        upload_data(
+            debug_uri, _zip_logs(artifacts.logs_dir, artifacts.policy_log_messages), content_type="application/zip"
+        )
 
     policy_log_urls = os.environ.get("POLICY_LOG_URLS")
     if policy_log_urls is not None:
@@ -672,6 +683,7 @@ def _upload_outputs(artifacts: EpisodeArtifacts) -> None:
             log_path = artifacts.policy_log_path(int(slot))
             contents = _read_player_log(log_path)
             if contents is not None:
+                contents = artifacts.policy_log_messages.get(log_path.name, "").encode() + contents
                 upload_data(log_uri, contents, content_type="text/plain")
 
 
@@ -706,40 +718,63 @@ def _prepare_game_hosted_outputs(
             missing_count += 1
     timings.slot_log_missing_count = missing_count
 
-
-def _upload_player_artifacts(artifacts: EpisodeArtifacts) -> int:
-    oversize_count = 0
-    raw_urls = os.environ["PLAYER_ARTIFACT_UPLOAD_URLS"]
-    for slot, uri in TypeAdapter(dict[int, str]).validate_json(raw_urls).items():
-        artifact_path = artifacts.policy_artifact_path(slot)
-        artifact = _open_game_authored_file(artifact_path)
+    # Validate optional annotations before the first publication of policy logs.
+    for slot in TypeAdapter(dict[int, str]).validate_json(os.environ.get(ANNOTATIONS_TARGETS_ENV, "{}")):
+        artifact = _open_game_authored_file(artifacts.policy_annotations_path(slot))
         if artifact is None:
             continue
         with artifact:
-            size = os.fstat(artifact.fileno()).st_size
-            if size == 0:
+            error = (
+                "file exceeds 64 MiB"
+                if os.fstat(artifact.fileno()).st_size > ANNOTATIONS_MAX_BYTES
+                else annotation_file_error(artifact)
+            )
+        if error is not None:
+            logger.warning("Skipping invalid annotations for slot %d: %s", slot, error)
+            artifacts.policy_log_messages[artifacts.policy_log_path(slot).name] = f"[Annotations rejected: {error}.]\n"
+
+
+def _upload_player_artifacts(artifacts: EpisodeArtifacts) -> int:
+    oversize_count = 0
+    for targets_env, path_for_slot, max_bytes, media_type in (
+        ("PLAYER_ARTIFACT_UPLOAD_URLS", artifacts.policy_artifact_path, _PLAYER_ARTIFACT_MAX_BYTES, "application/zip"),
+        (ANNOTATIONS_TARGETS_ENV, artifacts.policy_annotations_path, ANNOTATIONS_MAX_BYTES, ANNOTATIONS_MEDIA_TYPE),
+    ):
+        for slot, uri in TypeAdapter(dict[int, str]).validate_json(os.environ.get(targets_env, "{}")).items():
+            artifact_path = path_for_slot(slot)
+            artifact = _open_game_authored_file(artifact_path)
+            if artifact is None:
                 continue
-            if size > _PLAYER_ARTIFACT_MAX_BYTES:
-                logger.warning(
-                    "Skipping oversized player artifact for slot %d: %d bytes exceeds the %d-byte limit",
-                    slot,
-                    size,
-                    _PLAYER_ARTIFACT_MAX_BYTES,
-                )
-                oversize_count += 1
-                continue
-            try:
-                upload_file(uri, artifact, size=size, content_type="application/zip", attempts=1)
-            except Exception as exc:
-                logger.warning(
-                    "Skipping failed player artifact upload for slot %d: %s",
-                    slot,
-                    exception_summary(exc),
-                )
+            with artifact:
+                size = os.fstat(artifact.fileno()).st_size
+                if size == 0:
+                    continue
+                if size > max_bytes:
+                    logger.warning(
+                        "Skipping oversized player artifact for slot %d: %d bytes exceeds the %d-byte limit",
+                        slot,
+                        size,
+                        max_bytes,
+                    )
+                    oversize_count += 1
+                    continue
+                if (
+                    targets_env == ANNOTATIONS_TARGETS_ENV
+                    and artifacts.policy_log_path(slot).name in artifacts.policy_log_messages
+                ):
+                    continue
+                try:
+                    upload_file(uri, artifact, size=size, content_type=media_type, attempts=1)
+                except Exception as exc:
+                    logger.warning(
+                        "Skipping failed player artifact upload for slot %d: %s",
+                        slot,
+                        exception_summary(exc),
+                    )
     return oversize_count
 
 
-def _zip_logs(logs_dir: Path) -> bytes:
+def _zip_logs(logs_dir: Path, policy_log_messages: dict[str, str]) -> bytes:
     buf = BytesIO()
     with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as zf:
         for path in logs_dir.iterdir():
@@ -747,7 +782,7 @@ def _zip_logs(logs_dir: Path) -> bytes:
                 # Player logs are capped at _PLAYER_LOG_MAX_BYTES, so holding one is bounded.
                 contents = _read_player_log(path)
                 if contents is not None:
-                    zf.writestr(path.name, contents)
+                    zf.writestr(path.name, policy_log_messages.get(path.name, "").encode() + contents)
                 continue
             file = _open_game_authored_file(path)
             if file is None:

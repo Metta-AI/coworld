@@ -224,6 +224,9 @@ class CoworldPlayerSeat(BaseModel):
     )
     size_bytes: int = Field(ge=0, description="Player file size in bytes.")
     log_uri: str = Field(min_length=1, description="URI where the game writes this slot's log.")
+    annotations_uri: str | None = Field(
+        default=None, description="Optional URI for this seat’s episode annotations JSON Lines file."
+    )
     artifact_uri: str = Field(min_length=1, description="URI where the game writes this slot's optional artifact.")
 
 
