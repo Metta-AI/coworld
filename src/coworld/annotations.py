@@ -10,8 +10,9 @@ from pydantic_core import SchemaValidator, core_schema
 
 ANNOTATIONS_TARGETS_ENV = "PLAYER_EPISODE_ANNOTATIONS_URLS"
 ANNOTATIONS_MEDIA_TYPE = "application/x-ndjson"
-ANNOTATIONS_MAX_BYTES = 64 * 1024 * 1024
-ANNOTATION_MAX_BYTES = 16 * 1024
+ANNOTATIONS_MAX_BYTES = 2 * 1024 * 1024
+ANNOTATIONS_MAX_EVENTS = 1000
+ANNOTATION_MAX_BYTES = 2 * 1024
 
 
 class EpisodeAnnotation(BaseModel):
@@ -45,10 +46,12 @@ def annotation_file_error(source: BinaryIO) -> str | None:
         while line := source.readline(ANNOTATION_MAX_BYTES + 1):
             line_number += 1
             total += len(line)
+            if line_number > ANNOTATIONS_MAX_EVENTS:
+                return "Annotation file exceeds 1000 records"
             if total > ANNOTATIONS_MAX_BYTES:
-                return "Annotation file exceeds 64 MiB"
+                return "Annotation file exceeds 2 MiB"
             if len(line) > ANNOTATION_MAX_BYTES:
-                return f"Annotation record {line_number} exceeds 16 KiB"
+                return f"Annotation record {line_number} exceeds 2 KiB"
             if not line.endswith(b"\n"):
                 return f"Annotation record {line_number} is not newline-terminated"
             if not _annotation_validator.isinstance_python(line):
@@ -60,8 +63,10 @@ def annotation_file_error(source: BinaryIO) -> str | None:
 
 def read_annotations(source: BinaryIO, *, participant_slot: int, first_seq: int = 0) -> Iterator[bytes]:
     for seq, line in enumerate(source, start=first_seq):
+        if seq - first_seq >= ANNOTATIONS_MAX_EVENTS:
+            raise ValueError("Annotation file exceeds 1000 records")
         if len(line) > ANNOTATION_MAX_BYTES or not line.endswith(b"\n"):
-            raise ValueError("Annotation record exceeds 16 KiB or is not newline-terminated")
+            raise ValueError("Annotation record exceeds 2 KiB or is not newline-terminated")
         annotation = EpisodeAnnotation.model_validate_json(line)
         annotation = annotation.model_copy(update={"participant_slot": participant_slot, "seq": seq})
         yield annotation.model_dump_json(exclude_none=True).encode() + b"\n"

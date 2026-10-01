@@ -15,9 +15,9 @@ Write UTF-8 JSON Lines: one event per line, including a final newline. The typed
 platform does not translate ticks or impose a clock. Optional `end_time` describes an interval; `message` provides an
 explanation, and `actor` identifies an entity controlled by the policy.
 
-Files are capped at 64 MiB, with 16 KiB per record. Invalid or oversized hosted outputs are rejected, never truncated.
-Rejection notices appear at the start of the affected policy’s downloadable log. Ordinary logs keep their existing
-limits. Do not include credentials in annotations.
+Each policy seat is capped at 1,000 annotations and 2 MiB per episode, with 2 KiB per record. Invalid or oversized
+hosted outputs are rejected, never truncated. Rejection notices appear at the start of the affected policy’s
+downloadable log. Ordinary logs keep their existing limits. Do not include credentials in annotations.
 
 ## Producing a file
 
@@ -53,7 +53,7 @@ other policies.
 Storage keeps one object per execution attempt and policy seat. The download groups all seats of the requested policy
 version into one file. It overwrites any producer-supplied `participant_slot` and `seq` with trusted position and
 sequence. Order is seat order, then emission order; consumers can sort by game time. Invalid stored positions are
-skipped with a server warning; a download with no valid events returns 404. The combined download has the same 64 MiB
+skipped with a server warning; a download with no valid events returns 404. The combined download has the same 2 MiB
 cap. This read-time grouping needs no completion phase or storage migration.
 
 Player-authored advice can later reuse the event envelope, but needs separate author identity, storage, and
