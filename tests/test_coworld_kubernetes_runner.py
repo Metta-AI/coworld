@@ -374,6 +374,7 @@ def test_init_config_stages_verified_player_files_and_seats_document(monkeypatch
                 "size_bytes": len(content),
                 "log_uri": f"file:///coworld/logs/policy_agent_{slot}.log",
                 "artifact_uri": f"file:///coworld/policy_artifact_{slot}.zip",
+                "annotations_uri": f"file:///coworld/policy_annotations_{slot}.jsonl",
             }
             for slot, content in enumerate(contents)
         ],
@@ -594,7 +595,7 @@ def test_zip_logs_streams_game_logs_and_caps_player_logs(monkeypatch, tmp_path):
 
     monkeypatch.setattr(kubernetes_runner, "_read_game_authored_file", counting_read)
 
-    with zipfile.ZipFile(io.BytesIO(kubernetes_runner._zip_logs(logs_dir))) as zf:
+    with zipfile.ZipFile(io.BytesIO(kubernetes_runner._zip_logs(logs_dir, {}))) as zf:
         assert zf.read("game.log") == b"g" * (3 * 1024 * 1024)
         assert zf.read("policy_agent_0.log") == b"p" * 16 + kubernetes_runner._PLAYER_LOG_TRUNCATION_MARKER
         assert zf.read("policy_agent_1.log") == b"q" * 10
@@ -3626,6 +3627,7 @@ def test_kubernetes_runner_uses_direct_player_urls_without_address():
     )
 
 
+@pytest.mark.parametrize("annotations", ["absent", "invalid", "oversized"])
 @pytest.mark.parametrize(
     ("fails", "status_payload", "expected_invalid_count"),
     [
@@ -3640,6 +3642,7 @@ def test_game_hosted_run_from_env_collects_private_outputs(
     fails,
     status_payload,
     expected_invalid_count,
+    annotations,
 ):
     artifacts = EpisodeArtifacts.create(tmp_path / "work")
     policy_log_paths = [tmp_path / f"uploaded-log-{slot}" for slot in range(2)]
@@ -3647,11 +3650,24 @@ def test_game_hosted_run_from_env_collects_private_outputs(
     status_dest = tmp_path / "uploaded-status"
     error_dest = tmp_path / "error-info"
     timing_snapshots: list[dict[str, object]] = []
+    published: list[str] = []
+    upload_data = kubernetes_runner.upload_data
+
+    def record_upload(uri, data, **kwargs):
+        published.append(uri)
+        return upload_data(uri, data, **kwargs)
+
+    monkeypatch.setattr(kubernetes_runner, "upload_data", record_upload)
 
     def run_episode(*_args, **_kwargs):
         artifacts.policy_log_path(0).write_text("seat zero log", encoding="utf-8")
         artifacts.policy_artifact_path(0).write_bytes(b"artifact zip bytes")
         artifacts.player_status_path.write_text(status_payload, encoding="utf-8")
+        if annotations == "invalid":
+            artifacts.policy_annotations_path(0).write_bytes(b"{}\n")
+        elif annotations == "oversized":
+            with artifacts.policy_annotations_path(0).open("wb") as output:
+                output.truncate(kubernetes_runner.ANNOTATIONS_MAX_BYTES + 1)
         if fails:
             raise runner_io.RunnerEpisodeError("episode timed out", error_type="episode_timeout")
 
@@ -3675,7 +3691,12 @@ def test_game_hosted_run_from_env_collects_private_outputs(
     monkeypatch.setenv("PLAYER_ARTIFACT_UPLOAD_URLS", json.dumps({"0": artifact_dest.as_uri()}))
     monkeypatch.setenv("PLAYER_STATUS_URI", status_dest.as_uri())
     monkeypatch.setenv("ERROR_INFO_URI", error_dest.as_uri())
-    for name in ("RESULTS_URI", "REPLAY_URI", "EVENTS_URI", "DEBUG_URI", "WORKER_TIMINGS_URI"):
+    debug_dest = tmp_path / "debug.zip"
+    monkeypatch.setenv("DEBUG_URI", debug_dest.as_uri())
+    monkeypatch.setenv(
+        kubernetes_runner.ANNOTATIONS_TARGETS_ENV, json.dumps({"0": (tmp_path / "annotations.jsonl").as_uri()})
+    )
+    for name in ("RESULTS_URI", "REPLAY_URI", "EVENTS_URI", "WORKER_TIMINGS_URI"):
         monkeypatch.delenv(name, raising=False)
 
     if fails:
@@ -3684,13 +3705,20 @@ def test_game_hosted_run_from_env_collects_private_outputs(
     else:
         kubernetes_runner.run_from_env()
 
-    assert policy_log_paths[0].read_text(encoding="utf-8") == "seat zero log"
+    log = policy_log_paths[0].read_text(encoding="utf-8")
+    assert log.endswith("seat zero log")
+    assert log.startswith("[Annotations rejected:") is (annotations != "absent")
+    for destination in [*policy_log_paths, debug_dest]:
+        assert published.count(destination.as_uri()) == 1
+    with zipfile.ZipFile(debug_dest) as archive:
+        assert archive.read("policy_agent_0.log").decode() == log
+    assert not (tmp_path / "annotations.jsonl").exists()
     assert policy_log_paths[1].read_text(encoding="utf-8") == runner_module.GAME_HOSTED_PLAYER_LOG_MISSING
     assert artifact_dest.read_bytes() == b"artifact zip bytes"
     assert status_dest.exists() is (expected_invalid_count == 0)
     assert timing_snapshots[-1]["slot_log_missing_count"] == 1
     assert timing_snapshots[-1]["player_status_invalid_count"] == expected_invalid_count
-    assert timing_snapshots[-1]["player_artifact_oversize_count"] == 0
+    assert timing_snapshots[-1]["player_artifact_oversize_count"] == (annotations == "oversized")
     assert error_dest.exists() is fails
 
 
@@ -4581,7 +4609,7 @@ def test_zip_logs_rejects_symlinked_directories(tmp_path, ancestor):
     link.symlink_to(private if ancestor else private / "logs", target_is_directory=True)
     logs_dir = link / "logs" if ancestor else link
 
-    with zipfile.ZipFile(io.BytesIO(kubernetes_runner._zip_logs(logs_dir))) as archive:
+    with zipfile.ZipFile(io.BytesIO(kubernetes_runner._zip_logs(logs_dir, {}))) as archive:
         assert archive.namelist() == []
 
 
