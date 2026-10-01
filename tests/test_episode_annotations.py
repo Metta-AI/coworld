@@ -41,7 +41,8 @@ def test_game_hosted_annotations_are_optional_and_reach_storage(monkeypatch, tmp
         b"{\n",
         b"{}\n",
         b"{}",
-        b"x" * 16385 + b"\n",
+        b"x" * 2049 + b"\n",
+        b'{"time":1,"kind":"intent","function":"f","args":{}}\n' * 1001,
         b'{"schema_version":2,"time":1,"kind":"intent","function":"f","args":{}}\n',
         b'{"time":1,"kind":"intent","function":"f","args":{"value":NaN}}\n',
     ],
@@ -72,8 +73,33 @@ def test_collection_rejects_invalid_annotations_without_replacing_output(monkeyp
 
 
 def test_annotation_attribution_is_platform_controlled():
-    event = EpisodeAnnotation(time=0, kind="decision", function="move", args={}, participant_slot=999, seq=999)
+    event = EpisodeAnnotation.model_validate(
+        {"time": 0, "kind": "decision", "function": "move", "args": {}, "participant_slot": 999, "seq": 999}
+    )
     source = BytesIO(event.model_dump_json().encode() + b"\n")
     assert annotation_file_error(source) is None
     record = json.loads(next(read_annotations(source, participant_slot=2, first_seq=7)))
     assert (record["participant_slot"], record["seq"]) == (2, 7)
+
+
+@pytest.mark.parametrize("count", [1000, 1001])
+def test_annotation_record_budget(count):
+    line = b'{"time":1,"kind":"intent","function":"f","args":{}}\n'
+    source = BytesIO(line * count)
+    assert annotation_file_error(source) == (None if count == 1000 else "Annotation file exceeds 1000 records")
+    assert source.tell() == 0
+    if count == 1000:
+        assert len(list(read_annotations(source, participant_slot=0))) == count
+    else:
+        with pytest.raises(ValueError, match="1000 records"):
+            list(read_annotations(source, participant_slot=0))
+
+
+@pytest.mark.parametrize("size", [2048, 2049])
+def test_annotation_serialized_record_budget(size):
+    event = EpisodeAnnotation(time=1, kind="intent", function="f", args={"payload": ""})
+    line = event.model_dump_json(exclude_none=True).encode() + b"\n"
+    event.args["payload"] = "x" * (size - len(line))
+    line = event.model_dump_json(exclude_none=True).encode() + b"\n"
+    assert len(line) == size
+    assert annotation_file_error(BytesIO(line)) == (None if size == 2048 else "Annotation record 1 exceeds 2 KiB")

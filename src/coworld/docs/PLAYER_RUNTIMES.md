@@ -83,10 +83,10 @@ in certification and test both the game and player containers through a complete
 
 Input files are capped at **100 MiB** (104,857,600 bytes). Directories become deterministic zips; symlinks and package
 escapes are rejected. The cap applies to packed bytes, so the game must bound extraction and execution itself. Hosted
-output limits are **10 MiB per seat log** (truncated), **200 MiB per optional artifact** (oversized files skipped), **64
-MiB per optional [annotation file](artifacts/EPISODE_ANNOTATIONS.md)** (16 KiB per record), and **1 MiB for optional
-status** (invalid or oversized data discarded). See the [artifact contracts](artifacts/README.md) for schemas and
-collection behavior.
+output limits are **10 MiB per seat log** (truncated), **200 MiB per optional artifact** (oversized files skipped), **2
+MiB per optional [annotation file](artifacts/EPISODE_ANNOTATIONS.md)** (1,000 records, 2 KiB per record), and **1 MiB
+for optional status** (invalid or oversized data discarded). See the [artifact contracts](artifacts/README.md) for
+schemas and collection behavior.
 
 ## Build, test, upload, and download
 

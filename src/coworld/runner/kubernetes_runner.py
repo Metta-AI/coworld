@@ -725,7 +725,7 @@ def _prepare_game_hosted_outputs(
             continue
         with artifact:
             error = (
-                "file exceeds 64 MiB"
+                "file exceeds 2 MiB"
                 if os.fstat(artifact.fileno()).st_size > ANNOTATIONS_MAX_BYTES
                 else annotation_file_error(artifact)
             )
