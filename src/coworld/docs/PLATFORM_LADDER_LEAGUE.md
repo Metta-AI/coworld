@@ -141,17 +141,29 @@ changes and pause take effect within that window.
 
 ## Choose a ranking algorithm
 
-| Board you want                             | Config                 | Notes                                                                            |
-| ------------------------------------------ | ---------------------- | -------------------------------------------------------------------------------- |
-| Pairwise skill (win/loss / relative score) | `algorithm: elo`       | Default. `k_factor`, `initial_rating`, `round_scoring_rule: mean \| ewma`        |
-| Multi-player skill with uncertainty        | `algorithm: openskill` | `mu`, `sigma` (default 25, 25/3); supports `elo_softmax`; no dynamic handicaps   |
-| Continuous score / ATH / glory             | `algorithm: score`     | `standing_aggregation: ewma \| mean \| max`; `half_life_hours` required for EWMA |
+| Board you want                             | Config                 | Notes                                                                                                                                       |
+| ------------------------------------------ | ---------------------- | ------------------------------------------------------------------------------------------------------------------------------------------- |
+| Pairwise skill (win/loss / relative score) | `algorithm: elo`       | Default. `k_factor`, `initial_rating`, `round_scoring_rule: mean \| ewma`, `margin_scale`, `new_version_k_multiplier`, `new_version_rounds` |
+| Multi-player skill with uncertainty        | `algorithm: openskill` | `mu`, `sigma` (default 25, 25/3), `margin_scale`, `new_version_sigma`; supports `elo_softmax`; no dynamic handicaps                         |
+| Continuous score / ATH / glory             | `algorithm: score`     | `standing_aggregation: ewma \| mean \| max`; `half_life_hours` required for EWMA                                                            |
 
 For OpenSkill rating-based matchmaking, set `scheduler.matchmaking: elo_softmax`. Opponent selection uses the skill
 estimate `mu`; the leaderboard and movement rules use the conservative `mu - 3 * sigma` rating. New entrants match at
 configured initial `mu`. The matcher scales a skill gap of `2 * beta` to 400 Elo points, so `matchmaking_temperature`
 stays in Elo points (default 100). When `beta` is omitted, it defaults to `sigma / 2`, making one configured initial
 sigma equivalent to 400 Elo points. An explicit `beta` controls the scale instead.
+
+Score margin (`margin_scale`, unset by default): Elo rates each pairwise comparison, and OpenSkill each two-side
+episode, on the side-mean score margin instead of win/loss. The outcome is `0.5 + (mine - theirs) / (2 * margin_scale)`
+clamped to [0, 1]. Forfeits and solo benchmarks ignore it; so do OpenSkill episodes with more than two sides.
+
+New policy versions: ratings belong to the player, so a new champion version inherits the player's rating. Two opt-in
+knobs let the new version catch up. Elo `new_version_k_multiplier` (default 1.0) multiplies the player's own K for the
+version's first `new_version_rounds` rounds (default 0); opponents keep `k_factor`, so those rounds are not exactly
+zero-sum. OpenSkill `new_version_sigma` (unset by default) raises sigma to at least that value when the version changes.
+A player's first round never widens sigma. Standings flag a rating as settling while its current version has played
+fewer than 10 rounds. Standings recorded before version tracking adopt the current version on their next round without a
+boost.
 
 Movement rules gate on rating thresholds (`minimum_rating` / `maximum_rating`: the Elo rating, or the OpenSkill
 `mu - 3 * sigma` ordinal) or, for `score`, standing thresholds (`minimum_standing` / `maximum_standing`). Use the JSON
@@ -275,7 +287,9 @@ from `GET /v2/divisions` or the topology response):
       "algorithm": "elo",
       "initial_rating": 1500.0,
       "k_factor": 32.0,
-      "round_scoring_rule": "mean"
+      "round_scoring_rule": "mean",
+      "new_version_k_multiplier": 1.0,
+      "new_version_rounds": 0
     },
     "divisions": [
       {
@@ -313,6 +327,18 @@ Shape-specific scheduler swaps:
   "seat_count_min": 4,
   "seat_count_max": 8,
   "min_episodes_per_entrant": 1
+}
+```
+
+OpenSkill with new-version catch-up and margin rating (swap the `ranking` block):
+
+```json
+"ranking": {
+  "algorithm": "openskill",
+  "mu": 25.0,
+  "sigma": 8.333,
+  "new_version_sigma": 4.0,
+  "margin_scale": 100.0
 }
 ```
 
