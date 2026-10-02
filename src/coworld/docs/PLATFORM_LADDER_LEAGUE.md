@@ -144,8 +144,14 @@ changes and pause take effect within that window.
 | Board you want                             | Config                 | Notes                                                                            |
 | ------------------------------------------ | ---------------------- | -------------------------------------------------------------------------------- |
 | Pairwise skill (win/loss / relative score) | `algorithm: elo`       | Default. `k_factor`, `initial_rating`, `round_scoring_rule: mean \| ewma`        |
-| Multi-player skill with uncertainty        | `algorithm: openskill` | `mu`, `sigma` (default 25, 25/3); no `elo_softmax` or dynamic handicaps          |
+| Multi-player skill with uncertainty        | `algorithm: openskill` | `mu`, `sigma` (default 25, 25/3); supports `elo_softmax`; no dynamic handicaps   |
 | Continuous score / ATH / glory             | `algorithm: score`     | `standing_aggregation: ewma \| mean \| max`; `half_life_hours` required for EWMA |
+
+For OpenSkill rating-based matchmaking, set `scheduler.matchmaking: elo_softmax`. Opponent selection uses the skill
+estimate `mu`; the leaderboard and movement rules use the conservative `mu - 3 * sigma` rating. New entrants match at
+configured initial `mu`. The matcher scales a skill gap of `2 * beta` to 400 Elo points, so `matchmaking_temperature`
+stays in Elo points (default 100). When `beta` is omitted, it defaults to `sigma / 2`, making one configured initial
+sigma equivalent to 400 Elo points. An explicit `beta` controls the scale instead.
 
 Movement rules gate on rating thresholds (`minimum_rating` / `maximum_rating`: the Elo rating, or the OpenSkill
 `mu - 3 * sigma` ordinal) or, for `score`, standing thresholds (`minimum_standing` / `maximum_standing`). Use the JSON
