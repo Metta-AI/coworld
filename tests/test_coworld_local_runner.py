@@ -74,7 +74,10 @@ def test_local_game_container_commands_differ_only_by_player_seats_uri(tmp_path:
     assert game_hosted_command[: seats_index - 1] + game_hosted_command[seats_index + 1 :] == platform_command
 
 
-def test_game_hosted_local_runner_stages_files_and_starts_only_game(monkeypatch, tmp_path: Path) -> None:
+@pytest.mark.parametrize("player_seats_schema", ["coworld-player-seats/1", "coworld-player-seats/2"])
+def test_game_hosted_local_runner_stages_files_and_starts_only_game(
+    monkeypatch, tmp_path: Path, player_seats_schema: str
+) -> None:
     contents = [b"first player", b"second player"]
     sources = []
     for slot, content in enumerate(contents):
@@ -82,6 +85,8 @@ def test_game_hosted_local_runner_stages_files_and_starts_only_game(monkeypatch,
         source.write_bytes(content)
         sources.append(source)
     job = _game_hosted_job(contents)
+    if player_seats_schema == "coworld-player-seats/2":
+        job.game_runnable.env["COGAME_PLAYER_SEATS_SCHEMA"] = player_seats_schema
     artifacts = EpisodeArtifacts.create(tmp_path / "work")
     docker_commands: list[list[str]] = []
 
@@ -132,6 +137,10 @@ def test_game_hosted_local_runner_stages_files_and_starts_only_game(monkeypatch,
     assert "COGAME_PLAYER_SEATS_URI=file:///coworld/player_seats.json" in docker_commands[0]
     assert [artifacts.player_file_path(slot).read_bytes() for slot in range(2)] == contents
     seats = json.loads(artifacts.player_seats_path.read_text(encoding="utf-8"))
+    assert seats["schema"] == player_seats_schema
+    assert all(
+        ("annotations_uri" in seat) == (player_seats_schema == "coworld-player-seats/2") for seat in seats["seats"]
+    )
     assert [seat["file_uri"] for seat in seats["seats"]] == [
         "file:///coworld/players/0/file",
         "file:///coworld/players/1/file",

@@ -230,10 +230,13 @@ class CoworldPlayerSeat(BaseModel):
     artifact_uri: str = Field(min_length=1, description="URI where the game writes this slot's optional artifact.")
 
 
+CoworldPlayerSeatsSchema = Literal["coworld-player-seats/1", "coworld-player-seats/2"]
+
+
 class CoworldPlayerSeats(BaseModel):
     model_config = ConfigDict(extra="forbid", populate_by_name=True, serialize_by_alias=True)
 
-    schema_: Literal["coworld-player-seats/1"] = Field(
+    schema_: CoworldPlayerSeatsSchema = Field(
         alias="schema",
         description="Player seats document schema version.",
     )

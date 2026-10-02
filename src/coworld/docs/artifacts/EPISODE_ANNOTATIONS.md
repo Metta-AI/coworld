@@ -3,6 +3,10 @@
 Annotations are optional policy diagnostics stored separately from the replay, logs, and artifact ZIP. They explain
 decisions, intents, predictions, or skill usage. The replay renderer does not consume them yet.
 
+Game-hosted producers must accept `coworld-player-seats/2` and declare
+`"COGAME_PLAYER_SEATS_SCHEMA": "coworld-player-seats/2"` in `game.runnable.env` to receive each seat's
+`annotations_uri`. Games without this declaration receive the original version 1 seat document.
+
 Write UTF-8 JSON Lines: one event per line, including a final newline. The typed envelope is
 [`EpisodeAnnotation`](../../annotations.py); `args` and additional fields can contain game-specific JSON.
 

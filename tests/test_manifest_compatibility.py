@@ -97,7 +97,7 @@ def test_game_hosted_contract_models_cover_every_field() -> None:
         "annotations_uri": "file:///coworld/policy_annotations_0.jsonl",
     }
     seats = {
-        "schema": "coworld-player-seats/1",
+        "schema": "coworld-player-seats/2",
         "seats": [seat],
         "player_status_uri": "file:///coworld/player_status.json",
     }

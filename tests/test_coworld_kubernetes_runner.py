@@ -26,6 +26,7 @@ from urllib.error import HTTPError
 from urllib.request import Request, urlopen
 
 import httpx
+import jsonschema
 import pytest
 import websockets
 from kubernetes import client
@@ -321,7 +322,8 @@ def _configure_init_env(
     return error_path
 
 
-def test_init_config_stages_verified_player_files_and_seats_document(monkeypatch, tmp_path):
+@pytest.mark.parametrize("player_seats_schema", ["coworld-player-seats/1", "coworld-player-seats/2"])
+def test_init_config_stages_verified_player_files_and_seats_document(monkeypatch, tmp_path, player_seats_schema):
     contents = [b"alpha player", b"beta player"]
     sources = []
     for slot, content in enumerate(contents):
@@ -329,6 +331,8 @@ def test_init_config_stages_verified_player_files_and_seats_document(monkeypatch
         source.write_bytes(content)
         sources.append(source)
     job = _game_hosted_job(contents)
+    if player_seats_schema == "coworld-player-seats/2":
+        job.manifest.game.runnable.env["COGAME_PLAYER_SEATS_SCHEMA"] = player_seats_schema
     error_path = _configure_init_env(
         monkeypatch,
         tmp_path,
@@ -365,7 +369,7 @@ def test_init_config_stages_verified_player_files_and_seats_document(monkeypatch
     assert [(tmp_path / "players" / str(slot) / "file").read_bytes() for slot in range(len(contents))] == contents
     seats = json.loads((tmp_path / "player_seats.json").read_text(encoding="utf-8"))
     assert seats == {
-        "schema": "coworld-player-seats/1",
+        "schema": player_seats_schema,
         "seats": [
             {
                 "slot": slot,
@@ -374,7 +378,11 @@ def test_init_config_stages_verified_player_files_and_seats_document(monkeypatch
                 "size_bytes": len(content),
                 "log_uri": f"file:///coworld/logs/policy_agent_{slot}.log",
                 "artifact_uri": f"file:///coworld/policy_artifact_{slot}.zip",
-                "annotations_uri": f"file:///coworld/policy_annotations_{slot}.jsonl",
+                **(
+                    {"annotations_uri": f"file:///coworld/policy_annotations_{slot}.jsonl"}
+                    if player_seats_schema == "coworld-player-seats/2"
+                    else {}
+                ),
             }
             for slot, content in enumerate(contents)
         ],
@@ -385,6 +393,62 @@ def test_init_config_stages_verified_player_files_and_seats_document(monkeypatch
     assert timing["count"] == 2
     assert timing["bytes_total"] == sum(map(len, contents))
     assert timing["stage_s"] >= 0
+
+
+def test_stage_player_files_preserves_shipped_v1_game_consumer(tmp_path):
+    contents = [b"harvestbench player"]
+    job = _game_hosted_job(contents)
+    player_files = [player for player in job.players if isinstance(player, CoworldPlayerFileSpec)]
+    artifacts = EpisodeArtifacts.create(tmp_path)
+
+    runner_module.stage_player_files(player_files, lambda slot: contents[slot], artifacts)
+
+    # Frozen before #26252: shipped games reject unknown fields, independently of today's models.
+    seat_properties = {
+        "slot": {"type": "integer", "minimum": 0},
+        "file_uri": {"type": "string", "minLength": 1},
+        "content_hash": {"type": "string", "pattern": "^sha256:[0-9a-f]{64}$"},
+        "size_bytes": {"type": "integer", "minimum": 0},
+        "log_uri": {"type": "string", "minLength": 1},
+        "artifact_uri": {"type": "string", "minLength": 1},
+    }
+    jsonschema.validate(
+        json.loads(artifacts.player_seats_path.read_text()),
+        {
+            "type": "object",
+            "additionalProperties": False,
+            "required": ["schema", "seats", "player_status_uri"],
+            "properties": {
+                "schema": {"const": "coworld-player-seats/1"},
+                "seats": {
+                    "type": "array",
+                    "minItems": 1,
+                    "items": {
+                        "type": "object",
+                        "additionalProperties": False,
+                        "required": list(seat_properties),
+                        "properties": seat_properties,
+                    },
+                },
+                "player_status_uri": {"type": "string", "minLength": 1},
+            },
+        },
+    )
+
+
+def test_stage_player_files_exposes_annotations_for_opted_in_v2_game(tmp_path):
+    contents = [b"annotation-capable player"]
+    job = _game_hosted_job(contents)
+    player_files = [player for player in job.players if isinstance(player, CoworldPlayerFileSpec)]
+    artifacts = EpisodeArtifacts.create(tmp_path)
+
+    runner_module.stage_player_files(
+        player_files, lambda slot: contents[slot], artifacts, player_seats_schema="coworld-player-seats/2"
+    )
+
+    seats = json.loads(artifacts.player_seats_path.read_text())
+    assert seats["schema"] == "coworld-player-seats/2"
+    assert seats["seats"][0]["annotations_uri"] == "file:///coworld/policy_annotations_0.jsonl"
 
 
 def test_stage_player_files_writes_each_slot_before_reading_the_next(tmp_path):
