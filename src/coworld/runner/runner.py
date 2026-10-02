@@ -37,6 +37,7 @@ from coworld.types import (
     CoworldPlayerFileSpec,
     CoworldPlayerSeat,
     CoworldPlayerSeats,
+    CoworldPlayerSeatsSchema,
     CoworldRunnableSpec,
 )
 
@@ -332,7 +333,14 @@ def run_coworld_episode(
         player_files = [player for player in job.players if isinstance(player, CoworldPlayerFileSpec)]
         if player_file_paths is None or len(player_file_paths) != len(player_files):
             raise ValueError(f"game-hosted execution requires {len(player_files)} player file paths")
-        stage_player_files(player_files, lambda slot: player_file_bytes(player_file_paths[slot]), artifacts)
+        stage_player_files(
+            player_files,
+            lambda slot: player_file_bytes(player_file_paths[slot]),
+            artifacts,
+            player_seats_schema=TypeAdapter(CoworldPlayerSeatsSchema).validate_python(
+                job.game_runnable.env.get("COGAME_PLAYER_SEATS_SCHEMA", "coworld-player-seats/1")
+            ),
+        )
         run_game_hosted_container(
             RunnableLaunchSpec.from_model(job.game_runnable),
             len(tokens),
@@ -371,6 +379,8 @@ def stage_player_files(
     player_files: Sequence[CoworldPlayerFileSpec],
     read_player_file: Callable[[int], bytes],
     artifacts: EpisodeArtifacts,
+    *,
+    player_seats_schema: CoworldPlayerSeatsSchema = "coworld-player-seats/1",
 ) -> int:
     """Stage one file per seat and write the seats document; returns the bytes fetched.
 
@@ -403,15 +413,19 @@ def stage_player_files(
                 size_bytes=player.size_bytes,
                 log_uri=f"file://{CONTAINER_WORKDIR}/logs/policy_agent_{slot}.log",
                 artifact_uri=f"file://{CONTAINER_WORKDIR}/policy_artifact_{slot}.zip",
-                annotations_uri=f"file://{CONTAINER_WORKDIR}/policy_annotations_{slot}.jsonl",
+                annotations_uri=(
+                    f"file://{CONTAINER_WORKDIR}/policy_annotations_{slot}.jsonl"
+                    if player_seats_schema == "coworld-player-seats/2"
+                    else None
+                ),
             )
         )
     artifacts.player_seats_path.write_text(
         CoworldPlayerSeats(
-            schema="coworld-player-seats/1",
+            schema=player_seats_schema,
             seats=seats,
             player_status_uri=f"file://{CONTAINER_WORKDIR}/player_status.json",
-        ).model_dump_json(by_alias=True, indent=2),
+        ).model_dump_json(by_alias=True, exclude_none=True, indent=2),
         encoding="utf-8",
     )
     return bytes_total

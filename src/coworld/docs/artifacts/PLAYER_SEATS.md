@@ -14,8 +14,7 @@ use `file:///coworld/player_seats.json`.
       "content_hash": "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
       "size_bytes": 12345,
       "log_uri": "file:///coworld/logs/policy_agent_0.log",
-      "artifact_uri": "file:///coworld/policy_artifact_0.zip",
-      "annotations_uri": "file:///coworld/policy_annotations_0.jsonl"
+      "artifact_uri": "file:///coworld/policy_artifact_0.zip"
     }
   ],
   "player_status_uri": "file:///coworld/player_status.json"
@@ -24,7 +23,9 @@ use `file:///coworld/player_seats.json`.
 
 ## Fields
 
-- `schema` is exactly `coworld-player-seats/1`.
+- `schema` defaults to `coworld-player-seats/1`. Games that support annotations opt in to `coworld-player-seats/2`
+  through `game.runnable.env.COGAME_PLAYER_SEATS_SCHEMA` in their manifest. Both local and hosted runners honor this
+  declaration. Unsupported versions fail before the game starts.
 - `seats` is a non-empty ordered list. `slot` is the zero-based episode seat used by results, logs, artifacts, and
   ownership checks.
 - `file_uri` identifies the staged player bytes. The current layout is `/coworld/players/{slot}/file`.
@@ -34,7 +35,9 @@ use `file:///coworld/player_seats.json`.
   when it is empty.
 - `artifact_uri` is where the game may write one optional per-seat artifact. Hosted upload accepts a non-empty file up
   to 200 MiB and stores it as `application/zip` without inspecting its contents.
-- `annotations_uri` is an optional destination for that seat's [episode annotations](EPISODE_ANNOTATIONS.md).
+- `annotations_uri` is a destination for that seat's optional [episode annotations](EPISODE_ANNOTATIONS.md). It is
+  emitted only in `coworld-player-seats/2`. Version 1 never carries this field, including a null value, because
+  previously certified game images validate its original fields strictly.
 - `player_status_uri` is where the game may write the optional [`player_status.json`](PLAYER_STATUS.md) diagnostic
   snapshot.
 

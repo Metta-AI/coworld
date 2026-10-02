@@ -21,7 +21,7 @@ from coworld.runner.bootstrap import write_error_info as _write_error_info
 from coworld.runner.io import RunnerEpisodeError, exception_summary, is_retryable_relay_error, read_data, upload_data
 from coworld.runner.phase_timings import PlayerFileStageTiming, TimingClock
 from coworld.runner.runner import EpisodeArtifacts, coworld_game_config, episode_player_tokens, stage_player_files
-from coworld.types import CoworldPlayerFileSpec
+from coworld.types import CoworldPlayerFileSpec, CoworldPlayerSeatsSchema
 
 _IMPORT_DONE_NS = time.monotonic_ns()
 logger = logging.getLogger(__name__)
@@ -71,7 +71,14 @@ def init_config_from_env() -> None:
                     ) from None
 
             artifacts = EpisodeArtifacts.create(WORKDIR, prefix="coworld-job-")
-            bytes_total = stage_player_files(player_files, read_player_file, artifacts)
+            bytes_total = stage_player_files(
+                player_files,
+                read_player_file,
+                artifacts,
+                player_seats_schema=TypeAdapter(CoworldPlayerSeatsSchema).validate_python(
+                    job.game_runnable.env.get("COGAME_PLAYER_SEATS_SCHEMA", "coworld-player-seats/1")
+                ),
+            )
             (WORKDIR / "player_file_stage.json").write_text(
                 PlayerFileStageTiming(
                     stage_s=timings.record("player_files", stage_start),
