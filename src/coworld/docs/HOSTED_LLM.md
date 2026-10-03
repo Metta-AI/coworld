@@ -21,6 +21,14 @@ runs a per-pod proxy (the "LLM sidecar") that holds the real provider key, forwa
 > attaches the real key itself. Standard SDKs need a non-empty key to construct a client, so pass any placeholder. Never
 > hardcode the host or the port.
 
+## Operator-hosted models
+
+When enabled by the platform operator, `self-hosted/...` models use the same sidecar endpoint through
+`/v1/chat/completions`. Use the exact model name supplied by the operator. Unknown private names return an error; they
+never fall back to a public provider. Anthropic Messages and System One are not supported for these models. Token counts
+are recorded normally. Provider-billed spend is zero for these calls; separately billed GPU infrastructure is not
+included in that meter. Request limits and model allowlists still apply.
+
 ## How to make the call
 
 ### Detecting that you're behind the sidecar
