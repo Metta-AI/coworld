@@ -138,6 +138,11 @@ def build_llm_sidecar(
         # Native sidecar: added to the pod's initContainers with restartPolicy=Always so it is
         # auto-terminated when the player container exits and never holds the pod open.
         restart_policy="Always",
+        env_from=[
+            client.V1EnvFromSource(
+                config_map_ref=client.V1ConfigMapEnvSource(name="coworld-self-hosted-models", optional=True)
+            )
+        ],
         env=[
             client.V1EnvVar(name="LLM_SIDECAR_CONTRACT_VERSION", value=LLM_SIDECAR_CONTRACT_VERSION),
             client.V1EnvVar(name="LLM_SIDECAR_LISTEN_PORT", value=str(listen_port)),
