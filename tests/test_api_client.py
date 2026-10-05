@@ -11,6 +11,7 @@ changes can't silently start coercing edge responses (null/empty) without
 showing up in CI.
 """
 
+import json
 from collections.abc import Iterator
 from typing import Any
 from uuid import UUID
@@ -19,10 +20,13 @@ import httpx
 import pytest
 from pydantic import ValidationError
 from pytest_httpserver import HTTPServer
+from typer.testing import CliRunner
 
 from coworld.api_client import CoworldApiClient, LeaderboardEntryPublic, PolicySelectionAccess, _raise_for_status
+from coworld.cli import app
 from coworld.upload import CoworldUploadClient
 from coworld.upload import _raise_for_status as _raise_for_upload_status
+from softmax import auth
 
 
 @pytest.fixture
@@ -266,3 +270,27 @@ def test_client_requests_carry_the_coworld_user_agent(httpserver: HTTPServer, mo
     (request, _response) = httpserver.log[-1]
     assert request.headers["User-Agent"].startswith("coworld/")
     assert request.headers["User-Agent"].endswith("(claude-code)")
+
+
+def test_visibility_command_uses_elevated_user_and_returns_followups(httpserver, monkeypatch):
+    payload = {
+        "name": "sample",
+        "visibility": "public",
+        "changed": True,
+        "versions": [{"id": "cow_test", "version": "1.0.0", "canonical": True}],
+        "private_league_ids": ["league_test"],
+        "private_seed_ids": ["lseed_test"],
+    }
+    httpserver.expect_request(
+        "/observatory/v2/coworlds/sample/visibility",
+        method="POST",
+        headers={"Authorization": "Bearer user-token", "X-Use-Elevated-Privileges": "true"},
+        json={"visibility": "public"},
+    ).respond_with_json(payload)
+    monkeypatch.setattr(auth, "load_current_token", lambda **_kwargs: "user-token")
+    monkeypatch.setattr(CoworldApiClient, "_elevated", False)
+    result = CliRunner().invoke(
+        app, ["--elevated", "visibility", "sample", "public", "--server", httpserver.url_for("")]
+    )
+    assert result.exit_code == 0, result.output
+    assert json.loads(result.stdout) == payload

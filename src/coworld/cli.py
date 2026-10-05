@@ -1302,6 +1302,17 @@ def upload_coworld(
     )
 
 
+@app.command("visibility", help="Make every Coworld version public (Softmax team only; requires --elevated).")
+def visibility(
+    coworld_name: Annotated[str, typer.Argument(help="Coworld name with its original spelling.")],
+    visibility: Annotated[str, typer.Argument(help="Requested visibility; only public is supported.")],
+    server: Annotated[str, typer.Option("--server", help="Observatory API server URL.")] = DEFAULT_SUBMIT_SERVER,
+) -> None:
+    with CoworldApiClient.from_login(server_url=server) as client:
+        result = client.update_coworld_visibility(coworld_name, visibility)
+    emit_json(result.model_dump(mode="json"))
+
+
 @app.command("patch-commissioner", cls=_DockerCommand, help="Replace the commissioner image of an uploaded Coworld.")
 def patch_commissioner(
     coworld_name: Annotated[str, typer.Argument(help="Canonical Coworld name to patch.")],
