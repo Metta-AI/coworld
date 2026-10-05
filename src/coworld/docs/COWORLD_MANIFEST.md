@@ -18,6 +18,27 @@ The field-level reference is the generated JSON Schema:
 This document intentionally does **not** duplicate the schema field by field. It records how to use the manifest, which
 semantics live outside normal JSON Schema, and where to look when authoring or changing manifests.
 
+## Publication visibility
+
+Visibility is upload metadata, not a manifest field. The first upload defaults to public; use `--visibility private` to
+restrict access to the uploader and elevated Softmax team members. Later versions inherit the existing visibility.
+
+A Softmax team member with an elevated, write-capable user credential can publish every version:
+
+```bash
+uv run coworld --elevated visibility my-coworld public
+```
+
+The operation shares upload's public-publication gate, requires the original name spelling, and queues image mirroring
+and replay-viewer bundles for all versions. Repeating it is a no-op. Public-to-private changes are unsupported.
+Recordings completed while private stay in private storage. Authorized replay sessions use the content-origin proxy with
+expiring, recording-specific grants. Unlinked recordings become publicly viewable; private league and experience request
+recordings retain their existing access checks. Jobs completing after publication follow public storage behavior.
+Existing viewer links remain usable until their grants expire.
+
+The result lists private leagues and seeds with `private_league=true`. Seed reconciliation may publish linked leagues.
+Clear a seed's private override before publishing its league, or subsequent seed reconciliation will privatize it again.
+
 ## Source Of Truth
 
 The schema generated from `CoworldManifest` is the source of truth for:

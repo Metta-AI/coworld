@@ -4,6 +4,7 @@ from collections.abc import Iterable
 from datetime import datetime
 from enum import Enum
 from typing import Annotated, Any, Literal, Self
+from urllib.parse import quote
 from uuid import UUID
 
 import httpx
@@ -840,6 +841,21 @@ class ReporterListPage(CoworldAPIModel):
     next_cursor: str | None
 
 
+class CoworldVisibilityVersion(CoworldAPIModel):
+    id: str
+    version: str
+    canonical: bool
+
+
+class CoworldVisibilityResponse(CoworldAPIModel):
+    name: str
+    visibility: Literal["public"]
+    changed: bool
+    versions: list[CoworldVisibilityVersion]
+    private_league_ids: list[str]
+    private_seed_ids: list[str]
+
+
 class CoworldApiClient:
     # Process-scoped: set by the top-level Typer `--elevated` callback in `coworld/cli.py`
     # so it applies to every client constructed later in the same invocation. Client-side
@@ -898,6 +914,13 @@ class CoworldApiClient:
         response = self._http_client.request(method, path, headers=self._headers(), **kwargs)
         _raise_for_status(response)
         return TypeAdapter(response_type).validate_python(response.json())
+
+    def update_coworld_visibility(self, coworld_name: str, visibility: str) -> CoworldVisibilityResponse:
+        return self._post(
+            f"/v2/coworlds/{quote(coworld_name, safe='')}/visibility",
+            CoworldVisibilityResponse,
+            json={"visibility": visibility},
+        )
 
     def _get(self, path: str, response_type: Any, **kwargs: Any) -> Any:
         return self._request("GET", path, response_type, **kwargs)
