@@ -1,5 +1,6 @@
 import hashlib
 import json
+import subprocess
 from pathlib import Path
 from types import SimpleNamespace
 from typing import cast
@@ -25,7 +26,7 @@ def _game_hosted_job(contents: list[bytes]) -> CoworldEpisodeJobSpec:
     return cast(
         CoworldEpisodeJobSpec,
         SimpleNamespace(
-            manifest=SimpleNamespace(game=SimpleNamespace(player_runtime="game-hosted")),
+            manifest=SimpleNamespace(game=SimpleNamespace(player_runtime="game-hosted", replay_viewer=None)),
             game_runnable=CoworldRunnableSpec(type="game", image="game:latest"),
             players=players,
             game_config={},
@@ -51,7 +52,6 @@ def test_local_game_container_commands_differ_only_by_player_seats_uri(tmp_path:
     common = {
         "container_name": "coworld-game",
         "network_alias": "coworld-game-local",
-        "port": 12345,
         "local_ports": [],
     }
 
@@ -102,7 +102,7 @@ def test_game_hosted_local_runner_stages_files_and_starts_only_game(
 
     monkeypatch.setattr(runner_module, "assert_episode_images_reachable", lambda _job: None)
     monkeypatch.setattr(runner_module, "ensure_local_docker_network", lambda: None)
-    monkeypatch.setattr(runner_module, "_free_local_port", lambda: 12345)
+    monkeypatch.setattr(runner_module, "_wait_for_published_port", lambda *_args, **_kwargs: 12345)
     monkeypatch.setattr(runner_module, "_wait_for_health", lambda *_args, **_kwargs: None)
     monkeypatch.setattr(runner_module, "_require_http_ok", lambda *_args, **_kwargs: None)
     monkeypatch.setattr(runner_module, "_require_global_message", global_message)
@@ -207,7 +207,7 @@ def test_game_hosted_local_run_collects_on_results_without_waiting_for_exit(tmp_
     artifacts.game_stderr_path.write_text("", encoding="utf-8")
 
     runner_module._wait_for_game_results_or_exit(
-        _StillRunning(),  # type: ignore[arg-type]
+        cast(subprocess.Popen[str], _StillRunning()),
         artifacts,
         (artifacts.results_path,),
         player_count=1,
@@ -221,7 +221,7 @@ def test_game_hosted_local_run_reports_a_game_that_exits_without_results(tmp_pat
 
     with pytest.raises(runner_module.RunnerEpisodeError) as exc_info:
         runner_module._wait_for_game_results_or_exit(
-            _Exited(3),  # type: ignore[arg-type]
+            cast(subprocess.Popen[str], _Exited(3)),
             artifacts,
             (artifacts.results_path,),
             player_count=1,
@@ -241,7 +241,7 @@ def test_game_hosted_local_run_attributes_a_declared_player_failure(tmp_path, pr
 
     with pytest.raises(runner_module.RunnerEpisodeError) as exc_info:
         runner_module._wait_for_game_results_or_exit(
-            process,  # type: ignore[arg-type]
+            cast(subprocess.Popen[str], process),
             artifacts,
             (artifacts.results_path,),
             player_count=2,
@@ -258,7 +258,7 @@ def test_game_hosted_local_run_reports_a_clean_exit_without_results(tmp_path):
 
     with pytest.raises(runner_module.RunnerEpisodeError) as exc_info:
         runner_module._wait_for_game_results_or_exit(
-            _Exited(0),  # type: ignore[arg-type]
+            cast(subprocess.Popen[str], _Exited(0)),
             artifacts,
             (artifacts.results_path,),
             player_count=1,
@@ -274,7 +274,7 @@ def test_game_hosted_local_run_times_out_when_results_never_appear(tmp_path):
 
     with pytest.raises(runner_module.RunnerEpisodeError) as exc_info:
         runner_module._wait_for_game_results_or_exit(
-            _StillRunning(),  # type: ignore[arg-type]
+            cast(subprocess.Popen[str], _StillRunning()),
             artifacts,
             (artifacts.results_path,),
             player_count=1,
@@ -282,3 +282,49 @@ def test_game_hosted_local_run_times_out_when_results_never_appear(tmp_path):
         )
 
     assert exc_info.value.error_type == "episode_timeout"
+
+
+@pytest.mark.parametrize("binding", ["127.0.0.1:49152\n", "0.0.0.0:49152\n"])
+def test_local_game_reads_docker_allocated_loopback_binding(monkeypatch, tmp_path: Path, binding: str) -> None:
+    replies = iter(
+        [
+            subprocess.CompletedProcess([], 1, stdout="", stderr="container not created yet"),
+            subprocess.CompletedProcess([], 0, stdout=binding, stderr=""),
+        ]
+    )
+    monkeypatch.setattr(runner_module.subprocess, "run", lambda *_args, **_kwargs: next(replies))
+    monkeypatch.setattr(runner_module.time, "sleep", lambda _seconds: None)
+    process = cast(subprocess.Popen[str], SimpleNamespace(poll=lambda: None))
+    stderr_path = tmp_path / "stderr"
+    stderr_path.write_text("")
+    game = runner_module.RunnableLaunchSpec(image="game:latest")
+    command = runner_module.game_container_command(
+        game,
+        EpisodeArtifacts.create(tmp_path / "episode"),
+        container_name="owned-game",
+        network_alias="owned-game",
+        local_ports=[],
+        include_player_seats=False,
+    )
+    assert command[command.index("-p") + 1] == "127.0.0.1::8080"
+    if binding.startswith("127.0.0.1:"):
+        assert (
+            runner_module._wait_for_published_port(
+                "owned-game",
+                process,
+                stderr_path,
+                timeout_seconds=1,
+            )
+            == 49152
+        )
+    else:
+        with pytest.raises(runner_module.RunnerEpisodeError, match="Unexpected Docker port binding"):
+            runner_module._wait_for_published_port("owned-game", process, stderr_path, timeout_seconds=1)
+
+
+def test_local_game_port_publication_preserves_startup_failure(monkeypatch, tmp_path: Path) -> None:
+    stderr_path = tmp_path / "stderr"
+    stderr_path.write_text("actual Docker startup failure")
+    process = cast(subprocess.Popen[str], SimpleNamespace(poll=lambda: 125))
+    with pytest.raises(runner_module.RunnerEpisodeError, match="actual Docker startup failure"):
+        runner_module._wait_for_published_port("owned-game", process, stderr_path, timeout_seconds=1)

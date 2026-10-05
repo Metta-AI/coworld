@@ -49,8 +49,8 @@ from coworld.runner.runner import (
     EpisodeRunSpec,
     PlayerLaunchSpec,
     RunnableLaunchSpec,
-    _free_local_port,
     _wait_for_health,
+    _wait_for_published_port,
     assert_docker_image_reachable,
     docker_env_args,
     docker_image_command,
@@ -602,7 +602,7 @@ def certify_coworld(
                 feedback=_certification_failure_feedback(exc),
             )
             raise
-        feedback = pass_feedback(value) if callable(pass_feedback) else pass_feedback
+        feedback = pass_feedback(value) if isinstance(pass_feedback, Callable) else pass_feedback
         record(
             step,
             status="pass",
@@ -847,7 +847,6 @@ def run_certification_commissioner(
     workspace.mkdir(parents=True, exist_ok=True)
     stdout_path = workspace / "commissioner.stdout.log"
     stderr_path = workspace / "commissioner.stderr.log"
-    port = _free_local_port()
     container = f"coworld-cert-commissioner-{secrets.token_hex(8)}"
     launch_spec = RunnableLaunchSpec.from_model(commissioner)
     try:
@@ -860,7 +859,7 @@ def run_certification_commissioner(
                     "--name",
                     container,
                     "-p",
-                    f"127.0.0.1:{port}:{GAME_PORT}",
+                    f"127.0.0.1::{GAME_PORT}",
                     *docker_env_args(commissioner.env),
                     "-e",
                     f"{GAME_HOST_ENV_VAR}={GAME_HOST}",
@@ -872,6 +871,7 @@ def run_certification_commissioner(
                 stderr=stderr,
                 text=True,
             )
+            port = _wait_for_published_port(container, process, stderr_path, timeout_seconds=timeout_seconds)
             _wait_for_health(port, process, stderr_path, timeout_seconds=timeout_seconds)
             return asyncio.run(
                 request_commissioner_once(

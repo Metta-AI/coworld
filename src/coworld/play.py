@@ -44,6 +44,7 @@ from coworld.runner.runner import (
     _wait_for_game_exit,
     _wait_for_health,
     _wait_for_player_exit,
+    _wait_for_published_port,
     assert_docker_image_reachable,
     assert_episode_images_reachable,
     docker_env_args,
@@ -128,20 +129,8 @@ def play_coworld(
     tokens = generate_tokens(len(job_spec.players))
     write_coworld_game_config(job_spec, artifacts, tokens)
     players = [PlayerLaunchSpec.from_model(player) for player in cast(list[CoworldRunnableSpec], job_spec.players)]
-    game_port = _free_local_port()
-    local_ports = resolve_local_extra_ports(
-        package.game.env,
-        reserved_host_ports={game_port},
-        allocate_port=_free_local_port,
-    )
+    local_ports = resolve_local_extra_ports(package.game.env, allocate_port=_free_local_port)
     game_env = game_env_with_resolved_local_ports(package.game.env, local_ports)
-    session = PlaySession(
-        package=package,
-        artifacts=artifacts,
-        variant_id=variant_label,
-        links=build_play_links(players, tokens, game_port=game_port),
-        local_ports=local_ports,
-    )
 
     run_id = secrets.token_hex(8)
     game_network_alias = f"{LOCAL_GAME_NETWORK_ALIAS_PREFIX}{run_id}"
@@ -169,7 +158,7 @@ def play_coworld(
                     "--network-alias",
                     game_network_alias,
                     "-p",
-                    f"127.0.0.1:{game_port}:{GAME_PORT}",
+                    f"127.0.0.1::{GAME_PORT}",
                     *local_port_publish_args(local_ports),
                     *docker_env_args(game_env),
                     "-e",
@@ -193,6 +182,16 @@ def play_coworld(
                 text=True,
             )
 
+            game_port = _wait_for_published_port(
+                game_container, game_process, artifacts.game_stderr_path, timeout_seconds=timeout_seconds
+            )
+            session = PlaySession(
+                package=package,
+                artifacts=artifacts,
+                variant_id=variant_label,
+                links=build_play_links(players, tokens, game_port=game_port),
+                local_ports=local_ports,
+            )
             _wait_for_health(game_port, game_process, artifacts.game_stderr_path, timeout_seconds=timeout_seconds)
 
             for slot, player in enumerate(players):
@@ -299,14 +298,7 @@ def replay_coworld(
         return session
 
     assert_docker_image_reachable(package.game.image, label="game.runnable.image")
-    replay_port = _free_local_port()
     container_replay_uri = f"file:///coworld-replay/{replay_path.name}"
-    session = ReplaySession(
-        package=package,
-        artifacts=artifacts,
-        replay_path=replay_path,
-        link=replay_client_url(replay_port),
-    )
 
     replay_container = f"coworld-replay-game-{secrets.token_hex(8)}"
     try:
@@ -319,7 +311,7 @@ def replay_coworld(
                     "--name",
                     replay_container,
                     "-p",
-                    f"127.0.0.1:{replay_port}:{GAME_PORT}",
+                    f"127.0.0.1::{GAME_PORT}",
                     *docker_env_args(package.game.env),
                     "-e",
                     f"{GAME_HOST_ENV_VAR}={GAME_HOST}",
@@ -336,6 +328,12 @@ def replay_coworld(
                 text=True,
             )
 
+            replay_port = _wait_for_published_port(
+                replay_container, replay_process, artifacts.game_stderr_path, timeout_seconds=timeout_seconds
+            )
+            session = ReplaySession(
+                package=package, artifacts=artifacts, replay_path=replay_path, link=replay_client_url(replay_port)
+            )
             _wait_for_health(replay_port, replay_process, artifacts.game_stderr_path, timeout_seconds=timeout_seconds)
             if verify_replay:
                 probe_url = f"ws://127.0.0.1:{replay_port}{replay_session_path()}"

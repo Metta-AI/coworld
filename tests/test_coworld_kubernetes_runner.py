@@ -60,7 +60,13 @@ from coworld.runner.llm_sidecar_wiring import (
 from coworld.runner.phase_timings import EpisodePhaseTimings, ProcessTimings, TimingClock
 from coworld.runner.player_artifacts import ArtifactUploadTargets
 from coworld.runner.runner import EpisodeArtifacts, EpisodeRunSpec, PlayerLaunchSpec, RunnableLaunchSpec
-from coworld.types import CoworldEpisodeJobSpec, CoworldHumanPlayerSpec, CoworldPlayerFileSpec, CoworldRunnableSpec
+from coworld.types import (
+    CoworldEpisodeJobSpec,
+    CoworldHumanPlayerSpec,
+    CoworldPlayerFileSpec,
+    CoworldReplayViewer,
+    CoworldRunnableSpec,
+)
 
 
 def test_legacy_run_command_fails_closed(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -299,6 +305,64 @@ def _game_hosted_job(contents: list[bytes]) -> CoworldEpisodeJobSpec:
             for content in contents
         ],
     )
+
+
+@pytest.mark.parametrize("player_runtime", ["platform-hosted", "game-hosted"])
+@pytest.mark.parametrize("static_viewer", [False, True])
+@pytest.mark.parametrize("replay_kind", ["missing", "directory", "regular"])
+def test_local_episode_replay_verification_respects_declared_viewer(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    player_runtime: str,
+    static_viewer: bool,
+    replay_kind: str,
+) -> None:
+    job = _game_hosted_job([b"player"])
+    job.manifest.game = job.manifest.game.model_copy(
+        update={
+            "player_runtime": player_runtime,
+            "replay_viewer": CoworldReplayViewer(bundle="viewer") if static_viewer else None,
+        }
+    )
+    source = tmp_path / "player"
+    source.write_bytes(b"player")
+    if player_runtime == "platform-hosted":
+        job.players = [CoworldRunnableSpec(type="player", image="example.com/player:1")]
+    artifacts = EpisodeArtifacts.create(tmp_path)
+    replay_modes: list[tuple[bool, bool]] = []
+
+    def run_episode(*_args, verify_replay: bool, static_replay_viewer: bool, **_kwargs) -> None:
+        replay_modes.append((verify_replay, static_replay_viewer))
+        artifacts.results_path.write_text("{}", encoding="utf-8")
+        if replay_kind == "regular":
+            # Replay formats are opaque to Coworld, including binary payloads.
+            artifacts.replay_path.write_bytes(b"\x00opaque-replay\xff")
+        elif replay_kind == "directory":
+            artifacts.replay_path.mkdir()
+
+    monkeypatch.setattr(runner_module, "assert_episode_images_reachable", lambda _job: None)
+    monkeypatch.setattr(runner_module, "run_episode_containers", run_episode)
+    monkeypatch.setattr(runner_module, "run_game_hosted_container", run_episode)
+
+    if replay_kind == "regular":
+        runner_module.run_coworld_episode(
+            job,
+            artifacts,
+            timeout_seconds=1,
+            verify_replay=True,
+            player_file_paths=[source] if player_runtime == "game-hosted" else None,
+        )
+    else:
+        with pytest.raises(runner_module.RunnerEpisodeError) as exc_info:
+            runner_module.run_coworld_episode(
+                job,
+                artifacts,
+                timeout_seconds=1,
+                verify_replay=True,
+                player_file_paths=[source] if player_runtime == "game-hosted" else None,
+            )
+        assert exc_info.value.error_type == "replay_missing"
+    assert replay_modes == [(True, static_viewer)]
 
 
 def _configure_init_env(
@@ -903,7 +967,7 @@ def test_run_episode_containers_uses_docker_dns_and_omits_policy_names_env(tmp_p
     async def noop_async(*_args, **_kwargs):
         return None
 
-    monkeypatch.setattr(runner_module, "_free_local_port", lambda: 12345)
+    monkeypatch.setattr(runner_module, "_wait_for_published_port", lambda *_args, **_kwargs: 12345)
     monkeypatch.setattr(secrets, "token_hex", lambda _bytes: "session-1")
     monkeypatch.setattr(runner_module, "_wait_for_health", lambda *_args, **_kwargs: None)
     monkeypatch.setattr(runner_module, "_require_http_ok", lambda *_args, **_kwargs: None)
@@ -971,7 +1035,7 @@ def test_run_episode_containers_adds_fixed_extra_local_ports(tmp_path, monkeypat
     async def noop_async(*_args, **_kwargs):
         return None
 
-    monkeypatch.setattr(runner_module, "_free_local_port", lambda: 12345)
+    monkeypatch.setattr(runner_module, "_wait_for_published_port", lambda *_args, **_kwargs: 12345)
     monkeypatch.setattr(secrets, "token_hex", lambda _bytes: "session-1")
     monkeypatch.setattr(runner_module, "_wait_for_health", lambda *_args, **_kwargs: None)
     monkeypatch.setattr(runner_module, "_require_http_ok", lambda *_args, **_kwargs: None)
@@ -1007,7 +1071,7 @@ def test_run_episode_containers_adds_fixed_extra_local_ports(tmp_path, monkeypat
 
     game_command = commands[0]
     assert _docker_publish_values(game_command) == [
-        "127.0.0.1:12345:8080",
+        "127.0.0.1::8080",
         "127.0.0.1:3724:3724",
         "127.0.0.1:8085:8085",
     ]
@@ -1023,7 +1087,7 @@ def test_run_episode_containers_adds_fixed_extra_local_ports(tmp_path, monkeypat
 
 def test_run_episode_containers_allocates_dynamic_extra_local_ports(tmp_path, monkeypatch):
     commands: list[list[str]] = []
-    free_ports = iter([12345, 41000, 41001])
+    free_ports = iter([41000, 41001])
 
     class FakeProcess:
         def poll(self):
@@ -1033,6 +1097,7 @@ def test_run_episode_containers_allocates_dynamic_extra_local_ports(tmp_path, mo
         return None
 
     monkeypatch.setattr(runner_module, "_free_local_port", lambda: next(free_ports))
+    monkeypatch.setattr(runner_module, "_wait_for_published_port", lambda *_args, **_kwargs: 12345)
     monkeypatch.setattr(secrets, "token_hex", lambda _bytes: "session-1")
     monkeypatch.setattr(runner_module, "_wait_for_health", lambda *_args, **_kwargs: None)
     monkeypatch.setattr(runner_module, "_require_http_ok", lambda *_args, **_kwargs: None)
@@ -1068,7 +1133,7 @@ def test_run_episode_containers_allocates_dynamic_extra_local_ports(tmp_path, mo
 
     game_command = commands[0]
     assert _docker_publish_values(game_command) == [
-        "127.0.0.1:12345:8080",
+        "127.0.0.1::8080",
         "127.0.0.1:41000:3724",
         "127.0.0.1:41001:8085",
     ]
@@ -1113,7 +1178,7 @@ def test_run_episode_containers_player_artifact_round_trips_to_workspace(
     async def noop_async(*_args, **_kwargs):
         return None
 
-    monkeypatch.setattr(runner_module, "_free_local_port", lambda: 12345)
+    monkeypatch.setattr(runner_module, "_wait_for_published_port", lambda *_args, **_kwargs: 12345)
     monkeypatch.setattr(secrets, "token_hex", lambda _bytes: "session-1")
     monkeypatch.setattr(runner_module, "_wait_for_health", lambda *_args, **_kwargs: None)
     monkeypatch.setattr(runner_module, "_require_http_ok", lambda *_args, **_kwargs: None)
@@ -1175,10 +1240,11 @@ def test_run_episode_containers_player_artifact_round_trips_to_workspace(
     assert secret.read_bytes() == b"game-owned secret"
 
 
-def test_run_episode_containers_verifies_raw_replay_uri(tmp_path, monkeypatch):
+@pytest.mark.parametrize("static_replay_viewer", [False, True])
+def test_run_episode_containers_verifies_raw_replay_uri(tmp_path, monkeypatch, static_replay_viewer):
     commands: list[list[str]] = []
     mounted_replay_bytes: list[bytes] = []
-    free_ports = iter([12345, 3724, 41000])
+    free_ports = iter([3724])
     artifacts = EpisodeArtifacts.create(tmp_path)
     replay_payload = b"\x00crewrift-replay-bytes\xff"
     artifacts.replay_path.write_bytes(replay_payload)
@@ -1191,6 +1257,7 @@ def test_run_episode_containers_verifies_raw_replay_uri(tmp_path, monkeypatch):
         return None
 
     monkeypatch.setattr(runner_module, "_free_local_port", lambda: next(free_ports))
+    monkeypatch.setattr(runner_module, "_wait_for_published_port", lambda *_args, **_kwargs: 12345)
     monkeypatch.setattr(secrets, "token_hex", lambda _bytes: "session-1")
     monkeypatch.setattr(runner_module, "_wait_for_health", lambda *_args, **_kwargs: None)
     monkeypatch.setattr(runner_module, "_require_http_ok", lambda *_args, **_kwargs: None)
@@ -1227,11 +1294,16 @@ def test_run_episode_containers_verifies_raw_replay_uri(tmp_path, monkeypatch):
             container_prefix="coworld-run",
         ),
         verify_replay=True,
+        static_replay_viewer=static_replay_viewer,
     )
 
+    if static_replay_viewer:
+        assert len(commands) == 1
+        assert not mounted_replay_bytes
+        return
     _game_command, replay_command = commands
     assert _docker_publish_values(replay_command) == [
-        "127.0.0.1:41000:8080",
+        "127.0.0.1::8080",
         "127.0.0.1:3724:3724",
     ]
     assert f"{runner_module.REPLAY_LOAD_ENV_VAR}=file:///coworld-replay/replay" in replay_command
@@ -4795,7 +4867,7 @@ def test_local_player_exit_timeout_is_inconclusive(tmp_path):
 
     with pytest.raises(runner_io.RunnerEpisodeError) as excinfo:
         runner_module._wait_for_player_exit(
-            HangingPlayer(), tmp_path / "stderr", failed_policy_index=2, timeout_seconds=30
+            cast(subprocess.Popen[str], HangingPlayer()), tmp_path / "stderr", failed_policy_index=2, timeout_seconds=30
         )
     assert excinfo.value.error_type == "episode_inconclusive"
     assert excinfo.value.failed_policy_index is None
@@ -4806,7 +4878,7 @@ def test_local_player_exit_timeout_is_inconclusive(tmp_path):
 
 @pytest.mark.parametrize("exit_code", [1, 75])
 def test_local_player_nonzero_exit_keeps_player_blame(tmp_path, exit_code):
-    player = SimpleNamespace(wait=lambda **_: exit_code)
+    player = cast(subprocess.Popen[str], SimpleNamespace(wait=lambda **_: exit_code))
     with pytest.raises(runner_io.RunnerEpisodeError) as excinfo:
         runner_module._wait_for_player_exit(player, tmp_path / "stderr", failed_policy_index=2)
     assert excinfo.value.error_type == "player_error"

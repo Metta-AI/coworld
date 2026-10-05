@@ -328,6 +328,7 @@ def run_coworld_episode(
     assert_episode_images_reachable(job)
     tokens = generate_tokens(len(job.players))
     write_coworld_game_config(job, artifacts, tokens)
+    static_replay_viewer = job.manifest.game.replay_viewer is not None
 
     if job.manifest.game.player_runtime == "game-hosted":
         player_files = [player for player in job.players if isinstance(player, CoworldPlayerFileSpec)]
@@ -347,6 +348,7 @@ def run_coworld_episode(
             artifacts,
             timeout_seconds=timeout_seconds,
             verify_replay=verify_replay,
+            static_replay_viewer=static_replay_viewer,
             require_websocket_pong=require_websocket_pong,
             container_prefix=container_prefix,
         )
@@ -365,7 +367,7 @@ def run_coworld_episode(
             container_prefix=container_prefix,
             secret_env=secret_env or {},
         )
-        run_episode_containers(run_spec, verify_replay=verify_replay)
+        run_episode_containers(run_spec, verify_replay=verify_replay, static_replay_viewer=static_replay_viewer)
 
     if not artifacts.results_path.exists():
         raise RunnerEpisodeError(
@@ -373,6 +375,13 @@ def run_coworld_episode(
             error_type="results_missing",
         )
     _validate_results_file(artifacts.results_path, job.results_schema)
+    # Static viewers consume opaque game-owned bytes without booting a replay container.
+    # Presence remains required; parsing and rendering belong to the declared viewer.
+    if verify_replay and not artifacts.replay_path.is_file():
+        raise RunnerEpisodeError(
+            f"Replay required but game did not write replay: {artifacts.replay_path}",
+            error_type="replay_missing",
+        )
 
 
 def stage_player_files(
@@ -498,7 +507,6 @@ def game_container_command(
     *,
     container_name: str,
     network_alias: str,
-    port: int,
     local_ports: list[ResolvedLocalPort],
     include_player_seats: bool,
 ) -> list[str]:
@@ -516,7 +524,7 @@ def game_container_command(
         "--network-alias",
         network_alias,
         "-p",
-        f"127.0.0.1:{port}:{GAME_PORT}",
+        f"127.0.0.1::{GAME_PORT}",
         *local_port_publish_args(local_ports),
         *docker_env_args(game_env_with_resolved_local_ports(game.env, local_ports)),
         "-e",
@@ -547,9 +555,9 @@ def run_game_hosted_container(
     verify_replay: bool,
     container_prefix: str,
     require_websocket_pong: bool = False,
+    static_replay_viewer: bool = False,
 ) -> None:
-    port = _free_local_port()
-    local_ports = resolve_local_extra_ports(game.env, reserved_host_ports={port})
+    local_ports = resolve_local_extra_ports(game.env)
     run_id = secrets.token_hex(8)
     game_network_alias = f"{LOCAL_GAME_NETWORK_ALIAS_PREFIX}{run_id}"
     game_container = f"{container_prefix}-game-{run_id}"
@@ -565,7 +573,6 @@ def run_game_hosted_container(
                     artifacts,
                     container_name=game_container,
                     network_alias=game_network_alias,
-                    port=port,
                     local_ports=local_ports,
                     include_player_seats=True,
                 ),
@@ -574,6 +581,9 @@ def run_game_hosted_container(
                 text=True,
             )
 
+            port = _wait_for_published_port(
+                game_container, game_process, artifacts.game_stderr_path, timeout_seconds=timeout_seconds
+            )
             _wait_for_health(port, game_process, artifacts.game_stderr_path, timeout_seconds=timeout_seconds)
             _require_http_ok(f"http://127.0.0.1:{port}/client/global")
             asyncio.run(
@@ -594,7 +604,7 @@ def run_game_hosted_container(
                 timeout_seconds=timeout_seconds,
             )
 
-            if verify_replay:
+            if verify_replay and not static_replay_viewer:
                 # The game may still be serving after writing results; the replay container
                 # reuses its published ports, so stop it first.
                 subprocess.run(
@@ -611,9 +621,10 @@ def run_game_hosted_container(
         subprocess.run(["docker", "rm", "-f", game_container], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
 
 
-def run_episode_containers(spec: EpisodeRunSpec, *, verify_replay: bool = True) -> None:
-    port = _free_local_port()
-    local_ports = resolve_local_extra_ports(spec.game.env, reserved_host_ports={port})
+def run_episode_containers(
+    spec: EpisodeRunSpec, *, verify_replay: bool = True, static_replay_viewer: bool = False
+) -> None:
+    local_ports = resolve_local_extra_ports(spec.game.env)
     run_id = secrets.token_hex(8)
     game_network_alias = f"{LOCAL_GAME_NETWORK_ALIAS_PREFIX}{run_id}"
     game_container = f"{spec.container_prefix}-game-{run_id}"
@@ -631,7 +642,6 @@ def run_episode_containers(spec: EpisodeRunSpec, *, verify_replay: bool = True) 
                     spec.artifacts,
                     container_name=game_container,
                     network_alias=game_network_alias,
-                    port=port,
                     local_ports=local_ports,
                     include_player_seats=False,
                 ),
@@ -640,6 +650,9 @@ def run_episode_containers(spec: EpisodeRunSpec, *, verify_replay: bool = True) 
                 text=True,
             )
 
+            port = _wait_for_published_port(
+                game_container, game_process, spec.artifacts.game_stderr_path, timeout_seconds=spec.timeout_seconds
+            )
             _wait_for_health(port, game_process, spec.artifacts.game_stderr_path, timeout_seconds=spec.timeout_seconds)
             if spec.players:
                 _require_http_ok(_player_client_url(port, 0, spec.tokens[0]))
@@ -721,7 +734,7 @@ def run_episode_containers(spec: EpisodeRunSpec, *, verify_replay: bool = True) 
             for slot, (player_process, player_stderr_path) in enumerate(player_processes):
                 _wait_for_player_exit(player_process, player_stderr_path, failed_policy_index=slot)
 
-            if not verify_replay:
+            if not verify_replay or static_replay_viewer:
                 return
 
             verify_replay_loadable(
@@ -775,15 +788,7 @@ def verify_replay_loadable(
     container_prefix: str = LOCAL_EPISODE_CONTAINER_PREFIX,
     resolved_local_ports: list[ResolvedLocalPort] | None = None,
 ) -> None:
-    local_ports = resolved_local_ports
-    if local_ports is None:
-        replay_port = _free_local_port()
-        local_ports = resolve_local_extra_ports(game.env, reserved_host_ports={replay_port})
-    else:
-        replay_port = _allocate_local_extra_host_port(
-            {port.host_port for port in local_ports},
-            _free_local_port,
-        )
+    local_ports = resolved_local_ports if resolved_local_ports is not None else resolve_local_extra_ports(game.env)
     game_env = game_env_with_resolved_local_ports(game.env, local_ports)
     replay_container = f"{container_prefix}-replay-{secrets.token_hex(8)}"
     if not artifacts.replay_path.exists():
@@ -808,7 +813,7 @@ def verify_replay_loadable(
                     "--name",
                     replay_container,
                     "-p",
-                    f"127.0.0.1:{replay_port}:{GAME_PORT}",
+                    f"127.0.0.1::{GAME_PORT}",
                     *local_port_publish_args(local_ports),
                     *docker_env_args(game_env),
                     "-e",
@@ -824,6 +829,13 @@ def verify_replay_loadable(
                 stdout=game_stdout,
                 stderr=game_stderr,
                 text=True,
+            )
+            replay_port = _wait_for_published_port(
+                replay_container,
+                replay_process,
+                artifacts.game_stderr_path,
+                timeout_seconds=timeout_seconds,
+                error_type="replay_unloadable",
             )
             _wait_for_health(
                 replay_port,
@@ -1185,6 +1197,42 @@ def _wait_for_player_exit(
             error_type="player_error",
             failed_policy_index=failed_policy_index,
         )
+
+
+def _wait_for_published_port(
+    container_name: str,
+    process: subprocess.Popen[str],
+    stderr_path: Path,
+    *,
+    timeout_seconds: float,
+    error_type: RunnerErrorType = "game_unhealthy",
+) -> int:
+    """Read Docker's bound loopback port; never reserve then release a host socket."""
+    deadline = time.monotonic() + timeout_seconds
+    while time.monotonic() < deadline:
+        return_code = process.poll()
+        if return_code is not None:
+            raise RunnerEpisodeError(
+                f"Container exited with status {return_code} before port publication.\n{_tail(stderr_path)}",
+                error_type=error_type,
+            )
+        # docker run creates and starts asynchronously; the mapping appears after start.
+        published = subprocess.run(
+            ["docker", "port", container_name, f"{GAME_PORT}/tcp"],
+            capture_output=True,
+            text=True,
+            timeout=min(5.0, max(0.001, deadline - time.monotonic())),
+        )
+        if published.returncode == 0 and published.stdout.strip():
+            host, port = published.stdout.strip().split(":")
+            if host != "127.0.0.1" or not 0 < int(port) <= MAX_TCP_PORT:
+                raise RunnerEpisodeError(f"Unexpected Docker port binding: {published.stdout!r}", error_type=error_type)
+            return int(port)
+        time.sleep(0.05)
+    raise RunnerEpisodeError(
+        f"Container did not publish its loopback port within {timeout_seconds:g}s.\n{_tail(stderr_path)}",
+        error_type=error_type,
+    )
 
 
 def _free_local_port() -> int:
