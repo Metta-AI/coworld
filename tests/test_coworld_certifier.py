@@ -19,6 +19,7 @@ import websockets
 from fastapi.testclient import TestClient
 from jsonschema.exceptions import ValidationError as JsonSchemaValidationError
 from pydantic import ValidationError as PydanticValidationError
+from websockets.asyncio.client import ClientConnection
 from websockets.exceptions import ConnectionClosedOK
 
 import coworld.certifier as certifier_module
@@ -67,7 +68,7 @@ from coworld.runner.runner import (
     replay_client_url,
     replay_session_path,
 )
-from coworld.schema_validation import validate_json_schema
+from coworld.schema_validation import JsonObject, validate_json_schema
 from coworld.types import (
     CoworldEpisodeJobSpec,
     CoworldManifest,
@@ -1762,7 +1763,7 @@ def test_build_manifest_episode_job_spec_rejects_unknown_variant(tmp_path: Path)
 
 
 def test_episode_request_allows_no_runner_managed_players() -> None:
-    episode_request = {
+    episode_request: JsonObject = {
         "manifest": _coworld_manifest(),
         "game_config": {"difficulty": "easy", "players": []},
         "players": [{"type": "human", "token": "human-player-token"}],
@@ -1878,7 +1879,7 @@ def test_websocket_ping_probe_accepts_matching_pong() -> None:
             pong.set_result(0.001)
             return pong
 
-    asyncio.run(_require_websocket_pong(PongWebSocket(), "ws://example.test/global"))
+    asyncio.run(_require_websocket_pong(cast(ClientConnection, PongWebSocket()), "ws://example.test/global"))
 
 
 def test_websocket_ping_probe_rejects_missing_pong() -> None:
@@ -1889,7 +1890,7 @@ def test_websocket_ping_probe_rejects_missing_pong() -> None:
     with pytest.raises(RunnerEpisodeError, match="did not answer a WebSocket Ping") as exc_info:
         asyncio.run(
             _require_websocket_pong(
-                SilentWebSocket(),
+                cast(ClientConnection, SilentWebSocket()),
                 "ws://example.test/global",
                 timeout_seconds=0.01,
             )
@@ -2020,7 +2021,7 @@ def test_play_coworld_starts_certification_player_containers(tmp_path: Path, mon
         return subprocess.CompletedProcess(cmd, 0)
 
     monkeypatch.setattr("coworld.play.assert_episode_images_reachable", lambda _job: None)
-    monkeypatch.setattr("coworld.play._free_local_port", lambda: 1234)
+    monkeypatch.setattr("coworld.play._wait_for_published_port", lambda *_args, **_kwargs: 1234)
     monkeypatch.setattr("coworld.play._wait_for_health", noop_wait_for_health)
     monkeypatch.setattr("coworld.play._wait_for_game_exit", lambda *_args, **_kwargs: None)
     monkeypatch.setattr("coworld.play._wait_for_player_exit", fake_wait_for_player_exit)
@@ -2048,7 +2049,7 @@ def test_play_coworld_starts_certification_player_containers(tmp_path: Path, mon
     assert game_command[game_command.index("--network") + 1] == LOCAL_DOCKER_NETWORK
     assert "--network-alias" in game_command
     assert game_command[game_command.index("--network-alias") + 1] == f"{LOCAL_GAME_NETWORK_ALIAS_PREFIX}session-1"
-    assert _docker_publish_values(game_command) == ["127.0.0.1:1234:8080"]
+    assert _docker_publish_values(game_command) == ["127.0.0.1::8080"]
     assert f"{CONFIG_ENV_VAR}=file:///coworld/config.json" in game_command
     assert f"{PLAYER_FAILURE_ENV_VAR}=file:///coworld/player_failure.json" in game_command
     assert _env_value(game_command, LOCAL_PORTS_JSON_ENV_VAR) is None
@@ -2089,7 +2090,7 @@ def test_play_coworld_adds_fixed_extra_local_ports_to_game_container(
         return FakeProcess()
 
     monkeypatch.setattr("coworld.play.assert_episode_images_reachable", lambda _job: None)
-    monkeypatch.setattr("coworld.play._free_local_port", lambda: 1234)
+    monkeypatch.setattr("coworld.play._wait_for_published_port", lambda *_args, **_kwargs: 1234)
     monkeypatch.setattr("coworld.play._wait_for_health", lambda *_args, **_kwargs: None)
     monkeypatch.setattr("coworld.play._wait_for_game_exit", lambda *_args, **_kwargs: None)
     monkeypatch.setattr("coworld.play._wait_for_player_exit", lambda *_args, **_kwargs: None)
@@ -2107,7 +2108,7 @@ def test_play_coworld_adds_fixed_extra_local_ports_to_game_container(
 
     game_command = popen_commands[0]
     assert _docker_publish_values(game_command) == [
-        "127.0.0.1:1234:8080",
+        "127.0.0.1::8080",
         "127.0.0.1:3724:3724",
         "127.0.0.1:8085:8085",
     ]
@@ -2164,7 +2165,7 @@ def test_play_coworld_injects_llm_env_into_player_containers(
 
     monkeypatch.setattr("coworld.play.assert_episode_images_reachable", lambda _job: None)
     monkeypatch.setattr("coworld.play.ensure_local_docker_network", fake_ensure_local_docker_network)
-    monkeypatch.setattr("coworld.play._free_local_port", lambda: 1234)
+    monkeypatch.setattr("coworld.play._wait_for_published_port", lambda *_args, **_kwargs: 1234)
     monkeypatch.setattr("coworld.play._wait_for_health", lambda *_args, **_kwargs: None)
     monkeypatch.setattr("coworld.play._wait_for_game_exit", lambda *_args, **_kwargs: None)
     monkeypatch.setattr("coworld.play._wait_for_player_exit", lambda *_args, **_kwargs: None)
@@ -2229,7 +2230,7 @@ def test_play_coworld_does_not_resolve_llm_env_when_docker_network_fails(
 
     monkeypatch.setattr("coworld.play.assert_episode_images_reachable", lambda _job: None)
     monkeypatch.setattr("coworld.play.ensure_local_docker_network", fake_ensure_local_docker_network)
-    monkeypatch.setattr("coworld.play._free_local_port", lambda: 1234)
+    monkeypatch.setattr("coworld.play._wait_for_published_port", lambda *_args, **_kwargs: 1234)
     monkeypatch.setattr("coworld.play._resolve_local_llm_env", fake_resolve_local_llm_env)
     monkeypatch.setattr("coworld.play.subprocess.Popen", fake_popen)
     monkeypatch.setattr("coworld.play.secrets.token_hex", lambda _bytes: "session-1")
@@ -2290,7 +2291,7 @@ def test_replay_coworld_starts_replay_container_and_reports_link(
         raise AssertionError("ordinary local replay should not pre-consume the replay websocket")
 
     monkeypatch.setattr("coworld.play.assert_docker_image_reachable", noop_assert_docker_image_reachable)
-    monkeypatch.setattr("coworld.play._free_local_port", lambda: 1234)
+    monkeypatch.setattr("coworld.play._wait_for_published_port", lambda *_args, **_kwargs: 1234)
     monkeypatch.setattr("coworld.play._wait_for_health", noop_wait_for_health)
     monkeypatch.setattr("coworld.play._require_replay_message", fail_require_replay_message)
     monkeypatch.setattr("coworld.play.subprocess.Popen", fake_popen)
@@ -2407,7 +2408,7 @@ def _replay_coworld_with_probe(
         return subprocess.CompletedProcess(cmd, 0)
 
     monkeypatch.setattr("coworld.play.assert_docker_image_reachable", noop_assert_docker_image_reachable)
-    monkeypatch.setattr("coworld.play._free_local_port", lambda: 1234)
+    monkeypatch.setattr("coworld.play._wait_for_published_port", lambda *_args, **_kwargs: 1234)
     monkeypatch.setattr("coworld.play._wait_for_health", noop_wait_for_health)
     monkeypatch.setattr("coworld.play.subprocess.Popen", fake_popen)
     monkeypatch.setattr("coworld.play.secrets.token_hex", lambda _bytes: "session-1")
@@ -2568,7 +2569,7 @@ def test_replay_coworld_verify_replay_does_not_call_on_ready_until_probe_succeed
             return 0
 
     monkeypatch.setattr("coworld.play.assert_docker_image_reachable", lambda image, *, label: None)
-    monkeypatch.setattr("coworld.play._free_local_port", lambda: 1234)
+    monkeypatch.setattr("coworld.play._wait_for_published_port", lambda *_args, **_kwargs: 1234)
     monkeypatch.setattr(
         "coworld.play._wait_for_health",
         lambda *args, **kwargs: order.append("health"),
