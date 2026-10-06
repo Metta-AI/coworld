@@ -20,6 +20,7 @@ from json import JSONDecodeError
 from pathlib import Path
 from typing import Callable, Mapping, Sequence
 from urllib.parse import urlencode
+from uuid import uuid4
 
 import httpx
 import websockets
@@ -30,7 +31,9 @@ from websockets.exceptions import ConnectionClosed, InvalidHandshake, InvalidSta
 
 from coworld.player_files import player_file_bytes
 from coworld.runner.io import GamePlayerFailure, RunnerEpisodeError, RunnerErrorType, redact_uri
+from coworld.runner.local_player_status import collect_local_player_status
 from coworld.schema_validation import validate_json_schema
+from coworld.trajectory import trajectory_identity_env
 from coworld.types import (
     CoworldEpisodeJobSpec,
     CoworldHumanPlayerSpec,
@@ -330,6 +333,11 @@ def run_coworld_episode(
     write_coworld_game_config(job, artifacts, tokens)
     static_replay_viewer = job.manifest.game.replay_viewer is not None
 
+    game_launch = RunnableLaunchSpec(
+        image=job.game_runnable.image,
+        run=tuple(job.game_runnable.run),
+        env={**job.game_runnable.env, **trajectory_identity_env(job.manifest, str(uuid4()))},
+    )
     if job.manifest.game.player_runtime == "game-hosted":
         player_files = [player for player in job.players if isinstance(player, CoworldPlayerFileSpec)]
         if player_file_paths is None or len(player_file_paths) != len(player_files):
@@ -343,7 +351,7 @@ def run_coworld_episode(
             ),
         )
         run_game_hosted_container(
-            RunnableLaunchSpec.from_model(job.game_runnable),
+            game_launch,
             len(tokens),
             artifacts,
             timeout_seconds=timeout_seconds,
@@ -357,7 +365,7 @@ def run_coworld_episode(
             raise ValueError("player_file_paths are supported only for game-hosted execution")
         run_spec = EpisodeRunSpec(
             require_websocket_pong=require_websocket_pong,
-            game=RunnableLaunchSpec.from_model(job.game_runnable),
+            game=game_launch,
             players=[
                 PlayerLaunchSpec.from_model(player) for player in job.players if isinstance(player, CoworldRunnableSpec)
             ],
@@ -516,7 +524,6 @@ def game_container_command(
     return [
         "docker",
         "run",
-        "--rm",
         "--name",
         container_name,
         "--network",
@@ -538,12 +545,40 @@ def game_container_command(
         "-e",
         f"{REPLAY_SAVE_ENV_VAR}=file://{CONTAINER_WORKDIR}/replay",
         "-e",
+        f"COGAME_SAVE_TRAJECTORY_URI=file://{CONTAINER_WORKDIR}/trajectory.jsonl",
+        "-e",
         f"{PLAYER_FAILURE_ENV_VAR}=file://{CONTAINER_WORKDIR}/player_failure.json",
         *player_seats_args,
         "-v",
         f"{artifacts.workspace}:{CONTAINER_WORKDIR}:rw",
         *docker_image_command(game),
     ]
+
+
+def collect_game_trajectory(container_name: str, artifacts: EpisodeArtifacts) -> None:
+    """Copy private game output through Docker, retaining caller ownership and mode 0600."""
+    trajectory = artifacts.workspace / "trajectory.jsonl"
+    if not trajectory.exists():
+        return
+    subprocess.run(
+        ["docker", "stop", "--time", "0", container_name],
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+    )
+    with tempfile.TemporaryFile() as archive_file:
+        subprocess.run(
+            ["docker", "cp", f"{container_name}:{CONTAINER_WORKDIR}/trajectory.jsonl", "-"],
+            stdout=archive_file,
+            check=True,
+        )
+        archive_file.seek(0)
+        with tarfile.open(fileobj=archive_file) as archive:
+            source = archive.extractfile("trajectory.jsonl")
+            assert source is not None
+            with source, tempfile.NamedTemporaryFile(dir=artifacts.workspace, delete=False) as destination:
+                shutil.copyfileobj(source, destination)
+                temporary = Path(destination.name)
+            temporary.replace(trajectory)
 
 
 def run_game_hosted_container(
@@ -608,7 +643,9 @@ def run_game_hosted_container(
                 # The game may still be serving after writing results; the replay container
                 # reuses its published ports, so stop it first.
                 subprocess.run(
-                    ["docker", "rm", "-f", game_container], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL
+                    ["docker", "stop", "--time", "0", game_container],
+                    stdout=subprocess.DEVNULL,
+                    stderr=subprocess.DEVNULL,
                 )
                 verify_replay_loadable(
                     game,
@@ -618,7 +655,10 @@ def run_game_hosted_container(
                     resolved_local_ports=local_ports,
                 )
     finally:
-        subprocess.run(["docker", "rm", "-f", game_container], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        try:
+            collect_game_trajectory(game_container, artifacts)
+        finally:
+            subprocess.run(["docker", "rm", "-f", game_container], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
 
 
 def run_episode_containers(
@@ -746,30 +786,34 @@ def run_episode_containers(
             )
     finally:
         try:
-            for slot, container_name in enumerate(player_containers):
-                subprocess.run(
-                    ["docker", "stop", "--time", "0", container_name],
-                    stdout=subprocess.DEVNULL,
-                    stderr=subprocess.DEVNULL,
-                )
-                # Read through Docker so root-owned output never needs host cleanup privileges.
-                with tempfile.TemporaryFile() as archive_file:
-                    copied = subprocess.run(
-                        ["docker", "cp", f"{container_name}:/coworld-artifact", "-"],
-                        stdout=archive_file,
-                        stderr=subprocess.PIPE,
+            try:
+                collect_local_player_status(player_containers, len(spec.players), spec.artifacts.workspace)
+            finally:
+                collect_game_trajectory(game_container, spec.artifacts)
+                for slot, container_name in enumerate(player_containers):
+                    subprocess.run(
+                        ["docker", "stop", "--time", "0", container_name],
+                        stdout=subprocess.DEVNULL,
+                        stderr=subprocess.DEVNULL,
                     )
-                    if copied.returncode:
-                        raise RuntimeError(copied.stderr.decode())
-                    archive_file.seek(0)
-                    with tarfile.open(fileobj=archive_file) as archive:
-                        artifact_name = f"coworld-artifact/{spec.artifacts.policy_artifact_path(slot).name}"
-                        for member in archive:
-                            if member.name == artifact_name and member.isfile():
-                                source = archive.extractfile(member)
-                                assert source is not None
-                                with source, spec.artifacts.policy_artifact_path(slot).open("wb") as destination:
-                                    shutil.copyfileobj(source, destination)
+                    # Read through Docker so root-owned output never needs host cleanup privileges.
+                    with tempfile.TemporaryFile() as archive_file:
+                        copied = subprocess.run(
+                            ["docker", "cp", f"{container_name}:/coworld-artifact", "-"],
+                            stdout=archive_file,
+                            stderr=subprocess.PIPE,
+                        )
+                        if copied.returncode:
+                            raise RuntimeError(copied.stderr.decode())
+                        archive_file.seek(0)
+                        with tarfile.open(fileobj=archive_file) as archive:
+                            artifact_name = f"coworld-artifact/{spec.artifacts.policy_artifact_path(slot).name}"
+                            for member in archive:
+                                if member.name == artifact_name and member.isfile():
+                                    source = archive.extractfile(member)
+                                    assert source is not None
+                                    with source, spec.artifacts.policy_artifact_path(slot).open("wb") as destination:
+                                        shutil.copyfileobj(source, destination)
         finally:
             for container_name in player_containers:
                 subprocess.run(
