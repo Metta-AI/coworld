@@ -32,7 +32,7 @@ Implementing a policy from a design doc tends to silently diverge (~6 ways in on
 `generic`
 
 In a repo that holds both reusable generator code and accumulated outputs, keep generated artifacts under an output/ tree and reusable toolkit code in the toolkit roots -- a generated helper tool under output/ is still an artifact even if it has its own source, tests, and docs -- otherwise coding agents confuse historical output with the generator they should edit. Be deliberate about which pipeline stages are LLM-heavy (multi-model doc generation was slow while the deterministic builder stage was fast); make synthesis conditional on having more than one draft, since a single selected runner can promote its draft directly and skip a meaningless single-input synthesis.
-  <sub>sources: codex:019e13cd-d482-7133-a38d-c683c32a3004, codex:019e1940-5a75-7f51-b057-63f894ddb061, players_checkouts/players/tools/cogbase/README.md, players_checkouts/players/tools/cogbase/docs/artifact_pipeline.md</sub>
+  <sub>sources: codex:019e13cd-d482-7133-a38d-c683c32a3004, codex:019e1940-5a75-7f51-b057-63f894ddb061</sub>
 
 ## Agent workflow & collaboration
 
@@ -48,7 +48,7 @@ The hard part of checklist compliance is recognizing 'I am at checkpoint X right
 `generic`
 
 A per-project AGENTS.md should point a fresh agent up front at the canonical operational docs and a sibling lessons file, instructing it to follow the upstream walkthrough with local fixes applied inline. It can require reading a per-project notes file (e.g. PROJECT_NOTES.md) on first invocation each session, treated as ephemeral cross-session working memory (short-term hints) rather than permanent documentation -- expect it to sometimes be an empty scratch-pad template. A machine-detectable signal in project state can mark onboarding as done (resume work) versus absent (start guided onboarding). Treat code under a testbed/ directory as live and unstable -- interfaces change without notice and behavior may be wrong -- so automation and agents must not depend on it and should expect breakage until it is promoted into the main package.
-  <sub>sources: metta/agent-plugins/kitchensink/skills/ks.cross-agent-skill-layout/SKI, bitworld/among_them/players/evidencebot_v3/AGENTS.md, player_labs/README.md, player_labs/AGENTS.md (+1)</sub>
+  <sub>sources: bitworld/among_them/players/evidencebot_v3/AGENTS.md, player_labs/README.md, player_labs/AGENTS.md (+1)</sub>
 
 ## Agent workflow & collaboration
 
@@ -68,10 +68,12 @@ In uv/Python projects a bare `python`/`pip` is often missing or lacks deps; run 
 
 ## Environment & toolchain
 
-#### 8. metta commits/pushes MUST run inside `nix develop`; check the filesystem before deciding a tool is 'not installed'
+#### 8. Use the project's required environment for commits and pushes; check the filesystem before deciding a tool is 'not installed'
 `generic` · ⚠ _session-derived, unverified_
 
-Do not work around a toolchain guard that requires a sanctioned environment (e.g. metta commits/pushes must run inside `nix develop` because the pre-commit/pre-push hooks require the Nix flake -- never bypass with an env override or `--no-verify`; install and enter the sanctioned env). Before concluding a tool 'isn't installed', check the filesystem and known install locations (e.g. /nix, ~/.nix-profile, /opt/homebrew/bin, /usr/local/bin, /run/current-system/sw/bin), not just `command -v`/PATH: an agent's Bash tool runs a non-login shell sourcing a snapshot, not login rc files, so a tool added to PATH by a profile.d script shows as missing. To use an installed-but-unsourced tool, source its profile script then run the guarded operation inside the sanctioned env.
+Do not work around a toolchain guard that requires a sanctioned environment.
+Install and enter the environment required by the project; never bypass hooks
+with an environment override or `--no-verify`. Before concluding a tool 'isn't installed', check the filesystem and known install locations (e.g. /nix, ~/.nix-profile, /opt/homebrew/bin, /usr/local/bin, /run/current-system/sw/bin), not just `command -v`/PATH: an agent's Bash tool runs a non-login shell sourcing a snapshot, not login rc files, so a tool added to PATH by a profile.d script shows as missing. To use an installed-but-unsourced tool, source its profile script then run the guarded operation inside the sanctioned env.
   <sub>sources: claude-code:8e1dadfd-ab6e-4cec-8910-806828a5e82f, claude-code:a30ff353-3fc5-4f33-92cb-30810f530920</sub>
 
 ## Environment & toolchain

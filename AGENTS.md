@@ -1,8 +1,7 @@
 # AGENTS.md - coworld
 
 You are reading the public `Metta-AI/coworld` repository: the `coworld` Python package and CLI that players and Coworld
-authors use with the Softmax platform. This file is written for coding agents working outside Softmax. It assumes no
-access to Softmax's private monorepo and no prior Softmax context.
+authors use with the Softmax platform. This file is written for coding agents working from this checkout with no prior Softmax context.
 
 ## Start here
 
