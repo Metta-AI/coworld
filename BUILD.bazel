@@ -76,6 +76,8 @@ echo "coworld-paintarena@$$iid" > $@
 _CORE_SRCS = [
     "src/coworld/__init__.py",
     "src/coworld/annotations.py",
+    "src/coworld/decision_trajectory.py",
+    "src/coworld/training_provenance.py",
     "src/coworld/certifier.py",
     "src/coworld/commissioner/__init__.py",
     "src/coworld/commissioner/protocol.py",

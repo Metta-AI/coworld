@@ -7,7 +7,8 @@ For usage-oriented guidance, use the public [Coworld guide](../../../docs/overvi
 [Coworld cookbook](COOKBOOK.md). The [authoring entry point](AUTHORING.md) links the public authoring track and the
 exact references behind it. For browser-only replay bundles and their Coworld build hook, use
 [Static Replay Viewers](STATIC_REPLAY_VIEWERS.md). The package documentation uses
-[Paint Arena](../examples/paintarena/README.md) as its canonical example. Installable starter templates for every role
+[Paint Arena](../examples/paintarena/README.md) as its canonical example. For private decision capture and dataset
+evidence gates, read [Training Trajectories](TRAINING_TRAJECTORIES.md). Installable starter templates for every role
 ship under `coworld/templates`. When rebuilding an existing Coworld after the June 2026 repo consolidation, use
 [Rebuilding Coworlds After The Role Repo Move](REBUILDING_COWORLDS.md). For mixed human/agent league games with the same
 logs and LLM sidecar as other hosted episodes, use [League Lobbies](LEAGUE_LOBBIES.md) (`coworld lobby create` /

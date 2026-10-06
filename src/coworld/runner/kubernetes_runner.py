@@ -1268,7 +1268,8 @@ def _create_player_pod(
     # author's own env still wins if they set these explicitly.
     player_env = _player_thread_pool_env(player_cpu_limit) | dict(player.env) | dict(policy_secret_env)
     uses_llm = llm_enablement.enabled
-    uses_sidecar = uses_llm and os.environ.get("COWORLD_LOCAL_DEV") != "true"
+    local_checkpoint_routing = os.environ.get("COWORLD_LOCAL_CHECKPOINT_ROUTING") == "true"
+    uses_sidecar = uses_llm and (os.environ.get("COWORLD_LOCAL_DEV") != "true" or local_checkpoint_routing)
     if uses_sidecar:
         llm_sidecar_port = int(os.environ["LLM_SIDECAR_PORT"])
         # Apply platform endpoints after policy env so saved credentials cannot bypass the sidecar.
@@ -1386,7 +1387,7 @@ def _create_player_pod(
                 # League-configured per-episode per-player-pod LLM spend limit, forwarded
                 # by the dispatcher; the sidecar enforces it.
                 spend_limit_usd=os.environ.get("LLM_SIDECAR_SPEND_LIMIT_USD") or None,
-                openrouter_key_secret_name=os.environ["COWORLD_OPENROUTER_KEY_SECRET_NAME"],
+                openrouter_key_secret_name=os.environ.get("COWORLD_OPENROUTER_KEY_SECRET_NAME"),
                 openrouter_model_allowlist=(
                     json.loads(os.environ["COWORLD_OPENROUTER_MODEL_ALLOWLIST"])
                     if "COWORLD_OPENROUTER_MODEL_ALLOWLIST" in os.environ
@@ -1394,6 +1395,16 @@ def _create_player_pod(
                 ),
                 openrouter_allowlist_version=os.environ.get("COWORLD_OPENROUTER_ALLOWLIST_VERSION"),
                 egress_relay_url=egress_relay_url,
+                checkpoint_routes_secret_name=os.environ.get("COWORLD_CHECKPOINT_ROUTES_SECRET_NAME"),
+                local_artifact_endpoint_url=os.environ["COWORLD_LOCAL_ARTIFACT_ENDPOINT_URL"]
+                if local_checkpoint_routing
+                else None,
+                local_artifact_access_key_id=os.environ["COWORLD_LOCAL_ARTIFACT_ACCESS_KEY_ID"]
+                if local_checkpoint_routing
+                else None,
+                local_artifact_secret_access_key=os.environ["COWORLD_LOCAL_ARTIFACT_SECRET_ACCESS_KEY"]
+                if local_checkpoint_routing
+                else None,
                 runtime_deadline=(
                     os.environ["LLM_SIDECAR_RUNTIME_DEADLINE"]
                     if isinstance(player_llm_metadata, CoworldPersistentLlmMetadata)

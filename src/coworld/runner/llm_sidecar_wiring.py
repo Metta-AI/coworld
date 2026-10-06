@@ -34,6 +34,12 @@ RESERVED_SIDECAR_APP_ENV = frozenset(
         "OPENAI_BASE_URL",
         "OPENAI_API_KEY",
         "OPENROUTER_API_KEY",
+        "LLM_SIDECAR_CHECKPOINT_ROUTES",
+        "COWORLD_CHECKPOINT_ROUTES_SECRET_NAME",
+        "COWORLD_LOCAL_CHECKPOINT_ROUTING",
+        "COWORLD_LOCAL_ARTIFACT_ENDPOINT_URL",
+        "COWORLD_LOCAL_ARTIFACT_ACCESS_KEY_ID",
+        "COWORLD_LOCAL_ARTIFACT_SECRET_ACCESS_KEY",
         "AWS_ACCESS_KEY_ID",
         "AWS_SECRET_ACCESS_KEY",
         "AWS_SESSION_TOKEN",
@@ -76,12 +82,23 @@ def build_llm_sidecar(
     openrouter_capture_payloads: bool = True,
     spend_limit_usd: str | None = None,
     player_slot_count: int | None = None,
-    openrouter_key_secret_name: str,
+    openrouter_key_secret_name: str | None,
     openrouter_model_allowlist: list[str] | None = None,
     openrouter_allowlist_version: str | None = None,
     egress_relay_url: str | None = None,
     runtime_deadline: str | None = None,
+    checkpoint_routes_secret_name: str | None = None,
+    local_artifact_endpoint_url: str | None = None,
+    local_artifact_access_key_id: str | None = None,
+    local_artifact_secret_access_key: str | None = None,
 ) -> client.V1Container:
+    if openrouter_key_secret_name is None and (
+        checkpoint_routes_secret_name is None or openrouter_model_allowlist != []
+    ):
+        raise ValueError("Checkpoint-only sidecars require trusted routes and deny merchant models")
+    local_artifacts = local_artifact_endpoint_url is not None
+    if local_artifacts and (local_artifact_access_key_id is None or local_artifact_secret_access_key is None):
+        raise ValueError("Local artifact storage requires its configured credentials")
     sink_tuning_env = (
         [
             client.V1EnvVar(name="LLM_SIDECAR_FLUSH_RECORDS", value=str(flush_records)),
@@ -112,11 +129,13 @@ def build_llm_sidecar(
     openrouter_routing_env = [
         client.V1EnvVar(
             name="LLM_SIDECAR_OPENROUTER_API_KEY",
-            value_from=client.V1EnvVarSource(
-                secret_key_ref=client.V1SecretKeySelector(
-                    name=openrouter_key_secret_name,
-                    key="OPENROUTER_API_KEY",
+            value="" if openrouter_key_secret_name is None else None,
+            value_from=(
+                client.V1EnvVarSource(
+                    secret_key_ref=client.V1SecretKeySelector(name=openrouter_key_secret_name, key="OPENROUTER_API_KEY")
                 )
+                if openrouter_key_secret_name is not None
+                else None
             ),
         ),
         client.V1EnvVar(
@@ -170,6 +189,20 @@ def build_llm_sidecar(
             *openrouter_storage_env,
             *openrouter_routing_env,
             *(egress_relay_client_env(egress_relay_url, prefix="LLM_SIDECAR") if egress_relay_url else []),
+            *(
+                [
+                    client.V1EnvVar(
+                        name="LLM_SIDECAR_CHECKPOINT_ROUTES",
+                        value_from=client.V1EnvVarSource(
+                            secret_key_ref=client.V1SecretKeySelector(
+                                name=checkpoint_routes_secret_name, key="routes.json"
+                            )
+                        ),
+                    )
+                ]
+                if checkpoint_routes_secret_name is not None
+                else []
+            ),
             client.V1EnvVar(
                 name="POD_NAME",
                 value_from=client.V1EnvVarSource(field_ref=client.V1ObjectFieldSelector(field_path="metadata.name")),
@@ -185,8 +218,18 @@ def build_llm_sidecar(
             # default credential chain needs BOTH AWS_ROLE_ARN and AWS_WEB_IDENTITY_TOKEN_FILE to
             # assume the role from the projected token, and the EKS webhook can't be relied on for
             # an initContainer / skip-listed container.
-            client.V1EnvVar(name="AWS_ROLE_ARN", value=role_arn),
-            client.V1EnvVar(name="AWS_WEB_IDENTITY_TOKEN_FILE", value=LLM_SIDECAR_TOKEN_FILE),
+            *(
+                [
+                    client.V1EnvVar(name="AWS_ENDPOINT_URL_S3", value=local_artifact_endpoint_url),
+                    client.V1EnvVar(name="AWS_ACCESS_KEY_ID", value=local_artifact_access_key_id),
+                    client.V1EnvVar(name="AWS_SECRET_ACCESS_KEY", value=local_artifact_secret_access_key),
+                ]
+                if local_artifacts
+                else [
+                    client.V1EnvVar(name="AWS_ROLE_ARN", value=role_arn),
+                    client.V1EnvVar(name="AWS_WEB_IDENTITY_TOKEN_FILE", value=LLM_SIDECAR_TOKEN_FILE),
+                ]
+            ),
         ],
         ports=[client.V1ContainerPort(container_port=listen_port, name="llm")],
         # Exec probe, not httpGet: the sidecar binds 127.0.0.1, unreachable via the pod IP.
@@ -197,7 +240,8 @@ def build_llm_sidecar(
         ),
         readiness_probe=client.V1Probe(
             _exec=client.V1ExecAction(command=_healthz_probe_command(listen_port)),
-            period_seconds=1,
+            timeout_seconds=3,
+            period_seconds=5,
             failure_threshold=3,
         ),
         resources=client.V1ResourceRequirements(requests={"cpu": "100m", "memory": "128Mi"}),
