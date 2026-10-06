@@ -78,8 +78,8 @@ with an environment override or `--no-verify`. Before concluding a tool 'isn't i
 
 ## Environment & toolchain
 
-#### 9. Do not use `sed` for edits in this agent environment - it triggers an ungrantable permission prompt
+#### 9. Use editing tools permitted by the current environment
 `generic` · ⚠ _session-derived, unverified_
 
-Do not use `sed` for text edits in this Claude/Codex agent environment: it cannot be whitelisted, so every invocation triggers an ungrantable permission prompt that stalls autonomous loops. Use Read/Grep/Edit or a small Python script instead.
+A prior session blocked `sed` through its permission policy. That restriction is environment-specific. Use the current harness's approved editing tools, and respect its permission decisions; do not assume another session's tool restrictions apply.
   <sub>sources: claude-code:425dc11e-1c8d-4d12-bf44-adf01b6fa796, claude-code:e049dbf8-9702-41e5-8ac5-830cde8a27ad, codex:019de5a5-fadf-70b3-8773-2072cabae94c</sub>
