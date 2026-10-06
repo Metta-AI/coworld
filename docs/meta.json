@@ -1,0 +1,15 @@
+{
+  "title": "Coworld",
+  "pages": [
+    "overview",
+    "---Understand Coworld---",
+    "concepts",
+    "---Build and improve a player---",
+    "build-a-player",
+    "---Publish a Coworld---",
+    "build-a-coworld",
+    "---Reference---",
+    "cli",
+    "advanced"
+  ]
+}

@@ -39,7 +39,11 @@ async def _handle(
     relay_writer: asyncio.StreamWriter | None = None
     try:
         async with connection_limit:
-            request = await asyncio.wait_for(game_reader.readuntil(b"\r\n\r\n"), timeout=5)
+            async with asyncio.timeout(5):
+                first_byte = await game_reader.read(1)
+                if not first_byte:
+                    return  # TCP readiness probes close without sending a request.
+                request = first_byte + await game_reader.readuntil(b"\r\n\r\n")
             line = request.split(b"\r\n", 1)[0]
             method, separator, rest = line.partition(b" ")
             target, separator2, version = rest.partition(b" ")
