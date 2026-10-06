@@ -59,10 +59,15 @@ def validate_upload_manifest(document: dict[str, Any]) -> ValidatedManifest:
     api_version = _manifest_version(document)
     reader = _READERS[api_version]
     author_manifest = reader.model.model_validate(document)
+    runtime = reader.converter(author_manifest)
+    bundled_player_ids = {player.id for player in runtime.player}
+    for slot in runtime.certification.players:
+        if slot.player_id not in bundled_player_ids:
+            raise ValueError(f"unknown certification player_id: {slot.player_id}")
     return ValidatedManifest(
         api_version=api_version,
         schema_hash=manifest_schema_hash(api_version),
-        runtime_manifest=reader.converter(author_manifest),
+        runtime_manifest=runtime,
     )
 
 

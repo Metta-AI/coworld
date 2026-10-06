@@ -1,6 +1,9 @@
 import hashlib
+import io
 import json
+import os
 import subprocess
+import tarfile
 from pathlib import Path
 from types import SimpleNamespace
 from typing import cast
@@ -26,7 +29,14 @@ def _game_hosted_job(contents: list[bytes]) -> CoworldEpisodeJobSpec:
     return cast(
         CoworldEpisodeJobSpec,
         SimpleNamespace(
-            manifest=SimpleNamespace(game=SimpleNamespace(player_runtime="game-hosted", replay_viewer=None)),
+            manifest=SimpleNamespace(
+                game=SimpleNamespace(
+                    player_runtime="game-hosted",
+                    replay_viewer=None,
+                    version="1.0",
+                    runnable=CoworldRunnableSpec(type="game", image="game:latest"),
+                )
+            ),
             game_runnable=CoworldRunnableSpec(type="game", image="game:latest"),
             players=players,
             game_config={},
@@ -68,6 +78,7 @@ def test_local_game_container_commands_differ_only_by_player_seats_uri(tmp_path:
         include_player_seats=True,
     )
 
+    assert "COGAME_SAVE_TRAJECTORY_URI=file:///coworld/trajectory.jsonl" in platform_command
     seats_env = "COGAME_PLAYER_SEATS_URI=file:///coworld/player_seats.json"
     seats_index = game_hosted_command.index(seats_env)
     assert game_hosted_command[seats_index - 1] == "-e"
@@ -282,6 +293,31 @@ def test_game_hosted_local_run_times_out_when_results_never_appear(tmp_path):
         )
 
     assert exc_info.value.error_type == "episode_timeout"
+
+
+def test_private_game_trajectory_is_collected_with_caller_ownership(monkeypatch, tmp_path: Path) -> None:
+    artifacts = EpisodeArtifacts.create(tmp_path / "episode")
+    path = artifacts.workspace / "trajectory.jsonl"
+    path.write_bytes(b"container-owned original")
+    path.chmod(0)
+    content = b'{"type":"episode_end","complete":true}\n'
+
+    def docker_run(command, **kwargs):
+        if command[:2] == ["docker", "cp"]:
+            with tarfile.open(fileobj=kwargs["stdout"], mode="w") as archive:
+                member = tarfile.TarInfo("trajectory.jsonl")
+                member.uid = 0
+                member.mode = 0o600
+                member.size = len(content)
+                archive.addfile(member, io.BytesIO(content))
+        return SimpleNamespace(returncode=0)
+
+    monkeypatch.setattr(runner_module.subprocess, "run", docker_run)
+    runner_module.collect_game_trajectory("owned-game", artifacts)
+
+    assert path.read_bytes() == content
+    assert path.stat().st_uid == os.getuid()
+    assert path.stat().st_mode & 0o777 == 0o600
 
 
 @pytest.mark.parametrize("binding", ["127.0.0.1:49152\n", "0.0.0.0:49152\n"])

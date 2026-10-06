@@ -156,3 +156,14 @@ def test_optional_memory_survives_author_and_stored_conversion(version: str, mem
         else:
             assert manifest.game.memory is None
             assert "memory" not in manifest.model_dump(exclude_none=True)["game"]
+
+
+@pytest.mark.parametrize("version", ["v0", "v1"])
+def test_upload_rejects_missing_certification_player_without_narrowing_stored_reader(version: str) -> None:
+    document = _fixture(version)
+    players = document["player"]
+    assert isinstance(players, list)
+    players[0]["id"] = "different-player"
+    with pytest.raises(ValueError, match="unknown certification player_id"):
+        validate_upload_manifest(document)
+    assert to_runtime_manifest(f"coworld.softmax.com/{version}", document).certification.players[0].player_id

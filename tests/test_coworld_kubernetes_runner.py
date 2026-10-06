@@ -956,7 +956,29 @@ def test_require_global_message_uses_the_selected_startup_timeout(
     assert events[1][1] != events[0][1]
 
 
-def test_run_episode_containers_uses_docker_dns_and_omits_policy_names_env(tmp_path, monkeypatch):
+@pytest.fixture
+def docker_player_inspection() -> str:
+    return json.dumps(
+        [
+            {
+                "Id": "player-container-id",
+                "Image": "sha256:player-image",
+                "State": {
+                    "Status": "exited",
+                    "Running": False,
+                    "ExitCode": 0,
+                    "OOMKilled": False,
+                    "Error": "",
+                    "FinishedAt": "2026-10-03T20:00:00Z",
+                },
+            }
+        ]
+    )
+
+
+def test_run_episode_containers_uses_docker_dns_and_omits_policy_names_env(
+    tmp_path, monkeypatch, docker_player_inspection
+):
     commands: list[list[str]] = []
     run_commands: list[list[str]] = []
 
@@ -985,6 +1007,8 @@ def test_run_episode_containers_uses_docker_dns_and_omits_policy_names_env(tmp_p
         if command[:2] == ["docker", "cp"] and command[-1] == "-":
             with tarfile.open(fileobj=kwargs["stdout"], mode="w"):
                 pass
+        if command[:2] == ["docker", "inspect"]:
+            return subprocess.CompletedProcess(command, 0, docker_player_inspection)
         return subprocess.CompletedProcess(command, 0)
 
     monkeypatch.setattr(subprocess, "Popen", fake_popen)
@@ -1165,7 +1189,7 @@ def test_resolve_local_extra_ports_rejects_invalid_or_duplicate_mappings(value, 
 @pytest.mark.parametrize("artifact_kind", ["regular", "missing", "symlink", "directory", "fifo"])
 @pytest.mark.parametrize("game_failed", [False, True])
 def test_run_episode_containers_player_artifact_round_trips_to_workspace(
-    tmp_path, monkeypatch, artifact_kind, game_failed
+    tmp_path, monkeypatch, artifact_kind, game_failed, docker_player_inspection
 ):
     artifacts = EpisodeArtifacts.create(tmp_path)
     secret = tmp_path / "config.json"
@@ -1212,6 +1236,8 @@ def test_run_episode_containers_player_artifact_round_trips_to_workspace(
                         }[artifact_kind]
                         member.linkname = str(secret)
                         archive.addfile(member)
+        if command[:2] == ["docker", "inspect"]:
+            return subprocess.CompletedProcess(command, 0, docker_player_inspection)
         return subprocess.CompletedProcess(command, 0)
 
     monkeypatch.setattr(subprocess, "Popen", fake_popen)
