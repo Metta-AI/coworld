@@ -1,5 +1,6 @@
 import asyncio
 import signal
+import ssl
 from unittest.mock import MagicMock
 
 import pytest
@@ -73,6 +74,10 @@ class _Reader:
         return self.header
 
     async def read(self, size: int) -> bytes:
+        if size == 1:
+            self.header_read = True
+            first_byte, self.header = self.header[:1], self.header[1:]
+            return first_byte
         assert size == 65536
         if self.read_error is not None:
             raise self.read_error
@@ -104,6 +109,25 @@ class _Writer:
         self.close_events.append(f"{self.name}.wait_closed")
         if self.wait_error is not None:
             raise self.wait_error
+
+
+@pytest.mark.asyncio
+async def test_empty_readiness_connection_closes_without_opening_relay() -> None:
+    reader = asyncio.StreamReader()
+    reader.feed_eof()
+    writer = MagicMock(spec=asyncio.StreamWriter)
+    await game_egress_proxy._handle(
+        reader,
+        writer,
+        relay_host="relay.test",
+        relay_port=443,
+        allowed_targets=frozenset({"cdn.test:443"}),
+        tls_context=ssl.SSLContext(ssl.PROTOCOL_TLS_CLIENT),
+        connection_limit=asyncio.Semaphore(1),
+    )
+    writer.write.assert_not_called()
+    writer.close.assert_called_once()
+    writer.wait_closed.assert_awaited_once()
 
 
 @pytest.mark.asyncio
