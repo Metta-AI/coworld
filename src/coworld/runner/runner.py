@@ -33,6 +33,7 @@ from coworld.player_files import player_file_bytes
 from coworld.runner.io import GamePlayerFailure, RunnerEpisodeError, RunnerErrorType, redact_uri
 from coworld.runner.local_player_status import collect_local_player_status
 from coworld.schema_validation import validate_json_schema
+from coworld.training_provenance import training_environment
 from coworld.trajectory import trajectory_identity_env
 from coworld.types import (
     CoworldEpisodeJobSpec,
@@ -333,10 +334,15 @@ def run_coworld_episode(
     write_coworld_game_config(job, artifacts, tokens)
     static_replay_viewer = job.manifest.game.replay_viewer is not None
 
-    game_launch = RunnableLaunchSpec(
-        image=job.game_runnable.image,
-        run=tuple(job.game_runnable.run),
-        env={**job.game_runnable.env, **trajectory_identity_env(job.manifest, str(uuid4()))},
+    launch_game = RunnableLaunchSpec.from_model(job.game_runnable)
+    launch_game = RunnableLaunchSpec(
+        image=launch_game.image,
+        run=launch_game.run,
+        env={
+            **launch_game.env,
+            **trajectory_identity_env(job.manifest, str(uuid4())),
+            **training_environment(job.manifest, job.game_runnable, image=launch_game.image),
+        },
     )
     if job.manifest.game.player_runtime == "game-hosted":
         player_files = [player for player in job.players if isinstance(player, CoworldPlayerFileSpec)]
@@ -351,7 +357,7 @@ def run_coworld_episode(
             ),
         )
         run_game_hosted_container(
-            game_launch,
+            launch_game,
             len(tokens),
             artifacts,
             timeout_seconds=timeout_seconds,
@@ -365,7 +371,7 @@ def run_coworld_episode(
             raise ValueError("player_file_paths are supported only for game-hosted execution")
         run_spec = EpisodeRunSpec(
             require_websocket_pong=require_websocket_pong,
-            game=game_launch,
+            game=launch_game,
             players=[
                 PlayerLaunchSpec.from_model(player) for player in job.players if isinstance(player, CoworldRunnableSpec)
             ],

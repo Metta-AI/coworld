@@ -34,6 +34,7 @@ def _game_hosted_job(contents: list[bytes]) -> CoworldEpisodeJobSpec:
                     player_runtime="game-hosted",
                     replay_viewer=None,
                     version="1.0",
+                    name="test-game",
                     runnable=CoworldRunnableSpec(type="game", image="game:latest"),
                 )
             ),
@@ -80,6 +81,8 @@ def test_local_game_container_commands_differ_only_by_player_seats_uri(tmp_path:
 
     assert "COGAME_SAVE_TRAJECTORY_URI=file:///coworld/trajectory.jsonl" in platform_command
     seats_env = "COGAME_PLAYER_SEATS_URI=file:///coworld/player_seats.json"
+    trajectory_index = platform_command.index("COGAME_SAVE_TRAJECTORY_URI=file:///coworld/trajectory.jsonl")
+    assert platform_command[trajectory_index - 1] == "-e"
     seats_index = game_hosted_command.index(seats_env)
     assert game_hosted_command[seats_index - 1] == "-e"
     assert game_hosted_command[: seats_index - 1] + game_hosted_command[seats_index + 1 :] == platform_command

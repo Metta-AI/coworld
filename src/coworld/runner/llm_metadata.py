@@ -24,6 +24,7 @@ class CoworldEpisodeLlmMetadata(BaseModel):
     metadata_origin: LlmEpisodeMetadataOrigin
     episode_request_id: UUID | None = None
     job_request_id: UUID
+    runtime_episode_id: str | None = Field(default=None, min_length=1)
     role: Literal["game", "player"]
     slot: str = Field(min_length=1)
     image_digest: str = Field(min_length=1)
