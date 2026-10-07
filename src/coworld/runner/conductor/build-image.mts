@@ -12,17 +12,32 @@ const { values } = parseArgs({
     tag: { type: 'string' },
   },
 })
+
 if (!values.runner || !values['game-image']?.match(/@sha256:[a-f0-9]{64}$/) || !values.tag) {
   throw new Error(
-    'Usage: node build-image.mjs --runner /path/to/server.mjs --game-image registry/image@sha256:... --tag image:local'
+    'Usage: node build-image.mts --runner /path/to/server.mjs ' +
+      '--game-image registry/image@sha256:... --tag image:local'
   )
 }
-const directory = await mkdtemp(join(tmpdir(), 'coworld-conductor-image-'))
-const source = fileURLToPath(new URL('.', import.meta.url))
+
+const buildDirectory = await mkdtemp(join(tmpdir(), 'coworld-conductor-image-'))
+const sourceDirectory = fileURLToPath(new URL('.', import.meta.url))
+const adapterFiles = [
+  'Dockerfile',
+  'episode-files.mts',
+  'game-hosted.mts',
+  'game-outcome.mts',
+  'game-process.mts',
+  'protocol.mts',
+]
+
 try {
-  await copyFile(resolve(values.runner), join(directory, 'server.mjs'))
-  for (const name of ['Dockerfile', 'game-hosted.mjs', 'files.mjs', 'outcomes.mjs'])
-    await copyFile(join(source, name), join(directory, name))
+  await copyFile(resolve(values.runner), join(buildDirectory, 'server.mjs'))
+
+  for (const name of adapterFiles) {
+    await copyFile(join(sourceDirectory, name), join(buildDirectory, name))
+  }
+
   execFileSync(
     'docker',
     [
@@ -33,13 +48,14 @@ try {
       `GAME_IMAGE=${values['game-image']}`,
       '--tag',
       values.tag,
-      directory,
+      buildDirectory,
     ],
     { stdio: 'inherit' }
   )
+
   execFileSync('docker', ['image', 'inspect', values.tag, '--format', '{{.Id}}'], {
     stdio: 'inherit',
   })
 } finally {
-  await rm(directory, { recursive: true, force: true })
+  await rm(buildDirectory, { recursive: true, force: true })
 }

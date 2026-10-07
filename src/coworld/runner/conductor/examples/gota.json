@@ -1,7 +1,7 @@
 {
   "name": "gota",
   "image": "coworld-conductor-gota:local",
-  "command": ["node", "/opt/worlds/game-hosted.mjs", "/usr/local/bin/polyworld"],
+  "command": ["node", "/opt/worlds/game-hosted.mts", "/usr/local/bin/polyworld"],
   "policies": [
     {
       "role": "seat-0",

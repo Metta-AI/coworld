@@ -1,3 +1,5 @@
+load("@aspect_rules_ts//ts:defs.bzl", "ts_project")
+
 # Not pyproject_library: hand-split into :coworld_core (importable
 # library surface) + :coworld (CLI/examples) + :coworld_bin
 # for action-key isolation — edits under examples/, cli.py
@@ -295,12 +297,20 @@ package_format(exclude = ["docs/**"])
 
 style_check(
     name = "conductor_lint",
-    srcs = glob(["src/coworld/runner/conductor/*.mjs"]),
+    srcs = glob(["src/coworld/runner/conductor/*.mts"]),
     tool = "oxlint",
 )
 
 filegroup(
     name = "conductor_adapter",
-    srcs = glob(["src/coworld/runner/conductor/*.mjs"]),
+    srcs = glob(["src/coworld/runner/conductor/*.mts"]),
     visibility = ["//packages/coworld/tests:__pkg__"],
+)
+
+ts_project(
+    name = "conductor_typecheck",
+    srcs = glob(["src/coworld/runner/conductor/*.mts"]),
+    no_emit = True,
+    tsconfig = "src/coworld/runner/conductor/tsconfig.json",
+    deps = ["//:node_modules/@types/node"],
 )
