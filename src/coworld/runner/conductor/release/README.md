@@ -31,12 +31,13 @@ including reruns.
 5. Create the Metta-owned AWS Secrets Manager JSON record `observatory/conductor-gota` in account `751442549699`:
    `service_token` is the same random credential installed in Foundry's worlds settings, and `runtime` is the deployed
    runtime ID. Never put the credential in Git, a PR or workflow output. External Secrets reads only those two fields.
-6. Merge the pilot configuration PR last. It configures the exact manifest/image pair in
-   `devops/app-manifests/pilots/conductor-gota.yaml` without enrolling users. All API and round-runner replicas must
-   finish rolling before proof. In the existing admin flags UI, enable `experimental-conductor-xp-requests` for Scott's
-   user ID only. Submit a normal private XP request using this version, then verify its `conductor_jobs.run_id`, scores,
-   replay and route-selection log. Verify that a user with the flag off, a non-team requester and an unqualified version
-   keep Kubernetes. Ask Scott for more info.
+6. After qualification and secret provisioning, set `conductor.enabled: true` in
+   `devops/app-manifests/pilots/conductor-gota.yaml` through a reviewed PR. The prepared configuration stays disabled
+   until then: enabling it creates required secret references even when every user flag is off. All API and round-runner
+   replicas must finish rolling before proof. In the existing admin flags UI, enable
+   `experimental-conductor-xp-requests` for Scott's user ID only. Submit a normal private XP request using this version,
+   then verify its `conductor_jobs.run_id`, scores, replay and route-selection log. Verify that a user with the flag
+   off, a non-team requester and an unqualified version keep Kubernetes. Ask Scott for more info.
 
 The API and round runner admit ordinary user XP. The API runs Conductor reconciliation. Tournament requests remain
 ineligible for Conductor. New GOTA versions do not inherit this binding. Machine and commissioner tokens do not inherit
