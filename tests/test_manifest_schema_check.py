@@ -73,4 +73,4 @@ def test_missing_comparison_ref_is_actionable() -> None:
     failures = check_manifest_schema("definitely-not-a-git-ref")
 
     assert len(failures) == 1
-    assert "fetch-depth: 0" in failures[0]
+    assert "definitely-not-a-git-ref" in failures[0]

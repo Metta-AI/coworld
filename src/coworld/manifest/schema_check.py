@@ -104,7 +104,7 @@ def check_manifest_schema(against: str) -> list[str]:
     if ref.returncode:
         return [
             f"Cannot compare Coworld schemas because {against!r} is missing. "
-            "Fetch the base ref first (for GitHub Actions, use checkout fetch-depth: 0)."
+            "Fetch the base ref first; a shallow fetch is sufficient."
         ]
 
     failures: list[str] = []
