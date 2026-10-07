@@ -25,6 +25,12 @@ class CoworldAPIModel(BaseModel):
     model_config = ConfigDict(extra="allow")
 
 
+class SQLQueryResponse(CoworldAPIModel):
+    columns: list[str]
+    rows: list[list[Any]]
+    row_count: int
+
+
 class PolicyPublic(CoworldAPIModel):
     id: UUID
     name: str
@@ -943,6 +949,10 @@ class CoworldApiClient:
         response = self._http_client.get(path, headers=self._headers(), timeout=timeout)
         _raise_for_status(response)
         return response.text
+
+    def sql_query(self, query: str) -> SQLQueryResponse:
+        """Run a read-only Observatory query; requires an elevated team user session."""
+        return self._post("/sql/query", SQLQueryResponse, json={"query": query})
 
     def list_games(self) -> list[GamePublic]:
         return self._get("/v2/games", list[GamePublic])

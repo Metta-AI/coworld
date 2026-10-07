@@ -294,3 +294,17 @@ def test_visibility_command_uses_elevated_user_and_returns_followups(httpserver,
     )
     assert result.exit_code == 0, result.output
     assert json.loads(result.stdout) == payload
+
+
+def test_sql_query_uses_elevated_authenticated_transport(client, httpserver, monkeypatch):
+    monkeypatch.setattr(CoworldApiClient, "_elevated", True)
+    httpserver.expect_request(
+        "/observatory/sql/query",
+        method="POST",
+        json={"query": "SELECT 1 AS count"},
+        headers={"Authorization": "Bearer token", "X-Use-Elevated-Privileges": "true"},
+    ).respond_with_json({"columns": ["count"], "rows": [[1]], "row_count": 1})
+    result = client.sql_query("SELECT 1 AS count")
+    assert result.columns == ["count"]
+    assert result.rows == [[1]]
+    assert result.row_count == 1
