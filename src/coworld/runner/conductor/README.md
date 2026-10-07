@@ -10,7 +10,8 @@ LLM games still need their supported `COWORLD_LLM_ENDPOINT` integration before e
 
 ## Build and run locally
 
-Use Node 22 and Docker. Build Conductor's native launcher in a Foundry checkout:
+Use the repository-pinned Node runtime and Docker. The adapter uses erasable TypeScript in `.mts` files, which Node
+executes directly. Bazel checks the types separately. Build Conductor's native launcher in a Foundry checkout:
 
 ```sh
 mise exec -- pnpm --filter @softmax/conductor-world-runner build
@@ -19,7 +20,7 @@ mise exec -- pnpm --filter @softmax/conductor-world-runner build
 From this directory, build a derived game image with the compiled `server.mjs` artifact:
 
 ```sh
-node build-image.mjs \
+node build-image.mts \
   --runner /path/to/foundry/workspaces/conductor/worlds/native-runner/dist/server.mjs \
   --game-image public.ecr.aws/q5f4m8t9/cogames@sha256:afa8698675dc3ac14700eb7c77c7ef262ef1933b2658f85ee41e7b94c6431bbb \
   --tag coworld-conductor-gota:local
@@ -42,6 +43,17 @@ checks transport, compatibility and deterministic output; it is not a representa
 Conductor saves the two results, replay bytes, hashes, lifecycle events and elapsed times in its local scenario state.
 Compare real policies and full episode configurations before drawing performance conclusions.
 
+## Implementation
+
+Read the [adapter contracts](.contracts/index.md) before editing.
+
+- `game-hosted.mts` composes one episode.
+- `game-process.mts` owns the child process, bounded diagnostics and shutdown.
+- `game-outcome.mts` reads game markers and waits for a complete outcome within the deadline.
+- `episode-files.mts` prepares the game inputs and publishes the result/artifact manifest.
+- `protocol.mts` describes the consumed process envelope and the adapter's output types.
+- `build-image.mts` assembles the approved game image and removes its temporary build context.
+
 ## Adapter boundary
 
 The launcher validates the versioned input and supplies `WORLD_INPUT_PATH`, `WORLD_OUTPUT_PATH` and
@@ -59,7 +71,7 @@ collection. Seat logs, player status and policy bytes remain in scratch space.
 For local development, keep the installed command fixed to:
 
 ```json
-["node", "/opt/worlds/game-hosted.mjs", "/usr/local/bin/polyworld"]
+["node", "/opt/worlds/game-hosted.mts", "/usr/local/bin/polyworld"]
 ```
 
 Public world-run requests cannot select executables or images. This adapter is a local integration proof; deployment,

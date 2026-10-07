@@ -5,11 +5,13 @@ import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 import { test } from 'node:test'
 import { fileURLToPath } from 'node:url'
-import { readOutcome } from '../../src/coworld/runner/conductor/outcomes.mjs'
+import { readOutcome } from '../../src/coworld/runner/conductor/game-outcome.mts'
 
 // The installed game needs the real binary because the adapter deliberately scrubs Bazel launcher variables.
 const node = resolve(process.env.JS_BINARY__NODE_BINARY ?? process.execPath)
-const adapter = fileURLToPath(new URL('../../src/coworld/runner/conductor/game-hosted.mjs', import.meta.url))
+const adapter = fileURLToPath(
+  new URL('../../src/coworld/runner/conductor/game-hosted.mts', import.meta.url)
+)
 
 test('a game receives the resolved roster and returns a complete replay', async () => {
   const directory = await mkdtemp(join(tmpdir(), 'conductor-adapter-'))
@@ -46,7 +48,12 @@ test('a game receives the resolved roster and returns a complete replay', async 
     `
     )
     const child = spawn(node, [adapter, node, game], {
-      env: { ...process.env, WORLD_INPUT_PATH: input, WORLD_OUTPUT_PATH: output, WORLD_SCRATCH_PATH: directory },
+      env: {
+        ...process.env,
+        WORLD_INPUT_PATH: input,
+        WORLD_OUTPUT_PATH: output,
+        WORLD_SCRATCH_PATH: directory,
+      },
       stdio: 'inherit',
     })
     const exit = await new Promise((resolve, reject) => {
@@ -73,16 +80,22 @@ test('complete artifacts win over a failure marker, and failure seats must exist
       join(directory, 'failure.json'),
       JSON.stringify({ message: 'Policy stopped', failed_policy_index: 1 })
     )
-    assert.deepEqual(await readOutcome(directory, 2), {
+    assert.deepEqual(await readOutcome({ scratchDirectory: directory, playerCount: 2 }), {
       kind: 'failed',
       errorType: 'player_error',
       message: 'Policy stopped',
       failedPolicyIndex: 1,
     })
-    assert.equal((await readOutcome(directory, 1)).errorType, 'game_error')
+    assert.equal(
+      (await readOutcome({ scratchDirectory: directory, playerCount: 1 })).errorType,
+      'game_error'
+    )
     await writeFile(join(directory, 'results.json'), JSON.stringify({ scores: [7, 3] }))
     await writeFile(join(directory, 'replay.replay'), 'replay')
-    assert.deepEqual(await readOutcome(directory, 2), { kind: 'completed', result: { scores: [7, 3] } })
+    assert.deepEqual(await readOutcome({ scratchDirectory: directory, playerCount: 2 }), {
+      kind: 'completed',
+      result: { scores: [7, 3] },
+    })
   } finally {
     await rm(directory, { recursive: true, force: true })
   }
