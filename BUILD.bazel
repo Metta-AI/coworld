@@ -101,6 +101,7 @@ _CORE_SRCS = [
     "src/coworld/runner/bootstrap.py",
     "src/coworld/runner/io.py",
     "src/coworld/runner/llm_metadata.py",
+    "src/coworld/runner/external_llm.py",
     "src/coworld/runner/local_player_status.py",
     "src/coworld/runner/player_artifacts.py",
     "src/coworld/runner/relay_client.py",

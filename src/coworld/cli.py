@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import os
 import shlex
 import shutil
 import time
@@ -54,6 +55,7 @@ from coworld.manifest.schema_check import check_manifest_schema
 from coworld.manifest_uri import materialized_manifest_path, materialized_replay_path
 from coworld.optimizer.runtime import OptimizerSetupError, run_optimizer_session
 from coworld.play import PlaySession, ReplaySession, _resolve_local_llm_env, play_coworld, replay_coworld
+from coworld.runner.external_llm import EXTERNAL_LLM_SECRET_KEY, ExternalLlmRoute
 from coworld.runner.runner import DEFAULT_PLAYER_EXIT_TIMEOUT_SECONDS, EpisodeArtifacts, run_coworld_episode
 from coworld.submit import submit_policy_to_league_cmd
 from coworld.tournament_cli import register_tournament_commands
@@ -1432,7 +1434,8 @@ def upload_policy(
             "--use-llm",
             help=(
                 "Attach the hosted LLM sidecar to this policy's player pod so it can call a model through the "
-                "platform's OpenRouter key. Sets COWORLD_LLM_ENABLED=true in the policy environment."
+                "registered endpoint or the platform's OpenRouter key. "
+                "Sets COWORLD_LLM_ENABLED=true in the policy environment."
             ),
         ),
     ] = False,
@@ -1441,19 +1444,32 @@ def upload_policy(
         typer.Option(
             "--llm-model",
             help=(
-                "Model for this policy as a canonical OpenRouter slug, e.g. anthropic/claude-haiku-4.5. "
+                "OpenRouter model slug, or the model name served by --llm-endpoint. "
                 "Requires --use-llm and sets COWORLD_LLM_MODEL."
             ),
         ),
+    ] = None,
+    llm_endpoint: Annotated[
+        str | None, typer.Option("--llm-endpoint", help="Contributor HTTPS API base URL, including /v1 or /api/v1.")
+    ] = None,
+    llm_api_key_env: Annotated[
+        str | None,
+        typer.Option("--llm-api-key-env", help="Read the external endpoint key from this environment variable."),
     ] = None,
     server: Annotated[str, typer.Option("--server", help="Observatory API server URL.")] = DEFAULT_SUBMIT_SERVER,
 ) -> None:
     if (image is None) == (player_file is None):
         raise typer.BadParameter("Provide exactly one of IMAGE or --file")
-    if player_file is not None and (run or secret_env or use_llm or llm_model is not None):
+    if player_file is not None and (
+        run or secret_env or use_llm or llm_model is not None or llm_endpoint or llm_api_key_env
+    ):
         raise typer.BadParameter("--file cannot be combined with --run, --secret-env, --use-llm, or --llm-model")
     if llm_model is not None and not use_llm:
         raise typer.BadParameter("--llm-model requires --use-llm")
+    if llm_endpoint is not None and (not use_llm or llm_model is None):
+        raise typer.BadParameter("--llm-endpoint requires --use-llm and --llm-model")
+    if llm_api_key_env is not None and llm_endpoint is None:
+        raise typer.BadParameter("--llm-api-key-env requires --llm-endpoint")
     parsed_secret_env: dict[str, str] = {}
     if secret_env:
         for kv in secret_env:
@@ -1463,6 +1479,14 @@ def upload_policy(
         parsed_secret_env["COWORLD_LLM_ENABLED"] = "true"
     if llm_model is not None:
         parsed_secret_env["COWORLD_LLM_MODEL"] = llm_model
+    if llm_endpoint is not None:
+        route = ExternalLlmRoute(
+            base_url=llm_endpoint,
+            model=cast(str, llm_model),
+            api_key=os.environ[llm_api_key_env] if llm_api_key_env is not None else "",
+        )
+        parsed_secret_env[EXTERNAL_LLM_SECRET_KEY] = route.secret_json()
+        parsed_secret_env["COWORLD_LLM_MODEL"] = route.model_id
     parsed_tags: dict[str, str] = {}
     if tag:
         for kv in tag:

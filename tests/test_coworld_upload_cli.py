@@ -21,6 +21,7 @@ from werkzeug import Request, Response
 from coworld.cli import _DEFAULT_POLICY_NAME_MAX_LENGTH, app
 from coworld.config import NEXT_CURSOR_HEADER
 from coworld.player_files import player_file_bytes
+from coworld.runner.external_llm import EXTERNAL_LLM_SECRET_KEY, ExternalLlmRoute
 from coworld.runner.runner import EpisodeArtifacts
 from coworld.upload import (
     _PACKAGE_ROOT,
@@ -3856,3 +3857,33 @@ def test_guidance_failure_precedes_remote_request(tmp_path, httpserver, monkeypa
     assert "Malformed" in result.output
     assert result.exit_code == 1
     assert httpserver.log == []
+
+
+def test_external_model_upload_registers_private_route_and_prints_no_key(monkeypatch):
+    captured = {}
+    monkeypatch.setenv("CONTRIBUTOR_KEY", "private-endpoint-key")
+    monkeypatch.setattr("coworld.cli.update_agent_guidance", lambda _: None)
+    monkeypatch.setattr("coworld.cli.upload_policy_cmd", lambda *args, **kwargs: captured.update(kwargs))
+    result = CliRunner().invoke(
+        app,
+        [
+            "upload-policy",
+            "my-player:local",
+            "--name",
+            "E17",
+            "--use-llm",
+            "--llm-model",
+            "E17",
+            "--llm-endpoint",
+            "https://contributor.example/api/v1",
+            "--llm-api-key-env",
+            "CONTRIBUTOR_KEY",
+        ],
+    )
+    assert result.exit_code == 0, result.output
+    assert "private-endpoint-key" not in result.output
+    env = captured["secret_env"]
+    route = ExternalLlmRoute.model_validate_json(env[EXTERNAL_LLM_SECRET_KEY])
+    assert route.api_key.get_secret_value() == "private-endpoint-key"
+    assert route.model == "E17"
+    assert env["COWORLD_LLM_MODEL"] == route.model_id

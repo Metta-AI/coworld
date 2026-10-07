@@ -55,6 +55,7 @@ from coworld.annotations import (
 from coworld.runner.bootstrap import COORDINATOR_SPEC_PATH, STATE_PATH, WORKDIR, process_timings
 from coworld.runner.bootstrap import read_job_spec as _read_job_spec
 from coworld.runner.bootstrap import write_error_info as _write_error_info
+from coworld.runner.external_llm import EXTERNAL_LLM_SECRET_KEY, ExternalLlmRoute
 from coworld.runner.io import (
     PlayerRuntimeStatus,
     PlayerRuntimeStatuses,
@@ -1267,6 +1268,12 @@ def _create_player_pod(
     # thread-pool env to the limit so the player behaves like an N-core box on any node size; the
     # author's own env still wins if they set these explicitly.
     player_env = _player_thread_pool_env(player_cpu_limit) | dict(player.env) | dict(policy_secret_env)
+    external_route = (
+        ExternalLlmRoute.model_validate_json(policy_secret_env[EXTERNAL_LLM_SECRET_KEY])
+        if EXTERNAL_LLM_SECRET_KEY in policy_secret_env
+        else None
+    )
+    player_env.pop(EXTERNAL_LLM_SECRET_KEY, None)
     uses_llm = llm_enablement.enabled
     local_checkpoint_routing = os.environ.get("COWORLD_LOCAL_CHECKPOINT_ROUTING") == "true"
     uses_sidecar = uses_llm and (os.environ.get("COWORLD_LOCAL_DEV") != "true" or local_checkpoint_routing)
@@ -1370,6 +1377,7 @@ def _create_player_pod(
             pod_volumes.append(egress_relay_client_tls_volume())
         init_containers.append(
             build_llm_sidecar(
+                external_route=external_route,
                 metadata=player_llm_metadata.model_copy(update={"metadata_origin": "llm_sidecar"}),
                 listen_port=llm_sidecar_port,
                 region=os.environ["LLM_SIDECAR_REGION"],
@@ -1389,7 +1397,9 @@ def _create_player_pod(
                 spend_limit_usd=os.environ.get("LLM_SIDECAR_SPEND_LIMIT_USD") or None,
                 openrouter_key_secret_name=os.environ.get("COWORLD_OPENROUTER_KEY_SECRET_NAME"),
                 openrouter_model_allowlist=(
-                    json.loads(os.environ["COWORLD_OPENROUTER_MODEL_ALLOWLIST"])
+                    [llm_enablement.model]
+                    if llm_enablement.model is not None and llm_enablement.model.startswith("self-hosted/")
+                    else json.loads(os.environ["COWORLD_OPENROUTER_MODEL_ALLOWLIST"])
                     if "COWORLD_OPENROUTER_MODEL_ALLOWLIST" in os.environ
                     else None
                 ),
