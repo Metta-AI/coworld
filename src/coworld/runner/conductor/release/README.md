@@ -25,9 +25,10 @@ including reruns.
 3. Follow Foundry's `workspaces/conductor/worlds/deployment.md`. Set `CONDUCTOR_GOTA_ADAPTER_IMAGE` to the immutable
    digest, rerun the complete main push Check, and deploy its saved image. Record the returned `native-<image digest>`
    runtime ID.
-4. Qualify the hosted runtime before activating the Metta PR. Verify scores and replay against the existing path, two
-   concurrent games, cancellation, lost response recovery, private artifact access and denied game egress. Measure a
-   full-length match with representative BASIC policies. Inspect the pinned game's policy isolation independently.
+4. Qualify the hosted runtime before activating the Metta PR. Verify scores and replay against the existing path, burst
+   utilization up to the configured slot ceiling, cancellation, lost response recovery, private artifact access and
+   denied game egress. Measure a full-length match with representative BASIC policies. Inspect the pinned game's policy
+   isolation independently.
 5. Create the Metta-owned AWS Secrets Manager JSON record `observatory/conductor-gota` in account `751442549699`:
    `service_token` is the same random credential installed in Foundry's worlds settings, and `runtime` is the deployed
    runtime ID. Never put the credential in Git, a PR or workflow output. External Secrets reads only those two fields.
