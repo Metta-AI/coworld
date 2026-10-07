@@ -1,0 +1,100 @@
+{
+  "command": ["node", "/opt/worlds/game-hosted.mts", "/usr/local/bin/polyworld"],
+  "policyFormats": ["basic-v1"],
+  "smoke": {
+    "seed": 42,
+    "config": {
+      "draft_mode": "open",
+      "max_ticks": 600,
+      "players": [
+        {
+          "name": "Player 1"
+        },
+        {
+          "name": "Player 2"
+        },
+        {
+          "name": "Player 3"
+        },
+        {
+          "name": "Player 4"
+        },
+        {
+          "name": "Player 5"
+        },
+        {
+          "name": "Player 6"
+        },
+        {
+          "name": "Player 7"
+        },
+        {
+          "name": "Player 8"
+        },
+        {
+          "name": "Player 9"
+        },
+        {
+          "name": "Player 10"
+        }
+      ]
+    },
+    "timeoutMs": 120000,
+    "policies": [
+      {
+        "role": "seat-0",
+        "format": "basic-v1",
+        "source": "end\n"
+      },
+      {
+        "role": "seat-1",
+        "format": "basic-v1",
+        "source": "end\n"
+      },
+      {
+        "role": "seat-2",
+        "format": "basic-v1",
+        "source": "end\n"
+      },
+      {
+        "role": "seat-3",
+        "format": "basic-v1",
+        "source": "end\n"
+      },
+      {
+        "role": "seat-4",
+        "format": "basic-v1",
+        "source": "end\n"
+      },
+      {
+        "role": "seat-5",
+        "format": "basic-v1",
+        "source": "end\n"
+      },
+      {
+        "role": "seat-6",
+        "format": "basic-v1",
+        "source": "end\n"
+      },
+      {
+        "role": "seat-7",
+        "format": "basic-v1",
+        "source": "end\n"
+      },
+      {
+        "role": "seat-8",
+        "format": "basic-v1",
+        "source": "end\n"
+      },
+      {
+        "role": "seat-9",
+        "format": "basic-v1",
+        "source": "end\n"
+      }
+    ],
+    "expectedResult": {
+      "kind": "completed"
+    },
+    "expectedArtifacts": ["results", "replay"]
+  }
+}

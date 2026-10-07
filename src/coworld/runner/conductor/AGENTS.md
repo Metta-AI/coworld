@@ -1,5 +1,8 @@
 # Conductor adapter
 
+Experimental; owned by Scott (`@macromackie`). Production use is limited to Scott's approved GOTA XP pilot. Coordinate
+with Scott before adding consumers, games, users, or production dependencies. APIs may change.
+
 Read the [contracts](.contracts/index.md) and [integration guide](README.md) before editing this adapter. Keep game
 semantics here and infrastructure lifecycle in Foundry. The game process owner manages exit observation, bounded
 diagnostics, and graceful/forced shutdown together. The outer runner owns process-group cancellation.

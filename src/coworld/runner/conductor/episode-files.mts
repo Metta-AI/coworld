@@ -38,6 +38,7 @@ export async function prepareGameFiles({
       content_hash: `sha256:${policyDigest}`,
       log_uri: fileUri(`seat-${slot}.log`),
       artifact_uri: fileUri(`seat-${slot}.zip`),
+      annotations_uri: fileUri(`seat-${slot}.annotations.jsonl`),
     })
   }
 
@@ -54,7 +55,7 @@ export async function prepareGameFiles({
   }
 
   const playerSeats = {
-    schema: 'coworld-player-seats/1',
+    schema: 'coworld-player-seats/2',
     seats,
     player_status_uri: fileUri('player-status.json'),
   }
