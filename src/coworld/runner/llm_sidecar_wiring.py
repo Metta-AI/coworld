@@ -4,6 +4,7 @@ import json
 
 from kubernetes import client
 
+from coworld.runner.external_llm import ExternalLlmRoute
 from coworld.runner.llm_metadata import CoworldLlmMetadata, serialize_llm_request_metadata
 
 LLM_SIDECAR_CONTAINER_NAME = "llm-sidecar"
@@ -88,11 +89,15 @@ def build_llm_sidecar(
     egress_relay_url: str | None = None,
     runtime_deadline: str | None = None,
     checkpoint_routes_secret_name: str | None = None,
+    external_route: ExternalLlmRoute | None = None,
     local_artifact_endpoint_url: str | None = None,
     local_artifact_access_key_id: str | None = None,
     local_artifact_secret_access_key: str | None = None,
 ) -> client.V1Container:
-    if openrouter_key_secret_name is None and (
+    if external_route is not None:
+        openrouter_key_secret_name = None
+        openrouter_model_allowlist = [external_route.model_id]
+    elif openrouter_key_secret_name is None and (
         checkpoint_routes_secret_name is None or openrouter_model_allowlist != []
     ):
         raise ValueError("Checkpoint-only sidecars require trusted routes and deny merchant models")
@@ -188,6 +193,11 @@ def build_llm_sidecar(
             *sink_tuning_env,
             *openrouter_storage_env,
             *openrouter_routing_env,
+            *(
+                [client.V1EnvVar(name="LLM_SIDECAR_EXTERNAL_ROUTE", value=external_route.secret_json())]
+                if external_route is not None
+                else []
+            ),
             *(egress_relay_client_env(egress_relay_url, prefix="LLM_SIDECAR") if egress_relay_url else []),
             *(
                 [

@@ -7,7 +7,8 @@ on every request for seat `N`. File policies have no environment, secrets, or pl
 
 Players that call an LLM can do so in hosted tournaments **without shipping their own model credentials**. The platform
 runs a per-pod proxy (the "LLM sidecar") that holds the real provider key, forwards your calls to
-[OpenRouter](https://openrouter.ai), and meters spend against league and experience-request limits.
+[OpenRouter](https://openrouter.ai) or your registered endpoint, and meters platform spend against league and
+experience-request limits.
 
 > ## ⚠️ THE ONE RULE — send every model call to `COWORLD_LLM_ENDPOINT`
 >
@@ -31,7 +32,29 @@ included in that meter. Request limits and model allowlists still apply.
 
 ## How to make the call
 
-### Detecting that you're behind the sidecar
+### Bring your own hosted endpoint
+
+Register the endpoint, server model, and key when uploading the player:
+
+```bash
+# Set DISTILLABS_API_KEY through your shell's secret manager.
+uv run coworld upload-policy my-parley-player:local --name distillabs-e17 \
+  --use-llm --llm-model E17 --llm-endpoint https://models.example.com/api/v1 \
+  --llm-api-key-env DISTILLABS_API_KEY
+```
+
+The base URL includes `/api/v1` or `/v1`; the sidecar appends `/chat/completions` and sends non-streaming
+OpenRouter-compatible chat requests. The player uses `COWORLD_LLM_ENDPOINT/v1/chat/completions` and the assigned
+`COWORLD_LLM_MODEL`; only its sidecar receives the registered endpoint and key. Omit `--llm-api-key-env` for
+unauthenticated endpoints.
+
+Endpoints require public DNS, valid HTTPS on port 443, and chat responses with `choices`, `id`, and token `usage`.
+Private addresses, redirects, caller-selected destinations, and provider fallback are blocked. Upload a new policy
+version to change the route. Contributor inference uses the contributor's billing; platform request limits still apply.
+See the [hosted endpoint guide](https://softmax.com/docs/coworld/build-a-player/hosted-llm) for submission and protocol
+details.
+
+## Detecting that you're behind the sidecar
 
 The presence of **`COWORLD_LLM_ENDPOINT`** is the signal that the hosted sidecar is available. Gate on that env var, not
 on `COWORLD_LLM_ENABLED`, which is the stored enablement flag rather than a runtime signal.
@@ -46,10 +69,11 @@ The platform adds the sidecar and injects this environment into a hosted player 
 
 ### Which models you can name
 
-Name models by their canonical OpenRouter slug, for example `anthropic/claude-haiku-4.5`, `anthropic/claude-sonnet-4.6`,
-or `amazon/nova-micro-v1`. Short aliases and provider-specific inference IDs are rejected; the gateway does not
-translate them. Models outside the league's allowed set are rejected before any call leaves the pod. A canonical slug
-the provider does not serve fails with the provider's error, so verify the model exists before relying on it.
+For platform-provided models, use their canonical OpenRouter slug, for example `anthropic/claude-haiku-4.5`,
+`anthropic/claude-sonnet-4.6`, or `amazon/nova-micro-v1`. Short aliases and provider-specific inference IDs are
+rejected; the gateway does not translate them. Models outside the league's allowed set are rejected before any call
+leaves the pod. A canonical slug the provider does not serve fails with the provider's error, so verify the model exists
+before relying on it.
 
 ### The endpoints the sidecar serves
 
