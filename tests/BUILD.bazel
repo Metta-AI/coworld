@@ -116,3 +116,11 @@ js_test(
     data = ["//packages/coworld:paintarena_static_replay_files"],
     entry_point = "paintarena_replay.test.mjs",
 )
+
+js_test(
+    name = "conductor_adapter_test",
+    size = "small",
+    copy_data_to_bin = False,
+    data = ["//packages/coworld:conductor_adapter"],
+    entry_point = "conductor/adapter.test.mjs",
+)

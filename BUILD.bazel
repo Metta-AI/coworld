@@ -7,7 +7,7 @@
 # of the package that would have let this become two pyproject_library
 # calls.)
 load("@rules_python//python:defs.bzl", "py_binary", "py_library")
-load("//bazel:format.bzl", "package_format")
+load("//bazel:format.bzl", "package_format", "style_check")
 
 # Build the paintarena example image via the host docker daemon. Tags the
 # image `coworld-paintarena:latest` in the local docker store and writes a
@@ -222,6 +222,7 @@ py_library(
     data = glob(
         [
             "src/coworld/docs/**/*.md",
+            "src/coworld/runner/conductor/**",
             "src/coworld/examples/**/*.py",
             "src/coworld/examples/**/*.json",
             "src/coworld/examples/**/*.html",
@@ -235,8 +236,8 @@ py_library(
     imports = ["src"],
     visibility = ["//visibility:public"],
     deps = [
-        ":llm_sidecar_wiring",
         ":coworld_core",
+        ":llm_sidecar_wiring",
         "//packages/softmax-cli:softmax",
         "@pypi//cogsguard",
         "@pypi//fastapi",
@@ -291,3 +292,15 @@ exports_files(
 # settings instead of the softmax.com MDX overrides. //web/softmax.com:format_test
 # already owns that tree.
 package_format(exclude = ["docs/**"])
+
+style_check(
+    name = "conductor_lint",
+    srcs = glob(["src/coworld/runner/conductor/*.mjs"]),
+    tool = "oxlint",
+)
+
+filegroup(
+    name = "conductor_adapter",
+    srcs = glob(["src/coworld/runner/conductor/*.mjs"]),
+    visibility = ["//packages/coworld/tests:__pkg__"],
+)
