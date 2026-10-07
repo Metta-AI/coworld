@@ -28,7 +28,7 @@ node build-image.mts \
 
 This is the GOTA image qualified on 2026-10-06, not a moving latest tag. The helper requires an immutable game image,
 builds Linux/amd64, prints the resulting image identity, and removes its temporary context. The image adds Node and
-these adapters; the game executable is unchanged. The game base must support Node 22's Linux/glibc dependencies. This
+these adapters; the game executable is unchanged. The game base must support Node 24's Linux/glibc dependencies. This
 image was qualified on Ubuntu 24.04; other bases need their own qualification.
 
 From Foundry, run the checked-in scenario:
