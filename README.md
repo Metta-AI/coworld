@@ -132,3 +132,5 @@ See [automatic project guidance](https://softmax.com/docs/coworld/cli#automatic-
 selection, qualifying roots, ancestor opt-outs, managed blocks, and manual removal.
 
 Record optional policy decisions with [episode annotations](src/coworld/docs/artifacts/EPISODE_ANNOTATIONS.md).
+
+For the optional Conductor native integration, see the [local adapter guide](src/coworld/runner/conductor/README.md).
