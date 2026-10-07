@@ -298,19 +298,19 @@ package_format(exclude = ["docs/**"])
 
 style_check(
     name = "conductor_lint",
-    srcs = glob(["src/coworld/runner/conductor/*.mts"]),
+    srcs = glob(["src/coworld/runner/conductor/**/*.mts"]),
     tool = "oxlint",
 )
 
 filegroup(
     name = "conductor_adapter",
-    srcs = glob(["src/coworld/runner/conductor/*.mts"]),
+    srcs = glob(["src/coworld/runner/conductor/**/*.mts"]),
     visibility = ["//packages/coworld/tests:__pkg__"],
 )
 
 ts_project(
     name = "conductor_typecheck",
-    srcs = glob(["src/coworld/runner/conductor/*.mts"]),
+    srcs = glob(["src/coworld/runner/conductor/**/*.mts"]),
     no_emit = True,
     tsconfig = "src/coworld/runner/conductor/tsconfig.json",
     deps = ["//:node_modules/@types/node"],

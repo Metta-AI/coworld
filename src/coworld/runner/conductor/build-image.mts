@@ -8,14 +8,19 @@ import { fileURLToPath } from 'node:url'
 const { values } = parseArgs({
   options: {
     runner: { type: 'string' },
+    'adapter-only': { type: 'boolean', default: false },
     'game-image': { type: 'string' },
     tag: { type: 'string' },
   },
 })
 
-if (!values.runner || !values['game-image']?.match(/@sha256:[a-f0-9]{64}$/) || !values.tag) {
+if (
+  Boolean(values.runner) === values['adapter-only'] ||
+  !values['game-image']?.match(/@sha256:[a-f0-9]{64}$/) ||
+  !values.tag
+) {
   throw new Error(
-    'Usage: node build-image.mts --runner /path/to/server.mjs ' +
+    'Usage: node build-image.mts (--runner /path/to/server.mjs | --adapter-only) ' +
       '--game-image registry/image@sha256:... --tag image:local'
   )
 }
@@ -32,7 +37,18 @@ const adapterFiles = [
 ]
 
 try {
-  await copyFile(resolve(values.runner), join(buildDirectory, 'server.mjs'))
+  if (values.runner) {
+    await copyFile(resolve(values.runner), join(buildDirectory, 'server.mjs'))
+  }
+
+  await copyFile(
+    join(sourceDirectory, 'release/runtime.json'),
+    join(buildDirectory, 'runtime.json')
+  )
+  await copyFile(
+    join(sourceDirectory, 'release/smoke-adapter.mts'),
+    join(buildDirectory, 'smoke-adapter.mts')
+  )
 
   for (const name of adapterFiles) {
     await copyFile(join(sourceDirectory, name), join(buildDirectory, name))
@@ -42,6 +58,8 @@ try {
     'docker',
     [
       'build',
+      '--target',
+      values['adapter-only'] ? 'adapter' : 'runtime',
       '--platform',
       'linux/amd64',
       '--build-arg',

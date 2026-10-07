@@ -1,5 +1,8 @@
 # Conductor native integration
 
+Experimental; owned by Scott (`@macromackie`). Production use is limited to Scott's approved GOTA XP pilot. Coordinate
+with Scott before adding consumers, games, users, or production dependencies. APIs may change.
+
 This optional adapter runs a game-hosted Coworld through Conductor's native process protocol. It retains the existing
 `COGAME_*` file handoff and does not change the local/Kubernetes episode runners, manifests, policy uploads or XP
 routing. Game rules and policy isolation remain with the approved game image.
@@ -75,4 +78,4 @@ For local development, keep the installed command fixed to:
 ```
 
 Public world-run requests cannot select executables or images. This adapter is a local integration proof; deployment,
-scoped Metta service access, XP cohort routing and rollback remain separate rollout work.
+scoped Metta service access, XP feature-flag routing and rollback remain separate rollout work.

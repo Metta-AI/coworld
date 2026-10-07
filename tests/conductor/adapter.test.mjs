@@ -37,7 +37,9 @@ test('a game receives the resolved roster and returns a complete replay', async 
       import { readFile, writeFile } from 'node:fs/promises';
       import assert from 'node:assert/strict';
       const config = JSON.parse(await readFile(new URL(process.env.COGAME_CONFIG_URI)));
-      const { seats } = JSON.parse(await readFile(new URL(process.env.COGAME_PLAYER_SEATS_URI)));
+      const { schema, seats } = JSON.parse(await readFile(new URL(process.env.COGAME_PLAYER_SEATS_URI)));
+      assert.equal(schema, 'coworld-player-seats/2');
+      await writeFile(new URL(seats[0].annotations_uri), '');
       assert.deepEqual(config.players, [{ name: 'Alice', team: 3 }]);
       assert.equal(config.testMarker, 'preserved');
       assert.equal(seats[0].artifact_uri.startsWith('file:'), true);
