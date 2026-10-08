@@ -1500,22 +1500,18 @@ def upload_policy(
     validate_run_argv(run)
     update_agent_guidance(Path.cwd())
     if name is None:
-        user_token = softmax_auth.load_user_token(server=server)
-        if user_token is None:
+        token = softmax_auth.load_current_token(server=server)
+        if token is None:
             raise RuntimeError(f"Not authenticated. Run: softmax login --server {server}")
-        players = list_players(server=server, token=user_token)
-        active_player_id = (
-            softmax_auth.get_active_player_id(server=server)
-            if softmax_auth.load_player_session(server=server) is not None
-            else None
-        )
-        player = (
-            next(player for player in players if player.is_default)
-            if active_player_id is None
-            else next(player for player in players if player.id == active_player_id)
-        )
-        player_name = player.name.replace(":", "-")[: _DEFAULT_POLICY_NAME_MAX_LENGTH - len(player.id) - 1]
-        name = f"{player_name}-{player.id}"
+        identity = softmax_auth.fetch_cogames_whoami(api_server=server, token=token)
+        if identity.subject_type == "player":
+            assert identity.subject_id is not None
+            name = identity.subject_id
+        else:
+            players = list_players(server=server, token=token)
+            player = next(player for player in players if player.is_default)
+            player_name = player.name.replace(":", "-")[: _DEFAULT_POLICY_NAME_MAX_LENGTH - len(player.id) - 1]
+            name = f"{player_name}-{player.id}"
     typer.echo(f"Policy name: {name}")
 
     upload_policy_cmd(

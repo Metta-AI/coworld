@@ -58,6 +58,7 @@ from coworld.upload import (
     download_agents_md,
     upload_coworld,
 )
+from softmax.auth import WhoAmIResponse as AuthIdentity
 from softmax.players import PlayerResponse
 
 
@@ -1742,37 +1743,41 @@ def test_submit_player_files_rejects_missing_or_out_of_package_paths(tmp_path: P
 
 
 @pytest.mark.parametrize(
-    ("player_session", "active_player_id", "expected_name"),
+    ("subject_type", "subject_id", "expected_name"),
     [
-        ("player-token", "ply_active", "Tournament Player-ply_active"),
-        (None, None, "Account Default-ply_default"),
+        ("player", "ply_active", "ply_active"),
+        ("user", "user-id", "Account Default-ply_default"),
     ],
 )
 def test_upload_policy_command_defaults_name_from_authenticated_identity(
     monkeypatch: pytest.MonkeyPatch,
-    player_session: str | None,
-    active_player_id: str | None,
+    subject_type: str,
+    subject_id: str,
     expected_name: str,
 ) -> None:
     uploaded_names: list[str] = []
-    monkeypatch.setattr("softmax.auth.load_user_token", lambda *, server: "user-token")
-    monkeypatch.setattr("softmax.auth.load_player_session", lambda *, server: player_session)
-    monkeypatch.setattr("softmax.auth.get_active_player_id", lambda *, server: active_player_id)
+    monkeypatch.setattr("softmax.auth.load_user_token", lambda *, server: pytest.fail("used owner credential"))
     monkeypatch.setattr(
-        "coworld.cli.list_players",
-        lambda *, server, token: [
+        "softmax.auth.fetch_cogames_whoami",
+        lambda *, api_server, token: AuthIdentity(
+            user_email="test@example.com", subject_type=subject_type, subject_id=subject_id
+        ),
+    )
+
+    def owned_players(*, server: str, token: str) -> list[PlayerResponse]:
+        assert subject_type == "user", "player credentials cannot list account-owned players"
+        return [
             PlayerResponse(
                 id="ply_default",
                 name="Account Default",
                 is_default=True,
                 created_at=datetime(2026, 1, 1, tzinfo=UTC),
-            ),
-            PlayerResponse(
-                id="ply_active",
-                name="Tournament Player",
-                created_at=datetime(2026, 1, 2, tzinfo=UTC),
-            ),
-        ],
+            )
+        ]
+
+    monkeypatch.setattr(
+        "coworld.cli.list_players",
+        owned_players,
     )
     monkeypatch.setattr(
         "coworld.cli.upload_policy_cmd",
@@ -1789,14 +1794,17 @@ def test_upload_policy_command_defaults_name_from_authenticated_identity(
 def test_upload_policy_command_default_name_satisfies_policy_contract(monkeypatch: pytest.MonkeyPatch) -> None:
     player_id = "ply_00000000-0000-0000-0000-000000000001"
     uploaded_names: list[str] = []
-    monkeypatch.setattr("softmax.auth.load_player_session", lambda *, server: "player-token")
-    monkeypatch.setattr("softmax.auth.get_active_player_id", lambda *, server: player_id)
+    monkeypatch.setattr(
+        "softmax.auth.fetch_cogames_whoami",
+        lambda *, api_server, token: AuthIdentity(user_email="test@example.com", subject_type="user"),
+    )
     monkeypatch.setattr(
         "coworld.cli.list_players",
         lambda *, server, token: [
             PlayerResponse(
                 id=player_id,
                 name="Tournament: Player Name That Exceeds The Policy Name Limit",
+                is_default=True,
                 created_at=datetime(2026, 1, 1, tzinfo=UTC),
             )
         ],
