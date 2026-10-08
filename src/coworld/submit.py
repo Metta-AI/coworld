@@ -10,6 +10,7 @@ from coworld.agent_guidance import update_agent_guidance
 from coworld.api_client import AutoChampion, CoworldApiClient, PolicyVersionRow
 from coworld.cli_support import console, observatory_web_url
 from coworld.config import DEFAULT_SUBMIT_SERVER, DOCS_PAGES
+from coworld.feed_cli import FEED_CARD_REMINDER
 
 
 def parse_policy_identifier(identifier: str) -> tuple[str, int | None]:
@@ -83,5 +84,6 @@ def submit_policy_to_league_cmd(
         console.print(f"[dim]League forum:[/dim] {submission.league.forum_markdown_url}", soft_wrap=True)
     if submission.league.wiki_markdown_url is not None:
         console.print(f"[dim]League wiki:[/dim] {submission.league.wiki_markdown_url}", soft_wrap=True)
+    console.print(FEED_CARD_REMINDER, soft_wrap=True, markup=False)
     if open_browser:
         webbrowser.open(policy_url)

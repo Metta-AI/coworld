@@ -71,6 +71,7 @@ def test_submit_policy_to_league_posts_v2_submission(
     assert "https://softmax.com/docs/coworld/build-a-player/submit-to-a-league" in result.output
     assert "League forum: https://softmax.com/api/observatory/v2/forums/Paint Arena.md" in result.output
     assert "League wiki: https://softmax.com/api/observatory/v2/wikis/Paint Arena/pages.md" in result.output
+    assert "uv run coworld docs --local FEED_CARDS" in result.output
     assert opened == [policy_path]
     policy_query = next(
         request for request, _ in httpserver.log if request.path == "/observatory/stats/policy-versions"
