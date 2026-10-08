@@ -15,12 +15,24 @@ import os
 
 from pydantic import TypeAdapter
 
-from coworld.runner.bootstrap import COORDINATOR_SPEC_PATH, STATE_PATH, WORKDIR, process_timings
+from coworld.runner.bootstrap import (
+    COORDINATOR_SPEC_PATH,
+    PLAYER_ARTIFACT_TOKENS_PATH,
+    STATE_PATH,
+    WORKDIR,
+    process_timings,
+)
 from coworld.runner.bootstrap import read_job_spec as _read_job_spec
 from coworld.runner.bootstrap import write_error_info as _write_error_info
 from coworld.runner.io import RunnerEpisodeError, exception_summary, is_retryable_relay_error, read_data, upload_data
 from coworld.runner.phase_timings import PlayerFileStageTiming, TimingClock
-from coworld.runner.runner import EpisodeArtifacts, coworld_game_config, episode_player_tokens, stage_player_files
+from coworld.runner.runner import (
+    EpisodeArtifacts,
+    coworld_game_config,
+    episode_player_tokens,
+    generate_tokens,
+    stage_player_files,
+)
 from coworld.types import CoworldPlayerFileSpec, CoworldPlayerSeatsSchema
 
 _IMPORT_DONE_NS = time.monotonic_ns()
@@ -92,6 +104,8 @@ def init_config_from_env() -> None:
             (WORKDIR / "memory-input.json").write_bytes(read_data(scratchpad_uri))
         config_start = time.monotonic_ns()
         tokens = episode_player_tokens(job)
+        if job.manifest.game.player_runtime == "platform-hosted":
+            PLAYER_ARTIFACT_TOKENS_PATH.write_text(json.dumps(generate_tokens(len(job.players))), encoding="utf-8")
         upload_data(
             os.environ["COGAME_CONFIG_URI"],
             json.dumps(coworld_game_config(job, tokens), indent=2),

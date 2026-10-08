@@ -219,9 +219,11 @@ The coordinator creates one pod per player:
 - resource requests: 250m CPU and 256Mi memory in hosted jobs
 - `COWORLD_PLAYER_WS_URL`: points at the parent game's Kubernetes Service.
 - `COWORLD_PLAYER_ARTIFACT_UPLOAD_URL` (optional): a `PUT` URL for one artifact `.zip` object per slot (max 200 MiB).
-  The coordinator provides an authenticated HTTP upload endpoint per slot, independent of the egress relay. It resolves
-  the current target from `PLAYER_ARTIFACT_UPLOAD_URLS` (see Outputs). The player may replace that object with newer
-  checkpoints during the episode but must finish the last upload before pod teardown. See
+  Its credential is separate from game connection tokens. The coordinator stores upload credentials on its private
+  volume, which the game cannot mount. Each player receives only its own upload URL. The coordinator provides an
+  authenticated HTTP upload endpoint per slot, independent of the egress relay. It resolves the current target from
+  `PLAYER_ARTIFACT_UPLOAD_URLS` (see Outputs). The player may replace that object with newer checkpoints during the
+  episode but must finish the last upload before pod teardown. See
   [player artifact](../docs/artifacts/PLAYER_ARTIFACT.md).
 
 The player query string includes only the generated slot token and slot index.

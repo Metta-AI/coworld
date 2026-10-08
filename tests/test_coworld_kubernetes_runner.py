@@ -374,11 +374,15 @@ def _configure_init_env(
     private_dir = tmp_path.with_name(tmp_path.name + "-private")
     private_dir.mkdir()
     monkeypatch.setattr(init_config, "COORDINATOR_SPEC_PATH", private_dir / "worker_spec.json")
+    token_path = private_dir / "player_artifact_tokens.json"
+    monkeypatch.setattr(init_config, "PLAYER_ARTIFACT_TOKENS_PATH", token_path)
+    monkeypatch.setattr(kubernetes_runner, "PLAYER_ARTIFACT_TOKENS_PATH", token_path)
     job_spec_path = private_dir / "source_spec.json"
     job_spec_path.write_text(job.model_dump_json(by_alias=True), encoding="utf-8")
     error_path = tmp_path / "error_info.json"
     monkeypatch.setattr(init_config, "WORKDIR", tmp_path)
     monkeypatch.setattr(init_config, "STATE_PATH", tmp_path / "state.json")
+    monkeypatch.setattr(kubernetes_runner, "STATE_PATH", tmp_path / "state.json")
     monkeypatch.setenv("JOB_SPEC_URI", job_spec_path.as_uri())
     monkeypatch.setenv("COGAME_CONFIG_URI", (tmp_path / "config.json").as_uri())
     monkeypatch.setenv("PLAYER_FILE_URLS", json.dumps(player_file_uris))
@@ -2837,7 +2841,7 @@ def test_create_game_service_exposes_human_proxy_without_rerouting_policy_player
 
 
 @pytest.mark.parametrize("relay_enabled", [False, True])
-def test_create_game_service_exposes_internal_artifact_upload(monkeypatch, relay_enabled):
+def test_create_game_service_exposes_internal_artifact_upload(monkeypatch, tmp_path, relay_enabled):
     created: dict[str, Any] = {}
     core_v1 = SimpleNamespace(
         create_namespaced_service=lambda *, namespace, body: created.update({"namespace": namespace, "body": body})
@@ -2852,9 +2856,65 @@ def test_create_game_service_exposes_internal_artifact_upload(monkeypatch, relay
     ports = {port.name: port for port in created["body"].spec.ports}
     assert ports["player-artifact"].port == 9091
     assert ports["player-artifact"].target_port == 9091
-    assert kubernetes_runner._player_artifact_upload_url(0, "game-service", "slot-token") == (
-        "http://game-service:9091/player-artifact/0/slot-token"
+    token_path = tmp_path / "artifact_tokens.json"
+    token_path.write_text(json.dumps(["upload-token"]))
+    monkeypatch.setattr(kubernetes_runner, "PLAYER_ARTIFACT_TOKENS_PATH", token_path)
+    assert kubernetes_runner._player_artifact_upload_url(0, "game-service") == (
+        "http://game-service:9091/player-artifact/0/upload-token"
     )
+
+
+def test_player_artifact_upload_excludes_game_and_other_seat_tokens(monkeypatch, tmp_path):
+    manifest_path = Path(__file__).parent / "manifest_versions/v1/minimal_manifest.json"
+    job = CoworldEpisodeJobSpec(
+        manifest=validate_upload_manifest(json.loads(manifest_path.read_text())).runtime_manifest,
+        game_config={},
+        players=[CoworldRunnableSpec(type="player", image="player:test") for _ in range(2)],
+    )
+    _configure_init_env(monkeypatch, tmp_path, job, {})
+    init_config.init_config_from_env()
+    upload_tokens = json.loads(init_config.PLAYER_ARTIFACT_TOKENS_PATH.read_text())
+    game_tokens = json.loads(init_config.STATE_PATH.read_text())["tokens"]
+    for path in tmp_path.rglob("*"):
+        if path.is_file():
+            assert all(token.encode() not in path.read_bytes() for token in upload_tokens)
+
+    # The game can overwrite shared state without acquiring an upload capability.
+    init_config.STATE_PATH.write_text(json.dumps({"tokens": ["game-chosen"] * 2}))
+    output = tmp_path / "uploaded.zip"
+    monkeypatch.setenv("PLAYER_ARTIFACT_UPLOAD_URLS", json.dumps({"0": output.as_uri()}))
+    monkeypatch.setattr(kubernetes_runner, "PLAYER_ARTIFACT_PORT", 0)
+    server = kubernetes_runner._start_player_artifact_upload_server()
+    assert server is not None
+    finished = threading.Event()
+    release = server._release_connection
+
+    def release_connection(source):
+        release(source)
+        finished.set()
+
+    monkeypatch.setattr(server, "_release_connection", release_connection)
+    monkeypatch.setattr(kubernetes_runner, "PLAYER_ARTIFACT_PORT", server.server_address[1])
+    url = kubernetes_runner._player_artifact_upload_url(0, "127.0.0.1")
+    assert url is not None
+    try:
+        for token in [*game_tokens, "game-chosen", upload_tokens[1]]:
+            finished.clear()
+            with pytest.raises(HTTPError) as error:
+                urlopen(Request(url.rsplit("/", 1)[0] + "/" + token, data=b"forged", method="PUT"), timeout=2)
+            assert error.value.code == 403
+            error.value.close()
+            assert finished.wait(2)
+        assert not output.exists()
+        for payload in (b"first upload", b"updated upload"):
+            finished.clear()
+            with urlopen(Request(url, data=payload, method="PUT"), timeout=2) as response:
+                assert response.status == 201
+            assert finished.wait(2)
+            assert output.read_bytes() == payload
+    finally:
+        server.shutdown()
+        server.server_close()
 
 
 def test_player_artifact_upload_server_renews_mounted_targets_without_relay(monkeypatch, tmp_path):
@@ -2866,11 +2926,14 @@ def test_player_artifact_upload_server_renews_mounted_targets_without_relay(monk
     )
     monkeypatch.setattr(kubernetes_runner, "PLAYER_ARTIFACT_PORT", 0)
 
-    server = kubernetes_runner._start_player_artifact_upload_server(["secret"])
+    token_path = tmp_path / "artifact_tokens.json"
+    token_path.write_text(json.dumps(["secret"]))
+    monkeypatch.setattr(kubernetes_runner, "PLAYER_ARTIFACT_TOKENS_PATH", token_path)
+    server = kubernetes_runner._start_player_artifact_upload_server()
     assert server is not None
     try:
         monkeypatch.setattr(kubernetes_runner, "PLAYER_ARTIFACT_PORT", server.server_address[1])
-        url = kubernetes_runner._player_artifact_upload_url(0, "127.0.0.1", "secret")
+        url = kubernetes_runner._player_artifact_upload_url(0, "127.0.0.1")
         assert url == f"http://127.0.0.1:{server.server_address[1]}/player-artifact/0/secret"
         for generation in range(2):
             output = tmp_path / f"artifact-{generation}.zip"
@@ -3681,7 +3744,7 @@ def test_create_player_pod_routes_every_sidecar_without_exposing_openrouter_key(
 
 
 @pytest.mark.parametrize("relay_enabled", [False, True])
-def test_create_player_pod_forwards_artifact_upload_url_for_its_slot(monkeypatch, relay_enabled):
+def test_create_player_pod_forwards_artifact_upload_url_for_its_slot(monkeypatch, tmp_path, relay_enabled):
     created: dict[str, Any] = {}
     core_v1 = SimpleNamespace(create_namespaced_pod=lambda *, namespace, body: created.update({"body": body}))
     monkeypatch.setenv(
@@ -3691,6 +3754,9 @@ def test_create_player_pod_forwards_artifact_upload_url_for_its_slot(monkeypatch
     monkeypatch.delenv("COWORLD_EGRESS_RELAY_URL", raising=False)
     if relay_enabled:
         monkeypatch.setenv("COWORLD_EGRESS_RELAY_URL", "https://egress-relay-mtls.jobs.svc.cluster.local:3128")
+    token_path = tmp_path / "artifact_tokens.json"
+    token_path.write_text(json.dumps(["upload-0", "upload-1"]))
+    monkeypatch.setattr(kubernetes_runner, "PLAYER_ARTIFACT_TOKENS_PATH", token_path)
     player = PlayerLaunchSpec(image="paintbot:latest", run=(), env={})
 
     kubernetes_runner._create_player_pod(
@@ -3710,7 +3776,9 @@ def test_create_player_pod_forwards_artifact_upload_url_for_its_slot(monkeypatch
     )
 
     env = {env_var.name: env_var.value for env_var in created["body"].spec.containers[0].env}
-    assert env["COWORLD_PLAYER_ARTIFACT_UPLOAD_URL"] == ("http://game-service:9091/player-artifact/1/slot-token")
+    assert env["COWORLD_PLAYER_ARTIFACT_UPLOAD_URL"] == ("http://game-service:9091/player-artifact/1/upload-1")
+    assert env["COWORLD_PLAYER_WS_URL"].endswith("token=slot-token")
+    assert "upload-0" not in json.dumps(env)
     player_security = created["body"].spec.containers[0].security_context
     assert player_security.allow_privilege_escalation is False
     assert player_security.capabilities.drop == ["ALL"]
