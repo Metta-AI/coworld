@@ -137,6 +137,25 @@ def register_tournament_commands(app: typer.Typer) -> None:
     )
     app.add_typer(xp_request_app, name="xp-request")
 
+    @app.command("credits", epilog=docs_epilog("improve-a-policy"))
+    def credits(
+        server: Annotated[str, typer.Option("--server", help="Observatory API server URL.")] = DEFAULT_SUBMIT_SERVER,
+        json_output: Annotated[bool, typer.Option("--json", help="Print raw JSON.")] = False,
+    ) -> None:
+        """Show remaining XP credits for the active User or Player's owning account."""
+        with CoworldApiClient.from_login(server_url=server) as client:
+            response = client.get_my_credits()
+        if json_output:
+            emit_json(response.model_dump(mode="json"))
+            return
+        status = response.status
+        console.print(f"XP credits remaining: {status.balance_credits:g} / {status.max_balance_credits:g}")
+        console.print(f"Spent this period: {status.spent_this_period_credits:g}")
+        console.print(
+            f"Refill: {status.refill_credits:g} every {status.refill_cadence}; "
+            f"next at {status.next_refill_at.isoformat()}"
+        )
+
     @app.command(
         "power-analysis",
         help="Estimate the episodes needed to detect an Elo difference in a division or league.",
