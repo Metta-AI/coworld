@@ -24,6 +24,7 @@ from coworld.types import CoworldEpisodeJobSpec
 WORKDIR = Path(os.environ.get("COWORLD_WORKDIR", "/coworld"))
 STATE_PATH = WORKDIR / "state.json"
 COORDINATOR_SPEC_PATH = Path("/var/run/coworld-coordinator/job_spec.json")
+PLAYER_ARTIFACT_TOKENS_PATH = COORDINATOR_SPEC_PATH.with_name("player_artifact_tokens.json")
 
 
 def process_timings(

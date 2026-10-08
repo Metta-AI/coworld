@@ -51,7 +51,13 @@ from coworld.annotations import (
     ANNOTATIONS_TARGETS_ENV,
     annotation_file_error,
 )
-from coworld.runner.bootstrap import COORDINATOR_SPEC_PATH, STATE_PATH, WORKDIR, process_timings
+from coworld.runner.bootstrap import (
+    COORDINATOR_SPEC_PATH,
+    PLAYER_ARTIFACT_TOKENS_PATH,
+    STATE_PATH,
+    WORKDIR,
+    process_timings,
+)
 from coworld.runner.bootstrap import read_job_spec as _read_job_spec
 from coworld.runner.bootstrap import write_error_info as _write_error_info
 from coworld.runner.external_llm import EXTERNAL_LLM_SECRET_KEY, ExternalLlmRoute
@@ -454,7 +460,7 @@ class _PlayerArtifactUploadHandler(http.server.BaseHTTPRequestHandler):
         pass
 
 
-def _start_player_artifact_upload_server(tokens: list[str]) -> _PlayerArtifactUploadServer | None:
+def _start_player_artifact_upload_server() -> _PlayerArtifactUploadServer | None:
     raw_targets = os.environ.get("PLAYER_ARTIFACT_UPLOAD_URLS")
     if raw_targets is None:
         return None
@@ -465,7 +471,7 @@ def _start_player_artifact_upload_server(tokens: list[str]) -> _PlayerArtifactUp
     )
     server = _PlayerArtifactUploadServer(
         targets={int(slot): url for slot, url in targets.items()},
-        tokens=tokens,
+        tokens=TypeAdapter(list[str]).validate_json(PLAYER_ARTIFACT_TOKENS_PATH.read_bytes()),
     )
     threading.Thread(target=server.serve_forever, daemon=True).start()
     return server
@@ -983,7 +989,7 @@ def _run_kubernetes_episode(
     # Detection-time record of player containers that failed and became dead seats: teardown log
     # collection falls back to it when the pod itself is gone by then (terminated-pod GC).
     dead_seat_statuses: dict[int, PlayerRuntimeStatus] = {}
-    artifact_server = _start_player_artifact_upload_server(tokens)
+    artifact_server = _start_player_artifact_upload_server()
 
     try:
         health_start = time.monotonic_ns()
@@ -1306,7 +1312,7 @@ def _create_player_pod(
         }
         player_env = player_env | endpoint_env
     player_ws_url = _player_service_ws_url(service_name, slot, token)
-    player_artifact_upload_url = _player_artifact_upload_url(slot, service_name, token)
+    player_artifact_upload_url = _player_artifact_upload_url(slot, service_name)
     artifact_env_vars = (
         [client.V1EnvVar(name="COWORLD_PLAYER_ARTIFACT_UPLOAD_URL", value=player_artifact_upload_url)]
         if player_artifact_upload_url is not None
@@ -1525,13 +1531,14 @@ def _player_image_pull_policy(image: str) -> str:
     return "IfNotPresent" if "@sha256:" in image else "Always"
 
 
-def _player_artifact_upload_url(slot: int, service_name: str, token: str) -> str | None:
+def _player_artifact_upload_url(slot: int, service_name: str) -> str | None:
     raw = os.environ.get("PLAYER_ARTIFACT_UPLOAD_URLS")
     if raw is None:
         return None
     if not raw.startswith("file://") and str(slot) not in json.loads(raw):
         return None
-    return f"http://{service_name}:{PLAYER_ARTIFACT_PORT}/player-artifact/{slot}/{token}"
+    tokens = TypeAdapter(list[str]).validate_json(PLAYER_ARTIFACT_TOKENS_PATH.read_bytes())
+    return f"http://{service_name}:{PLAYER_ARTIFACT_PORT}/player-artifact/{slot}/{tokens[slot]}"
 
 
 def _policy_secrets_from_env() -> dict[int, dict[str, str]]:
