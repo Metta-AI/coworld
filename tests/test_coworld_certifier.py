@@ -5,6 +5,7 @@ import hashlib
 import importlib
 import json
 import subprocess
+import threading
 import time
 from pathlib import Path
 from types import SimpleNamespace
@@ -1899,18 +1900,24 @@ def test_websocket_ping_probe_rejects_missing_pong() -> None:
     assert exc_info.value.error_type == "game_contract_violation"
 
 
-def test_global_probe_survives_unread_global_backlog() -> None:
-    # Regression for max_queue=None in _require_global_message: hosted
-    # certification blocks in on_connected before receiving a frame, and a game
-    # that streams to /global meanwhile fills the client's receive queue.
+def test_global_probe_keeps_first_message_and_heartbeats_during_player_startup() -> None:
     async def run() -> None:
+        players_starting = asyncio.Event()
+        game_disconnected = threading.Event()
+        loop = asyncio.get_running_loop()
+
         async def game(ws) -> None:
-            try:
-                while True:
-                    await ws.send(b"lobby-frame")
-                    await asyncio.sleep(0.005)
-            except websockets.ConnectionClosed:
-                return
+            await players_starting.wait()
+            for _ in range(80):
+                await ws.send(b"x" * 4096)
+                await asyncio.sleep(0)
+            await (await ws.ping())
+            await ws.close(code=1011)
+            game_disconnected.set()
+
+        def start_players() -> None:
+            loop.call_soon_threadsafe(players_starting.set)
+            assert game_disconnected.wait(timeout=5)
 
         server = await websockets.serve(game, "127.0.0.1", 0)
         port = next(iter(server.sockets)).getsockname()[1]
@@ -1918,8 +1925,7 @@ def test_global_probe_survives_unread_global_backlog() -> None:
             await _require_global_message(
                 f"ws://127.0.0.1:{port}/global",
                 timeout_seconds=5.0,
-                # Block long enough for far more than the default receive queue to pile up.
-                on_connected=lambda: time.sleep(0.5),
+                on_connected=start_players,
                 require_pong=True,
             )
         finally:

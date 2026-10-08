@@ -1006,27 +1006,33 @@ async def _require_global_message(
     require_pong: bool = False,
 ) -> None:
     try:
-        # max_size=None: a game's first global snapshot can exceed the 1 MiB
-        # websockets default (high-resolution sprite protocols ship multi-MB
-        # init frames), and this probe only checks that a message arrives.
-        # max_queue=None when pinging: this probe does not recv() while
-        # on_connected blocks (hosted runs hold the viewer open until every
-        # player pod has started). A game that streams lobby frames to /global
-        # meanwhile fills websockets' default receive queue. Only certification
-        # pays for unbounded buffering; ordinary episodes keep the default
-        # backpressure.
-        backpressure = {"max_queue": None} if require_pong else {}
-        async with websockets.connect(url, open_timeout=5, max_size=None, **backpressure) as websocket:
-            # Probe the idle game before player startup can drive a fast baseline
-            # episode to completion and close the WebSocket server.
-            if require_pong:
-                await _require_websocket_pong(websocket, url)
-            if on_connected is not None:
-                await asyncio.to_thread(on_connected)
-            message = await asyncio.wait_for(
-                websocket.recv(),
-                timeout=min(timeout_seconds, startup_timeout_seconds),
-            )
+        # Games may send large snapshots. Hosted jobs bound process memory.
+        async with websockets.connect(url, open_timeout=5, max_size=None, max_queue=2) as websocket:
+            first_message_received: asyncio.Future[bool] = asyncio.get_running_loop().create_future()
+
+            async def receive_messages() -> None:
+                first_message_received.set_result(bool(await websocket.recv()))
+                # Keep heartbeats moving while player startup holds the viewer open.
+                # The probe needs no later snapshots, so discard them as they arrive.
+                async for _ in websocket:
+                    await asyncio.sleep(0)
+
+            receiver = asyncio.create_task(receive_messages())
+            try:
+                if require_pong:
+                    await _require_websocket_pong(websocket, url)
+                if on_connected is not None:
+                    await asyncio.to_thread(on_connected)
+                await asyncio.wait_for(
+                    asyncio.wait((first_message_received, receiver), return_when=asyncio.FIRST_COMPLETED),
+                    timeout=min(timeout_seconds, startup_timeout_seconds),
+                )
+                if not first_message_received.done():
+                    receiver.result()
+                has_message = first_message_received.result()
+            finally:
+                receiver.cancel()
+                await asyncio.gather(receiver, return_exceptions=True)
     except (OSError, asyncio.TimeoutError, ConnectionClosed, InvalidHandshake, InvalidStatus) as exc:
         # A player that crashes before the game emits its first global message
         # starves this socket, so the timeout/close is the player's fault, not
@@ -1038,7 +1044,7 @@ async def _require_global_message(
             f"Global viewer websocket did not produce a message from {redact_uri(url)}: {exc}",
             error_type="game_contract_violation",
         ) from exc
-    if not message:
+    if not has_message:
         raise RunnerEpisodeError(
             f"Global viewer received an empty message from {redact_uri(url)}",
             error_type="game_contract_violation",
