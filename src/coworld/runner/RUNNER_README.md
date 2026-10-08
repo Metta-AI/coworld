@@ -58,3 +58,9 @@ for consumption by current one-shot graders and diagnosers, see
 [artifacts/EPISODE_BUNDLE.md](../docs/artifacts/EPISODE_BUNDLE.md). Reporters do not consume bundles: they are
 platform-run wasm components that read episode artifacts through the Bureau (see
 [roles/REPORTER.md](../docs/roles/REPORTER.md)); the optimizer pulls artifacts through its workbench tooling.
+
+### Local container limits
+
+Local games, players, and replay containers use the runnable's manifest CPU and memory limits. If a limit is absent, the
+runner uses its resource request, then defaults to 1 CPU and 1 GiB. Swap is disabled. These limits also apply to
+`coworld play` and certification.
