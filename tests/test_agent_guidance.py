@@ -136,7 +136,7 @@ COMMANDS = [
     (["play", "cow_x"], "coworld.cli._materialized_manifest_path"),
     (["run-episode", "cow_x"], "coworld.cli._materialized_manifest_path"),
     (["scrimmage", "cow_x", "image"], "coworld.cli._materialized_manifest_path"),
-    (["upload-policy", "image"], "coworld.cli.list_players"),
+    (["upload-policy", "image"], "softmax.auth.fetch_cogames_whoami"),
     (["upload-coworld", "manifest.json"], "coworld.upload.upload_coworld"),
     (["submit", "policy:v1", "--league", "league_x"], "coworld.submit.CoworldApiClient.lookup_policy_version"),
 ]
