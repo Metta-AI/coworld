@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import logging
 import os
 import shutil
@@ -16,7 +17,7 @@ from pydantic import BaseModel, ConfigDict, Field
 from tenacity import RetryCallState, Retrying, retry_if_exception, stop_after_attempt, wait_chain, wait_fixed
 
 from coworld.runner.player_artifacts import ArtifactUploadTargets
-from coworld.runner.relay_client import relay_http_client
+from coworld.runner.relay_client import relay_http_client, relay_proxy
 
 _RETRY_DELAYS_SECONDS = (0.5, 1.0, 2.0)
 _RETRYABLE_STATUS_CODES = {429, 500, 502, 503, 504}
@@ -303,6 +304,21 @@ def _resolve_upload_uri(uri: str) -> str:
 
 def upload_data(uri: str, data: bytes | str, *, content_type: str) -> None:
     write_data(_resolve_upload_uri(uri), data, content_type=content_type)
+
+
+async def upload_data_with_deadline(uri: str, data: bytes | str, *, content_type: str, timeout_seconds: float) -> None:
+    """Upload once, cancelling network I/O when the total deadline expires."""
+    uri = _resolve_upload_uri(uri)
+    if urlparse(uri).scheme not in ("http", "https"):
+        write_data(uri, data, content_type=content_type)
+        return
+
+    relay_url = os.environ.get("COWORLD_EGRESS_RELAY_URL")
+    proxy = relay_proxy(relay_url) if relay_url is not None else None
+    async with asyncio.timeout(timeout_seconds):
+        async with httpx.AsyncClient(proxy=proxy, follow_redirects=True) as client:
+            response = await client.put(uri, content=data, headers={"Content-Type": content_type})
+            response.raise_for_status()
 
 
 def upload_file(
