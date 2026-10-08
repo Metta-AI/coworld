@@ -9,21 +9,28 @@ const { values } = parseArgs({
   options: {
     runner: { type: 'string' },
     'adapter-only': { type: 'boolean', default: false },
+    'payload-only': { type: 'boolean', default: false },
     'game-image': { type: 'string' },
     tag: { type: 'string' },
   },
 })
 
-if (
-  Boolean(values.runner) === values['adapter-only'] ||
-  !values['game-image']?.match(/@sha256:[a-f0-9]{64}$/) ||
-  !values.tag
-) {
+const modes = [Boolean(values.runner), values['adapter-only'], values['payload-only']]
+const requiresGame = !values['payload-only']
+const validGame = values['game-image']?.match(/@sha256:[a-f0-9]{64}$/)
+
+if (modes.filter(Boolean).length !== 1 || (requiresGame && !validGame) || !values.tag) {
   throw new Error(
-    'Usage: node build-image.mts (--runner /path/to/server.mjs | --adapter-only) ' +
+    'Usage: node build-image.mts --payload-only --tag image:local; or ' +
+      '(--runner /path/to/server.mjs | --adapter-only) ' +
       '--game-image registry/image@sha256:... --tag image:local'
   )
 }
+
+const target = values['payload-only'] ? 'payload' : values['adapter-only'] ? 'adapter' : 'runtime'
+const gameArguments = values['game-image']
+  ? ['--build-arg', `GAME_IMAGE=${values['game-image']}`]
+  : []
 
 const buildDirectory = await mkdtemp(join(tmpdir(), 'coworld-conductor-image-'))
 const sourceDirectory = fileURLToPath(new URL('.', import.meta.url))
@@ -59,11 +66,10 @@ try {
     [
       'build',
       '--target',
-      values['adapter-only'] ? 'adapter' : 'runtime',
+      target,
       '--platform',
       'linux/amd64',
-      '--build-arg',
-      `GAME_IMAGE=${values['game-image']}`,
+      ...gameArguments,
       '--tag',
       values.tag,
       buildDirectory,
