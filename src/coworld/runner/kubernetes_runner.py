@@ -1294,7 +1294,9 @@ def _create_player_pod(
     player_env.pop(EXTERNAL_LLM_SECRET_KEY, None)
     uses_llm = llm_enablement.enabled
     local_checkpoint_routing = os.environ.get("COWORLD_LOCAL_CHECKPOINT_ROUTING") == "true"
-    uses_sidecar = uses_llm and (os.environ.get("COWORLD_LOCAL_DEV") != "true" or local_checkpoint_routing)
+    uses_sidecar = uses_llm and (
+        os.environ.get("COWORLD_LOCAL_DEV") != "true" or "LLM_SIDECAR_IMAGE" in os.environ or local_checkpoint_routing
+    )
     if uses_sidecar:
         llm_sidecar_port = int(os.environ["LLM_SIDECAR_PORT"])
         # Apply platform endpoints after policy env so saved credentials cannot bypass the sidecar.

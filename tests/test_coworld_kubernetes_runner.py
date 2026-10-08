@@ -3402,7 +3402,9 @@ def test_local_llm_player_preserves_supplied_endpoint_without_sidecar_infrastruc
     assert pod.spec.automount_service_account_token is False
 
 
-def test_create_player_pod_with_native_sidecar_overrides_provider_credentials(monkeypatch):
+@pytest.mark.parametrize("local_dev", [False, True])
+def test_create_player_pod_with_native_sidecar_overrides_provider_credentials(monkeypatch, local_dev):
+    monkeypatch.setenv("COWORLD_LOCAL_DEV", str(local_dev).lower())
     created: dict[str, Any] = {}
     core_v1 = SimpleNamespace(create_namespaced_pod=lambda *, namespace, body: created.update({"body": body}))
     monkeypatch.setenv("LLM_SIDECAR_REGION", "us-west-2")
