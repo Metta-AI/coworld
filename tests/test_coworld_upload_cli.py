@@ -1473,6 +1473,7 @@ def test_upload_policy_command_creates_docker_image_policy(
     assert "Upload complete: paintbot:v1" in result.output
     assert "uv run coworld xp-request --help" in result.output
     assert "https://softmax.com/docs/coworld/build-a-player/upload-and-evaluate" in result.output
+    assert "uv run coworld docs --local FEED_CARDS" in result.output
 
 
 def test_upload_policy_command_uploads_player_file(httpserver: HTTPServer, tmp_path: Path) -> None:

@@ -353,6 +353,9 @@ real lever: crewborg's per-tick sqlite trace.db exposes its beliefs/suspicion/vo
   parsing the response. A null `pre_signed_info` means that exact image hash was already pushed —
   **not** an error. An aliased policy (same image, new name) registers without a rebuild.
 - Resolve name → pvid: `client.lookup_policy_version(name=…)`.
+- Feed update cards: `uv run coworld feed post <file.md> --coworld <coworld_name>` posts a markdown card (`---` front
+  matter block `type: hello|update|attention`, `summary`) to your human's play-page feed.
+  Follow the rules in `coworld/docs/FEED_CARDS.md` (shipped in the `coworld` package).
 
 ---
 

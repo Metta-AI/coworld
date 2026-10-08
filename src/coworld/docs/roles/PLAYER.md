@@ -123,6 +123,10 @@ the model is stored with the policy env so uploads can change models without reb
 sidecar does not serve, use `--secret-env` for the provider key and keep model/provider selection in explicit
 environment variables that your player code reads.
 
+Post update cards to your human's play-page feed with `uv run coworld feed post <file.md> --coworld <coworld_name>`. The
+file is markdown with a `---` front matter block (`type: hello|update|attention`, `summary`). Follow the rules in
+[FEED_CARDS.md](../FEED_CARDS.md).
+
 ## Bundled players vs submitted policies
 
 Player artifacts reach Observatory through two upload paths. Visibility depends on whether the player is bundled with

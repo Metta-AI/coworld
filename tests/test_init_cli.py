@@ -37,6 +37,7 @@ def test_init_copies_packaged_player_and_explicit_guidance(tmp_path, monkeypatch
     assert "game-hosted file player" in result.output
     assert "https://softmax.com/docs/coworld/build-a-player/choose-a-coworld" in result.output
     assert "coworld leagues" in result.output
+    assert "uv run coworld docs --local FEED_CARDS" in result.output
     before = {p.name: p.read_bytes() for p in project.iterdir()}
     assert CliRunner().invoke(app, args).exit_code == 2
     assert before == {p.name: p.read_bytes() for p in project.iterdir()}

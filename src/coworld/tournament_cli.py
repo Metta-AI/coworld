@@ -59,9 +59,7 @@ _XP_REQUEST_HELP = (
     "roster entries with policy_ref/top_n/random players, slot assignments, num_episodes, and notes. "
     "For direct Coworld runs, use coworld_id, roster, and num_episodes. "
     "Compare the previous best and candidate with matching target, roster, episode count, and notes format. "
-    "Every request an agent creates carries a writeup: --title (what this request tests, one line, "
-    "at most 50 characters recommended) and --description (what changed, why, expected result, "
-    "at most 600 characters recommended). Both may also be set as title/description in the JSON body."
+    "--title and --description label the request; both may also be set as title/description in the JSON body."
 )
 
 
@@ -202,14 +200,14 @@ def register_tournament_commands(app: typer.Typer) -> None:
             str | None,
             typer.Option(
                 "--title",
-                help="Writeup title: what this request tests, one line, at most 50 characters recommended.",
+                help="One-line title for this request: what it tests.",
             ),
         ] = None,
         description: Annotated[
             str | None,
             typer.Option(
                 "--description",
-                help="Writeup: what changed, why, and the expected result, at most 600 characters recommended.",
+                help="What this request changes, why, and the expected result.",
             ),
         ] = None,
         server: Annotated[str, typer.Option("--server", help="Observatory API server URL.")] = DEFAULT_SUBMIT_SERVER,

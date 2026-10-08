@@ -862,6 +862,28 @@ class CoworldVisibilityResponse(CoworldAPIModel):
     private_seed_ids: list[str]
 
 
+FeedCardKind = Literal["hello", "update", "attention"]
+
+
+class AddFeedCardRequest(CoworldAPIModel):
+    kind: FeedCardKind
+    summary: str
+    body: str
+    idempotency_key: str
+
+
+class FeedCardPublic(CoworldAPIModel):
+    id: UUID
+    coworld_name: str
+    kind: FeedCardKind
+    summary: str
+    body: str
+    author_user_id: str
+    author_player_id: str | None = None
+    author_name: str
+    created_at: datetime
+
+
 class CoworldApiClient:
     # Process-scoped: set by the top-level Typer `--elevated` callback in `coworld/cli.py`
     # so it applies to every client constructed later in the same invocation. Client-side
@@ -926,6 +948,13 @@ class CoworldApiClient:
             f"/v2/coworlds/{quote(coworld_name, safe='')}/visibility",
             CoworldVisibilityResponse,
             json={"visibility": visibility},
+        )
+
+    def post_feed_card(self, coworld_name: str, request: AddFeedCardRequest) -> FeedCardPublic:
+        return self._post(
+            f"/v2/coworlds/{quote(coworld_name, safe='')}/feed-cards",
+            FeedCardPublic,
+            json=request.model_dump(mode="json"),
         )
 
     def _get(self, path: str, response_type: Any, **kwargs: Any) -> Any:

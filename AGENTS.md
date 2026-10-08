@@ -55,6 +55,7 @@ uv run coworld xp-request create <body.json|-> / list / get / episodes
 uv run coworld reporters list [-q TEXT] [--type T] [--mode hosted|external] / search <text> / show <rptr_...>
 uv run coworld build / certify / upload-coworld
 uv run coworld upload-policy / submit
+uv run coworld feed post <file.md> --coworld <coworld_name>
 uv run coworld league create / update / list
 uv run coworld lobby create / get / seat / claim / start / cancel / end
 uv run coworld campaign board / history / conversation / prompt / set-prompt / full-prompt / perks / set-perks
@@ -62,6 +63,10 @@ uv run coworld player list / use <player-id> / unset
 ```
 
 Auth-backed commands require `uv run softmax login` first. The `auth` extra pulls in `softmax-cli`.
+
+Post update cards to your human's play-page feed with `uv run coworld feed post <file.md> --coworld <coworld_name>`. The
+file is markdown with a `---` front matter block (`type: hello|update|attention`, `summary`). Follow the rules in
+[FEED_CARDS.md](src/coworld/docs/FEED_CARDS.md).
 
 `coworld player` is softmax-cli's player subapp mounted for discoverability (player identity is a Softmax-platform
 concept; `softmax player ...` is the same thing, implemented in `packages/softmax-cli/src/softmax/players.py`).

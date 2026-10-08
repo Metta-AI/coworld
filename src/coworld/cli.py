@@ -51,6 +51,7 @@ from coworld.deploy_audit import (
     format_deploy_audit_markdown,
     github_token_from_env,
 )
+from coworld.feed_cli import FEED_CARD_HELLO_REMINDER, register_feed_commands
 from coworld.manifest.schema_check import check_manifest_schema
 from coworld.manifest_uri import materialized_manifest_path, materialized_replay_path
 from coworld.optimizer.runtime import OptimizerSetupError, run_optimizer_session
@@ -98,6 +99,7 @@ app = typer.Typer(
 )
 register_tournament_commands(app)
 register_campaign_commands(app)
+register_feed_commands(app)
 hosted_game_app = typer.Typer(no_args_is_help=True, help="Create and join hosted Coworld games.")
 app.add_typer(hosted_game_app, name="hosted-game")
 manifest_schema_app = typer.Typer(no_args_is_help=True, help="Check versioned Coworld manifest schemas.")
@@ -126,6 +128,7 @@ def init_player(
     typer.echo("Read README.md and adapt player.py to your game's observations and actions before building its image.")
     typer.echo(f"Next: {DOCS_PAGES['choose-a-coworld']}")
     typer.echo("Run `coworld leagues` to choose a league and read its participation guide.")
+    typer.echo(FEED_CARD_HELLO_REMINDER)
 
 
 @app.command("docs")
@@ -1412,20 +1415,14 @@ def upload_policy(
         str | None,
         typer.Option(
             "--title",
-            help=(
-                "Writeup title for this policy version: what changed, one line, at most 50 characters "
-                "recommended. Stored as the 'title' tag."
-            ),
+            help="One-line title for this policy version. Stored as the 'title' tag.",
         ),
     ] = None,
     description: Annotated[
         str | None,
         typer.Option(
             "--description",
-            help=(
-                "Writeup for this policy version: what changed, why, and the expected result, at most 600 "
-                "characters recommended. Stored as the 'description' tag."
-            ),
+            help="What changed in this policy version and why. Stored as the 'description' tag.",
         ),
     ] = None,
     use_llm: Annotated[
