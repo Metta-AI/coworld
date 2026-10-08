@@ -211,10 +211,27 @@ py_library(
 )
 
 py_library(
+    name = "self_hosted_inference",
+    srcs = [
+        "src/coworld/runner/llm_enablement.py",
+        "src/coworld/runner/self_hosted_inference.py",
+    ],
+    imports = ["src"],
+    visibility = ["//visibility:public"],
+    deps = [
+        ":coworld_core",
+        "@pypi//kubernetes",
+        "@pypi//pydantic",
+    ],
+)
+
+py_library(
     name = "coworld",
     srcs = glob(
         ["src/coworld/**/*.py"],
         exclude = _CORE_SRCS + [
+            "src/coworld/runner/llm_enablement.py",
+            "src/coworld/runner/self_hosted_inference.py",
             "src/coworld/runner/llm_sidecar_wiring.py",
             "src/coworld/templates/**/*.py",
         ],
@@ -241,6 +258,7 @@ py_library(
     deps = [
         ":coworld_core",
         ":llm_sidecar_wiring",
+        ":self_hosted_inference",
         "//packages/softmax-cli:softmax",
         "@pypi//cogsguard",
         "@pypi//fastapi",
