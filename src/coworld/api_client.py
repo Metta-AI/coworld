@@ -31,6 +31,30 @@ class SQLQueryResponse(CoworldAPIModel):
     row_count: int
 
 
+class UserCreditsStatus(CoworldAPIModel):
+    balance_credits: float
+    max_balance_credits: float
+    refill_credits: float
+    refill_cadence: str
+    next_refill_at: datetime
+    credits_per_usd: float
+    spent_this_period_credits: float
+    enforced: bool
+
+
+class ExperienceRequestComputeCostRow(CoworldAPIModel):
+    experience_request_id: str
+    coworld: str | None
+    episodes: int
+    compute_cost_credits: float
+    last_activity_at: datetime
+
+
+class MyCreditsResponse(CoworldAPIModel):
+    status: UserCreditsStatus
+    recent_requests: list[ExperienceRequestComputeCostRow]
+
+
 class PolicyPublic(CoworldAPIModel):
     id: UUID
     name: str
@@ -982,6 +1006,9 @@ class CoworldApiClient:
     def sql_query(self, query: str) -> SQLQueryResponse:
         """Run a read-only Observatory query; requires an elevated team user session."""
         return self._post("/sql/query", SQLQueryResponse, json={"query": query})
+
+    def get_my_credits(self) -> MyCreditsResponse:
+        return self._get("/usage/me/credits", MyCreditsResponse)
 
     def list_games(self) -> list[GamePublic]:
         return self._get("/v2/games", list[GamePublic])
