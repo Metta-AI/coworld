@@ -18,7 +18,7 @@ from contextlib import ExitStack
 from dataclasses import dataclass, field
 from json import JSONDecodeError
 from pathlib import Path
-from typing import Callable, Mapping, Sequence
+from typing import Callable, Mapping, Self, Sequence
 from urllib.parse import urlencode
 from uuid import uuid4
 
@@ -32,6 +32,7 @@ from websockets.exceptions import ConnectionClosed, InvalidHandshake, InvalidSta
 from coworld.player_files import player_file_bytes
 from coworld.runner.io import GamePlayerFailure, RunnerEpisodeError, RunnerErrorType, redact_uri
 from coworld.runner.local_player_status import collect_local_player_status
+from coworld.runner.resource_quantity import parse_resource_quantity
 from coworld.schema_validation import validate_json_schema
 from coworld.training_provenance import training_environment
 from coworld.trajectory import trajectory_identity_env
@@ -42,6 +43,8 @@ from coworld.types import (
     CoworldPlayerSeat,
     CoworldPlayerSeats,
     CoworldPlayerSeatsSchema,
+    CoworldResourceLimits,
+    CoworldRunnableResources,
     CoworldRunnableSpec,
 )
 
@@ -173,6 +176,15 @@ class ResolvedLocalPort:
     host: str = LOCAL_PORT_HOST
 
 
+class LocalContainerResources(BaseModel):
+    """Finite Docker limits for each local child, independent of its caller's cgroup."""
+
+    model_config = ConfigDict(frozen=True, extra="forbid", allow_inf_nan=False)
+
+    cpus: float = Field(default=1.0, ge=0.01)
+    memory_bytes: int = Field(default=1024**3, ge=6 * 1024**2)
+
+
 @dataclass(frozen=True)
 class EpisodeRunSpec:
     game: RunnableLaunchSpec
@@ -190,22 +202,31 @@ class RunnableLaunchSpec:
     image: str
     run: tuple[str, ...] = ()
     env: Mapping[str, str] = field(default_factory=dict)
+    resources: CoworldRunnableResources | None = None
 
     @classmethod
-    def from_model(cls, runnable: CoworldRunnableSpec) -> RunnableLaunchSpec:
-        return cls(image=runnable.image, run=tuple(runnable.run), env=runnable.env)
+    def from_model(cls, runnable: CoworldRunnableSpec) -> Self:
+        return cls(
+            image=runnable.image,
+            run=tuple(runnable.run),
+            env=runnable.env,
+            resources=runnable.resources,
+        )
+
+    def docker_resource_args(self) -> list[str]:
+        profile = self.resources or CoworldRunnableResources()
+        limits = profile.limits or CoworldResourceLimits()
+        allocation = LocalContainerResources(
+            cpus=float(parse_resource_quantity(limits.cpu or profile.requests.cpu or "1")),
+            memory_bytes=int(parse_resource_quantity(limits.memory or profile.requests.memory or "1Gi")),
+        )
+        memory = str(allocation.memory_bytes)
+        return ["--cpus", str(allocation.cpus), "--memory", memory, "--memory-swap", memory]
 
 
 @dataclass(frozen=True)
 class PlayerLaunchSpec(RunnableLaunchSpec):
-    @classmethod
-    def from_model(cls, player: CoworldRunnableSpec) -> PlayerLaunchSpec:
-        runnable = RunnableLaunchSpec.from_model(player)
-        return cls(
-            image=runnable.image,
-            run=runnable.run,
-            env=runnable.env,
-        )
+    pass
 
 
 def assert_docker_image_reachable(
@@ -338,6 +359,7 @@ def run_coworld_episode(
     launch_game = RunnableLaunchSpec(
         image=launch_game.image,
         run=launch_game.run,
+        resources=launch_game.resources,
         env={
             **launch_game.env,
             **trajectory_identity_env(job.manifest, str(uuid4())),
@@ -530,6 +552,7 @@ def game_container_command(
     return [
         "docker",
         "run",
+        *game.docker_resource_args(),
         "--name",
         container_name,
         "--network",
@@ -720,6 +743,7 @@ def run_episode_containers(
                     [
                         "docker",
                         "create",
+                        *player.docker_resource_args(),
                         "--name",
                         container_name,
                         "--network",
@@ -860,6 +884,7 @@ def verify_replay_loadable(
                     "docker",
                     "run",
                     "--rm",
+                    *game.docker_resource_args(),
                     "--name",
                     replay_container,
                     "-p",

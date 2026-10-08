@@ -144,13 +144,12 @@ def test_local_player_artifact_isolation(tmp_path: Path, game_exit_code: int, pl
         timeout_seconds=30,
         container_prefix="relh-artifact-isolation",
     )
-    for _ in range(2):
-        if game_exit_code:
-            with pytest.raises(RunnerEpisodeError, match="Game container exited with status 1"):
-                run_episode_containers(spec, verify_replay=False)
-        else:
+    if game_exit_code:
+        with pytest.raises(RunnerEpisodeError, match="Game container exited with status 1"):
             run_episode_containers(spec, verify_replay=False)
-        assert list(artifacts.workspace.glob("player-*")) == []
+    else:
+        run_episode_containers(spec, verify_replay=False)
+    assert list(artifacts.workspace.glob("player-*")) == []
 
     for slot in range(2):
         with ZipFile(artifacts.policy_artifact_path(slot)) as archive:

@@ -41,7 +41,6 @@ import httpx
 import urllib3
 from kubernetes import client, config
 from kubernetes.client.rest import ApiException
-from kubernetes.utils import parse_quantity
 from pydantic import TypeAdapter, ValidationError
 from urllib3.exceptions import HTTPError
 from urllib3.util import Retry
@@ -99,6 +98,7 @@ from coworld.runner.player_artifacts import (
     upload_captured_player_artifact,
 )
 from coworld.runner.relay_client import egress_relay_ssl_context
+from coworld.runner.resource_quantity import parse_resource_quantity
 from coworld.runner.runner import (
     CERTIFICATION_EPISODE_SOURCE,
     DEFAULT_PLAYER_EXIT_TIMEOUT_SECONDS,
@@ -249,7 +249,7 @@ def _player_thread_pool_env(cpu_limit: str) -> dict[str, str]:
     """
     if not cpu_limit:
         return {}
-    threads = max(1, int(parse_quantity(cpu_limit)))
+    threads = max(1, int(parse_resource_quantity(cpu_limit)))
     return {name: str(threads) for name in _PLAYER_THREAD_POOL_ENV_VARS}
 
 

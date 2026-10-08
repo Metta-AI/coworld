@@ -107,6 +107,7 @@ _CORE_SRCS = [
     "src/coworld/runner/relay_client.py",
     "src/coworld/runner/phase_timings.py",
     "src/coworld/runner/runner.py",
+    "src/coworld/runner/resource_quantity.py",
     "src/coworld/schema_validation.py",
     "src/coworld/trajectory.py",
     "src/coworld/types.py",
