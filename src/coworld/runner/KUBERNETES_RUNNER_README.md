@@ -28,6 +28,11 @@ Hosted deployments pass player requests through `COWORLD_PLAYER_CPU_REQUEST` and
 those env vars are omitted in a direct runner invocation, the coordinator falls back to 2 CPU and 2Gi memory per player
 pod.
 
+The trusted coordinator and certification containers each have a 4Gi memory limit. This bounds memory consumed while
+reading game output without imposing a new viewer-message size limit. Deployment settings `COWORLD_WORKER_MEMORY_LIMIT`
+and `CERTIFIER_RUNNER_MEMORY_LIMIT` control these budgets. Exceeding the budget can terminate that container and fail
+its job; these limits do not reserve additional node capacity.
+
 A player pod gets **no CPU limit by default**, so it may burst to every core on the node it lands on — meaning a policy
 that reads `os.cpu_count()`/`nproc` sees 8/12/16 cores depending on placement. A Coworld that wants deterministic,
 node-size-independent player compute declares `player.resources.limits.cpu` in its manifest. The backend forwards it as

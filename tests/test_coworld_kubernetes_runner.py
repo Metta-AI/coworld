@@ -897,6 +897,12 @@ def test_require_global_message_uses_the_selected_startup_timeout(
             events.append(("global message", threading.get_ident()))
             return b"frame"
 
+        def __aiter__(self):
+            return self
+
+        async def __anext__(self):
+            return await asyncio.Future()
+
     observed_timeouts: list[float] = []
 
     async def wait_for(awaitable, *, timeout):
@@ -916,8 +922,8 @@ def test_require_global_message_uses_the_selected_startup_timeout(
     )
 
     assert observed_timeouts == [expected_timeout_seconds]
-    assert [event for event, _thread_id in events] == ["viewer connected", "players started", "global message"]
-    assert events[1][1] != events[0][1]
+    threads = dict(events)
+    assert threads["players started"] != threads["viewer connected"]
 
 
 @pytest.fixture
