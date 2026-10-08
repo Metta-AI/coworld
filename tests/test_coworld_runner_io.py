@@ -1,3 +1,4 @@
+import asyncio
 import logging
 from datetime import UTC, datetime, timedelta
 from email.message import Message
@@ -11,6 +12,28 @@ import pytest
 from coworld.runner import io as runner_io
 from coworld.runner import relay_client
 from coworld.runner.player_artifacts import ArtifactUploadTargets
+
+
+@pytest.mark.asyncio
+async def test_upload_deadline_closes_stalled_connection(monkeypatch):
+    monkeypatch.delenv("COWORLD_EGRESS_RELAY_URL", raising=False)
+    closed = asyncio.Event()
+
+    async def stall(reader, writer):
+        try:
+            await reader.read()
+        finally:
+            writer.close()
+            await writer.wait_closed()
+            closed.set()
+
+    async with await asyncio.start_server(stall, "127.0.0.1", 0) as server:
+        port = server.sockets[0].getsockname()[1]
+        with pytest.raises(TimeoutError):
+            await runner_io.upload_data_with_deadline(
+                f"http://127.0.0.1:{port}/timings", "{}", content_type="application/json", timeout_seconds=0.5
+            )
+        await asyncio.wait_for(closed.wait(), timeout=5)
 
 
 class _Response:

@@ -13,10 +13,14 @@ def egress_relay_ssl_context(*, ca_file: str, cert_file: str, key_file: str) -> 
     return context
 
 
-def relay_http_client(relay_url: str) -> httpx.Client:
+def relay_proxy(relay_url: str) -> httpx.Proxy:
     context = egress_relay_ssl_context(
         ca_file=os.environ["COWORLD_EGRESS_RELAY_CA_FILE"],
         cert_file=os.environ["COWORLD_EGRESS_RELAY_CLIENT_CERT_FILE"],
         key_file=os.environ["COWORLD_EGRESS_RELAY_CLIENT_KEY_FILE"],
     )
-    return httpx.Client(proxy=httpx.Proxy(relay_url, ssl_context=context), timeout=60.0, follow_redirects=True)
+    return httpx.Proxy(relay_url, ssl_context=context)
+
+
+def relay_http_client(relay_url: str) -> httpx.Client:
+    return httpx.Client(proxy=relay_proxy(relay_url), timeout=60.0, follow_redirects=True)

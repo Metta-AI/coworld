@@ -758,52 +758,16 @@ def test_upload_outputs_rejects_symlinked_results(tmp_path, monkeypatch, caplog)
     assert str(artifacts.results_path) in caplog.text
 
 
-def test_upload_timings_writes_model_json_to_env_uri(monkeypatch):
-    uploads: list[tuple[str, str, str]] = []
-    monkeypatch.setattr(
-        kubernetes_runner,
-        "upload_data",
-        lambda uri, data, *, content_type: uploads.append((uri, data, content_type)),
-    )
-    monkeypatch.setenv("WORKER_TIMINGS_URI", "file:///tmp/timings.json")
-    timings = EpisodePhaseTimings(
-        game_boot_s=1.0, player_launch_s=2.0, first_step_s=3.0, gameplay_s=4.0, artifact_upload_s=0.5
-    )
+@pytest.mark.parametrize("complete", [False, True])
+def test_upload_timings_preserves_completed_phases(monkeypatch, tmp_path, complete):
+    destination = tmp_path / "timings.json"
+    monkeypatch.setenv("WORKER_TIMINGS_URI", destination.as_uri())
+    timings = EpisodePhaseTimings(game_boot_s=1.0, artifact_upload_s=0.5 if complete else None)
 
     kubernetes_runner._upload_timings(timings)
 
-    assert len(uploads) == 1
-    uri, data, content_type = uploads[0]
-    assert uri == "file:///tmp/timings.json"
-    assert content_type == "application/json"
-    assert EpisodePhaseTimings.model_validate_json(data).first_step_s == 3.0
-
-
-def test_upload_timings_omits_incomplete_phases(monkeypatch):
-    uploads: list[str] = []
-    monkeypatch.setattr(
-        kubernetes_runner,
-        "upload_data",
-        lambda _uri, data, *, content_type: uploads.append(data),
-    )
-    monkeypatch.setenv("WORKER_TIMINGS_URI", "file:///tmp/timings.json")
-
-    kubernetes_runner._upload_timings(EpisodePhaseTimings(game_boot_s=1.0))
-
-    assert json.loads(uploads[0]) == {"game_boot_s": 1.0}
-    assert EpisodePhaseTimings.model_validate_json(uploads[0]).phase_seconds() == {"game_boot": 1.0}
-
-
-def test_upload_timings_noop_without_env(monkeypatch):
-    uploads: list[object] = []
-    monkeypatch.setattr(kubernetes_runner, "upload_data", lambda *a, **k: uploads.append(a))
-    monkeypatch.delenv("WORKER_TIMINGS_URI", raising=False)
-
-    kubernetes_runner._upload_timings(
-        EpisodePhaseTimings(game_boot_s=1, player_launch_s=1, first_step_s=1, gameplay_s=1, artifact_upload_s=1)
-    )
-
-    assert uploads == []
+    restored = EpisodePhaseTimings.model_validate_json(destination.read_bytes())
+    assert restored.phase_seconds() == timings.phase_seconds()
 
 
 def test_player_image_pull_policy_uses_ifnotpresent_for_digest(monkeypatch):
@@ -4228,9 +4192,11 @@ def test_run_from_env_uploads_final_artifact_timing(monkeypatch):
     assert timing_snapshots == [{"gameplay": 12.0, "artifact_upload": 2.5}]
 
 
-def test_run_from_env_recovers_from_an_intermediate_timing_upload_failure(monkeypatch):
+def test_intermediate_timing_failures_cannot_queue_work_or_block_final_snapshot(monkeypatch):
     upload_attempts = 0
     outputs_uploaded: list[bool] = []
+    upload_started = threading.Event()
+    outputs_ready = threading.Event()
 
     monkeypatch.setattr(kubernetes_runner, "_start_worker_health_server", lambda port: None)
     monkeypatch.setattr(kubernetes_runner, "_read_job_spec", lambda _timings: (_runtime_job(), b"{}"))
@@ -4239,16 +4205,26 @@ def test_run_from_env_recovers_from_an_intermediate_timing_upload_failure(monkey
     def run_episode(*_args, timings, upload_timings, **_kwargs):
         timings.game_boot_s = 1.0
         upload_timings(timings)
+        assert upload_started.wait(timeout=5)
+        for _ in range(10):
+            upload_timings(timings)
 
-    def upload_timing(_timings):
+    async def upload_timing(*_args, **_kwargs):
         nonlocal upload_attempts
         upload_attempts += 1
         if upload_attempts == 1:
-            raise OSError("transient timing upload failure")
+            upload_started.set()
+            assert await asyncio.to_thread(outputs_ready.wait, timeout=5)
+            raise httpx.ConnectError("transient timing upload failure")
+
+    def upload_outputs(_artifacts):
+        outputs_uploaded.append(True)
+        outputs_ready.set()
 
     monkeypatch.setattr(kubernetes_runner, "_run_kubernetes_episode", run_episode)
-    monkeypatch.setattr(kubernetes_runner, "_upload_outputs", lambda _artifacts: outputs_uploaded.append(True))
-    monkeypatch.setattr(kubernetes_runner, "_upload_timings", upload_timing)
+    monkeypatch.setattr(kubernetes_runner, "_upload_outputs", upload_outputs)
+    monkeypatch.setenv("WORKER_TIMINGS_URI", "https://example.test/timings")
+    monkeypatch.setattr(kubernetes_runner, "upload_data_with_deadline", upload_timing)
 
     kubernetes_runner.run_from_env()
 
@@ -4256,7 +4232,8 @@ def test_run_from_env_recovers_from_an_intermediate_timing_upload_failure(monkey
     assert outputs_uploaded == [True]
 
 
-def test_worker_cannot_succeed_when_final_timing_publication_fails(monkeypatch):
+@pytest.mark.parametrize("error_type", [httpx.ConnectError, OSError, ValueError, KeyError])
+def test_worker_succeeds_when_only_timing_publication_fails(monkeypatch, caplog, error_type):
     monkeypatch.setattr(kubernetes_runner, "_start_worker_health_server", lambda port: None)
     monkeypatch.setattr(kubernetes_runner, "_read_job_spec", lambda timings: (_runtime_job(), b"{}"))
     monkeypatch.setattr(kubernetes_runner.EpisodeArtifacts, "create", lambda *args, **kwargs: object())
@@ -4264,13 +4241,15 @@ def test_worker_cannot_succeed_when_final_timing_publication_fails(monkeypatch):
     published = []
     monkeypatch.setattr(kubernetes_runner, "_upload_outputs", lambda artifacts: published.append("results and replay"))
 
-    def fail_timings(timings):
-        raise OSError("final upload failed")
+    async def fail_timings(*args, **kwargs):
+        raise error_type("Timing upload failed https://example.test/timings?secret=hidden")
 
-    monkeypatch.setattr(kubernetes_runner, "_upload_timings", fail_timings)
-    with pytest.raises(OSError, match="final upload failed"):
-        kubernetes_runner.run_from_env()
+    monkeypatch.setenv("WORKER_TIMINGS_URI", "https://example.test/timings?secret=hidden")
+    monkeypatch.setattr(kubernetes_runner, "upload_data_with_deadline", fail_timings)
+    kubernetes_runner.run_from_env()
     assert published == ["results and replay"]
+    assert "timing_upload_failed" in caplog.text
+    assert "secret=hidden" not in caplog.text
 
 
 def test_write_error_info_marks_failure_as_crash(monkeypatch, tmp_path):
@@ -4837,13 +4816,20 @@ def test_transport_failure_survives_error_artifact_upload_failure(monkeypatch, t
     termination_path = tmp_path / "termination-log"
     monkeypatch.setenv("COWORLD_ERROR_TYPE_PATH", str(termination_path))
     monkeypatch.setenv("ERROR_INFO_URI", "https://example.test/error.json?secret=hidden")
+    monkeypatch.setattr(kubernetes_runner, "_start_worker_health_server", lambda port: None)
+    monkeypatch.setattr(kubernetes_runner, "_read_job_spec", lambda timings: (_runtime_job(), b"{}"))
+    monkeypatch.setattr(kubernetes_runner.EpisodeArtifacts, "create", lambda *args, **kwargs: object())
+    monkeypatch.setattr(kubernetes_runner, "_run_kubernetes_episode", lambda *args, **kwargs: None)
+    monkeypatch.setattr(kubernetes_runner, "_upload_debug_logs", lambda *args: None)
+    monkeypatch.delenv("WORKER_TIMINGS_URI", raising=False)
 
     def fail_upload(*args, **kwargs):
         raise httpx.ConnectError("relay is saturated")
 
     monkeypatch.setattr(bootstrap, "upload_data", fail_upload)
+    monkeypatch.setattr(kubernetes_runner, "_upload_outputs", fail_upload)
     with pytest.raises(httpx.ConnectError):
-        bootstrap.write_error_info(httpx.ConnectError("TLS EOF"), default_error_type="config_error")
+        kubernetes_runner.run_from_env()
 
     assert termination_path.read_text() == "artifact_transport_error"
 

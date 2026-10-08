@@ -64,6 +64,7 @@ from coworld.runner.io import (
     read_data,
     redact_uri,
     upload_data,
+    upload_data_with_deadline,
     upload_file,
 )
 from coworld.runner.llm_enablement import resolve_player_llm
@@ -470,7 +471,7 @@ def _start_player_artifact_upload_server(tokens: list[str]) -> _PlayerArtifactUp
 
 
 def run_from_env(*, prepare_players: bool = False) -> None:
-    """Exit zero only after bounded episode publication, including the final timing upload.
+    """Exit zero after required episode publication; timings are diagnostic.
 
     ``prepare_players`` is the separate launch-players init container, never the named worker.
     Optional player artifacts retain their existing best-effort upload semantics.
@@ -480,11 +481,15 @@ def run_from_env(*, prepare_players: bool = False) -> None:
     players_ready = _start_worker_health_server(HEALTH_PORT)
     artifacts = EpisodeArtifacts.create(WORKDIR, prefix="coworld-job-")
     timings = EpisodePhaseTimings()
-    timing_uploads: list[Future[None]] = []
+    timing_upload: Future[None] | None = None
     with ThreadPoolExecutor(max_workers=1) as timing_executor:
 
         def queue_timings_upload(current_timings: EpisodePhaseTimings) -> None:
-            timing_uploads.append(timing_executor.submit(_upload_timings, current_timings.model_copy(deep=True)))
+            nonlocal timing_upload
+            if timing_upload is not None and not timing_upload.done():
+                return
+            timing_upload = timing_executor.submit(_upload_timings, current_timings.model_copy(deep=True))
+            timing_upload.add_done_callback(_log_timing_upload_failure)
 
         try:
             worker_timings = process_timings(
@@ -582,9 +587,8 @@ def run_from_env(*, prepare_players: bool = False) -> None:
         timings.artifact_upload_s = worker_timings.record("artifact_upload", upload_start)
         logger.info("Required episode outputs durable")
         worker_timings.final_clock = TimingClock.capture()
-        queue_timings_upload(timings)
-        timing_uploads[-1].result()
-        logger.info("Worker publication complete")
+        timing_executor.submit(_upload_timings, timings).add_done_callback(_log_timing_upload_failure)
+    logger.info("Worker publication complete")
 
 
 def _upload_debug_logs(artifacts: EpisodeArtifacts) -> None:
@@ -609,7 +613,16 @@ def _upload_debug_logs(artifacts: EpisodeArtifacts) -> None:
 def _upload_timings(timings: EpisodePhaseTimings) -> None:
     timings_uri = os.environ.get("WORKER_TIMINGS_URI")
     if timings_uri is not None:
-        upload_data(timings_uri, timings.model_dump_json(exclude_none=True), content_type="application/json")
+        payload = timings.model_dump_json(exclude_none=True)
+        asyncio.run(
+            upload_data_with_deadline(timings_uri, payload, content_type="application/json", timeout_seconds=5.0)
+        )
+
+
+def _log_timing_upload_failure(upload: Future[None]) -> None:
+    error = upload.exception()
+    if error is not None:
+        logger.warning("timing_upload_failed artifact=worker_timings reason=%s", exception_summary(error))
 
 
 def _upload_player_status(artifacts: EpisodeArtifacts) -> None:
@@ -621,9 +634,7 @@ def _upload_player_status(artifacts: EpisodeArtifacts) -> None:
 
 
 def _upload_outputs(artifacts: EpisodeArtifacts) -> None:
-    # Read the required replay BEFORE publishing anything: results.json is what the backend
-    # reconciles success from, so a missing or non-regular replay (the artifact wait only
-    # checks existence) must fail the episode before results reach S3.
+    # Validate the replay before publishing results so incomplete output never reaches scoring.
     replay_uri = os.environ.get("REPLAY_URI")
     replay_contents = None
     if replay_uri is not None:
