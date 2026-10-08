@@ -2766,7 +2766,23 @@ def test_prepare_players_creates_all_slots_or_cleans_partial_launch(monkeypatch,
     monkeypatch.setenv("COWORLD_SERVICE_NAME", "game-service")
     monkeypatch.delenv("COWORLD_EGRESS_ENFORCEMENT_ENABLED", raising=False)
     monkeypatch.setattr(kubernetes_runner, "_load_incluster_config", lambda **kwargs: None)
-    monkeypatch.setattr(kubernetes_runner, "_policy_secrets_from_env", lambda: {})
+    monkeypatch.setattr(
+        kubernetes_runner,
+        "_policy_secrets_from_env",
+        lambda: {0: {"COWORLD_LLM_ENABLED": "true", "COWORLD_LLM_MODEL": "self-hosted/test"}},
+    )
+    monkeypatch.setenv("COWORLD_SELF_HOSTED_DEPLOYMENTS", '{"self-hosted/test":"coworld-inference"}')
+    ready = []
+
+    def wait_ready(_api, namespace, models, deployments):
+        assert namespace == "jobs"
+        assert models == {"self-hosted/test"}
+        assert deployments == {"self-hosted/test": "coworld-inference"}
+        core.create_namespaced_service.assert_not_called()
+        create.assert_not_called()
+        ready.append(True)
+
+    monkeypatch.setattr(kubernetes_runner, "wait_for_self_hosted_models", wait_ready)
     core = MagicMock()
     monkeypatch.setattr(kubernetes_runner.client, "CoreV1Api", lambda _: core)
     create = MagicMock(side_effect=[None, RuntimeError("pod creation failed")] if creation_fails else None)
@@ -2777,6 +2793,7 @@ def test_prepare_players_creates_all_slots_or_cleans_partial_launch(monkeypatch,
     with pytest.raises(RuntimeError, match="pod creation failed") if creation_fails else nullcontext():
         kubernetes_runner._prepare_player_pods(job, timings)
 
+    assert ready == [True]
     expected_slots = list(range(2 if creation_fails else 3))
     assert [call.args[3] for call in create.call_args_list] == expected_slots
     assert [call.args[4] for call in create.call_args_list] == [f"token-{slot}" for slot in expected_slots]

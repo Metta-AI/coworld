@@ -30,6 +30,12 @@ never fall back to a public provider. Anthropic Messages and System One are not 
 are recorded normally. Provider-billed spend is zero for these calls; separately billed GPU infrastructure is not
 included in that meter. Request limits and model allowlists still apply.
 
+For platform-hosted players, declare the private model with `--use-llm --llm-model self-hosted/...` at upload. The
+platform waits for the enabled endpoint to become ready before starting the game, allowing up to 20 minutes without
+consuming the game's runtime budget. A disabled model or readiness timeout fails startup. Selecting a private model
+dynamically inside a running game does not receive this startup wait. The platform never scales the endpoint; a
+deployment at zero replicas fails startup.
+
 ## How to make the call
 
 ### Bring your own hosted endpoint

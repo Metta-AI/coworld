@@ -117,6 +117,7 @@ from coworld.runner.runner import (
 from coworld.runner.runner import (
     _player_query as _episode_player_query,
 )
+from coworld.runner.self_hosted_inference import requested_self_hosted_models, wait_for_self_hosted_models
 from coworld.types import CoworldEpisodeJobSpec, CoworldRunnableSpec
 
 _IMPORT_DONE_NS = time.monotonic_ns()
@@ -820,6 +821,12 @@ def _prepare_player_pods(job: CoworldEpisodeJobSpec, worker_timings: ProcessTimi
         if isinstance(player, CoworldRunnableSpec)
     ]
     policy_secrets = _policy_secrets_from_env()
+    private_models = requested_self_hosted_models(
+        policy_secrets[slot] for slot, _ in policy_players if slot in policy_secrets
+    )
+    if private_models:
+        deployments = TypeAdapter(dict[str, str]).validate_json(os.environ.get("COWORLD_SELF_HOSTED_DEPLOYMENTS", "{}"))
+        wait_for_self_hosted_models(client.AppsV1Api(api_client), namespace, private_models, deployments)
     player_cpu_request = os.environ.get("COWORLD_PLAYER_CPU_REQUEST", DEFAULT_PLAYER_CPU_REQUEST)
     player_memory_request = os.environ.get("COWORLD_PLAYER_MEMORY_REQUEST", DEFAULT_PLAYER_MEMORY_REQUEST)
     # Empty (the default) means no CPU limit: a player pod may burst to the whole node, so it
