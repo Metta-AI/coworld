@@ -91,6 +91,14 @@ def test_load_coworld_package_validates_inline_game_manifest(tmp_path: Path) -> 
     assert package.manifest.game.name == "unit-test-game"
 
 
+def test_load_coworld_package_does_not_touch_docker(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    # Images are pulled by the flows that launch containers, not by loading a package.
+    coworld_manifest_path = _write_package_files(tmp_path)
+    monkeypatch.setattr("coworld.certifier.ensure_downloaded_images", lambda _: pytest.fail("loading pulled images"))
+
+    load_coworld_package(coworld_manifest_path, tolerate_newer_fields=True)
+
+
 def test_load_coworld_package_allows_tagless_historical_manifest(tmp_path: Path) -> None:
     coworld_manifest_path = _write_package_files(tmp_path)
     manifest = json.loads(coworld_manifest_path.read_text())

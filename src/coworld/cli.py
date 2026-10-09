@@ -52,6 +52,7 @@ from coworld.deploy_audit import (
     github_token_from_env,
 )
 from coworld.feed_cli import FEED_CARD_HELLO_REMINDER, register_feed_commands
+from coworld.local_images import ensure_downloaded_images
 from coworld.manifest.schema_check import check_manifest_schema
 from coworld.manifest_uri import materialized_manifest_path, materialized_replay_path
 from coworld.optimizer.runtime import OptimizerSetupError, run_optimizer_session
@@ -1340,8 +1341,7 @@ def patch_commissioner(
 
 @app.command(
     "download",
-    cls=_DockerCommand,
-    help="Download a Coworld package (manifest, image list, AGENTS.md) for local runs.",
+    help="Download a Coworld package (manifest, image list, player files, AGENTS.md). Needs no Docker.",
     epilog=docs_epilog("choose-a-coworld"),
 )
 def download(
@@ -1355,7 +1355,10 @@ def download(
     server: Annotated[str, typer.Option("--server", help="Observatory API server URL.")] = DEFAULT_SUBMIT_SERVER,
     refresh: Annotated[
         bool,
-        typer.Option("--refresh", help="Re-fetch the Coworld and re-pull images even when it is already cached."),
+        typer.Option(
+            "--refresh",
+            help="Re-fetch the Coworld even when it is already cached. Images are pulled by local runs, not here.",
+        ),
     ] = False,
 ) -> None:
     update_agent_guidance(Path.cwd())
@@ -1647,6 +1650,7 @@ def run_episode(
     player_file_paths: list[Path] | None = None
     with _materialized_manifest_path(manifest_uri, server=server) as manifest_path:
         package = load_coworld_package(manifest_path, tolerate_newer_fields=True)
+        ensure_downloaded_images(package.manifest_path)
         if package.manifest.game.player_runtime == "game-hosted":
             if run or use_llm or secret_env:
                 raise typer.BadParameter("game-hosted Coworlds do not support --run, --use-llm, or --secret-env")

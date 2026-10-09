@@ -81,6 +81,7 @@ _CORE_SRCS = [
     "src/coworld/decision_trajectory.py",
     "src/coworld/training_provenance.py",
     "src/coworld/certifier.py",
+    "src/coworld/local_images.py",
     "src/coworld/commissioner/__init__.py",
     "src/coworld/commissioner/protocol.py",
     "src/coworld/manifest_validation.py",

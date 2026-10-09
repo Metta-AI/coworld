@@ -239,8 +239,9 @@ uv run python -m json.tool ./coworld/cow_.../coworld_manifest.json
 ```
 
 Downloaded packages live under `./coworld/<coworld-id>/` and include `coworld_manifest.json`, `coworld_images.json`, and
-an `AGENTS.md` for local policy work. The command pulls public images and rewrites their manifest references to local
-Docker tags. Game-hosted packages also include `player-files/`; their manifest `file` references become local paths.
+an `AGENTS.md` for local policy work. The command needs no Docker: it rewrites image references to local Docker tags,
+and local runs pull the images the first time they are needed. Game-hosted packages also include `player-files/`; their
+manifest `file` references become local paths.
 
 ### Non-CLI API
 
@@ -266,8 +267,7 @@ coworld = download_coworld("cow_...", server=server)
 Path("coworld_manifest.json").write_text(json.dumps(coworld.manifest, indent=2) + "\n")
 ```
 
-If you intend to run the downloaded Coworld locally, also pull and tag the manifest images or use `coworld download`,
-which does that Docker work for you.
+If you intend to run the Coworld locally, use `coworld download`; local runs pull and tag its images on first use.
 
 ## Build And Run Paint Arena Locally
 

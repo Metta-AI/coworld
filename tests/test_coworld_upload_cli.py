@@ -1,7 +1,6 @@
 import hashlib
 import io
 import json
-import os
 import re
 import subprocess
 import tarfile
@@ -2305,43 +2304,14 @@ def test_download_coworld_command_writes_local_package(
     coworld_id = "cow_00000000-0000-0000-0000-000000000040"
     public_image_uri = "public.ecr.aws/softmax/coworld@sha256:public-digest"
     output_dir = tmp_path / "downloaded"
-    source_docker_config = tmp_path / "source-docker-config"
-    source_context_meta = source_docker_config / "contexts" / "meta" / "colima"
-    source_context_meta.mkdir(parents=True)
-    (source_context_meta / "meta.json").write_text('{"Name":"colima"}\n', encoding="utf-8")
-    (source_docker_config / "config.json").write_text(
-        json.dumps(
-            {
-                "auths": {"public.ecr.aws": {"auth": "stale-public-ecr-token"}},
-                "credHelpers": {"public.ecr.aws": "ecr-login"},
-                "credsStore": "desktop",
-                "currentContext": "colima",
-                "plugins": {"debug": "enabled"},
-            }
-        )
-        + "\n",
-        encoding="utf-8",
-    )
     docker_calls: list[list[str]] = []
-    docker_envs: list[dict[str, str] | None] = []
-    docker_config_snapshots: list[dict[str, object]] = []
-    docker_context_snapshots: list[str] = []
 
-    def fake_run(command: list[str], **kwargs: object) -> subprocess.CompletedProcess[str]:
+    def fake_run(command: list[str], **_kwargs: object) -> subprocess.CompletedProcess[str]:
         docker_calls.append(command)
-        env = cast(dict[str, str] | None, kwargs.get("env"))
-        docker_envs.append(env)
-        if command[:2] == ["docker", "pull"]:
-            assert env is not None
-            pull_config = Path(env["DOCKER_CONFIG"])
-            docker_config_snapshots.append(json.loads((pull_config / "config.json").read_text(encoding="utf-8")))
-            docker_context_snapshots.append(
-                (pull_config / "contexts" / "meta" / "colima" / "meta.json").read_text(encoding="utf-8")
-            )
-        return subprocess.CompletedProcess(command, 0)
+        raise FileNotFoundError("docker is not installed")
 
     monkeypatch.setattr("coworld.upload.subprocess.run", fake_run)
-    monkeypatch.setenv("DOCKER_CONFIG", str(source_docker_config))
+    monkeypatch.setattr("coworld.local_images.subprocess.run", fake_run)
     httpserver.expect_request(
         f"/observatory/v2/coworlds/{coworld_id}",
         method="GET",
@@ -2375,16 +2345,8 @@ def test_download_coworld_command_writes_local_package(
     assert result.exit_code == 0, result.output
     assert all(request.headers["User-Agent"].startswith("coworld/") for request, _response in httpserver.log)
     local_image = "coworld/cow_00000000-0000-0000-0000-000000000040/unit-test-game-0.1.0-0:downloaded"
-    assert docker_calls == [
-        ["docker", "pull", public_image_uri],
-        ["docker", "tag", public_image_uri, local_image],
-    ]
-    assert docker_envs[0] is not None
-    assert docker_envs[0]["DOCKER_CONFIG"] != os.environ.get("DOCKER_CONFIG")
-    assert "coworld-docker-config-" in Path(docker_envs[0]["DOCKER_CONFIG"]).name
-    assert docker_envs[1] is None
-    assert docker_config_snapshots == [{"currentContext": "colima", "plugins": {"debug": "enabled"}}]
-    assert docker_context_snapshots == ['{"Name":"colima"}\n']
+    assert docker_calls == []
+    assert "Docker images are not pulled by download" in result.output
     manifest = json.loads((output_dir / coworld_id / "coworld_manifest.json").read_text())
     assert manifest["game"]["runnable"]["image"] == local_image
     assert manifest["player"][0]["image"] == local_image
@@ -2582,10 +2544,7 @@ def test_download_coworld_command_resolves_canonical_name(
 
     assert result.exit_code == 0, result.output
     local_image = "coworld/cow_00000000-0000-0000-0000-000000000040/unit-test-game-0.1.0-0:downloaded"
-    assert docker_calls == [
-        ["docker", "pull", public_image_uri],
-        ["docker", "tag", public_image_uri, local_image],
-    ]
+    assert docker_calls == []
     manifest = json.loads((output_dir / coworld_id / "coworld_manifest.json").read_text())
     assert manifest["game"]["runnable"]["image"] == local_image
 
@@ -2717,10 +2676,7 @@ def test_download_coworld_command_refreshes_cached_coworld(
 
     assert result.exit_code == 0, result.output
     local_image = "coworld/cow_00000000-0000-0000-0000-000000000040/unit-test-game-0.1.0-0:downloaded"
-    assert docker_calls == [
-        ["docker", "pull", public_image_uri],
-        ["docker", "tag", public_image_uri, local_image],
-    ]
+    assert docker_calls == []
     manifest = json.loads((cached_dir / "coworld_manifest.json").read_text())
     assert manifest["game"]["runnable"]["image"] == local_image
     agents_md = (cached_dir / "AGENTS.md").read_text(encoding="utf-8")

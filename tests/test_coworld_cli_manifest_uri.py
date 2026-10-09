@@ -369,7 +369,7 @@ def test_coworld_play_downloads_missing_coworld_id_cache(tmp_path: Path, monkeyp
         manifest_path = output_dir / coworld_ref / "coworld_manifest.json"
         manifest_path.parent.mkdir(parents=True)
         manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
-        (output_dir / coworld_ref / "coworld_images.json").write_text("{}", encoding="utf-8")
+        (output_dir / coworld_ref / "coworld_images.json").write_text('{"images": []}', encoding="utf-8")
 
     def fake_play_coworld(resolved_manifest_path: Path, **_kwargs: object) -> SimpleNamespace:
         captured["manifest_path"] = resolved_manifest_path
@@ -416,7 +416,7 @@ def test_coworld_certify_downloads_missing_coworld_id_cache(tmp_path: Path, monk
         viewer.mkdir(parents=True)
         (viewer / "index.html").write_text("<html></html>", encoding="utf-8")
         manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
-        (output_dir / coworld_ref / "coworld_images.json").write_text("{}", encoding="utf-8")
+        (output_dir / coworld_ref / "coworld_images.json").write_text('{"images": []}', encoding="utf-8")
 
     def fake_certify_coworld(resolved_manifest_path: Path, **_kwargs: object) -> SimpleNamespace:
         captured["manifest_path"] = resolved_manifest_path
@@ -712,7 +712,7 @@ def test_run_episode_downloads_missing_coworld_id_cache(
         manifest_path = output_dir / coworld_ref / "coworld_manifest.json"
         manifest_path.parent.mkdir(parents=True)
         manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
-        (output_dir / coworld_ref / "coworld_images.json").write_text("{}", encoding="utf-8")
+        (output_dir / coworld_ref / "coworld_images.json").write_text('{"images": []}', encoding="utf-8")
 
     def fake_run_coworld_episode(spec: CoworldEpisodeJobSpec, artifacts: object, **_kwargs: object) -> None:
         captured["spec"] = spec
