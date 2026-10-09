@@ -42,10 +42,10 @@ from coworld.api_client import (
 from coworld.cli_support import console, emit_json, print_replay_session
 from coworld.config import DEFAULT_SUBMIT_SERVER, docs_epilog, participation_guide_url
 from coworld.episode_downloads import DownloadResult, download_episodes
+from coworld.episode_replays import materialized_episode_replay
 from coworld.episode_workflows import register_episode_workflows
 from coworld.feed_cli import FEED_CARD_REMINDER
 from coworld.manifest import read_downloaded_manifest
-from coworld.manifest_uri import materialized_replay_path
 from coworld.play import ReplaySession, replay_coworld
 from coworld.submit import parse_policy_identifier
 from coworld.upload import download_coworld, downloaded_coworld_manifest_path, pull_and_tag_image
@@ -859,7 +859,7 @@ def register_tournament_commands(app: typer.Typer) -> None:
             )
             rows = [row for row in page.entries if row.replay_url is not None]
             if download_dir is not None:
-                metadata = _download_replays(rows, download_dir)
+                metadata = _download_replays(client=client, rows=rows, output_dir=download_dir)
                 if json_output:
                     emit_json(metadata)
                     return
@@ -903,7 +903,7 @@ def register_tournament_commands(app: typer.Typer) -> None:
             if open_browser:
                 webbrowser.open(session.link)
 
-        with CoworldApiClient.from_login(server_url=server) as client:
+        with CoworldApiClient.from_login(server_url=server) as client, ExitStack() as stack:
             episode = client.get_episode_request(episode_request_id)
             if with_artifacts:
                 _download_episode_artifacts(client, episode, episode_request_id, artifacts_dir, mine)
@@ -943,7 +943,6 @@ def register_tournament_commands(app: typer.Typer) -> None:
                 if open_browser:
                     webbrowser.open(session.viewer_url)
                 return
-        with ExitStack() as stack:
             if manifest_path.is_file():
                 replay_manifest_path = manifest_path.resolve()
             else:
@@ -956,7 +955,13 @@ def register_tournament_commands(app: typer.Typer) -> None:
                 manifest_temp_dir = stack.enter_context(tempfile.TemporaryDirectory(prefix="coworld-replay-manifest-"))
                 replay_manifest_path = Path(manifest_temp_dir) / "coworld_manifest.json"
                 replay_manifest_path.write_text(json.dumps(manifest, indent=2) + "\n", encoding="utf-8")
-            replay_path = stack.enter_context(materialized_replay_path(episode.replay_url))
+            replay_path = stack.enter_context(
+                materialized_episode_replay(
+                    client=client,
+                    episode_request_id=episode_request_id,
+                    replay_uri=episode.replay_url,
+                )
+            )
             session = replay_coworld(
                 replay_manifest_path,
                 replay_path,
@@ -1493,6 +1498,8 @@ def _print_policy_artifacts(agent_indices: list[int]) -> None:
 
 
 def _download_replays(
+    *,
+    client: CoworldApiClient,
     rows: list[V2EpisodeRequestSummary],
     output_dir: Path,
 ) -> list[dict[str, Any]]:
@@ -1502,7 +1509,9 @@ def _download_replays(
         assert row.replay_url is not None, "replay download rows must have replay_url"
         local_name = f"{row.id}.replay"
         local_path = output_dir / local_name
-        with materialized_replay_path(row.replay_url) as replay_path:
+        with materialized_episode_replay(
+            client=client, episode_request_id=row.id, replay_uri=row.replay_url
+        ) as replay_path:
             shutil.copyfile(replay_path, local_path)
         metadata.append(
             {
@@ -1525,6 +1534,6 @@ def _print_replays(rows: Sequence[V2EpisodeRequestSummary | V2EpisodeRequestList
     table.add_column("Replay URI")
     table.add_column("Local Command")
     for row in rows:
-        command = f"uv run coworld replay {row.coworld_id} {row.replay_url}" if row.coworld_id else "-"
+        command = f"uv run coworld replay-open {row.id}" if row.coworld_id else "-"
         table.add_row(row.id, row.coworld_id or "-", row.replay_url or "-", command)
     console.print(table)

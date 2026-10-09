@@ -71,13 +71,17 @@ def test_api_client_auth_error_mentions_server_url(monkeypatch: pytest.MonkeyPat
     assert "uv run softmax login --server http://localhost:3102/api" in str(exc_info.value)
 
 
+@pytest.mark.parametrize("conductor", [False, True])
 def test_replays_downloads_round_replays(
     httpserver: HTTPServer,
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
+    conductor: bool,
 ) -> None:
     replay_payload = b"\x00crewrift-replay-bytes\xff"
     replay_url = httpserver.url_for("/replay")
+    if conductor:
+        replay_url = "conductor://run/attempt/replay"
     httpserver.expect_request(
         f"/observatory/v2/rounds/{ROUND_ID}/episode-requests",
         method="GET",
@@ -98,7 +102,14 @@ def test_replays_downloads_round_replays(
             "next_cursor": None,
         }
     )
-    httpserver.expect_request("/replay", method="GET").respond_with_data(replay_payload)
+    if conductor:
+        httpserver.expect_request(
+            f"/observatory/v2/episode-requests/{EPISODE_REQUEST_ID}/artifacts/replay",
+            method="GET",
+            headers={"Authorization": "Bearer token"},
+        ).respond_with_data(replay_payload)
+    else:
+        httpserver.expect_request("/replay", method="GET").respond_with_data(replay_payload)
 
     result = CliRunner().invoke(
         app,
@@ -848,20 +859,30 @@ def test_replay_open_with_artifacts_downloads_zips(
     assert (artifacts_dir / "policy_artifact_1.zip").read_bytes() == b"PK\x03\x04zip1"
 
 
+@pytest.mark.parametrize("conductor", [False, True])
 def test_replay_open_downloads_only_game_image_for_local_replay(
     httpserver: HTTPServer,
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
+    conductor: bool,
 ) -> None:
     monkeypatch.chdir(tmp_path)
     replay_path = tmp_path / "replay"
     replay_path.write_text('{"frames":[]}\n')
+    replay_uri = replay_path.as_uri()
+    if conductor:
+        replay_uri = "conductor://run/attempt/replay"
+        httpserver.expect_request(
+            f"/observatory/v2/episode-requests/{EPISODE_REQUEST_ID}/artifacts/replay",
+            method="GET",
+            headers={"Authorization": "Bearer token"},
+        ).respond_with_data(replay_path.read_bytes())
     opened_urls: list[str] = []
     httpserver.expect_request(
         f"/observatory/v2/episode-requests/{EPISODE_REQUEST_ID}",
         method="GET",
         headers={"Authorization": "Bearer token"},
-    ).respond_with_json(_episode_request(episode_request_id=EPISODE_REQUEST_ID, replay_url=replay_path.as_uri()))
+    ).respond_with_json(_episode_request(episode_request_id=EPISODE_REQUEST_ID, replay_url=replay_uri))
 
     calls: dict[str, Any] = {}
     game_image = "public.ecr.aws/example/unit-test-game:latest"
@@ -891,6 +912,7 @@ def test_replay_open_downloads_only_game_image_for_local_replay(
             "manifest": json.loads(manifest_path.read_text(encoding="utf-8")),
             "manifest_path": manifest_path,
             "replay_path": replay_path,
+            "replay_bytes": replay_path.read_bytes(),
             "timeout_seconds": timeout_seconds,
         }
         artifacts = SimpleNamespace(workspace=tmp_path / "artifacts", logs_dir=tmp_path / "logs")
@@ -925,7 +947,7 @@ def test_replay_open_downloads_only_game_image_for_local_replay(
     replay_call = calls["replay"]
     assert replay_call["manifest"]["game"]["runnable"]["image"] == f"coworld/{COWORLD_ID}/replay-game:downloaded"
     assert replay_call["manifest"]["player"][0]["image"] == player_image
-    assert replay_call["replay_path"] == replay_path
+    assert replay_call["replay_bytes"] == replay_path.read_bytes()
     assert "Replay client: http://replay.local" in result.output
     assert opened_urls == ["http://replay.local"]
 
