@@ -357,8 +357,9 @@ One Docker image can implement multiple roles by appearing in multiple runnable 
 different commands. `coworld upload-coworld` deduplicates image uploads by image reference and backend content identity.
 At hosted execution time, image tags resolve to immutable digests.
 
-`coworld download` pulls public bundled images and game-hosted player files. It writes files under
-`player-files/{sha256}` and rewrites the downloaded manifest to those local package-relative paths.
+`coworld download` fetches the manifest and game-hosted player files without Docker; local runs pull the images on first
+use. It writes files under `player-files/{sha256}` and rewrites the downloaded manifest to those local package-relative
+paths.
 
 `manifest.game.runnable.env.COWORLD_LOCAL_EXTRA_PORTS` is a local-runner-only deployment hint for games that expose
 additional host TCP services beyond Coworld HTTP on container port 8080. Use comma-separated

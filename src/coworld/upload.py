@@ -39,6 +39,7 @@ from coworld.config import (
 )
 from coworld.feed_cli import FEED_CARD_REMINDER
 from coworld.image_refs import is_digest_pinned_image_ref, is_mutable_registry_image_ref
+from coworld.local_images import _prepare_public_ecr_docker_config, ensure_downloaded_images, pull_and_tag_image
 from coworld.manifest import validate_upload_manifest
 from coworld.manifest.registry import read_downloaded_manifest
 from coworld.manifest_validation import validate_coworld_manifest_game_configs
@@ -65,7 +66,6 @@ _REPLAY_VIEWER_BUNDLE_WAIT_SECONDS = 600.0
 _CERTIFICATION_CACHE_VERSION = "coworld-certification-v1"
 _PLAYER_FILE_CONTENT_TYPE = "application/octet-stream"
 _PACKAGE_ROOT = Path(__file__).parent
-_DOCKER_AUTH_CONFIG_KEYS = {"auths", "credsStore", "credHelpers"}
 
 
 def download_agents_md(server: str, leagues: list[LeaguePublic], manifest: dict[str, Any]) -> str:
@@ -1219,6 +1219,7 @@ def upload_coworld(
 ) -> CoworldUploadResult:
     with _certification_snapshot(manifest_path) as manifest_path:
         package = load_coworld_package(manifest_path)
+        ensure_downloaded_images(package.manifest_path)
         manifest = package.manifest.model_dump(exclude_none=True)
         _reject_mutable_registry_image_refs(manifest)
 
@@ -1926,9 +1927,6 @@ def download_coworld_cmd(
     coworld = download_coworld(coworld_id, server=server)
 
     image_tags = _local_image_tags(coworld)
-    for public_image_uri, local_tag in image_tags.items():
-        pull_and_tag_image(public_image_uri, local_tag)
-
     (output_dir / coworld.id).mkdir(parents=True, exist_ok=True)
     manifest = _download_coworld_player_files(coworld, output_dir, server=server)
     manifest = _manifest_with_local_images(manifest, image_tags)
@@ -1959,6 +1957,7 @@ def download_coworld_cmd(
 
     typer.echo(f"Downloaded Coworld: {coworld.name}:{coworld.version}")
     _print_download_paths(coworld.id, manifest_path, image_map_path, agents_path)
+    typer.echo("Docker images are not pulled by download; local runs pull them on first use.")
 
 
 def _print_download_paths(coworld_id: str, manifest_path: Path, image_map_path: Path, agents_path: Path) -> None:
@@ -1970,38 +1969,6 @@ def _print_download_paths(coworld_id: str, manifest_path: Path, image_map_path: 
         typer.echo(f"Player files: {player_files_path}")
     typer.echo(f"Agent guide: {agents_path}")
     typer.echo(f"Play: {shlex.join(['uv', 'run', 'coworld', 'play', coworld_id])}")
-
-
-def pull_and_tag_image(public_image_uri: str, local_tag: str) -> None:
-    if public_image_uri.startswith("public.ecr.aws/"):
-        # Anonymous public pulls fail when the caller's Docker config carries stale
-        # public-ECR auth (ecr-public login tokens expire ~12h; ecr-login credHelpers
-        # break with expired AWS creds). Pull through a temp DOCKER_CONFIG that keeps
-        # the active Docker context (colima/OrbStack/Desktop) but drops auth material.
-        with tempfile.TemporaryDirectory(prefix="coworld-docker-config-") as docker_config:
-            _prepare_public_ecr_docker_config(Path(docker_config))
-            subprocess.run(
-                ["docker", "pull", public_image_uri],
-                check=True,
-                env={**os.environ, "DOCKER_CONFIG": docker_config},
-            )
-    else:
-        subprocess.run(["docker", "pull", public_image_uri], check=True)
-    subprocess.run(["docker", "tag", public_image_uri, local_tag], check=True)
-
-
-def _prepare_public_ecr_docker_config(docker_config: Path) -> None:
-    source_config = Path(os.environ.get("DOCKER_CONFIG") or str(Path.home() / ".docker")).expanduser()
-    config_path = source_config / "config.json"
-    if config_path.is_file():
-        config = json.loads(config_path.read_text(encoding="utf-8"))
-        for key in _DOCKER_AUTH_CONFIG_KEYS:
-            config.pop(key, None)
-        (docker_config / "config.json").write_text(json.dumps(config, indent=2) + "\n", encoding="utf-8")
-
-    contexts_path = source_config / "contexts"
-    if contexts_path.exists():
-        shutil.copytree(contexts_path, docker_config / "contexts")
 
 
 def _manifest_with_softmax_image_ids(client: CoworldUploadClient, manifest: dict[str, object]) -> dict[str, object]:

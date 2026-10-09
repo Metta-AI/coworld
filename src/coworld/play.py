@@ -18,6 +18,7 @@ from coworld.certifier import (
     load_manifest_episode_job_spec,
     load_results,
 )
+from coworld.local_images import ensure_downloaded_images
 from coworld.replay_viewer import LocalReplayViewerServer, source_replay_viewer_bundle
 from coworld.runner.runner import (
     CONFIG_ENV_VAR,
@@ -107,6 +108,7 @@ def play_coworld(
     on_ready: Callable[[PlaySession], None],
 ) -> PlayResult:
     package = load_coworld_package(manifest_path, tolerate_newer_fields=True)
+    ensure_downloaded_images(package.manifest_path)
     if package.manifest.game.player_runtime == "game-hosted":
         raise ValueError("coworld play does not support game-hosted Coworlds")
     artifacts = EpisodeArtifacts.create(workspace, prefix="coworld-play-")
@@ -299,6 +301,8 @@ def replay_coworld(
                 server_thread.join()
         return session
 
+    # Only the container replay path needs the game image; a static viewer bundle runs without Docker.
+    ensure_downloaded_images(package.manifest_path)
     assert_docker_image_reachable(package.game.image, label="game.runnable.image")
     container_replay_uri = f"file:///coworld-replay/{replay_path.name}"
 

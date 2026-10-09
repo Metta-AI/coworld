@@ -30,6 +30,7 @@ from coworld.commissioner.protocol import (
     ScheduleRoundsRequest,
     ScheduleRoundsResponse,
 )
+from coworld.local_images import ensure_downloaded_images
 from coworld.manifest import read_downloaded_manifest, validate_upload_manifest
 from coworld.manifest_validation import (
     game_config_with_tokens,
@@ -619,6 +620,7 @@ def certify_coworld(
             "Manifest schema and certification tags validated.",
         ),
     )
+    ensure_downloaded_images(package.manifest_path)
     matriculated_at = datetime.now(timezone.utc)
 
     def source_refs_feedback(checked: object) -> str:
