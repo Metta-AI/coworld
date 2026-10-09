@@ -107,14 +107,25 @@ def test_watch_resumes_after_rate_limit_with_equal_revision_update(httpserver: H
     initial["phase"] = "changes"
     initial["has_more"] = False
     initial["next_cursor"] = "finished"
-    initial["batches"][0]["status"] = "completed"
     initial["entries"][0]["episode"]["status"] = "completed"
     httpserver.expect_ordered_request(
         "/observatory/v2/episode-requests/changes",
         query_string={"ids": BATCH, "view": "progress", "limit": "200", "cursor": "saved"},
     ).respond_with_json(initial)
+    initial["batches"][0]["status"] = "completed"
+    initial["entries"] = []
+
+    def finish_parent(request):
+        assert 0 < float(request.args["wait_seconds"]) <= 1
+        return Response(json.dumps(initial), content_type="application/json")
+
+    httpserver.expect_ordered_request("/observatory/v2/episode-requests/changes").respond_with_handler(finish_parent)
     resumed = CliRunner().invoke(app, args)
     assert resumed.exit_code == 0, resumed.output
+    partial, completed = [json.loads(line) for line in resumed.stdout.splitlines()]
+    assert partial["entries"][0]["episode"]["status"] == "completed"
+    assert partial["batches"][0]["status"] == "running"
+    assert completed["batches"][0]["status"] == "completed"
     assert WatchCheckpoint.model_validate_json(checkpoint.read_text()).cursor == "finished"
     assert "private-api-token" not in checkpoint.read_text()
 

@@ -1422,11 +1422,12 @@ class CoworldApiClient:
         view: EpisodeView = "progress",
         limit: int = 200,
         cursor: str | None = None,
+        wait_seconds: float = 0,
     ) -> EpisodeChangePage | EpisodeFeedRetry | EpisodeFeedRestart:
         response = self._http_client.get(
             "/v2/episode-requests/changes",
             headers=self._headers(),
-            params=_query_params(ids=ids, view=view, limit=limit, cursor=cursor),
+            params=_query_params(ids=ids, view=view, limit=limit, cursor=cursor, wait_seconds=wait_seconds or None),
         )
         if response.status_code == 429 and response.headers.get("Retry-After", "").isdigit():
             return EpisodeFeedRetry(retry_after_seconds=int(response.headers["Retry-After"]))

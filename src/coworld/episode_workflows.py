@@ -68,9 +68,10 @@ def watch_episodes(
     jsonl: bool,
 ) -> int:
     deadline = time.monotonic() + timeout
-    idle_delay = 2.0
+    wait_seconds = 0.0
     while time.monotonic() < deadline:
-        page = client.episode_changes(state.ids, view=state.view, cursor=state.cursor)
+        requested_wait = min(wait_seconds, max(0.0, deadline - time.monotonic()))
+        page = client.episode_changes(state.ids, view=state.view, cursor=state.cursor, wait_seconds=requested_wait)
         if isinstance(page, EpisodeFeedRestart):
             typer.echo(
                 f"Watch cannot resume (HTTP {page.status_code}). Check access, then use --reset for a fresh snapshot.",
@@ -99,6 +100,7 @@ def watch_episodes(
             if checkpoint is not None:
                 write_json_atomic(checkpoint, state)
             if page.has_more:
+                wait_seconds = 0.0
                 continue
             episodes = [e for e in state.episodes.values() if e.status != "removed"]
             terminal = {"completed", "failed", "cancelled"}
@@ -133,13 +135,16 @@ def watch_episodes(
                         write_json_atomic(checkpoint, state)
                     if not evidence_pending and all(e.evidence_state == "sealed" for e in episodes):
                         return 2 if failed or evidence_unavailable else 0
-            idle_delay = 2.0 if page.entries else min(10.0, idle_delay * 1.5)
-            delay = max(idle_delay, page.poll_after_seconds) + random.uniform(0, 0.25)
+            wait_seconds = 25.0
+            delay = page.poll_after_seconds if requested_wait else 0.0
+            if delay:
+                delay += random.uniform(0, 0.25)
         remaining = deadline - time.monotonic()
         if remaining <= delay:
             typer.echo("Watch timed out; resume with the same checkpoint.", err=True)
             return 3
-        time.sleep(delay)
+        if delay:
+            time.sleep(delay)
     return 3
 
 
