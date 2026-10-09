@@ -6,6 +6,7 @@ from typer.testing import CliRunner
 from werkzeug import Request, Response
 
 from coworld.cli import app
+from coworld.feed_cli import FEED_CARD_REMINDER
 
 NOW = "2026-05-12T12:00:00Z"
 COWORLD_ID = "cow_00000000-0000-0000-0000-000000000015"
@@ -212,6 +213,21 @@ def test_xp_request_get_renders_detail_and_episodes(httpserver: HTTPServer) -> N
     assert result.exit_code == 0, result.output
     assert XP_REQUEST_ID in result.output
     assert EPISODE_REQUEST_ID in result.output
+    assert FEED_CARD_REMINDER not in result.output
+
+
+def test_xp_request_get_completed_ends_with_feed_reminder(httpserver: HTTPServer) -> None:
+    detail = {**_experience_request_detail(), "status": "completed", "completed_at": NOW}
+    httpserver.expect_request(f"/observatory/v2/experience-requests/{XP_REQUEST_ID}", method="GET").respond_with_json(
+        detail
+    )
+
+    result = CliRunner().invoke(
+        app, ["xp-request", "get", XP_REQUEST_ID, "--server", httpserver.url_for("/")], env={"COLUMNS": "200"}
+    )
+
+    assert result.exit_code == 0, result.output
+    assert result.output.rstrip().endswith(FEED_CARD_REMINDER)
 
 
 def test_xp_request_episodes_renders_children(httpserver: HTTPServer) -> None:

@@ -10,6 +10,7 @@ from werkzeug.wrappers import Response
 
 from coworld.api_client import CoworldApiClient
 from coworld.cli import app
+from coworld.feed_cli import FEED_CARD_REMINDER
 
 NOW = "2026-05-12T12:00:00Z"
 GAME_ID = "game_00000000-0000-0000-0000-000000000010"
@@ -186,6 +187,19 @@ def test_results_handles_empty_division_leaderboard(httpserver: HTTPServer) -> N
 
     assert result.exit_code == 0, result.output
     assert json.loads(result.output) == []
+
+
+def test_results_ends_with_feed_reminder(httpserver: HTTPServer) -> None:
+    httpserver.expect_request(
+        f"/observatory/v2/divisions/{DIVISION_ID}/leaderboard",
+        method="GET",
+        headers={"Authorization": "Bearer token"},
+    ).respond_with_json(None)
+
+    result = CliRunner().invoke(app, ["results", DIVISION_ID, "--server", httpserver.url_for("")])
+
+    assert result.exit_code == 0, result.output
+    assert result.output.rstrip().endswith(FEED_CARD_REMINDER)
 
 
 def test_episodes_accepts_bulk_rows_without_assignments(

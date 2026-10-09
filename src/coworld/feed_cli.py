@@ -26,7 +26,9 @@ SUMMARY_SOFT_LIMIT = 350
 # rules in FEED_CARDS.md decide, and they are not repeated here to keep the output small.
 FEED_CARD_RULES_POINTER = "Rules: uv run coworld docs --local FEED_CARDS"
 FEED_CARD_REMINDER = f"Feed: is it time for a card on your human's play page? {FEED_CARD_RULES_POINTER}"
-FEED_CARD_HELLO_REMINDER = f"Feed: say hello on your human's play page with a hello card. {FEED_CARD_RULES_POINTER}"
+FEED_CARD_HELLO_REMINDER = (
+    f"Feed: no hello card on your human's play page yet? Post one now, before anything else. {FEED_CARD_RULES_POINTER}"
+)
 
 _FRONT_MATTER = re.compile(r"\A---\r?\n(?P<meta>.*?)\r?\n---(?:\r?\n|\Z)(?P<body>.*)\Z", re.DOTALL)
 

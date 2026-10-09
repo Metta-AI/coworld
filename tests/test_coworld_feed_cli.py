@@ -8,7 +8,7 @@ from typer.testing import CliRunner
 from werkzeug import Request, Response
 
 from coworld.cli import app
-from coworld.feed_cli import parse_feed_card
+from coworld.feed_cli import FEED_CARD_HELLO_REMINDER, parse_feed_card
 
 NOW = "2026-10-07T12:00:00Z"
 CARD_ID = "00000000-0000-0000-0000-000000000099"
@@ -165,3 +165,13 @@ def test_feed_post_reuses_key_after_failed_response(
     changed = CliRunner().invoke(app, args)
     assert changed.exit_code == 0, changed.output
     assert (captured[-1]["idempotency_key"] in keys) == (explicit_key is not None)
+
+
+def test_download_ends_with_hello_reminder(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr("coworld.cli.download_coworld_cmd", lambda *args, **kwargs: None)
+
+    result = CliRunner().invoke(app, ["download", "cow_x"])
+
+    assert result.exit_code == 0, result.output
+    assert result.output.rstrip().endswith(FEED_CARD_HELLO_REMINDER)
