@@ -7,7 +7,6 @@ import subprocess
 import tarfile
 import tracemalloc
 import zipfile
-from datetime import UTC, datetime
 from pathlib import Path
 from typing import Literal, cast
 
@@ -18,7 +17,7 @@ from pytest_httpserver import HTTPServer
 from typer.testing import CliRunner
 from werkzeug import Request, Response
 
-from coworld.cli import _DEFAULT_POLICY_NAME_MAX_LENGTH, app
+from coworld.cli import app
 from coworld.config import NEXT_CURSOR_HEADER
 from coworld.player_files import player_file_bytes
 from coworld.runner.external_llm import EXTERNAL_LLM_SECRET_KEY, ExternalLlmRoute
@@ -58,8 +57,6 @@ from coworld.upload import (
     download_agents_md,
     upload_coworld,
 )
-from softmax.auth import WhoAmIResponse as AuthIdentity
-from softmax.players import PlayerResponse
 
 
 @pytest.fixture(autouse=True)
@@ -1743,81 +1740,83 @@ def test_submit_player_files_rejects_missing_or_out_of_package_paths(tmp_path: P
         _submit_player_files(cast(CoworldUploadClient, object()), {"player": [{"file": reference}]}, tmp_path)
 
 
-@pytest.mark.parametrize(
-    ("subject_type", "subject_id", "expected_name"),
-    [
-        ("player", "ply_active", "ply_active"),
-        ("user", "user-id", "Account Default-ply_default"),
-    ],
-)
-def test_upload_policy_command_defaults_name_from_authenticated_identity(
-    monkeypatch: pytest.MonkeyPatch,
-    subject_type: str,
-    subject_id: str,
-    expected_name: str,
+def test_upload_policy_command_without_name_lets_the_server_name_the_policy(
+    httpserver: HTTPServer, tmp_path: Path
 ) -> None:
-    uploaded_names: list[str] = []
-    monkeypatch.setattr("softmax.auth.load_user_token", lambda *, server: pytest.fail("used owner credential"))
-    monkeypatch.setattr(
-        "softmax.auth.fetch_cogames_whoami",
-        lambda *, api_server, token: AuthIdentity(
-            user_email="test@example.com", subject_type=subject_type, subject_id=subject_id
-        ),
+    player_file = tmp_path / "player.wasm"
+    contents = b"scissors"
+    player_file.write_bytes(contents)
+    body = {"content_hash": hashlib.sha256(contents).hexdigest(), "size_bytes": len(contents), "tags": {}}
+    httpserver.expect_request("/observatory/stats/policies/files/upload", method="POST", json=body).respond_with_json(
+        {"detail": "already stored"}, status=409
+    )
+    # No "name" key is sent; the server answers with the name it chose.
+    httpserver.expect_request("/observatory/stats/policies/files/complete", method="POST", json=body).respond_with_json(
+        {"id": "00000000-0000-0000-0000-000000000031", "name": "Scissors", "version": 3}
     )
 
-    def owned_players(*, server: str, token: str) -> list[PlayerResponse]:
-        assert subject_type == "user", "player credentials cannot list account-owned players"
-        return [
-            PlayerResponse(
-                id="ply_default",
-                name="Account Default",
-                is_default=True,
-                created_at=datetime(2026, 1, 1, tzinfo=UTC),
-            )
-        ]
-
-    monkeypatch.setattr(
-        "coworld.cli.list_players",
-        owned_players,
-    )
-    monkeypatch.setattr(
-        "coworld.cli.upload_policy_cmd",
-        lambda image, name, **kwargs: uploaded_names.append(name),
-    )
-
-    result = CliRunner().invoke(app, ["upload-policy", "unit-test-policy:latest"])
+    result = CliRunner().invoke(app, ["upload-policy", "--file", str(player_file), "--server", httpserver.url_for("")])
 
     assert result.exit_code == 0, result.output
-    assert uploaded_names == [expected_name]
-    assert f"Policy name: {expected_name}" in result.output
+    assert "Policy name: Scissors (your player's name; pass --name to choose another)" in result.output
+    assert "Upload complete: Scissors:v3" in result.output
 
 
-def test_upload_policy_command_default_name_satisfies_policy_contract(monkeypatch: pytest.MonkeyPatch) -> None:
-    player_id = "ply_00000000-0000-0000-0000-000000000001"
-    uploaded_names: list[str] = []
-    monkeypatch.setattr(
-        "softmax.auth.fetch_cogames_whoami",
-        lambda *, api_server, token: AuthIdentity(user_email="test@example.com", subject_type="user"),
+def test_upload_policy_command_without_name_omits_name_for_docker_images(
+    httpserver: HTTPServer, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr("coworld.upload.assert_docker_image_reachable", lambda *_args, **_kwargs: None)
+    monkeypatch.setattr("coworld.upload._local_image_client_hash", lambda image: "sha256:client-hash")
+    monkeypatch.setattr("coworld.upload._push_container_image", lambda source_image, push_info: None)
+    httpserver.expect_request("/observatory/v2/container_images/upload", method="POST").respond_with_json(
+        {
+            "image": {
+                "id": "img_00000000-0000-0000-0000-000000000030",
+                "name": "unit-test-policy",
+                "version": 1,
+                "client_hash": "sha256:client-hash",
+                "status": "ready",
+                "image_uri": "123456789012.dkr.ecr.us-east-1.amazonaws.com/coworld/user/unit-test-policy@sha256:digest",
+                "image_digest": "sha256:digest",
+            },
+            "pre_signed_info": None,
+        }
     )
-    monkeypatch.setattr(
-        "coworld.cli.list_players",
-        lambda *, server, token: [
-            PlayerResponse(
-                id=player_id,
-                name="Tournament: Player Name That Exceeds The Policy Name Limit",
-                is_default=True,
-                created_at=datetime(2026, 1, 1, tzinfo=UTC),
-            )
-        ],
-    )
-    monkeypatch.setattr("coworld.cli.upload_policy_cmd", lambda image, name, **kwargs: uploaded_names.append(name))
+    httpserver.expect_request(
+        "/observatory/stats/policies/docker-img/complete",
+        method="POST",
+        json={"container_image_id": "img_00000000-0000-0000-0000-000000000030"},
+    ).respond_with_json({"id": "00000000-0000-0000-0000-000000000031", "name": "Scissors-afba5e76", "version": 1})
 
-    result = CliRunner().invoke(app, ["upload-policy", "unit-test-policy:latest"])
+    result = CliRunner().invoke(app, ["upload-policy", "unit-test-policy:latest", "--server", httpserver.url_for("")])
 
     assert result.exit_code == 0, result.output
-    assert uploaded_names[0].endswith(f"-{player_id}")
-    assert len(uploaded_names[0]) == _DEFAULT_POLICY_NAME_MAX_LENGTH
-    assert ":" not in uploaded_names[0]
+    assert "Policy name: Scissors-afba5e76 (your player's name" in result.output
+
+
+def test_upload_policy_command_explicit_name_is_sent_unchanged(httpserver: HTTPServer, tmp_path: Path) -> None:
+    player_file = tmp_path / "player.wasm"
+    player_file.write_bytes(b"scissors")
+    body = {
+        "name": "custom",
+        "content_hash": hashlib.sha256(b"scissors").hexdigest(),
+        "size_bytes": 8,
+        "tags": {},
+    }
+    httpserver.expect_request("/observatory/stats/policies/files/upload", method="POST", json=body).respond_with_json(
+        {"detail": "already stored"}, status=409
+    )
+    httpserver.expect_request("/observatory/stats/policies/files/complete", method="POST", json=body).respond_with_json(
+        {"id": "00000000-0000-0000-0000-000000000031", "name": "custom", "version": 1}
+    )
+
+    result = CliRunner().invoke(
+        app, ["upload-policy", "--file", str(player_file), "--name", "custom", "--server", httpserver.url_for("")]
+    )
+
+    assert result.exit_code == 0, result.output
+    assert "Policy name: custom\n" in result.output
+    assert "pass --name" not in result.output
 
 
 def test_upload_policy_command_sends_policy_secrets(

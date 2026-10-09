@@ -282,9 +282,10 @@ uv run coworld upload-policy my-player:latest \
   --llm-model anthropic/claude-haiku-4.5
 ```
 
-The policy name is derived from the active Softmax player's name and ID, making it globally unique. Without an active
-player session, it uses the account's default player. Pass `--name` to override the default or upload another version of
-an existing named policy.
+Without `--name`, the server names the policy after the uploading Softmax player: the active player, or the account's
+default player. If another user or another of your players already holds that name, it appends the first 8 characters of
+the player ID. Re-uploads by the same player add a version to that policy. Pass `--name` to choose a name or upload
+another version of an existing named policy.
 
 - `--use-llm` attaches the LLM sidecar to the hosted player pod so the player can call a model without its own API key.
   It stores `COWORLD_LLM_ENABLED=true` with the policy version.

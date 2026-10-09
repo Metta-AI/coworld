@@ -78,13 +78,10 @@ from coworld.upload import (
     upload_coworld_cmd,
     upload_policy_cmd,
 )
-from softmax import auth as softmax_auth
 from softmax.docs import DOCS_AGENT_INDEX_URL, DOCS_AGENT_SKILL_URL
 from softmax.docs_cli import fetch_docs, validate_docs_path
 from softmax.http_errors import AgentFriendlyGroup
-from softmax.players import list_players, player_app
-
-_DEFAULT_POLICY_NAME_MAX_LENGTH = 64
+from softmax.players import player_app
 
 app = typer.Typer(
     cls=AgentFriendlyGroup,
@@ -1390,7 +1387,10 @@ def upload_policy(
         typer.Option(
             "--name",
             "-n",
-            help="Policy name override. Defaults to a unique name derived from the active or default player.",
+            help=(
+                "Policy name. Defaults to the uploading player's name (chosen by the server); "
+                "re-uploading as the same player adds a version to that policy."
+            ),
         ),
     ] = None,
     run: Annotated[
@@ -1496,20 +1496,8 @@ def upload_policy(
 
     validate_run_argv(run)
     update_agent_guidance(Path.cwd())
-    if name is None:
-        token = softmax_auth.load_current_token(server=server)
-        if token is None:
-            raise RuntimeError(f"Not authenticated. Run: softmax login --server {server}")
-        identity = softmax_auth.fetch_cogames_whoami(api_server=server, token=token)
-        if identity.subject_type == "player":
-            assert identity.subject_id is not None
-            name = identity.subject_id
-        else:
-            players = list_players(server=server, token=token)
-            player = next(player for player in players if player.is_default)
-            player_name = player.name.replace(":", "-")[: _DEFAULT_POLICY_NAME_MAX_LENGTH - len(player.id) - 1]
-            name = f"{player_name}-{player.id}"
-    typer.echo(f"Policy name: {name}")
+    if name is not None:
+        typer.echo(f"Policy name: {name}")
 
     upload_policy_cmd(
         image,
