@@ -606,9 +606,10 @@ The active session lives in `~/.softmax/credentials.yaml` under `player_sessions
 authenticate with your user token. Re-run `player use` after 24h to refresh an expired session. `coworld player` is
 softmax-cli's player subapp (`softmax player ...` is equivalent).
 
-`upload-policy` derives a globally unique policy name from the active player's name and ID. Without an active player
-session, it uses the account's default player. Pass `--name` to override the default or add a version to an existing
-named policy.
+Without `--name`, the server names the policy after the uploading player: the active player, or the account's default
+player. If another user or another of your players already holds that name, it appends the first 8 characters of the
+player ID. Re-uploads by the same player add a version to that policy. Pass `--name` to choose a name or add a version
+to an existing named policy.
 
 ## Play A Campaign League
 

@@ -985,7 +985,7 @@ class CoworldUploadClient:
     def complete_docker_image_policy(
         self,
         *,
-        name: str,
+        name: str | None,
         container_image_id: str,
         run: list[str] | None,
         secret_env: dict[str, str] | None,
@@ -1002,7 +1002,9 @@ class CoworldUploadClient:
             _raise_for_status(secret_response)
             policy_secret_env_id = secret_response.json()["id"]
 
-        payload: dict[str, Any] = {"name": name, "container_image_id": container_image_id}
+        payload: dict[str, Any] = {"container_image_id": container_image_id}
+        if name is not None:
+            payload["name"] = name
         if run:
             payload["run"] = run
         if policy_secret_env_id is not None:
@@ -1021,7 +1023,7 @@ class CoworldUploadClient:
     def request_player_file_upload(
         self,
         *,
-        name: str,
+        name: str | None,
         content_hash: str,
         size_bytes: int,
         tags: dict[str, str] | None,
@@ -1030,7 +1032,7 @@ class CoworldUploadClient:
             "/stats/policies/files/upload",
             headers=self._headers(),
             json={
-                "name": name,
+                **({"name": name} if name is not None else {}),
                 "content_hash": content_hash,
                 "size_bytes": size_bytes,
                 "tags": tags or {},
@@ -1045,7 +1047,7 @@ class CoworldUploadClient:
     def complete_player_file_policy(
         self,
         *,
-        name: str,
+        name: str | None,
         content_hash: str,
         size_bytes: int,
         tags: dict[str, str] | None,
@@ -1054,7 +1056,7 @@ class CoworldUploadClient:
             "/stats/policies/files/complete",
             headers=self._headers(),
             json={
-                "name": name,
+                **({"name": name} if name is not None else {}),
                 "content_hash": content_hash,
                 "size_bytes": size_bytes,
                 "tags": tags or {},
@@ -1718,7 +1720,7 @@ def upload_coworld_cmd(
 
 def upload_policy_cmd(
     image: str | None,
-    name: str,
+    name: str | None,
     *,
     player_file: Path | None = None,
     run: list[str] | None = None,
@@ -1764,6 +1766,8 @@ def upload_policy_cmd(
                 secret_env=secret_env,
                 tags=tags,
             )
+    if name is None:
+        typer.echo(f"Policy name: {result.name} (your player's name; pass --name to choose another)")
     typer.echo(f"Upload complete: {result.name}:v{result.version}")
     typer.echo("Next: run hosted episodes against live opponents with an Experience Request:")
     typer.echo("  uv run coworld xp-request --help")
