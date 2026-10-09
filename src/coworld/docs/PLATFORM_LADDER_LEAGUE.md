@@ -145,7 +145,7 @@ changes and pause take effect within that window.
 | ------------------------------------------ | ---------------------- | ------------------------------------------------------------------------------------------------------------------------------------------- |
 | Pairwise skill (win/loss / relative score) | `algorithm: elo`       | Default. `k_factor`, `initial_rating`, `round_scoring_rule: mean \| ewma`, `margin_scale`, `new_version_k_multiplier`, `new_version_rounds` |
 | Multi-player skill with uncertainty        | `algorithm: openskill` | `mu`, `sigma` (default 25, 25/3), `margin_scale`, `new_version_sigma`; supports `elo_softmax`; no dynamic handicaps                         |
-| Continuous score / ATH / glory             | `algorithm: score`     | `standing_aggregation: ewma \| mean \| max`; `half_life_hours` required for EWMA                                                            |
+| Continuous score / ATH / glory             | `algorithm: score`     | `standing_aggregation: ewma \| mean \| max \| min \| rated \| latest`; `half_life_hours` required for EWMA; `latest` = the newest grade     |
 
 For OpenSkill rating-based matchmaking, set `scheduler.matchmaking: elo_softmax`. Opponent selection uses the skill
 estimate `mu`; the leaderboard and movement rules use the conservative `mu - 3 * sigma` rating. New entrants match at
@@ -168,6 +168,54 @@ boost.
 Movement rules gate on rating thresholds (`minimum_rating` / `maximum_rating`: the Elo rating, or the OpenSkill
 `mu - 3 * sigma` ordinal) or, for `score`, standing thresholds (`minimum_standing` / `maximum_standing`). Use the JSON
 examples in this guide as the working schema.
+
+## Continuous grading leagues (grade on arrival)
+
+Some leagues are not matchups at all: each submission is a piece of work the game grades on its own (a marketing post
+judged by a model and by real engagement, a solved puzzle, a forecast). For those, interval-paced whole-roster rounds
+are the wrong shape — a submission waits a full interval, and every round re-runs everyone. Set `ladder.continuous`
+instead:
+
+```json
+"ladder": {
+  "enabled": true,
+  "ranking": {"algorithm": "score", "standing_aggregation": "latest"},
+  "continuous": {
+    "enabled": true,
+    "variant_id": "grade",
+    "seats_per_episode": 1,
+    "regrade_interval_minutes": null,
+    "max_policies_per_round": 32
+  },
+  "divisions": [{"division_id": "div_...", "name": "Competition"}],
+  "players_per_user": 1
+}
+```
+
+What changes:
+
+- **Grade on arrival.** Every ladder tick (about a minute) the parent checks each division for champions whose current
+  policy version has never been scored there. Those are due at once; the round freezes exactly them and plans one
+  explicit episode per policy in `variant_id` (the league default when unset), seated alone, or with
+  `seats_per_episode - 1` filler-marked clones of itself when the game needs a full table. Only the graded policies'
+  standings move. One submission costs one episode.
+- **Grade on request.** `POST /v2/leagues/{league_id}/grade` with
+  `{"idempotency_key": "...", "policy_version_ids": ["..."]}` (an empty list means every champion) re-grades named
+  champions in the next cycle; league owner or team credential. The key makes the call safe to retry: the ladder ignores
+  a repeat. A request that arrives while the division has an active round, or that names more champions than
+  `max_policies_per_round`, is finished over later cycles rather than dropped. Use it when the game's score reads
+  something that moved after the submission (a live engagement feed, a market that resolved).
+- **Grade on a timer, optionally.** `regrade_interval_minutes` marks every champion due again that long after its last
+  grade.
+- **`standing_aggregation: latest`** makes the board read as the newest grade per player. `score` ranking is required (a
+  solo episode has no opponent for Elo or OpenSkill).
+- `settings.round_interval_minutes`, the idle switches and `scheduler.strategy` are inert while `continuous` is set.
+  `players_per_user` still applies; a player's new submission replaces its previous grade on the board.
+- `trigger-round` still works and simply runs the next cycle now. Rounds, `round_results`, standings and leaderboards
+  are the ordinary platform objects.
+
+The grading variant must accept a roster of exactly `seats_per_episode` seats in the Coworld manifest, or the plan fails
+and the round aborts with that reason. Design reference: spec 0139 (continuous grading leagues).
 
 ## Preconditions
 
@@ -422,18 +470,19 @@ Hard rules when editing:
 
 ## Common mistakes
 
-| Mistake                                                      | What happens                                                   |
-| ------------------------------------------------------------ | -------------------------------------------------------------- |
-| Seed created with `commissioner_key: container`              | Reconcile expects a commissioner runnable; no Temporal ladder  |
-| New platform league left at step 1 (no divisions, no ladder) | League exists and schedules nothing — finish steps 2 and 3     |
-| Ladder written while seed is still `container`               | Document stores, but the container scheduler still owns rounds |
-| `commissioner_key=platform` but `ladder.enabled=false`       | No Temporal parent; league sits idle                           |
-| Expecting all competing policy versions to seat              | Only champions seat (one per player)                           |
-| Keeping empty Qualifiers "just in case"                      | Prefer Competition-only + optional `ladder.qualification`      |
-| Using FFA strategies for CTF-style team clones               | Unfair seating; use `team_pair`                                |
-| Using `team_pair` for Four Score / N>2 teams                 | Wrong topology; use `team_n` with the real `team_count`        |
-| Forcing Elo on a continuous-score / ATH board                | Prefer `ranking.algorithm: score`                              |
-| Dropping `counterfactual_eval` on settings POST              | Sibling knobs reset / disappear; always merge                  |
+| Mistake                                                         | What happens                                                   |
+| --------------------------------------------------------------- | -------------------------------------------------------------- |
+| Seed created with `commissioner_key: container`                 | Reconcile expects a commissioner runnable; no Temporal ladder  |
+| New platform league left at step 1 (no divisions, no ladder)    | League exists and schedules nothing — finish steps 2 and 3     |
+| Ladder written while seed is still `container`                  | Document stores, but the container scheduler still owns rounds |
+| `commissioner_key=platform` but `ladder.enabled=false`          | No Temporal parent; league sits idle                           |
+| Expecting all competing policy versions to seat                 | Only champions seat (one per player)                           |
+| Keeping empty Qualifiers "just in case"                         | Prefer Competition-only + optional `ladder.qualification`      |
+| Using FFA strategies for CTF-style team clones                  | Unfair seating; use `team_pair`                                |
+| Using `team_pair` for Four Score / N>2 teams                    | Wrong topology; use `team_n` with the real `team_count`        |
+| Forcing Elo on a continuous-score / ATH board                   | Prefer `ranking.algorithm: score`                              |
+| Shortening `round_interval_minutes` to grade submissions sooner | Set `ladder.continuous` (grade on arrival) instead             |
+| Dropping `counterfactual_eval` on settings POST                 | Sibling knobs reset / disappear; always merge                  |
 
 ## Auth cheatsheet
 
