@@ -43,6 +43,7 @@ from coworld.cli_support import console, emit_json, print_replay_session
 from coworld.config import DEFAULT_SUBMIT_SERVER, docs_epilog, participation_guide_url
 from coworld.episode_downloads import DownloadResult, download_episodes
 from coworld.episode_workflows import register_episode_workflows
+from coworld.feed_cli import FEED_CARD_REMINDER
 from coworld.manifest import read_downloaded_manifest
 from coworld.manifest_uri import materialized_replay_path
 from coworld.play import ReplaySession, replay_coworld
@@ -274,6 +275,8 @@ def register_tournament_commands(app: typer.Typer) -> None:
             emit_json(detail.model_dump(mode="json"))
             return
         _print_experience_request_detail(detail)
+        if detail.status == "completed":
+            console.print(FEED_CARD_REMINDER, soft_wrap=True, markup=False)
 
     register_episode_workflows(xp_request_app)
 
@@ -410,6 +413,7 @@ def register_tournament_commands(app: typer.Typer) -> None:
                     emit_json(_dump_models(rows))
                     return
                 _print_division_ladder(target_id, rows)
+                console.print(FEED_CARD_REMINDER, soft_wrap=True, markup=False)
                 return
             if target_id.startswith("div_"):
                 rows = client.get_division_leaderboard(target_id)
@@ -417,6 +421,7 @@ def register_tournament_commands(app: typer.Typer) -> None:
                     emit_json(_dump_models(rows))
                     return
                 _print_division_leaderboard(target_id, rows)
+                console.print(FEED_CARD_REMINDER, soft_wrap=True, markup=False)
                 return
             if target_id.startswith("round_"):
                 round_detail = client.get_round(target_id)
@@ -424,6 +429,7 @@ def register_tournament_commands(app: typer.Typer) -> None:
                     emit_json(round_detail.model_dump(mode="json"))
                     return
                 _print_round_results(round_detail)
+                console.print(FEED_CARD_REMINDER, soft_wrap=True, markup=False)
                 return
         raise typer.BadParameter("target_id must start with league_, div_, or round_")
 

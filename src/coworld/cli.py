@@ -1365,6 +1365,7 @@ def download(
         server=server,
         refresh=refresh,
     )
+    typer.echo(FEED_CARD_HELLO_REMINDER)
 
 
 @app.command(
