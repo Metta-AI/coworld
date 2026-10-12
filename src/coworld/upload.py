@@ -20,7 +20,7 @@ from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
 from types import TracebackType
-from typing import Any, BinaryIO, Literal, Self
+from typing import IO, Any, Literal, Self
 from urllib.parse import quote, urlparse
 
 import httpx
@@ -39,7 +39,7 @@ from coworld.config import (
 )
 from coworld.feed_cli import FEED_CARD_REMINDER
 from coworld.image_refs import is_digest_pinned_image_ref, is_mutable_registry_image_ref
-from coworld.local_images import _prepare_public_ecr_docker_config, ensure_downloaded_images, pull_and_tag_image
+from coworld.local_images import ensure_downloaded_images, pull_and_tag_image
 from coworld.manifest import validate_upload_manifest
 from coworld.manifest.registry import read_downloaded_manifest
 from coworld.manifest_validation import validate_coworld_manifest_game_configs
@@ -586,7 +586,7 @@ class CoworldUploadClient:
         payload = self._post_replay_viewer_bundle_complete(content_hash=content_hash, size_bytes=size_bytes)
         if payload is not None and payload.status == "ready":
             return payload
-        return self._wait_for_replay_viewer_bundle(content_hash=content_hash, size_bytes=size_bytes)
+        return self._wait_for_replay_viewer_bundle(content_hash=content_hash, size_bytes=size_bytes, status=payload)
 
     def get_replay_viewer_bundle(self, content_hash: str) -> ReplayViewerBundleCompleteResponse | None:
         response = self._http_client.get(
@@ -619,12 +619,14 @@ class CoworldUploadClient:
         return ReplayViewerBundleCompleteResponse.model_validate(response.json())
 
     def _wait_for_replay_viewer_bundle(
-        self, *, content_hash: str, size_bytes: int
+        self, *, content_hash: str, size_bytes: int, status: ReplayViewerBundleCompleteResponse | None
     ) -> ReplayViewerBundleCompleteResponse:
         deadline = time.monotonic() + _REPLAY_VIEWER_BUNDLE_WAIT_SECONDS
         poll_seconds = _REPLAY_VIEWER_BUNDLE_POLL_SECONDS
         while time.monotonic() < deadline:
-            status = self.get_replay_viewer_bundle(content_hash)
+            # While admission is pending, GET can still report an earlier attempt's failure.
+            if status is None or status.status != "pending":
+                status = self.get_replay_viewer_bundle(content_hash)
             if status is not None and status.status == "ready":
                 return status
             if status is not None and status.status == "failed":
@@ -632,9 +634,9 @@ class CoworldUploadClient:
             if status is None or status.status == "pending":
                 # No expansion is running (it died, or the complete request never reached the
                 # server); the complete endpoint is idempotent, so re-POST to restart it.
-                payload = self._post_replay_viewer_bundle_complete(content_hash=content_hash, size_bytes=size_bytes)
-                if payload is not None and payload.status == "ready":
-                    return payload
+                status = self._post_replay_viewer_bundle_complete(content_hash=content_hash, size_bytes=size_bytes)
+                if status is not None and status.status == "ready":
+                    return status
             time.sleep(poll_seconds)
             poll_seconds = min(poll_seconds * 1.5, _REPLAY_VIEWER_BUNDLE_POLL_MAX_SECONDS)
         raise RuntimeError(
@@ -2371,7 +2373,7 @@ def _push_archive_to_registry(archive: Any, base_url: str, tag: str, auth_header
 @contextmanager
 def _archive_or_registry_blob(
     tar: tarfile.TarFile, descriptor: _OciDescriptor, source_image: str, client: httpx.Client
-) -> Iterator[BinaryIO]:
+) -> Iterator[IO[bytes]]:
     blob_name = _archive_blob_name(descriptor.digest)
     if blob_name in tar.getnames():
         blob = tar.extractfile(blob_name)

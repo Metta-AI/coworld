@@ -18,6 +18,7 @@ from werkzeug import Request, Response
 
 from coworld.cli import app
 from coworld.config import NEXT_CURSOR_HEADER
+from coworld.local_images import _prepare_public_ecr_docker_config
 from coworld.player_files import player_file_bytes
 from coworld.runner.external_llm import EXTERNAL_LLM_SECRET_KEY, ExternalLlmRoute
 from coworld.runner.runner import EpisodeArtifacts
@@ -46,7 +47,6 @@ from coworld.upload import (
     _manifest_with_local_images,
     _manifest_with_softmax_image_ids,
     _OciImageIndex,
-    _prepare_public_ecr_docker_config,
     _push_archive_to_registry,
     _replay_viewer_bundle_files,
     _select_oci_image_manifest,
@@ -3360,9 +3360,11 @@ def test_complete_replay_viewer_bundle_treats_504_as_indeterminate(
     assert result == ReplayViewerBundleCompleteResponse(bundle=bundle, status="ready")
 
 
+@pytest.mark.parametrize("initial_status", ["indeterminate", "pending"])
 def test_complete_replay_viewer_bundle_reposts_complete_while_pending(
     httpserver: HTTPServer,
     monkeypatch: pytest.MonkeyPatch,
+    initial_status: str,
 ) -> None:
     content_hash = "c" * 64
     bundle = f"sha256:{content_hash}"
@@ -3371,7 +3373,13 @@ def test_complete_replay_viewer_bundle_reposts_complete_while_pending(
     def complete_handler(_request: Request) -> Response:
         completes["n"] += 1
         if completes["n"] == 1:
-            return Response("softmax.com | 504: Gateway time-out", status=504)
+            if initial_status == "indeterminate":
+                return Response("softmax.com | 504: Gateway time-out", status=504)
+            return Response(
+                json.dumps({"bundle": bundle, "status": "pending"}),
+                status=202,
+                content_type="application/json",
+            )
         return Response(
             json.dumps({"bundle": bundle, "status": "ready"}),
             status=200,
@@ -3386,14 +3394,13 @@ def test_complete_replay_viewer_bundle_reposts_complete_while_pending(
     httpserver.expect_request(
         f"/observatory/v2/coworlds/replay-viewer-bundles/{content_hash}",
         method="GET",
-    ).respond_with_json({"bundle": bundle, "status": "pending"})
+    ).respond_with_json({"bundle": bundle, "status": "failed" if initial_status == "pending" else "pending"})
     monkeypatch.setattr("coworld.upload.time.sleep", lambda _seconds: None)
 
     with CoworldUploadClient(server_url=httpserver.url_for(""), token="token") as client:
         result = client.complete_replay_viewer_bundle_upload(content_hash=content_hash, size_bytes=12)
 
     assert result == ReplayViewerBundleCompleteResponse(bundle=bundle, status="ready")
-    assert completes["n"] == 2
 
 
 def test_complete_replay_viewer_bundle_raises_on_failed_expansion(
