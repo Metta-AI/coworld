@@ -15,7 +15,7 @@ import tarfile
 import tempfile
 import time
 from contextlib import ExitStack
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from json import JSONDecodeError
 from pathlib import Path
 from typing import Callable, Mapping, Self, Sequence
@@ -193,7 +193,7 @@ class EpisodeRunSpec:
     artifacts: EpisodeArtifacts
     timeout_seconds: float
     container_prefix: str = LOCAL_EPISODE_CONTAINER_PREFIX
-    secret_env: Mapping[str, str] = field(default_factory=dict)
+    secret_env: Mapping[str, str] = field(default_factory=dict, repr=False)
     require_websocket_pong: bool = False
 
 
@@ -226,7 +226,7 @@ class RunnableLaunchSpec:
 
 @dataclass(frozen=True)
 class PlayerLaunchSpec(RunnableLaunchSpec):
-    pass
+    secret_env: Mapping[str, str] = field(default_factory=dict, repr=False)
 
 
 def assert_docker_image_reachable(
@@ -345,11 +345,18 @@ def run_coworld_episode(
     verify_replay: bool = False,
     container_prefix: str = LOCAL_EPISODE_CONTAINER_PREFIX,
     secret_env: Mapping[str, str] | None = None,
+    player_secret_env: Mapping[int, Mapping[str, str]] | None = None,
     player_file_paths: Sequence[Path] | None = None,
     require_websocket_pong: bool = False,
 ) -> None:
+    """Run locally; per-slot private env overrides shared secrets without entering the job artifact."""
     if any(isinstance(player, CoworldHumanPlayerSpec) for player in job.players):
         raise ValueError("Human player seats require the hosted Kubernetes episode runner")
+    secrets_by_slot = player_secret_env or {}
+    if set(secrets_by_slot) - set(range(len(job.players))):
+        raise ValueError("Player secrets name an unoccupied slot")
+    if secrets_by_slot and job.manifest.game.player_runtime != "platform-hosted":
+        raise ValueError("Per-player secrets require container players")
     assert_episode_images_reachable(job)
     tokens = generate_tokens(len(job.players))
     write_coworld_game_config(job, artifacts, tokens)
@@ -395,7 +402,12 @@ def run_coworld_episode(
             require_websocket_pong=require_websocket_pong,
             game=launch_game,
             players=[
-                PlayerLaunchSpec.from_model(player) for player in job.players if isinstance(player, CoworldRunnableSpec)
+                replace(
+                    PlayerLaunchSpec.from_model(player),
+                    secret_env=secrets_by_slot[slot] if slot in secrets_by_slot else {},
+                )
+                for slot, player in enumerate(job.players)
+                if isinstance(player, CoworldRunnableSpec)
             ],
             tokens=tokens,
             artifacts=artifacts,
@@ -728,10 +740,10 @@ def run_episode_containers(
                 asyncio.run(_require_bad_player_rejected(f"ws://127.0.0.1:{port}/player?slot=0&token=bad"))
             _require_http_ok(f"http://127.0.0.1:{port}/client/global")
 
-            secret_env_key_args = [arg for key in spec.secret_env for arg in ("-e", key)]
-            player_subprocess_env = {**os.environ, **spec.secret_env} if spec.secret_env else None
-
             for slot, player in enumerate(spec.players):
+                private_env = {**spec.secret_env, **player.secret_env}
+                secret_env_key_args = [arg for key in private_env for arg in ("-e", key)]
+                player_subprocess_env = {**os.environ, **private_env} if private_env else None
                 container_name = f"{spec.container_prefix}-player-{run_id}-{slot}"
                 engine_ws_url = _player_container_ws_url(game_network_alias, slot, spec.tokens[slot])
                 player_log_path = spec.artifacts.policy_log_path(slot)

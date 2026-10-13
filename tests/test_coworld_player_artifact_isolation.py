@@ -36,6 +36,7 @@ viewer = asyncio.Event()
 players = []
 reports = []
 config = json.loads(Path('/coworld/config.json').read_text())
+assert not any(name.startswith('SEAT_PRIVATE_') for name in os.environ)
 
 def request(connection, request):
     parsed = urlparse(request.path)
@@ -85,6 +86,8 @@ from websockets.asyncio.client import connect
 
 url = os.environ['COWORLD_PLAYER_WS_URL']
 slot = int(parse_qs(urlparse(url).query)['slot'][0])
+assert os.environ[f'SEAT_PRIVATE_{slot}'] == f'private-for-{slot}'
+assert f'SEAT_PRIVATE_{1 - slot}' not in os.environ
 upload = Path(urlparse(os.environ['COWORLD_PLAYER_ARTIFACT_UPLOAD_URL']).path)
 
 async def main():
@@ -136,8 +139,13 @@ def test_local_player_artifact_isolation(tmp_path: Path, game_exit_code: int, pl
     spec = EpisodeRunSpec(
         game=RunnableLaunchSpec(image=image, run=("python", "-c", _GAME), env={"GAME_EXIT_CODE": str(game_exit_code)}),
         players=[
-            PlayerLaunchSpec(image=image, run=("python", "-c", _PLAYER), env={"PLAYER_UID": str(player_uid)})
-            for _ in range(2)
+            PlayerLaunchSpec(
+                image=image,
+                run=("python", "-c", _PLAYER),
+                env={"PLAYER_UID": str(player_uid)},
+                secret_env={f"SEAT_PRIVATE_{slot}": f"private-for-{slot}"},
+            )
+            for slot in range(2)
         ],
         tokens=["slot-0", "slot-1"],
         artifacts=artifacts,
