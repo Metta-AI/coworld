@@ -2289,7 +2289,9 @@ class _OciDescriptor(BaseModel):
 
 class _OciImageIndex(BaseModel):
     schema_version: Literal[2] = Field(alias="schemaVersion")
-    media_type: Literal["application/vnd.oci.image.index.v1+json"] = Field(alias="mediaType")
+    media_type: Literal["application/vnd.oci.image.index.v1+json"] = Field(
+        default="application/vnd.oci.image.index.v1+json", alias="mediaType"
+    )
     manifests: list[_OciDescriptor]
 
 
