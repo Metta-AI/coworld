@@ -61,6 +61,7 @@ from coworld.runner.bootstrap import (
 from coworld.runner.bootstrap import read_job_spec as _read_job_spec
 from coworld.runner.bootstrap import write_error_info as _write_error_info
 from coworld.runner.external_llm import EXTERNAL_LLM_SECRET_KEY, ExternalLlmRoute
+from coworld.runner.https_egress import HTTPS_HOSTS_SECRET_KEY, HttpsHosts
 from coworld.runner.io import (
     PlayerRuntimeStatus,
     PlayerRuntimeStatuses,
@@ -81,8 +82,11 @@ from coworld.runner.llm_metadata import (
 )
 from coworld.runner.llm_sidecar_wiring import (
     COWORLD_EGRESS_ENFORCED_LABEL,
+    EGRESS_RELAY_CLIENT_TLS_VOLUME_NAME,
+    GAME_EGRESS_PROXY_PORT,
     LLM_SIDECAR_CONTAINER_NAME,
     RESERVED_SIDECAR_APP_ENV,
+    build_egress_proxy,
     build_llm_sidecar,
     egress_relay_client_tls_volume,
     llm_app_endpoint_env,
@@ -1354,6 +1358,20 @@ def _create_player_pod(
         else None
     )
     player_env.pop(EXTERNAL_LLM_SECRET_KEY, None)
+    https_hosts = HttpsHosts.model_validate_json(policy_secret_env.get(HTTPS_HOSTS_SECRET_KEY, "[]")).root
+    player_env.pop(HTTPS_HOSTS_SECRET_KEY, None)
+    if https_hosts:
+        if not os.environ.get("LLM_SIDECAR_EGRESS_RELAY_URL"):
+            raise RunnerEpisodeError(
+                "Player HTTPS destinations require the hosted egress relay", error_type="config_error"
+            )
+        player_env = {
+            key: value
+            for key, value in player_env.items()
+            if key not in {"HTTPS_PROXY", "https_proxy", "HTTP_PROXY", "http_proxy", "NO_PROXY", "no_proxy"}
+        }
+        player_env["HTTPS_PROXY"] = f"http://127.0.0.1:{GAME_EGRESS_PROXY_PORT}"
+        player_env["NO_PROXY"] = f"127.0.0.1,localhost,{service_name}"
     uses_llm = llm_enablement.enabled
     local_checkpoint_routing = os.environ.get("COWORLD_LOCAL_CHECKPOINT_ROUTING") == "true"
     uses_sidecar = uses_llm and (
@@ -1513,6 +1531,22 @@ def _create_player_pod(
                     else None
                 ),
             )
+        )
+    if https_hosts:
+        pod_volumes = pod_volumes or []
+        if not any(volume.name == EGRESS_RELAY_CLIENT_TLS_VOLUME_NAME for volume in pod_volumes):
+            pod_volumes.append(egress_relay_client_tls_volume())
+        init_containers.append(
+            build_egress_proxy(
+                image=os.environ["COWORLD_COORDINATOR_IMAGE"],
+                image_pull_policy=_player_image_pull_policy(os.environ["COWORLD_COORDINATOR_IMAGE"]),
+                relay_url=os.environ["LLM_SIDECAR_EGRESS_RELAY_URL"],
+                allowed_upstreams="",
+                https_hosts=https_hosts,
+            )
+        )
+        pod_annotations["eks.amazonaws.com/skip-containers"] = ",".join(
+            container.name for container in [*containers, *init_containers]
         )
     enforced = os.environ.get("COWORLD_EGRESS_ENFORCEMENT_ENABLED") == "true"
     host_aliases = None

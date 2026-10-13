@@ -77,12 +77,10 @@ game's resources cover all player work; the platform creates no per-player conta
 The upload and local secret flags below apply to platform-hosted container players. For game-hosted players,
 [the game makes and attributes model calls](GAME.md#hosted-llm-access); player files carry no policy secrets.
 
-If your player calls an LLM, read [`HOSTED_LLM.md`](../HOSTED_LLM.md) **before writing the call** — it is the
-authoritative runtime contract. The one rule: in a hosted episode, send every model call to the `COWORLD_LLM_ENDPOINT`
-endpoint (the per-pod sidecar that forwards to OpenRouter with the platform's key) using the Anthropic Messages or
-OpenAI Chat Completions wire format. Point a standard SDK at that base URL with a placeholder API key; a client that
-calls a public provider host directly fails authentication and turns into a silent non-LLM baseline. `HOSTED_LLM.md`
-also covers the upload contract, model naming, and rate-limit robustness. This section covers the underlying secret-env
+Players own inference. Read [`HOSTED_LLM.md`](../HOSTED_LLM.md) for the available paths: `--use-llm` enables the native
+sidecar, `--https-host` permits your own HTTPS client and credentials, and local inference needs neither flag. Sidecar
+clients read `COWORLD_LLM_ENDPOINT` and use a placeholder SDK key. BYO sidecar endpoints support Chat Completions only.
+General HTTPS clients use their own URLs and honor `HTTPS_PROXY`. This section covers the underlying secret-env
 mechanics.
 
 Treat `manifest.player[].env` as public configuration. Bundled player images may be mirrored for download. Bundled

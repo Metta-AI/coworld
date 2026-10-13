@@ -67,6 +67,62 @@ def egress_relay_client_env(url: str, *, prefix: str) -> list[client.V1EnvVar]:
     ]
 
 
+def build_egress_proxy(
+    *,
+    image: str,
+    image_pull_policy: str,
+    relay_url: str,
+    allowed_upstreams: str,
+    https_hosts: list[str],
+) -> client.V1Container:
+    proxy = client.V1Container(
+        name="game-egress-proxy",
+        image=image,
+        image_pull_policy=image_pull_policy,
+        command=["python", "-m", "coworld.runner.game_egress_proxy"],
+        env=[
+            client.V1EnvVar(name="COWORLD_GAME_EGRESS_UPSTREAM_RELAY_URL", value=relay_url),
+            client.V1EnvVar(name="COWORLD_GAME_EGRESS_ALLOWED_UPSTREAMS", value=allowed_upstreams),
+            client.V1EnvVar(
+                name="COWORLD_HTTPS_EXTERNAL_UPSTREAMS", value=",".join(f"{host}:443" for host in https_hosts)
+            ),
+        ],
+        volume_mounts=[
+            client.V1VolumeMount(
+                name=EGRESS_RELAY_CLIENT_TLS_VOLUME_NAME,
+                mount_path=EGRESS_RELAY_CLIENT_TLS_MOUNT_PATH,
+                read_only=True,
+            )
+        ],
+        resources=client.V1ResourceRequirements(
+            requests={"cpu": "50m", "memory": "128Mi"},
+            limits={"cpu": "200m", "memory": "256Mi"},
+        ),
+        # The proxy listens on loopback, so a probe must run inside the pod.
+        readiness_probe=client.V1Probe(
+            _exec=client.V1ExecAction(
+                command=[
+                    "python",
+                    "-c",
+                    "import socket; "
+                    f"socket.create_connection(('127.0.0.1', {GAME_EGRESS_PROXY_PORT}), timeout=2).close()",
+                ]
+            ),
+            timeout_seconds=3,
+            period_seconds=5,
+            failure_threshold=3,
+        ),
+        restart_policy="Always",
+        security_context=client.V1SecurityContext(
+            allow_privilege_escalation=False,
+            capabilities=client.V1Capabilities(drop=["ALL"]),
+            seccomp_profile=client.V1SeccompProfile(type="RuntimeDefault"),
+        ),
+    )
+    proxy.startup_probe = proxy.readiness_probe
+    return proxy
+
+
 def build_llm_sidecar(
     *,
     metadata: CoworldLlmMetadata,

@@ -58,6 +58,7 @@ from coworld.manifest_uri import materialized_manifest_path, materialized_replay
 from coworld.optimizer.runtime import OptimizerSetupError, run_optimizer_session
 from coworld.play import PlaySession, ReplaySession, _resolve_local_llm_env, play_coworld, replay_coworld
 from coworld.runner.external_llm import EXTERNAL_LLM_SECRET_KEY, ExternalLlmRoute
+from coworld.runner.https_egress import HTTPS_HOSTS_SECRET_KEY, HttpsHosts
 from coworld.runner.runner import DEFAULT_PLAYER_EXIT_TIMEOUT_SECONDS, EpisodeArtifacts, run_coworld_episode
 from coworld.submit import submit_policy_to_league_cmd
 from coworld.tournament_cli import register_tournament_commands
@@ -1488,6 +1489,10 @@ def upload_policy(
         str | None,
         typer.Option("--llm-api-key-env", help="Read the external endpoint key from this environment variable."),
     ] = None,
+    https_host: Annotated[
+        list[str] | None,
+        typer.Option("--https-host", help="Allow HTTPS to this exact public hostname. Repeat for multiple hosts."),
+    ] = None,
     server: Annotated[str, typer.Option("--server", help="Observatory API server URL.")] = DEFAULT_SUBMIT_SERVER,
 ) -> None:
     if (image is None) == (player_file is None):
@@ -1516,9 +1521,10 @@ def upload_policy(
         or llm_model is not None
         or llm_endpoint
         or llm_api_key_env
+        or https_host
     ):
         raise typer.BadParameter(
-            "--file cannot be combined with pod resources, --run, --secret-env, --use-llm, or --llm-model"
+            "--file cannot be combined with pod resources, --run, --secret-env, --use-llm, --llm-model, or --https-host"
         )
     if llm_model is not None and not use_llm:
         raise typer.BadParameter("--llm-model requires --use-llm")
@@ -1533,6 +1539,8 @@ def upload_policy(
             parsed_secret_env[key] = val
     if use_llm:
         parsed_secret_env["COWORLD_LLM_ENABLED"] = "true"
+    if https_host:
+        parsed_secret_env[HTTPS_HOSTS_SECRET_KEY] = HttpsHosts(https_host).model_dump_json()
     if llm_model is not None:
         parsed_secret_env["COWORLD_LLM_MODEL"] = llm_model
     if llm_endpoint is not None:

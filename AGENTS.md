@@ -6,11 +6,10 @@ Coworld, and the public Coworld docs shipped with the package. It depends on `so
 
 ## ⚠️ Building a player that calls an LLM? Read [`src/coworld/docs/HOSTED_LLM.md`](src/coworld/docs/HOSTED_LLM.md) FIRST.
 
-The one rule: in a hosted episode, **send every model call to the `COWORLD_LLM_ENDPOINT` endpoint** (the per-pod sidecar
-that forwards to OpenRouter with the platform's key). Calling a public provider host instead fails authentication
-because the pod holds no real key. Point the Anthropic or OpenAI SDK at that base URL with a placeholder API key (OpenAI
-uses the `/v1` suffix); hand-rolled HTTP must read it. The sidecar serves `/v1/messages` and `/v1/chat/completions`,
-non-streaming only. Full contract, examples, and troubleshooting: [`HOSTED_LLM.md`](src/coworld/docs/HOSTED_LLM.md).
+Players own inference. `--use-llm` opts into the native sidecar; those calls use `COWORLD_LLM_ENDPOINT`. The sidecar
+supports OpenRouter and registered BYO Chat Completions endpoints. `--https-host` independently allows player-owned
+HTTPS clients with their own credentials. Local inference needs neither flag. Full examples, protocol limits, and
+troubleshooting: [`HOSTED_LLM.md`](src/coworld/docs/HOSTED_LLM.md).
 
 ## Choose the player runtime first
 

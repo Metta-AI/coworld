@@ -7,6 +7,7 @@ from typing import cast
 
 from kubernetes import client
 
+from coworld.runner.external_llm import EXTERNAL_LLM_SECRET_KEY, ExternalLlmRoute
 from coworld.runner.io import RunnerEpisodeError
 from coworld.runner.llm_enablement import resolve_player_llm
 
@@ -18,6 +19,15 @@ def requested_self_hosted_models(policy_environments: Iterable[Mapping[str, str]
     models = set()
     for environment in policy_environments:
         llm = resolve_player_llm(environment)
+        if EXTERNAL_LLM_SECRET_KEY in environment:
+            route = ExternalLlmRoute.model_validate_json(environment[EXTERNAL_LLM_SECRET_KEY])
+            if not llm.enabled or llm.model != route.model_id:
+                raise RunnerEpisodeError(
+                    "External LLM registration requires enabled inference and its exact registered model ID",
+                    error_type="config_error",
+                )
+            # Registered contributor endpoints do not have a cluster Deployment to wait for.
+            continue
         if llm.enabled and llm.model and llm.model.startswith("self-hosted/"):
             models.add(llm.model)
     return models
