@@ -1,7 +1,6 @@
 """Contributor-owned chat endpoints, registered with a policy's encrypted secrets."""
 
 import hashlib
-import ipaddress
 import json
 from urllib.parse import urlsplit
 
@@ -45,11 +44,3 @@ class ExternalLlmRoute(BaseModel):
 
     def secret_json(self) -> str:
         return json.dumps(self.model_dump(mode="json") | {"api_key": self.api_key.get_secret_value()})
-
-
-def public_endpoint_addresses(addresses: list[str]) -> bool:
-    """Reject mixed public/private DNS answers, including IPv4-mapped IPv6."""
-    ips = [ipaddress.ip_address(address) for address in addresses]
-    return bool(ips) and all(
-        (ip.ipv4_mapped if isinstance(ip, ipaddress.IPv6Address) and ip.ipv4_mapped else ip).is_global for ip in ips
-    )

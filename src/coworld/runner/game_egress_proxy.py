@@ -1,4 +1,4 @@
-"""Pod-local CDN proxy for games that cannot hold the shared relay client key."""
+"""Pod-local HTTPS tunnels for games and players without exposing the relay client key."""
 
 from __future__ import annotations
 
@@ -35,6 +35,7 @@ async def _handle(
     allowed_targets: frozenset[str],
     tls_context: ssl.SSLContext,
     connection_limit: asyncio.Semaphore,
+    external_targets: frozenset[str] = frozenset(),
 ) -> None:
     relay_writer: asyncio.StreamWriter | None = None
     try:
@@ -52,7 +53,7 @@ async def _handle(
                 or not separator
                 or not separator2
                 or version != b"HTTP/1.1"
-                or target.decode("ascii") not in allowed_targets
+                or target.decode("ascii") not in allowed_targets | external_targets
             ):
                 game_writer.write(b"HTTP/1.1 403 Forbidden\r\nContent-Length: 0\r\n\r\n")
                 await game_writer.drain()
@@ -60,7 +61,13 @@ async def _handle(
             relay_reader, relay_writer = await asyncio.open_connection(
                 relay_host, relay_port, ssl=tls_context, server_hostname=relay_host
             )
-            relay_writer.write(b"CONNECT " + target + b" HTTP/1.1\r\nHost: " + target + b"\r\n\r\n")
+            # Only this trusted proxy can authorize public destinations. Never forward caller headers.
+            authorization = (
+                b"Proxy-Authorization: Coworld-External\r\n" if target.decode("ascii") in external_targets else b""
+            )
+            relay_writer.write(
+                b"CONNECT " + target + b" HTTP/1.1\r\nHost: " + target + b"\r\n" + authorization + b"\r\n"
+            )
             await relay_writer.drain()
             response = await asyncio.wait_for(relay_reader.readuntil(b"\r\n\r\n"), timeout=10)
             if not response.startswith(b"HTTP/1.1 200 "):
@@ -106,8 +113,11 @@ async def _main() -> None:
     relay_host, relay_port = relay_url.hostname, relay_url.port
     if relay_url.scheme != "https" or relay_host is None or relay_port is None:
         raise ValueError("game egress upstream relay must be an https URL with host and port")
-    allowed_targets = frozenset(os.environ["COWORLD_GAME_EGRESS_ALLOWED_UPSTREAMS"].split(","))
-    if not allowed_targets or any(not target.endswith(":443") for target in allowed_targets):
+    allowed_targets = frozenset(filter(None, os.environ["COWORLD_GAME_EGRESS_ALLOWED_UPSTREAMS"].split(",")))
+    external_targets = frozenset(filter(None, os.environ.get("COWORLD_HTTPS_EXTERNAL_UPSTREAMS", "").split(",")))
+    if not (allowed_targets | external_targets) or any(
+        not target.endswith(":443") for target in allowed_targets | external_targets
+    ):
         raise ValueError("game egress upstreams must be exact host:443 targets")
     tls_context = egress_relay_ssl_context(
         ca_file=EGRESS_RELAY_CA_FILE,
@@ -131,6 +141,7 @@ async def _main() -> None:
                 allowed_targets=allowed_targets,
                 tls_context=tls_context,
                 connection_limit=connection_limit,
+                external_targets=external_targets,
             )
         )
         connections.add(task)

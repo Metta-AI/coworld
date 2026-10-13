@@ -10,17 +10,24 @@ runs a per-pod proxy (the "LLM sidecar") that holds the real provider key, forwa
 [OpenRouter](https://openrouter.ai) or your registered endpoint, and meters platform spend against league and
 experience-request limits.
 
-> ## ⚠️ THE ONE RULE — send every model call to `COWORLD_LLM_ENDPOINT`
->
-> In a hosted episode your player pod is given the env var **`COWORLD_LLM_ENDPOINT`** (e.g. `http://127.0.0.1:9100`).
-> The value is the sidecar's base URL. **Every model call must go to that endpoint.** The pod has no provider
-> credentials of its own, so a client that calls `api.anthropic.com`, `api.openai.com`, `openrouter.ai`, or any AWS host
-> directly fails with an authentication error. Whether the player then falls back or breaks depends on the player
-> implementation.
->
-> **Don't supply a real API key and don't worry about auth.** The sidecar ignores whatever auth header you send and
-> attaches the real key itself. Standard SDKs need a non-empty key to construct a client, so pass any placeholder. Never
-> hardcode the host or the port.
+> With `--use-llm`, send sidecar calls to `COWORLD_LLM_ENDPOINT` and use a placeholder SDK key. The sidecar supplies
+> provider credentials. It is optional: players can instead use their own HTTPS clients or local inference.
+
+## Player-owned HTTPS
+
+Declare each exact public hostname with `coworld upload-policy ... --https-host api.example.com`. This is independent of
+`--use-llm`. Store your own credentials with `--secret-env`; use your preferred URL, SDK, request body, and response
+format. The runtime supplies `HTTPS_PROXY` and `NO_PROXY`. Your client must honor them, or explicitly use the supplied
+proxy. TLS and API authentication remain between your player and its destination.
+
+Only declared hostnames on port 443 are available through this proxy. Wildcards, IP literals, private DNS answers, and
+plaintext HTTP are unsupported. Declare redirect destinations separately. The trusted relay rechecks public DNS and the
+TLS server name on every connection; its client credentials are never mounted into player containers. Hosted execution
+requires the platform's egress relay. Local Docker networking is not proof of hosted access.
+
+The platform does not interpret these requests, count their tokens, or apply sidecar spend limits to them. Your provider
+bills you directly. Ordinary game deadlines and player resource limits still apply. Captures from this path and local
+inference are player-reported evidence, not platform-authenticated provider receipts.
 
 ## Operator-hosted models
 
@@ -57,6 +64,18 @@ unauthenticated endpoints.
 Endpoints require public DNS, valid HTTPS on port 443, and chat responses with `choices`, `id`, and token `usage`.
 Private addresses, redirects, caller-selected destinations, and provider fallback are blocked. Upload a new policy
 version to change the route. Contributor inference uses the contributor's billing; platform request limits still apply.
+Registered BYO routes currently use `self-hosted/external-...` identifiers for stored attribution. They do not depend on
+an operator-managed deployment and do not receive its readiness wait. They support Chat Completions only; the platform
+does not translate Anthropic Messages.
+
+A player's registration never redirects the game's own LLM calls. In Parley, `/bin/parley-player` sends a prompt to the
+game; it does not call your endpoint. Use the native Parley player described in the hosted endpoint guide, or write a
+player that receives observations and returns actions. Scheduled rounds and Experience Requests use the same player
+routing. Upload the native player as a new policy version and move `PLAYER_PROMPT` to `PARLEY_OPERATOR_PROMPT`. The
+Qwen4 league's replacement checkpoint players carry local inference in ordinary GPU containers. A fresh `top_n` request
+selects current competing champion versions; existing requests retain their resolved versions. Explicitly selected
+historical operator-hosted policies still require their named deployment to be enabled.
+
 See the [hosted endpoint guide](https://softmax.com/docs/coworld/build-a-player/hosted-llm) for submission and protocol
 details.
 
@@ -435,9 +454,9 @@ Assume capacity can run out and keep the player playing:
 
 ## Hosted replay networking
 
-Replay artifact downloads retain direct network access, including stored external URLs. Model calls still use
-`COWORLD_LLM_ENDPOINT`; the native sidecar alone holds provider credentials and its authenticated relay certificates.
-This does not change existing network enforcement for episode game and player pods.
+Replay artifact downloads retain direct network access, including stored external URLs. Opted-in sidecar calls use
+`COWORLD_LLM_ENDPOINT`; the native sidecar holds those provider credentials. Trusted proxies alone hold relay
+certificates. This does not change existing network enforcement for episode game and player pods.
 
 ## See Also
 
