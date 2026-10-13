@@ -61,7 +61,15 @@ from coworld.runner.external_llm import EXTERNAL_LLM_SECRET_KEY, ExternalLlmRout
 from coworld.runner.runner import DEFAULT_PLAYER_EXIT_TIMEOUT_SECONDS, EpisodeArtifacts, run_coworld_episode
 from coworld.submit import submit_policy_to_league_cmd
 from coworld.tournament_cli import register_tournament_commands
-from coworld.types import CoworldManifest, StepResult, TranscriptStep
+from coworld.types import (
+    CoworldManifest,
+    CoworldPlayerStartup,
+    CoworldResourceLimits,
+    CoworldResourceRequests,
+    CoworldRunnableResources,
+    StepResult,
+    TranscriptStep,
+)
 from coworld.upload import (
     ContainerImageResponse,
     CoworldCertificationStatus,
@@ -1401,6 +1409,29 @@ def upload_policy(
         list[str] | None,
         typer.Option("--run", help="Command argv for images that contain multiple Coworld roles."),
     ] = None,
+    gpu: Annotated[bool, typer.Option("--gpu", help="Reserve one NVIDIA GPU for this player.")] = False,
+    instance_type: Annotated[
+        str | None,
+        typer.Option(
+            "--instance-type",
+            help=(
+                "Softmax employees only: EC2 instance type, e.g. g6.xlarge. "
+                "Requires --elevated; GPU reservation is separate."
+            ),
+        ),
+    ] = None,
+    startup_port: Annotated[
+        int | None, typer.Option("--startup-port", help="HTTP readiness port checked before starting the game.")
+    ] = None,
+    startup_path: Annotated[str, typer.Option("--startup-path", help="HTTP readiness path.")] = "/healthz",
+    startup_timeout: Annotated[
+        int, typer.Option("--startup-timeout", help="Scheduling and warmup deadline, seconds (maximum 1200).")
+    ] = 1200,
+    cpu: Annotated[str | None, typer.Option("--cpu", help="Player pod CPU request, e.g. 16 or 500m.")] = None,
+    memory: Annotated[str | None, typer.Option("--memory", help="Player pod memory request, e.g. 40Gi.")] = None,
+    cpu_limit: Annotated[
+        str | None, typer.Option("--cpu-limit", help="CPU ceiling and math-library thread count.")
+    ] = None,
     secret_env: Annotated[
         list[str] | None,
         typer.Option(
@@ -1461,10 +1492,34 @@ def upload_policy(
 ) -> None:
     if (image is None) == (player_file is None):
         raise typer.BadParameter("Provide exactly one of IMAGE or --file")
+    resources = None
+    if cpu is not None or memory is not None or cpu_limit is not None or gpu or instance_type is not None:
+        resources = CoworldRunnableResources(
+            requests=CoworldResourceRequests(
+                cpu=cpu, memory=memory, gpu=1 if gpu else None, instance_type=instance_type
+            ),
+            limits=CoworldResourceLimits(cpu=cpu_limit) if cpu_limit is not None else None,
+        )
+    if startup_port is None and (startup_path != "/healthz" or startup_timeout != 1200):
+        raise typer.BadParameter("--startup-path and --startup-timeout require --startup-port")
+    startup = (
+        CoworldPlayerStartup(port=startup_port, path=startup_path, timeout_seconds=startup_timeout)
+        if startup_port is not None
+        else None
+    )
     if player_file is not None and (
-        run or secret_env or use_llm or llm_model is not None or llm_endpoint or llm_api_key_env
+        resources is not None
+        or startup is not None
+        or run
+        or secret_env
+        or use_llm
+        or llm_model is not None
+        or llm_endpoint
+        or llm_api_key_env
     ):
-        raise typer.BadParameter("--file cannot be combined with --run, --secret-env, --use-llm, or --llm-model")
+        raise typer.BadParameter(
+            "--file cannot be combined with pod resources, --run, --secret-env, --use-llm, or --llm-model"
+        )
     if llm_model is not None and not use_llm:
         raise typer.BadParameter("--llm-model requires --use-llm")
     if llm_endpoint is not None and (not use_llm or llm_model is None):
@@ -1507,6 +1562,8 @@ def upload_policy(
         image,
         name,
         run=run,
+        resources=resources,
+        startup=startup,
         secret_env=parsed_secret_env if parsed_secret_env else None,
         tags=parsed_tags if parsed_tags else None,
         server=server,

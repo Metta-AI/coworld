@@ -24,9 +24,9 @@ capacity:
 
 These are scheduling **requests**, not CPU or memory limits. A container may use more if the node has spare capacity,
 but game and player authors should treat the requested capacity as the portable baseline available in hosted runs.
-Hosted deployments pass player requests through `COWORLD_PLAYER_CPU_REQUEST` and `COWORLD_PLAYER_MEMORY_REQUEST`; if
-those env vars are omitted in a direct runner invocation, the coordinator falls back to 2 CPU and 2Gi memory per player
-pod.
+Hosted deployments resolve each policy’s resource profile into its seat in the episode specification. Policies without a
+profile inherit the Coworld’s player profile. Direct runner invocations can use `COWORLD_PLAYER_CPU_REQUEST` and
+`COWORLD_PLAYER_MEMORY_REQUEST` as defaults; without either source, the coordinator requests 2 CPU and 2Gi per player.
 
 The trusted coordinator and certification containers each have a 4Gi memory limit. This bounds memory consumed while
 reading game output without imposing a new viewer-message size limit. Deployment settings `COWORLD_WORKER_MEMORY_LIMIT`
@@ -34,12 +34,12 @@ and `CERTIFIER_RUNNER_MEMORY_LIMIT` control these budgets. Exceeding the budget 
 its job; these limits do not reserve additional node capacity.
 
 A player pod gets **no CPU limit by default**, so it may burst to every core on the node it lands on — meaning a policy
-that reads `os.cpu_count()`/`nproc` sees 8/12/16 cores depending on placement. A Coworld that wants deterministic,
-node-size-independent player compute declares `player.resources.limits.cpu` in its manifest. The backend forwards it as
-`COWORLD_PLAYER_CPU_LIMIT`, and the worker then (a) sets that as the player container's CPU limit and (b) pins the
-player's math-library thread pools (`OMP_NUM_THREADS`/`MKL_NUM_THREADS`/`OPENBLAS_NUM_THREADS`/`NUMEXPR_NUM_THREADS`) to
-`floor(limit)` cores so the player behaves like an N-core box on any node. The player image's own thread-env wins if it
-sets these explicitly.
+that reads `os.cpu_count()`/`nproc` sees 8/12/16/32 cores depending on placement. A Coworld that wants deterministic,
+node-size-independent player compute declares `player.resources.limits.cpu` in its manifest; uploaded policies can
+override it with their own profile. The backend resolves each seat’s `resources.limits.cpu`. The worker applies that CPU
+limit and pins the player's math-library thread pools
+(`OMP_NUM_THREADS`/`MKL_NUM_THREADS`/`OPENBLAS_NUM_THREADS`/`NUMEXPR_NUM_THREADS`) to `floor(limit)` cores so the player
+behaves like an N-core box on any node. The player image's own thread-env wins if it sets these explicitly.
 
 A game pod similarly gets **no CPU or memory limit by default**. A Coworld that wants a hard compute ceiling on the game
 container declares `game.runnable.resources.limits.cpu` and/or `game.runnable.resources.limits.memory` in its manifest;

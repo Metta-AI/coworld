@@ -914,6 +914,11 @@ def _prepare_player_pods(job: CoworldEpisodeJobSpec, worker_timings: ProcessTimi
         for slot, player in policy_players:
             name = f"{service_name}-player-{slot}"
             child_names.append(name)
+            cpu_request, memory_request, cpu_limit = player_cpu_request, player_memory_request, player_cpu_limit
+            if player.resources is not None:
+                cpu_request = player.resources.requests.cpu or player_cpu_request
+                memory_request = player.resources.requests.memory or player_memory_request
+                cpu_limit = (player.resources.limits.cpu or "") if player.resources.limits else ""
             _create_player_pod(
                 core_v1,
                 namespace,
@@ -924,18 +929,60 @@ def _prepare_player_pods(job: CoworldEpisodeJobSpec, worker_timings: ProcessTimi
                 policy_secrets.get(slot, {}),
                 job_id,
                 service_name,
-                player_cpu_request,
-                player_memory_request,
-                player_cpu_limit,
+                cpu_request,
+                memory_request,
+                cpu_limit,
                 owner_references,
                 game_pod_ip=game_pod_ip,
                 timings=worker_timings,
             )
+        _wait_for_player_warmup(core_v1, namespace, service_name, policy_players)
         launched = True
     finally:
         if not launched:
             _delete_child_resources(core_v1, namespace, service_name, child_names)
     worker_timings.record("player_launch", player_launch_start)
+
+
+def _wait_for_player_warmup(
+    core_v1, namespace: str, service_name: str, players: list[tuple[int, PlayerLaunchSpec]]
+) -> None:
+    pending = {slot: player.startup for slot, player in players if player.startup is not None}
+    started = time.monotonic()
+    while pending:
+        for slot, startup in list(pending.items()):
+            name = f"{service_name}-player-{slot}"
+            pod = core_v1.read_namespaced_pod(name=name, namespace=namespace)
+            failure = _player_container_failure(pod, name, slot)
+            disruption = _player_pod_disruption(pod, has_player_failure=failure is not None)
+            if disruption is not None:
+                raise RunnerEpisodeError(
+                    f"Player {slot} warmup interrupted: {disruption}", error_type="node_disruption"
+                )
+            if failure is not None:
+                raise RunnerEpisodeError(failure[1], error_type="player_error", failed_policy_index=slot)
+            if _container_terminated_state(pod, "player") is not None:
+                raise RunnerEpisodeError(
+                    f"Player {slot} exited before warmup completed",
+                    error_type="player_error",
+                    failed_policy_index=slot,
+                )
+            if any(
+                condition.type == "Ready" and condition.status == "True" for condition in pod.status.conditions or []
+            ):
+                del pending[slot]
+            elif time.monotonic() - started >= startup.timeout_seconds:
+                scheduled = any(
+                    condition.type == "PodScheduled" and condition.status == "True"
+                    for condition in pod.status.conditions or []
+                )
+                raise RunnerEpisodeError(
+                    f"Player {slot} exceeded its {startup.timeout_seconds}s startup deadline",
+                    error_type="player_error" if scheduled else "player_never_started",
+                    failed_policy_index=slot if scheduled else None,
+                )
+        if pending:
+            time.sleep(_HEALTH_POLL_SECONDS)
 
 
 def _run_kubernetes_episode(
@@ -1292,6 +1339,15 @@ def _create_player_pod(
     # thread-pool env to the limit so the player behaves like an N-core box on any node size; the
     # author's own env still wins if they set these explicitly.
     player_env = _player_thread_pool_env(player_cpu_limit) | dict(player.env) | dict(policy_secret_env)
+    if player.startup is not None:
+        player_env["COWORLD_PLAYER_START_URL"] = f"http://{service_name}:{HEALTH_PORT}/players-ready"
+    gpu = player.resources.requests.gpu if player.resources is not None else None
+    instance_type = player.resources.requests.instance_type if player.resources is not None else None
+    requests = {"cpu": player_cpu_request, "memory": player_memory_request}
+    limits = {"cpu": player_cpu_limit} if player_cpu_limit else {}
+    if gpu is not None:
+        requests["nvidia.com/gpu"] = str(gpu)
+        limits["nvidia.com/gpu"] = str(gpu)
     external_route = (
         ExternalLlmRoute.model_validate_json(policy_secret_env[EXTERNAL_LLM_SECRET_KEY])
         if EXTERNAL_LLM_SECRET_KEY in policy_secret_env
@@ -1347,6 +1403,13 @@ def _create_player_pod(
             name="player",
             image=player.image,
             image_pull_policy=_player_image_pull_policy(player.image),
+            readiness_probe=client.V1Probe(
+                http_get=client.V1HTTPGetAction(path=player.startup.path, port=player.startup.port),
+                period_seconds=2,
+                timeout_seconds=2,
+            )
+            if player.startup is not None
+            else None,
             command=command,
             args=args,
             env=[
@@ -1357,9 +1420,8 @@ def _create_player_pod(
                 *metadata_env_vars,
             ],
             resources=client.V1ResourceRequirements(
-                requests={"cpu": player_cpu_request, "memory": player_memory_request},
-                # CPU limit only: a memory limit would risk OOM-killing existing players.
-                limits={"cpu": player_cpu_limit} if player_cpu_limit else None,
+                requests=requests,
+                limits=limits or None,
             ),
             security_context=client.V1SecurityContext(
                 allow_privilege_escalation=False,
@@ -1390,6 +1452,10 @@ def _create_player_pod(
             ],
         )
     ]
+    if player.startup is not None:
+        # Warmup runs before the game exists. The policy waits for COWORLD_PLAYER_START_URL
+        # after reporting readiness, so model loading cannot consume the connection budget.
+        init_containers = []
     # Native sidecar: an initContainer with restartPolicy=Always, NOT a regular container —
     # a regular container running the long-lived proxy would keep this restartPolicy=Never pod
     # Running after the player exits instead of letting it reach a terminal phase.
@@ -1501,8 +1567,14 @@ def _create_player_pod(
             service_account_name=_LLM_SERVICE_ACCOUNT if uses_sidecar else None,
             automount_service_account_token=False,
             host_aliases=host_aliases,
-            node_selector=_workload_node_selector(),
-            tolerations=_workload_tolerations(),
+            node_selector=(_workload_node_selector() or {})
+            | ({"node.kubernetes.io/instance-type": instance_type} if instance_type is not None else {}),
+            tolerations=(_workload_tolerations() or [])
+            + (
+                [client.V1Toleration(key="nvidia.com/gpu", operator="Exists", effect="NoSchedule")]
+                if gpu is not None
+                else []
+            ),
             volumes=pod_volumes,
             init_containers=init_containers,
             containers=containers,

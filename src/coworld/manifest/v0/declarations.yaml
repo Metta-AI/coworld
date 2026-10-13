@@ -32,3 +32,7 @@
   kind: compatible
   summary: Optional game.memory opt-in for private append-only policy notes.
   fixture: packages/coworld/tests/manifest_versions/v0/memory_manifest.json
+- schema_hash: 0353c6a34165a6965b479a1422b3f31b8d77cc4cf7a6ca1e9a2d5d35e160a335
+  kind: compatible
+  summary: Optional NVIDIA GPU reservation, EC2 instance selection, and pre-game player startup readiness.
+  fixture: packages/coworld/tests/manifest_versions/v0/gpu_player_manifest.json

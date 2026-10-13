@@ -1406,10 +1406,27 @@ def test_upload_coworld_surfaces_server_error_detail(
     assert "variant 'default' references unknown image" in message
 
 
+@pytest.mark.parametrize(
+    "with_resources,gpu,instance_type",
+    [(False, False, None), (True, False, "m7i.2xlarge"), (True, True, None), (True, True, "g6.xlarge")],
+)
 def test_upload_policy_command_creates_docker_image_policy(
     httpserver: HTTPServer,
+    with_resources: bool,
+    gpu: bool,
+    instance_type: str | None,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    resources = {
+        "requests": {
+            "cpu": "2",
+            "memory": "12Gi",
+            **({"gpu": 1} if gpu else {}),
+            **({"instance-type": instance_type} if instance_type is not None else {}),
+        },
+        "limits": {"cpu": "2"},
+    }
+    startup = {"port": 8080, "path": "/healthz", "timeout_seconds": 1200}
     softmax_image_uri = "123456789012.dkr.ecr.us-east-1.amazonaws.com/coworld/user/unit-test-policy@sha256:digest"
 
     monkeypatch.setattr("softmax.auth.load_current_token", lambda *, server: "player-token")
@@ -1441,6 +1458,7 @@ def test_upload_policy_command_creates_docker_image_policy(
         method="POST",
         headers={"Authorization": "Bearer player-token"},
         json={
+            **({"resources": resources, "startup": startup} if with_resources else {}),
             "name": "paintbot",
             "container_image_id": "img_00000000-0000-0000-0000-000000000030",
         },
@@ -1457,6 +1475,22 @@ def test_upload_policy_command_creates_docker_image_policy(
         [
             "upload-policy",
             "unit-test-policy:latest",
+            *(
+                [
+                    "--cpu",
+                    "2",
+                    "--memory",
+                    "12Gi",
+                    "--cpu-limit",
+                    "2",
+                    *(["--gpu"] if gpu else []),
+                    *(["--instance-type", instance_type] if instance_type is not None else []),
+                    "--startup-port",
+                    "8080",
+                ]
+                if with_resources
+                else []
+            ),
             "--name",
             "paintbot",
             "--server",

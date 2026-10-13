@@ -50,7 +50,15 @@ def test_runnable_and_manifest_role_fields_are_flat() -> None:
     spec = CoworldRunnableSpec(type="game", image="game", source_url="https://example.com")
 
     assert spec.source_url == "https://example.com"
-    assert set(CoworldRunnableSpec.model_fields) == {"type", "image", "run", "env", "source_url", "resources"}
+    assert set(CoworldRunnableSpec.model_fields) == {
+        "type",
+        "image",
+        "run",
+        "env",
+        "source_url",
+        "resources",
+        "startup",
+    }
 
 
 def test_manifest_schema_does_not_require_runnable_source_url() -> None:
@@ -901,3 +909,33 @@ def test_manifest_rejects_invalid_achievement_catalogs(achievements: list[dict[s
     data["game"]["achievements"] = achievements
     with pytest.raises(ValidationError):
         CoworldManifest.model_validate(data)
+
+
+@pytest.mark.parametrize(
+    "compute",
+    [
+        {"resources": {"requests": {"gpu": 1}}},
+        {"resources": {"requests": {"instance-type": "g6.xlarge"}}},
+        {"startup": {"port": 8080}},
+    ],
+)
+def test_model_compute_requires_a_player_container(compute: dict[str, Any]) -> None:
+    CoworldRunnableSpec.model_validate({"type": "player", "image": "model:latest", **compute})
+    with pytest.raises(ValidationError, match="Only player containers"):
+        CoworldRunnableSpec.model_validate({"type": "game", "image": "game:latest", **compute})
+    with pytest.raises(ValidationError, match="File players cannot"):
+        CoworldManifestRoleSpec.model_validate(
+            {"type": "player", "file": "player.bin", "id": "p", "name": "Player", "description": "File", **compute}
+        )
+
+
+@pytest.mark.parametrize("instance_type", ["", "g6", "g6.xlarge,foo", "../node"])
+def test_instance_type_rejects_malformed_names(instance_type: str) -> None:
+    with pytest.raises(ValidationError):
+        coworld.types.CoworldResourceRequests(instance_type=instance_type)
+
+
+def test_instance_type_does_not_reserve_a_gpu() -> None:
+    requests = coworld.types.CoworldResourceRequests(instance_type="g6.xlarge")
+    assert requests.gpu is None
+    assert requests.model_dump(exclude_none=True) == {"instance-type": "g6.xlarge"}
