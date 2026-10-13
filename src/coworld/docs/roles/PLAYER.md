@@ -176,3 +176,16 @@ game's output artifacts after the episode. Players' per-slot actions plus the ga
   upload at episode end.
 - [`artifacts/REPLAY.md`](../artifacts/REPLAY.md) — replay artifact containing player actions and game state.
 - [`README.md`](../README.md) — full artifact flow.
+
+## Pod resource requests
+
+Container policy authors can reserve compute independently of the game’s bundled player:
+
+```bash
+coworld upload-policy player:local --cpu 16 --memory 40Gi --cpu-limit 16
+```
+
+The profile belongs to that policy version and applies only to its seats. Omitting all three flags inherits the Coworld
+player profile. Within an explicit profile, omitted requests use platform defaults. The CPU limit also sets math-library
+thread counts. Requests above operator bounds are rejected during upload. File players execute inside the game and
+cannot request separate pod resources.

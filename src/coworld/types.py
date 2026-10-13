@@ -56,6 +56,14 @@ def _omit_default_from_schema(schema: JsonSchema) -> None:
     schema.pop("default", None)
 
 
+class CoworldPlayerStartup(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    port: int = Field(ge=1024, le=65535, description="HTTP port serving readiness before the game starts.")
+    path: str = Field(default="/healthz", pattern=r"^/", description="HTTP readiness path; return 200 after warmup.")
+    timeout_seconds: int = Field(default=1200, ge=1, le=1200, description="Maximum scheduling and warmup time.")
+
+
 class CoworldResourceRequests(BaseModel):
     model_config = ConfigDict(extra="forbid", populate_by_name=True, serialize_by_alias=True)
 
@@ -66,6 +74,19 @@ class CoworldResourceRequests(BaseModel):
     memory: str | None = Field(
         default=None,
         description="Kubernetes memory request quantity, e.g. '512Mi' or '4Gi'. Omit to use the role default.",
+    )
+    gpu: int | None = Field(
+        default=None,
+        ge=1,
+        le=1,
+        strict=True,
+        description="Dedicated NVIDIA GPUs for a player. Omit for CPU execution; currently one GPU is supported.",
+    )
+    instance_type: str | None = Field(
+        default=None,
+        alias="instance-type",
+        pattern=r"^[a-z][a-z0-9-]*\.[a-z0-9-]+$",
+        description="EC2 instance type for hosted player placement, e.g. g6.xlarge. Does not reserve a GPU.",
     )
     ephemeral_storage: str | None = Field(
         default=None,
@@ -148,6 +169,19 @@ class CoworldRunnableSpec(BaseModel):
         ),
     )
 
+    startup: CoworldPlayerStartup | None = Field(
+        default=None,
+        description="Optional player warmup gate. The player starts before the game and reports HTTP readiness.",
+    )
+
+    @model_validator(mode="after")
+    def validate_player_compute(self) -> "CoworldRunnableSpec":
+        gpu = self.resources.requests.gpu if self.resources is not None else None
+        instance_type = self.resources.requests.instance_type if self.resources is not None else None
+        if self.type != "player" and (self.startup is not None or gpu is not None or instance_type is not None):
+            raise ValueError("Only player containers may declare GPU requests, instance types, or startup readiness")
+        return self
+
     def as_runnable_spec(self) -> CoworldRunnableSpec:
         return CoworldRunnableSpec.model_validate(self.model_dump(include=set(CoworldRunnableSpec.model_fields)))
 
@@ -186,6 +220,11 @@ class CoworldManifestRoleSpec(CoworldRunnableSpec):
         if (self.image is None) == (self.file is None):
             raise ValueError("manifest role must define exactly one of image or file")
         if self.file is not None:
+            if self.startup is not None or (
+                self.resources is not None
+                and (self.resources.requests.gpu is not None or self.resources.requests.instance_type is not None)
+            ):
+                raise ValueError("File players cannot declare GPU requests, instance types, or startup readiness")
             if self.type != "player":
                 raise ValueError("file is supported only for player roles")
             if not re.fullmatch(REPLAY_VIEWER_BUNDLE_DIGEST_PATTERN, self.file):

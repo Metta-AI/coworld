@@ -44,13 +44,16 @@
         "requests": {
           "cpu": "2",
           "memory": "4Gi",
-          "ephemeral-storage": "10Gi"
+          "ephemeral-storage": "10Gi",
+          "gpu": null,
+          "instance-type": null
         },
         "limits": {
           "cpu": "4",
           "memory": "3Gi"
         }
-      }
+      },
+      "startup": null
     },
     "protocols": {
       "player": {
@@ -124,7 +127,9 @@
         "requests": {
           "cpu": "1",
           "memory": "1Gi",
-          "ephemeral-storage": "2Gi"
+          "ephemeral-storage": "2Gi",
+          "gpu": 1,
+          "instance-type": "g6.xlarge"
         },
         "limits": {
           "cpu": "2"
@@ -133,7 +138,12 @@
       "id": "golden-player",
       "name": "Golden Player",
       "description": "Bundled player covering every role-spec field.",
-      "repository_url": "https://example.com/golden/player"
+      "repository_url": "https://example.com/golden/player",
+      "startup": {
+        "port": 8080,
+        "path": "/healthz",
+        "timeout_seconds": 1200
+      }
     }
   ],
   "reporter": [

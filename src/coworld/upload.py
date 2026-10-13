@@ -46,7 +46,7 @@ from coworld.manifest_validation import validate_coworld_manifest_game_configs
 from coworld.player_files import player_file_bytes, resolve_player_file
 from coworld.replay_viewer import source_replay_viewer_bundle
 from coworld.runner.runner import assert_docker_image_reachable
-from coworld.types import MANIFEST_ROLE_SECTIONS
+from coworld.types import MANIFEST_ROLE_SECTIONS, CoworldPlayerStartup, CoworldRunnableResources
 from softmax import auth as softmax_auth
 from softmax.agent import user_agent
 from softmax.docs import DOCS_AGENT_INDEX_URL, DOCS_AGENT_SKILL_URL
@@ -992,6 +992,8 @@ class CoworldUploadClient:
         run: list[str] | None,
         secret_env: dict[str, str] | None,
         tags: dict[str, str] | None = None,
+        resources: CoworldRunnableResources | None = None,
+        startup: CoworldPlayerStartup | None = None,
     ) -> PolicyVersionResponse:
         policy_secret_env_id: str | None = None
         if secret_env:
@@ -1011,6 +1013,10 @@ class CoworldUploadClient:
             payload["run"] = run
         if policy_secret_env_id is not None:
             payload["policy_secret_env_id"] = policy_secret_env_id
+        if resources is not None:
+            payload["resources"] = resources.model_dump(mode="json", exclude_none=True)
+        if startup is not None:
+            payload["startup"] = startup.model_dump(mode="json")
         if tags:
             payload["tags"] = tags
         response = self._http_client.post(
@@ -1727,6 +1733,8 @@ def upload_policy_cmd(
     *,
     player_file: Path | None = None,
     run: list[str] | None = None,
+    resources: CoworldRunnableResources | None = None,
+    startup: CoworldPlayerStartup | None = None,
     secret_env: dict[str, str] | None = None,
     tags: dict[str, str] | None = None,
     server: str = DEFAULT_SUBMIT_SERVER,
@@ -1735,8 +1743,10 @@ def upload_policy_cmd(
         raise ValueError("Exactly one of image or player_file is required")
     with CoworldUploadClient.from_login(server_url=server) as client:
         if player_file is not None:
-            if run or secret_env:
-                raise ValueError("player-file policies do not support run commands or secret environments")
+            if run or secret_env or resources is not None or startup is not None:
+                raise ValueError(
+                    "player-file policies do not support run commands, secret environments, or pod resources"
+                )
             contents = player_file_bytes(player_file)
             content_hash = hashlib.sha256(contents).hexdigest()
             upload = client.request_player_file_upload(
@@ -1766,6 +1776,8 @@ def upload_policy_cmd(
                 name=name,
                 container_image_id=uploaded_image.id,
                 run=run,
+                resources=resources,
+                startup=startup,
                 secret_env=secret_env,
                 tags=tags,
             )

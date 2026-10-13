@@ -6,19 +6,19 @@ using Kubernetes (`execution_backend=k8s`). This field selects who executes each
 
 ## Compare the two modes
 
-| Decision                       | `platform-hosted` (default)                                                              | `game-hosted`                                                                                                       |
-| ------------------------------ | ---------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------- |
-| Player artifact                | Docker image (`docker-img` policy)                                                       | File or directory packed as a zip (`player-file` policy)                                                            |
-| Packaging                      | Build a `linux/amd64` player image; 512 MiB bundled image cap; 5 GiB submitted image cap | Prepare a game-defined file or directory; 100 MiB packed cap for bundled and submitted files                        |
-| Startup                        | Pull an image and start a container per seat within the player connection deadline       | Stage and verify seat files before starting the game; game owns player initialization                               |
-| Bundled manifest entry         | `player[].image`                                                                         | `player[].file`                                                                                                     |
-| Execution                      | Runner starts a container per seat; hosted runs use child pods                           | Game loads every seat's file inside its own container                                                               |
-| Player interface               | Game-defined WebSocket protocol at `/player`; runner supplies `COWORLD_PLAYER_WS_URL`    | Game-defined file format, entrypoint, and execution protocol; runner supplies `COGAME_PLAYER_SEATS_URI` to the game |
-| Resources and isolation        | Separate player containers, with platform resource controls                              | Game resources cover all seats; game author owns player isolation, scheduling, and execution limits                 |
-| Policy configuration           | Player `run`, public environment, and policy-scoped secrets                              | No policy process environment or secrets; game defines configuration inside the file format                         |
-| Player code visibility         | Game does not receive player image bytes                                                 | Game author controls code that can read or copy every submitted file                                                |
-| Logs and artifacts             | Runner captures player logs; player uploads its optional zip                             | Game writes separate seat logs and optional zips                                                                    |
-| Human and persistent workflows | Human seats, lobbies, hosted play sessions, and persistent player runtimes               | Episode-only; these workflows are unavailable                                                                       |
+| Decision                       | `platform-hosted` (default)                                                               | `game-hosted`                                                                                                       |
+| ------------------------------ | ----------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------- |
+| Player artifact                | Docker image (`docker-img` policy)                                                        | File or directory packed as a zip (`player-file` policy)                                                            |
+| Packaging                      | Build a `linux/amd64` player image; 512 MiB bundled image cap; 32 GiB submitted image cap | Prepare a game-defined file or directory; 100 MiB packed cap for bundled and submitted files                        |
+| Startup                        | Pull an image and start a container per seat within the player connection deadline        | Stage and verify seat files before starting the game; game owns player initialization                               |
+| Bundled manifest entry         | `player[].image`                                                                          | `player[].file`                                                                                                     |
+| Execution                      | Runner starts a container per seat; hosted runs use child pods                            | Game loads every seat's file inside its own container                                                               |
+| Player interface               | Game-defined WebSocket protocol at `/player`; runner supplies `COWORLD_PLAYER_WS_URL`     | Game-defined file format, entrypoint, and execution protocol; runner supplies `COGAME_PLAYER_SEATS_URI` to the game |
+| Resources and isolation        | Separate player containers, with platform resource controls                               | Game resources cover all seats; game author owns player isolation, scheduling, and execution limits                 |
+| Policy configuration           | Player `run`, public environment, and policy-scoped secrets                               | No policy process environment or secrets; game defines configuration inside the file format                         |
+| Player code visibility         | Game does not receive player image bytes                                                  | Game author controls code that can read or copy every submitted file                                                |
+| Logs and artifacts             | Runner captures player logs; player uploads its optional zip                              | Game writes separate seat logs and optional zips                                                                    |
+| Human and persistent workflows | Human seats, lobbies, hosted play sessions, and persistent player runtimes                | Episode-only; these workflows are unavailable                                                                       |
 
 ## Match the runtime to the game
 
@@ -59,6 +59,33 @@ Use the [player contract](roles/PLAYER.md#platform-hosted-players) for startup, 
 logs, and artifact uploads. Start from the [Paint Arena example](../examples/paintarena/README.md). Document
 observations, actions, connection deadlines, and failure behavior in `game.protocols.player`. Seat every bundled player
 in certification and test both the game and player containers through a complete episode.
+
+### Player compute and warmup
+
+Submitted container policies may declare `--cpu`, `--memory`, `--cpu-limit`, `--gpu`, and `--instance-type` on
+`coworld upload-policy`. Each option controls one setting. `--instance-type` pins hosted placement to an EC2 instance
+such as `g6.xlarge`; `--gpu` separately reserves one NVIDIA GPU. Instance-type overrides are restricted to Softmax
+employees using an elevated user session. Use `coworld --elevated upload-policy ... --instance-type ...`. If a player
+session is active, run `softmax player unset` first. Public users keep automatic placement and can still request CPU,
+RAM, and a GPU. The API enforces this restriction for policy uploads and bundled players in Coworld manifests. Instance
+type does not change CPU, RAM, or GPU requests. Omit instance type to let the platform select a machine from its
+supported pools.
+
+```bash
+coworld upload-policy my-cpu-player:latest --cpu 2 --memory 4Gi
+coworld upload-policy my-gpu-player:latest --gpu --cpu 2 --memory 12Gi
+coworld --elevated upload-policy my-larger-player:latest --instance-type g6e.2xlarge --gpu --cpu 4 --memory 32Gi
+```
+
+The selected instance must satisfy the platform pool constraints and the declared resources. GPU players need `--gpu`
+even when their instance type contains a GPU. Availability depends on regional capacity and quotas. Each seat reserves a
+whole GPU; fractional GPUs and multiple GPUs per seat are unsupported. Local Docker uses the current host and its
+assigned GPU; EC2 instance selection applies only to hosted execution. Use `--startup-port PORT` for expensive
+initialization, with optional `--startup-path` and `--startup-timeout` (up to 1,200 seconds, including scheduling and
+image pulling). Serve HTTP 200 after initialization, then wait for `COWORLD_PLAYER_START_URL` to return 200 before
+connecting to the game. The runner starts gameplay after every player with a startup declaration is ready. This does not
+increase the game's action or connection budgets. Resource and startup declarations belong to the immutable policy
+version; file players cannot use these pod controls.
 
 ## Implement game-hosted players
 

@@ -601,6 +601,18 @@
           "default": null,
           "description": "Optional compute request profile for this runnable. Omit to inherit the role's default profile. Declared requests are clamped to per-role bounds by the backend."
         },
+        "startup": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/CoworldPlayerStartup"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Optional player warmup gate. The player starts before the game and reports HTTP readiness."
+        },
         "file": {
           "anyOf": [
             {
@@ -689,6 +701,36 @@
       },
       "required": ["type", "content_hash", "size_bytes"],
       "title": "CoworldPlayerFileSpec",
+      "type": "object"
+    },
+    "CoworldPlayerStartup": {
+      "additionalProperties": false,
+      "properties": {
+        "port": {
+          "description": "HTTP port serving readiness before the game starts.",
+          "maximum": 65535,
+          "minimum": 1024,
+          "title": "Port",
+          "type": "integer"
+        },
+        "path": {
+          "default": "/healthz",
+          "description": "HTTP readiness path; return 200 after warmup.",
+          "pattern": "^/",
+          "title": "Path",
+          "type": "string"
+        },
+        "timeout_seconds": {
+          "default": 1200,
+          "description": "Maximum scheduling and warmup time.",
+          "maximum": 1200,
+          "minimum": 1,
+          "title": "Timeout Seconds",
+          "type": "integer"
+        }
+      },
+      "required": ["port"],
+      "title": "CoworldPlayerStartup",
       "type": "object"
     },
     "CoworldPromo": {
@@ -936,6 +978,35 @@
           "description": "Kubernetes memory request quantity, e.g. '512Mi' or '4Gi'. Omit to use the role default.",
           "title": "Memory"
         },
+        "gpu": {
+          "anyOf": [
+            {
+              "maximum": 1,
+              "minimum": 1,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Dedicated NVIDIA GPUs for a player. Omit for CPU execution; currently one GPU is supported.",
+          "title": "Gpu"
+        },
+        "instance-type": {
+          "anyOf": [
+            {
+              "pattern": "^[a-z][a-z0-9-]*\\.[a-z0-9-]+$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "EC2 instance type for hosted player placement, e.g. g6.xlarge. Does not reserve a GPU.",
+          "title": "Instance-Type"
+        },
         "ephemeral-storage": {
           "anyOf": [
             {
@@ -1030,6 +1101,18 @@
           ],
           "default": null,
           "description": "Optional compute request profile for this runnable. Omit to inherit the role's default profile. Declared requests are clamped to per-role bounds by the backend."
+        },
+        "startup": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/CoworldPlayerStartup"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Optional player warmup gate. The player starts before the game and reports HTTP readiness."
         }
       },
       "required": ["type", "image"],

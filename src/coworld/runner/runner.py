@@ -43,6 +43,7 @@ from coworld.types import (
     CoworldPlayerSeat,
     CoworldPlayerSeats,
     CoworldPlayerSeatsSchema,
+    CoworldPlayerStartup,
     CoworldResourceLimits,
     CoworldRunnableResources,
     CoworldRunnableSpec,
@@ -203,6 +204,7 @@ class RunnableLaunchSpec:
     run: tuple[str, ...] = ()
     env: Mapping[str, str] = field(default_factory=dict)
     resources: CoworldRunnableResources | None = None
+    startup: CoworldPlayerStartup | None = None
 
     @classmethod
     def from_model(cls, runnable: CoworldRunnableSpec) -> Self:
@@ -211,6 +213,7 @@ class RunnableLaunchSpec:
             run=tuple(runnable.run),
             env=runnable.env,
             resources=runnable.resources,
+            startup=runnable.startup,
         )
 
     def docker_resource_args(self) -> list[str]:
@@ -221,7 +224,9 @@ class RunnableLaunchSpec:
             memory_bytes=int(parse_resource_quantity(limits.memory or profile.requests.memory or "1Gi")),
         )
         memory = str(allocation.memory_bytes)
-        return ["--cpus", str(allocation.cpus), "--memory", memory, "--memory-swap", memory]
+        return ["--cpus", str(allocation.cpus), "--memory", memory, "--memory-swap", memory] + (
+            ["--gpus", str(profile.requests.gpu)] if profile.requests.gpu else []
+        )
 
 
 @dataclass(frozen=True)
@@ -717,29 +722,7 @@ def run_episode_containers(
         with ExitStack() as stack:
             game_stdout = stack.enter_context(spec.artifacts.game_stdout_path.open("w"))
             game_stderr = stack.enter_context(spec.artifacts.game_stderr_path.open("w"))
-            game_process = subprocess.Popen(
-                game_container_command(
-                    spec.game,
-                    spec.artifacts,
-                    container_name=game_container,
-                    network_alias=game_network_alias,
-                    local_ports=local_ports,
-                    include_player_seats=False,
-                ),
-                stdout=game_stdout,
-                stderr=game_stderr,
-                text=True,
-            )
-
-            port = _wait_for_published_port(
-                game_container, game_process, spec.artifacts.game_stderr_path, timeout_seconds=spec.timeout_seconds
-            )
-            _wait_for_health(port, game_process, spec.artifacts.game_stderr_path, timeout_seconds=spec.timeout_seconds)
-            if spec.players:
-                _require_http_ok(_player_client_url(port, 0, spec.tokens[0]))
-                asyncio.run(_require_bad_player_rejected(f"ws://127.0.0.1:{port}/player?slot=0&token=bad"))
-            _require_http_ok(f"http://127.0.0.1:{port}/client/global")
-
+            player_logs = []
             for slot, player in enumerate(spec.players):
                 private_env = {**spec.secret_env, **player.secret_env}
                 secret_env_key_args = [arg for key in private_env for arg in ("-e", key)]
@@ -756,6 +739,16 @@ def run_episode_containers(
                         "docker",
                         "create",
                         *player.docker_resource_args(),
+                        *(
+                            [
+                                "-p",
+                                f"127.0.0.1::{player.startup.port}",
+                                "-e",
+                                f"COWORLD_PLAYER_START_URL=http://{game_network_alias}:{GAME_PORT}/healthz",
+                            ]
+                            if player.startup is not None
+                            else []
+                        ),
                         "--name",
                         container_name,
                         "--network",
@@ -785,17 +778,70 @@ def run_episode_containers(
                         ["docker", "cp", str(artifact_dir), f"{container_name}:/"],
                         check=True,
                     )
-                player_processes.append(
-                    (
-                        subprocess.Popen(
-                            ["docker", "start", "--attach", container_name],
-                            stdout=player_log,
-                            stderr=subprocess.STDOUT,
-                            text=True,
-                        ),
-                        player_log_path,
-                    )
+                player_logs.append(player_log)
+
+            def start_player(slot: int) -> tuple[subprocess.Popen[str], Path]:
+                return (
+                    subprocess.Popen(
+                        ["docker", "start", "--attach", player_containers[slot]],
+                        stdout=player_logs[slot],
+                        stderr=subprocess.STDOUT,
+                        text=True,
+                    ),
+                    spec.artifacts.policy_log_path(slot),
                 )
+
+            warming = {
+                slot: start_player(slot) for slot, player in enumerate(spec.players) if player.startup is not None
+            }
+            warmup_started = time.monotonic()
+            for slot, (process, log_path) in warming.items():
+                startup = spec.players[slot].startup
+                assert startup is not None
+                deadline = warmup_started + startup.timeout_seconds
+                readiness_port = _wait_for_published_port(
+                    player_containers[slot],
+                    process,
+                    log_path,
+                    container_port=startup.port,
+                    timeout_seconds=max(0, deadline - time.monotonic()),
+                    error_type="player_error",
+                )
+                _wait_for_health(
+                    readiness_port,
+                    process,
+                    log_path,
+                    path=startup.path,
+                    timeout_seconds=max(0, deadline - time.monotonic()),
+                    error_type="player_error",
+                )
+
+            game_process = subprocess.Popen(
+                game_container_command(
+                    spec.game,
+                    spec.artifacts,
+                    container_name=game_container,
+                    network_alias=game_network_alias,
+                    local_ports=local_ports,
+                    include_player_seats=False,
+                ),
+                stdout=game_stdout,
+                stderr=game_stderr,
+                text=True,
+            )
+
+            port = _wait_for_published_port(
+                game_container, game_process, spec.artifacts.game_stderr_path, timeout_seconds=spec.timeout_seconds
+            )
+            _wait_for_health(port, game_process, spec.artifacts.game_stderr_path, timeout_seconds=spec.timeout_seconds)
+            if spec.players:
+                _require_http_ok(_player_client_url(port, 0, spec.tokens[0]))
+                asyncio.run(_require_bad_player_rejected(f"ws://127.0.0.1:{port}/player?slot=0&token=bad"))
+            _require_http_ok(f"http://127.0.0.1:{port}/client/global")
+
+            player_processes = [
+                warming[slot] if slot in warming else start_player(slot) for slot in range(len(spec.players))
+            ]
 
             asyncio.run(
                 _require_global_message(
@@ -1125,15 +1171,16 @@ def _wait_for_health(
     stderr_path: Path,
     *,
     timeout_seconds: float,
+    path: str = "/healthz",
     error_type: RunnerErrorType = "game_unhealthy",
 ) -> None:
     deadline = time.monotonic() + timeout_seconds
-    url = f"http://127.0.0.1:{port}/healthz"
+    url = f"http://127.0.0.1:{port}{path}"
     while time.monotonic() < deadline:
         return_code = game_process.poll()
         if return_code is not None:
             raise RunnerEpisodeError(
-                f"Game container exited with status {return_code} before healthz passed.\n{_tail(stderr_path)}",
+                f"Container exited with status {return_code} before readiness passed.\n{_tail(stderr_path)}",
                 error_type=error_type,
             )
         try:
@@ -1298,6 +1345,7 @@ def _wait_for_published_port(
     stderr_path: Path,
     *,
     timeout_seconds: float,
+    container_port: int = GAME_PORT,
     error_type: RunnerErrorType = "game_unhealthy",
 ) -> int:
     """Read Docker's bound loopback port; never reserve then release a host socket."""
@@ -1311,7 +1359,7 @@ def _wait_for_published_port(
             )
         # docker run creates and starts asynchronously; the mapping appears after start.
         published = subprocess.run(
-            ["docker", "port", container_name, f"{GAME_PORT}/tcp"],
+            ["docker", "port", container_name, f"{container_port}/tcp"],
             capture_output=True,
             text=True,
             timeout=min(5.0, max(0.001, deadline - time.monotonic())),

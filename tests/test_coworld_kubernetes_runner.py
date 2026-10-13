@@ -64,7 +64,10 @@ from coworld.types import (
     CoworldEpisodeJobSpec,
     CoworldHumanPlayerSpec,
     CoworldPlayerFileSpec,
+    CoworldPlayerStartup,
     CoworldReplayViewer,
+    CoworldResourceRequests,
+    CoworldRunnableResources,
     CoworldRunnableSpec,
 )
 
@@ -2798,6 +2801,11 @@ def test_prepare_players_creates_all_slots_or_cleans_partial_launch(monkeypatch,
     create = MagicMock(side_effect=[None, RuntimeError("pod creation failed")] if creation_fails else None)
     monkeypatch.setattr(kubernetes_runner, "_create_player_pod", create)
     job = _runtime_job(players=[CoworldRunnableSpec(type="player", image="player:test") for _ in range(3)])
+    job.players[0].resources = CoworldRunnableResources.model_validate(
+        {"requests": {"cpu": "16", "memory": "40Gi"}, "limits": {"cpu": "16"}}
+    )
+    job.players[1].resources = CoworldRunnableResources.model_validate({"requests": {"cpu": "1", "memory": "1Gi"}})
+    monkeypatch.setenv("COWORLD_PLAYER_CPU_LIMIT", "2")
     timings = ProcessTimings(clock=TimingClock.capture())
 
     with pytest.raises(RuntimeError, match="pod creation failed") if creation_fails else nullcontext():
@@ -2805,6 +2813,11 @@ def test_prepare_players_creates_all_slots_or_cleans_partial_launch(monkeypatch,
 
     assert ready == [True]
     expected_slots = list(range(2 if creation_fails else 3))
+    assert [call.args[9:12] for call in create.call_args_list] == [
+        ("16", "40Gi", "16"),
+        ("1", "1Gi", ""),
+        ("2", "2Gi", "2"),
+    ][: len(expected_slots)]
     assert [call.args[3] for call in create.call_args_list] == expected_slots
     assert [call.args[4] for call in create.call_args_list] == [f"token-{slot}" for slot in expected_slots]
     core.create_namespaced_service.assert_called_once()
@@ -5138,3 +5151,76 @@ def test_player_pod_rejects_wrong_runtime_identity(monkeypatch, source, slot):
             [],
         )
     assert created == []
+
+
+@pytest.mark.parametrize("gpu,instance_type", [(None, None), (None, "m7i.2xlarge"), (1, None), (1, "g6.xlarge")])
+def test_player_warms_before_game_and_keeps_normal_pod_ownership(monkeypatch, gpu, instance_type):
+    monkeypatch.setenv("COWORLD_WORKLOAD_TYPE", "coworld-secure")
+    created = {}
+    core = SimpleNamespace(create_namespaced_pod=lambda *, namespace, body: created.update(body=body))
+    player = PlayerLaunchSpec(
+        image="frozen-qwen:latest",
+        resources=CoworldRunnableResources(requests=CoworldResourceRequests(gpu=gpu, instance_type=instance_type)),
+        startup=CoworldPlayerStartup(port=8080),
+    )
+    owners = [kubernetes_runner.client.V1OwnerReference(api_version="v1", kind="Pod", name="coordinator", uid="owner")]
+    kubernetes_runner._create_player_pod(
+        core,
+        "jobs",
+        "game-player-0",
+        0,
+        "token",
+        player,
+        {},
+        "job",
+        "game",
+        "2",
+        "12Gi",
+        "",
+        owners,
+    )
+    pod = created["body"]
+    container = pod.spec.containers[0]
+    gpu_resources = {"nvidia.com/gpu": "1"} if gpu is not None else {}
+    assert container.resources.requests == {"cpu": "2", "memory": "12Gi"} | gpu_resources
+    assert container.resources.limits == (gpu_resources or None)
+    assert container.readiness_probe.http_get.port == 8080
+    assert pod.spec.init_containers == []
+    assert pod.metadata.owner_references == owners
+    assert pod.spec.node_selector == {"workload-type": "coworld-secure"} | (
+        {"node.kubernetes.io/instance-type": instance_type} if instance_type is not None else {}
+    )
+    assert any(t.key == "nvidia.com/gpu" for t in pod.spec.tolerations) == (gpu is not None)
+    assert pod.spec.affinity is None
+
+    assert {e.name: e.value for e in container.env}["COWORLD_PLAYER_START_URL"].endswith("/players-ready")
+
+
+@pytest.mark.parametrize("scheduled", [False, True])
+def test_player_warmup_waits_for_readiness_and_attributes_deadline(gate_clock, scheduled):
+    conditions = [SimpleNamespace(type="PodScheduled", status="True" if scheduled else "False")]
+    pod = SimpleNamespace(status=SimpleNamespace(container_statuses=[], conditions=conditions, phase="Pending"))
+    core = SimpleNamespace(read_namespaced_pod=lambda **kwargs: pod)
+    players = [(0, PlayerLaunchSpec(image="model", startup=CoworldPlayerStartup(port=8080, timeout_seconds=2)))]
+    with pytest.raises(runner_io.RunnerEpisodeError) as failure:
+        kubernetes_runner._wait_for_player_warmup(core, "jobs", "game", players)
+    assert failure.value.error_type == ("player_error" if scheduled else "player_never_started")
+    assert failure.value.failed_policy_index == (0 if scheduled else None)
+    conditions.append(SimpleNamespace(type="Ready", status="True"))
+    kubernetes_runner._wait_for_player_warmup(core, "jobs", "game", players)
+
+
+def test_player_exit_before_ready_is_not_success(gate_clock):
+    terminated = SimpleNamespace(exit_code=0)
+    pod = SimpleNamespace(
+        status=SimpleNamespace(
+            container_statuses=[SimpleNamespace(name="player", state=SimpleNamespace(terminated=terminated))],
+            conditions=[],
+            phase="Succeeded",
+        )
+    )
+    core = SimpleNamespace(read_namespaced_pod=lambda **kwargs: pod)
+    players = [(0, PlayerLaunchSpec(image="model", startup=CoworldPlayerStartup(port=8080)))]
+    with pytest.raises(runner_io.RunnerEpisodeError, match="exited before warmup") as failure:
+        kubernetes_runner._wait_for_player_warmup(core, "jobs", "game", players)
+    assert failure.value.failed_policy_index == 0
