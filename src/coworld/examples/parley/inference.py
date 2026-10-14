@@ -1,0 +1,50 @@
+"""Inference settings shared by the Parley player and its training consumers."""
+
+from typing import Any, Literal
+
+from pydantic import BaseModel, ConfigDict, Field, JsonValue, TypeAdapter
+
+CHAT_TEMPLATE_KWARGS = {"enable_thinking": False}
+
+
+class Message(BaseModel):
+    role: Literal["system", "user", "assistant"]
+    content: str
+
+
+class InferenceSettings(BaseModel):
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    context_tokens: int = Field(default=32768, gt=1)
+    output_tokens: int = Field(default=300, gt=0)
+    temperature: float = Field(default=0, ge=0, le=2)
+    timeout_seconds: float = Field(default=40, gt=0)
+    output_format: Literal["json", "text"] = "json"
+    stop: list[str] = Field(default_factory=list)
+
+    def request(self, model: str, messages: list[Message]) -> dict[str, JsonValue]:
+        request: dict[str, JsonValue] = {
+            "model": model,
+            "messages": [message.model_dump() for message in messages],
+            "temperature": self.temperature,
+            "top_p": 1,
+            "reasoning": {"effort": "none"},
+            "chat_template_kwargs": CHAT_TEMPLATE_KWARGS,
+            "max_tokens": self.output_tokens,
+        }
+        if self.output_format == "json":
+            request["response_format"] = {"type": "json_object"}
+        if self.stop:
+            request["stop"] = self.stop
+        return request
+
+
+def validate_single_choice(value: Any) -> dict[str, JsonValue]:
+    """Validate the provider envelope before projecting its single answer into a model."""
+    response = TypeAdapter(dict[str, JsonValue]).validate_python(value)
+    if "choices" not in response:
+        raise ValueError("Chat response must contain choices")
+    TypeAdapter(tuple[dict[str, JsonValue]]).validate_python(response["choices"])
+    if "usage" in response and response["usage"] is not None:
+        TypeAdapter(dict[str, JsonValue]).validate_python(response["usage"])
+    return response

@@ -252,6 +252,7 @@ py_library(
             "src/coworld/examples/**/*.json",
             "src/coworld/examples/**/*.html",
             "src/coworld/examples/**/*.md",
+            "src/coworld/examples/**/Dockerfile",
             "src/coworld/manifest/**/*.json",
             "src/coworld/manifest/**/*.yaml",
             "src/coworld/templates/**/*",

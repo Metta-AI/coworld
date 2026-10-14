@@ -119,11 +119,20 @@ app.add_typer(init_app, name="init")
 @init_app.command("player", epilog=docs_epilog("choose-a-coworld"))
 def init_player(
     directory: Annotated[Path, typer.Argument(help="Missing or empty target directory.")] = Path("."),
+    example: Annotated[
+        Literal["parley"] | None,
+        typer.Option("--example", help="Copy a complete editable player for this game's protocol."),
+    ] = None,
 ) -> None:
     """Create a platform-hosted WebSocket player skeleton."""
     if directory.exists() and (not directory.is_dir() or any(directory.iterdir())):
         raise typer.BadParameter("Target must be a missing or empty directory.")
-    with as_file(files("coworld") / "templates" / "roles" / "player") as template:
+    source = (
+        files("coworld") / "examples" / example
+        if example is not None
+        else files("coworld") / "templates" / "roles" / "player"
+    )
+    with as_file(source) as template:
         shutil.copytree(template, directory, dirs_exist_ok=True, ignore=shutil.ignore_patterns("__pycache__"))
     (directory / ".coworld-project").write_text("player\n")
     (directory / "AGENTS.md").write_bytes(
@@ -132,7 +141,7 @@ def init_player(
     (directory / "CLAUDE.md").write_bytes(upsert_guidance(b"", IMPORT_BLOCK))
     typer.echo(f"Created player project: {directory}")
     typer.echo("This is a platform-hosted WebSocket skeleton, not a game-hosted file player.")
-    typer.echo("Read README.md and adapt player.py to your game's observations and actions before building its image.")
+    typer.echo("Read README.md, adapt player.py to your game, then build and upload your image.")
     typer.echo(f"Next: {DOCS_PAGES['choose-a-coworld']}")
     typer.echo("Run `coworld leagues` to choose a league and read its participation guide.")
     typer.echo(FEED_CARD_HELLO_REMINDER)

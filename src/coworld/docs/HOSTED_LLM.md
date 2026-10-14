@@ -51,7 +51,7 @@ Register the endpoint, server model, and key when uploading the player:
 
 ```bash
 # Set DISTILLABS_API_KEY through your shell's secret manager.
-uv run coworld upload-policy my-parley-player:local --name distillabs-e17 \
+uv run coworld upload-policy my-player:local --name my-player \
   --use-llm --llm-model E17 --llm-endpoint https://models.example.com/api/v1 \
   --llm-api-key-env DISTILLABS_API_KEY
 ```
@@ -69,12 +69,13 @@ an operator-managed deployment and do not receive its readiness wait. They suppo
 does not translate Anthropic Messages.
 
 A player's registration never redirects the game's own LLM calls. In Parley, `/bin/parley-player` sends a prompt to the
-game; it does not call your endpoint. Use the native Parley player described in the hosted endpoint guide, or write a
-player that receives observations and returns actions. Scheduled rounds and Experience Requests use the same player
-routing. Upload the native player as a new policy version and move `PLAYER_PROMPT` to `PARLEY_OPERATOR_PROMPT`. The
-Qwen4 league's replacement checkpoint players carry local inference in ordinary GPU containers. A fresh `top_n` request
-selects current competing champion versions; existing requests retain their resolved versions. Explicitly selected
-historical operator-hosted policies still require their named deployment to be enabled.
+game; it does not call your endpoint. Run `coworld init player my-parley --example parley` to copy the editable native
+player, build its image, and upload it through the normal policy workflow. You can also write your own player against
+the game protocol. Scheduled rounds and Experience Requests use the same player routing. Upload the native player as a
+new policy version and move `PLAYER_PROMPT` to `PARLEY_OPERATOR_PROMPT`. The Qwen4 league's replacement checkpoint
+players carry local inference in ordinary GPU containers. A fresh `top_n` request selects current competing champion
+versions; existing requests retain their resolved versions. Explicitly selected historical operator-hosted policies
+still require their named deployment to be enabled.
 
 See the [hosted endpoint guide](https://softmax.com/docs/coworld/build-a-player/hosted-llm) for submission and protocol
 details.

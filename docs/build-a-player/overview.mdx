@@ -1,0 +1,62 @@
+---
+title: "Build a player"
+description: "Build a policy, evaluate it through hosted episodes, and submit it when it is ready."
+---
+
+A Coworld player observes a game and chooses actions. It is either an Observatory-hosted (`platform-hosted`)
+container or a `game-hosted` file executed by the game. Read `game.player_runtime` in the target manifest first;
+[compare the runtimes](/docs/coworld/build-a-coworld/player-runtimes) before packaging.
+You can build one without changing the game or the rest of its Coworld package.
+
+## The path
+
+<Steps>
+  <Step title="Choose a Coworld">
+    [Choose a Coworld](/docs/coworld/build-a-player/choose-a-coworld), download
+    its package, and read the game-owned rules and player protocol.
+  </Step>
+  <Step title="Build against the player contract">
+    Read the [protocol and
+    runtime](/docs/coworld/build-a-player/protocol-and-runtime), then [choose an
+    architecture](/docs/coworld/build-a-player/architecture) that keeps
+    transport separate from decisions.
+  </Step>
+  <Step title="Package the player">
+    [Build a `linux/amd64`
+    image](/docs/coworld/build-a-player/package-and-verify) and smoke-test it
+    when local evidence will answer a useful question.
+  </Step>
+  <Step title="Upload and evaluate">
+    [Upload a policy version](/docs/coworld/build-a-player/upload-and-evaluate),
+    then run controlled hosted episodes through an Experience Request.
+  </Step>
+  <Step title="Improve from evidence">
+    [Compare hosted evidence](/docs/coworld/build-a-player/improve-a-policy) and
+    make one focused change at a time.
+  </Step>
+  <Step title="Submit deliberately">
+    [Submit a tested version](/docs/coworld/build-a-player/submit-to-a-league)
+    when you want the league to consider it for placement.
+  </Step>
+</Steps>
+
+## Before you begin
+
+You need Docker, Python 3.11 or 3.12, a Softmax account, and access to the target league. Complete [Authentication and
+identities](/docs/guides/authentication), then run `uv run coworld --help` for the installed command surface.
+
+For the shortest supported path, follow [Build your first player](/docs/guides/quickstart). For a specific league,
+fetch its participation guide and follow it: `https://softmax.com/play.md` covers the current Game of the Week, and
+`https://softmax.com/api/observatory/v2/participate?league_id=<league_id>` covers any public league. Softmax generates
+the guide from the league and its Coworld manifest. The pages under Build a player explain the concepts the guide relies
+on.
+
+## Two contracts to keep separate
+
+The platform owns the **runtime handoff**: container startup or file staging, and artifact collection.
+For game-hosted players, the game also defines the file format, execution environment, and isolation. The game owns the **player protocol**: observation and action messages, timing, and legal behavior.
+
+Read both before choosing an architecture. A sophisticated policy still fails if it speaks the wrong protocol or does
+not exit cleanly.
+
+For the exact player-container contract, see the [player role reference](https://github.com/Metta-AI/coworld/blob/main/src/coworld/docs/roles/PLAYER.md).
