@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import copy
+import gzip
 import hashlib
 import io
 import json
@@ -2339,24 +2340,38 @@ def _push_archive_to_registry(archive: Any, base_url: str, tag: str, auth_header
         index = _OciImageIndex.model_validate_json(index_file.read())
         manifest_bytes, manifest = _select_oci_image_manifest(tar, index)
 
+        layers: list[_OciDescriptor] = []
         for descriptor in manifest.layers:
-            resp = client.head(f"{base_url}/blobs/{descriptor.digest}", headers=headers)
-            if resp.status_code == 200:
-                _logger.info("Reused layer %s (%d bytes)", descriptor.digest, descriptor.size)
-                continue
-            if resp.status_code != 404:
-                resp.raise_for_status()
-
-            with _archive_or_registry_blob(tar, descriptor, source_image, client) as layer_file:
-                _push_streaming_blob(
-                    client,
-                    base_url,
-                    headers,
-                    layer_file,
-                    size=descriptor.size,
-                    expected_digest=descriptor.digest,
-                )
-            _logger.info("Pushed layer %s (%d bytes)", descriptor.digest, descriptor.size)
+            if (
+                is_digest_pinned_image_ref(source_image)
+                or descriptor.media_type != "application/vnd.oci.image.layer.v1.tar"
+            ):
+                response = client.head(f"{base_url}/blobs/{descriptor.digest}", headers=headers)
+                if response.status_code == 200:
+                    layers.append(descriptor)
+                    continue
+                if response.status_code != 404:
+                    response.raise_for_status()
+            with _registry_layer(tar, descriptor, source_image, client) as (uploaded, layer_file):
+                resp = client.head(f"{base_url}/blobs/{uploaded.digest}", headers=headers)
+                if resp.status_code == 404:
+                    _push_streaming_blob(
+                        client,
+                        base_url,
+                        headers,
+                        layer_file,
+                        size=uploaded.size,
+                        expected_digest=uploaded.digest,
+                    )
+                    _logger.info("Pushed layer %s (%d bytes)", uploaded.digest, uploaded.size)
+                elif resp.status_code == 200:
+                    _logger.info("Reused layer %s (%d bytes)", uploaded.digest, uploaded.size)
+                else:
+                    resp.raise_for_status()
+                layers.append(uploaded)
+        if layers != manifest.layers:
+            manifest.layers = layers
+            manifest_bytes = manifest.model_dump_json(by_alias=True, exclude_none=True).encode()
 
         resp = client.head(f"{base_url}/blobs/{manifest.config.digest}", headers=headers)
         if resp.status_code == 200:
@@ -2382,6 +2397,40 @@ def _push_archive_to_registry(archive: Any, base_url: str, tag: str, auth_header
         )
         resp.raise_for_status()
         _logger.info("Pushed manifest tagged %s", tag)
+
+
+@contextmanager
+def _registry_layer(
+    tar: tarfile.TarFile, descriptor: _OciDescriptor, source_image: str, client: httpx.Client
+) -> Iterator[tuple[_OciDescriptor, IO[bytes]]]:
+    """Compress local Docker layers; preserve explicitly pinned registry manifests."""
+    with _archive_or_registry_blob(tar, descriptor, source_image, client) as source:
+        if (
+            is_digest_pinned_image_ref(source_image)
+            or descriptor.media_type != "application/vnd.oci.image.layer.v1.tar"
+        ):
+            yield descriptor, source
+            return
+        with tempfile.TemporaryFile() as compressed:
+            original_hash = hashlib.sha256()
+            original_size = 0
+            with gzip.GzipFile(fileobj=compressed, mode="wb", compresslevel=1, mtime=0) as output:
+                while chunk := source.read(1024 * 1024):
+                    original_hash.update(chunk)
+                    original_size += len(chunk)
+                    output.write(chunk)
+            if original_size != descriptor.size or "sha256:" + original_hash.hexdigest() != descriptor.digest:
+                raise RuntimeError(f"Docker archive layer does not match {descriptor.digest}")
+            size = compressed.tell()
+            compressed.seek(0)
+            digest = "sha256:" + hashlib.file_digest(compressed, "sha256").hexdigest()
+            compressed.seek(0)
+            yield (
+                descriptor.model_copy(
+                    update={"media_type": "application/vnd.oci.image.layer.v1.tar+gzip", "digest": digest, "size": size}
+                ),
+                compressed,
+            )
 
 
 @contextmanager
