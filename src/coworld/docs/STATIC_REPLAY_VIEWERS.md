@@ -36,6 +36,8 @@ The viewer must:
 3. Reconstruct public presentation state and render it without a game container or other game-owned server.
 4. Use relative URLs for files inside the bundle so the content-addressed hosting prefix can change.
 5. Fail visibly when loading, parsing, resimulation, or rendering fails.
+6. Identify each policy's team, color, name, or seat inside the replay frame, following the
+   [policy identity requirement](artifacts/REPLAY.md#policy-identity-in-the-replay-frame).
 
 The bundle may be a small HTML/JavaScript viewer, a Three.js/WebGL application, a Bitworld viewer backed by WASM, or
 another static browser program. There is no required `viewer.wasm`, JavaScript API, or presentation schema.
@@ -208,17 +210,18 @@ output in `.gitignore`.
 
 Before uploading a new Coworld version:
 
-| Check                     | Evidence                                                                                               |
-| ------------------------- | ------------------------------------------------------------------------------------------------------ |
-| Clean build               | Add a sentinel file to the output, rerun the hook, and confirm the sentinel is gone                    |
-| Self-contained bundle     | Serve the bundle over local HTTP; no game container is running                                         |
-| Replay compatibility      | Load a replay produced by the same Coworld version and representative historical fixtures              |
-| Playback                  | Autoplay, pause, seek, speed, loop/end behavior, and resize work as intended                           |
-| Presentation parity       | Compare representative live and replay public frames or screenshots                                    |
-| Deterministic WASM parity | Native and WASM replay execution agree across seeds, seeking, and keyframes                            |
-| Failure behavior          | Missing, corrupt, and incompatible replay bytes produce a visible error                                |
-| Build integration         | Run `coworld build`; confirm the hook runs and the hydrated manifest points at the generated bundle    |
-| Upload integration        | Run `coworld upload-coworld`; confirm it finds that bundle and the stored manifest contains its digest |
+| Check                     | Evidence                                                                                                                             |
+| ------------------------- | ------------------------------------------------------------------------------------------------------------------------------------ |
+| Clean build               | Add a sentinel file to the output, rerun the hook, and confirm the sentinel is gone                                                  |
+| Self-contained bundle     | Serve the bundle over local HTTP; no game container is running                                                                       |
+| Replay compatibility      | Load a replay produced by the same Coworld version and representative historical fixtures                                            |
+| Playback                  | Autoplay, pause, seek, speed, loop/end behavior, and resize work as intended                                                         |
+| Presentation parity       | Compare representative live and replay public frames or screenshots                                                                  |
+| Policy identity           | View the frame alone; policy names visibly match recorded teams, colors, or seats during playback, seeking, resizing, and fullscreen |
+| Deterministic WASM parity | Native and WASM replay execution agree across seeds, seeking, and keyframes                                                          |
+| Failure behavior          | Missing, corrupt, and incompatible replay bytes produce a visible error                                                              |
+| Build integration         | Run `coworld build`; confirm the hook runs and the hydrated manifest points at the generated bundle                                  |
+| Upload integration        | Run `coworld upload-coworld`; confirm it finds that bundle and the stored manifest contains its digest                               |
 
 Run the browser test on both x86 and ARM when the viewer contains WASM or architecture-sensitive assets. When a static
 bundle is declared, `coworld certify` does not require the game image to expose the legacy `/client/replay` and

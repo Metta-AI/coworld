@@ -39,6 +39,21 @@ sessions pass the hosted `.replay` artifact URI directly through `COGAME_LOAD_RE
 `GET /client/replay` starts playback automatically by default. When playback reaches the recorded end, the viewer loops
 back to tick 0 and continues until a user pauses or seeks.
 
+## Policy Identity In The Replay Frame
+
+Every replay viewer, static or container-backed, must clearly map each policy to its in-game team, color, name, or seat
+**inside the replay frame**. Use a visible legend, scoreboard, or labels that pair policy names with the same
+identifiers used on the board. Color alone is insufficient; include text labels.
+
+For example, a Generals.io replay featuring Alpha and Richard should show `Red — Alpha` and `Blue — Richard` when those
+are the recorded assignments. Labels reading only `Red` and `Blue` leave the policy mapping ambiguous.
+
+Use the recorded episode's assignments, including seat swaps; never infer the mapping from leaderboard order or the
+surrounding page. Keep it readable during playback, seeking, resizing, and fullscreen viewing without requiring hover or
+information outside the frame.
+
+Verify by viewing the replay frame alone: a spectator must be able to identify which policy controls each side.
+
 ## Consumers
 
 Replays are consumed by:

@@ -3,6 +3,9 @@ from __future__ import annotations
 import copy
 from typing import Any, cast
 
+from referencing import Registry, Resource
+from referencing.jsonschema import DRAFT202012
+
 from coworld.schema_validation import JsonObject, JsonSchema, json_schema_validation_errors
 from coworld.types import CoworldManifest
 
@@ -151,8 +154,8 @@ def game_config_with_named_players(
         raise ValueError("player_owners must match player_names")
 
     named_config = copy.deepcopy(game_config)
-    properties = config_schema.get("properties", {})
-    if isinstance(properties, dict) and _declares_named_players(properties.get("players")):
+    player_properties = _named_player_properties(config_schema)
+    if player_properties:
         names = _unique_player_names(player_names)
         players = named_config.get("players", [{} for _ in names])
         player_configs = _player_config_objects(players, "game_config.players")
@@ -162,7 +165,7 @@ def game_config_with_named_players(
             {**player_config, "name": player_name}
             for player_config, player_name in zip(player_configs, names, strict=True)
         ]
-        owner_schema = properties["players"]["items"]["properties"].get("owner")
+        owner_schema = player_properties.get("owner")
         if player_owners is not None and owner_schema is not None:
             # Resolved ownership replaces any authored owner: a seat without a human owner gets none.
             owner_type = owner_schema.get("type") if isinstance(owner_schema, dict) else None
@@ -186,8 +189,8 @@ def game_config_with_overwritten_named_players(
         raise ValueError("game_config.player_names is not supported; use game_config.players[].name")
 
     named_config = copy.deepcopy(game_config)
-    properties = config_schema.get("properties", {})
-    if isinstance(properties, dict) and _declares_named_players(properties.get("players")):
+    player_properties = _named_player_properties(config_schema)
+    if player_properties:
         names = _unique_player_names(player_names)
         existing_players = named_config.get("players")
         if existing_players is None:
@@ -268,17 +271,35 @@ def _unique_player_names(player_names: list[str]) -> list[str]:
     return names
 
 
-def _declares_named_players(value: Any) -> bool:
+def _named_player_properties(config_schema: JsonSchema) -> dict[str, Any]:
+    properties = config_schema.get("properties", {})
+    if not isinstance(properties, dict):
+        return {}
+    value = properties.get("players")
     if not isinstance(value, dict) or value.get("type") != "array":
-        return False
+        return {}
     items = value.get("items")
+    if isinstance(items, dict) and "$ref" in items:
+        resource = Resource.from_contents(config_schema, default_specification=DRAFT202012)
+        resolver = Registry().resolver_with_root(resource)
+        referenced = resolver.lookup(items["$ref"]).contents
+        if isinstance(referenced, dict):
+            properties = dict(referenced.get("properties", {}))
+            for name, declaration in items.get("properties", {}).items():
+                inherited = properties.get(name)
+                properties[name] = (
+                    {**inherited, **declaration}
+                    if isinstance(inherited, dict) and isinstance(declaration, dict)
+                    else declaration
+                )
+            items = {**referenced, **items, "properties": properties}
     if not isinstance(items, dict) or items.get("type") != "object":
-        return False
+        return {}
     properties = items.get("properties")
     if not isinstance(properties, dict):
-        return False
+        return {}
     name = properties.get("name")
-    return isinstance(name, dict) and name.get("type") == "string"
+    return properties if isinstance(name, dict) and name.get("type") == "string" else {}
 
 
 def _player_config_objects(value: Any, field_name: str) -> list[dict[str, Any]]:
