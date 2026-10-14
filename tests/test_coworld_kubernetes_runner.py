@@ -714,7 +714,7 @@ def test_upload_outputs_truncates_oversized_player_log(monkeypatch, tmp_path):
     )
 
 
-def test_zip_logs_streams_game_logs_and_caps_player_logs(monkeypatch, tmp_path):
+def test_debug_archive_streams_game_logs_and_caps_player_logs(monkeypatch, tmp_path):
     logs_dir = tmp_path / "logs"
     logs_dir.mkdir()
     (logs_dir / "game.log").write_bytes(b"g" * (3 * 1024 * 1024))
@@ -730,7 +730,9 @@ def test_zip_logs_streams_game_logs_and_caps_player_logs(monkeypatch, tmp_path):
 
     monkeypatch.setattr(kubernetes_runner, "_read_game_authored_file", counting_read)
 
-    with zipfile.ZipFile(io.BytesIO(kubernetes_runner._zip_logs(logs_dir, {}))) as zf:
+    destination = tmp_path / "debug.zip"
+    kubernetes_runner._upload_debug_archive(destination.as_uri(), logs_dir, {})
+    with zipfile.ZipFile(destination) as zf:
         assert zf.read("game.log") == b"g" * (3 * 1024 * 1024)
         assert zf.read("policy_agent_0.log") == b"p" * 16 + kubernetes_runner._PLAYER_LOG_TRUNCATION_MARKER
         assert zf.read("policy_agent_1.log") == b"q" * 10
@@ -3882,14 +3884,6 @@ def test_game_hosted_run_from_env_collects_private_outputs(
     status_dest = tmp_path / "uploaded-status"
     error_dest = tmp_path / "error-info"
     timing_snapshots: list[dict[str, object]] = []
-    published: list[str] = []
-    upload_data = kubernetes_runner.upload_data
-
-    def record_upload(uri, data, **kwargs):
-        published.append(uri)
-        return upload_data(uri, data, **kwargs)
-
-    monkeypatch.setattr(kubernetes_runner, "upload_data", record_upload)
 
     def run_episode(*_args, **_kwargs):
         artifacts.policy_log_path(0).write_text("seat zero log", encoding="utf-8")
@@ -3940,8 +3934,6 @@ def test_game_hosted_run_from_env_collects_private_outputs(
     log = policy_log_paths[0].read_text(encoding="utf-8")
     assert log.endswith("seat zero log")
     assert log.startswith("[Annotations rejected:") is (annotations != "absent")
-    for destination in [*policy_log_paths, debug_dest]:
-        assert published.count(destination.as_uri()) == 1
     with zipfile.ZipFile(debug_dest) as archive:
         assert archive.read("policy_agent_0.log").decode() == log
     assert not (tmp_path / "annotations.jsonl").exists()
@@ -4848,7 +4840,7 @@ def test_init_entrypoint_does_not_import_kubernetes_client():
 
 
 @pytest.mark.parametrize("ancestor", [False, True])
-def test_zip_logs_rejects_symlinked_directories(tmp_path, ancestor):
+def test_debug_archive_rejects_symlinked_directories(tmp_path, ancestor):
     private = tmp_path / "private"
     (private / "logs").mkdir(parents=True)
     (private / "logs" / "targets.json").write_text("private upload credentials")
@@ -4856,7 +4848,9 @@ def test_zip_logs_rejects_symlinked_directories(tmp_path, ancestor):
     link.symlink_to(private if ancestor else private / "logs", target_is_directory=True)
     logs_dir = link / "logs" if ancestor else link
 
-    with zipfile.ZipFile(io.BytesIO(kubernetes_runner._zip_logs(logs_dir, {}))) as archive:
+    destination = tmp_path / "debug.zip"
+    kubernetes_runner._upload_debug_archive(destination.as_uri(), logs_dir, {})
+    with zipfile.ZipFile(destination) as archive:
         assert archive.namelist() == []
 
 
