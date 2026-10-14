@@ -118,7 +118,7 @@ class PrivateAttempt(Packet):
     behavior_logprobs: list[float] | None = None
 
 
-class _SamplingEvidence(Packet):
+class UnitSamplingEvidence(Packet):
     policy_revision: str
     tokenizer_revision: str
     chat_template: str
@@ -132,17 +132,10 @@ class _SamplingEvidence(Packet):
     behavior_log_probs: list[float]
     stop_reason: Literal["eos", "length"]
     response: str
-
-
-class UnitSamplingEvidence(_SamplingEvidence):
     sampling: Literal["full_softmax_temperature_one"]
 
-    @property
-    def temperature(self) -> float:
-        return 1.0
 
-
-class TemperedSamplingEvidence(_SamplingEvidence):
+class TemperedSamplingEvidence(UnitSamplingEvidence):
     sampling: Literal["full_softmax"]
     temperature: FiniteFloat = Field(gt=0, le=2)
 
@@ -333,7 +326,9 @@ class Player:
                         )
                     ):
                         raise ValueError("Native sampling evidence differs from served response")
-                    if self.settings.temperature != sample.temperature:
+                    if self.settings.temperature != (
+                        sample.temperature if isinstance(sample, TemperedSamplingEvidence) else 1.0
+                    ):
                         raise ValueError("Sampled response differs from requested frozen decoder")
                     attempt.prompt_token_ids = sample.prompt_token_ids
                     attempt.sampled_token_ids = sample.completion_token_ids
