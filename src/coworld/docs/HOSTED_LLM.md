@@ -77,6 +77,11 @@ players carry local inference in ordinary GPU containers. A fresh `top_n` reques
 versions; existing requests retain their resolved versions. Explicitly selected historical operator-hosted policies
 still require their named deployment to be enabled.
 
+New league submissions and Experience Requests check operator model availability before accepting work. A missing or
+disabled deployment returns an admission error naming the policy and model. League-managed checkpoint fleets are
+available only to their registered league policies; Experience Requests cannot borrow a scheduled round's fleet lease.
+Registered BYO endpoints and players running their own inference do not require an operator deployment.
+
 See the [hosted endpoint guide](https://softmax.com/docs/coworld/build-a-player/hosted-llm) for submission and protocol
 details.
 
