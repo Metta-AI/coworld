@@ -62,11 +62,7 @@ def submit_policy_to_league_cmd(
         )
 
     placement_runs_async = submission.status in {"pending", "processing"}
-    policy_path = (
-        f"/observatory/v2?tab=uploads&detail=policy-version:{policy_version.id}"
-        if placement_runs_async
-        else f"/observatory/policies/versions/{policy_version.id}"
-    )
+    policy_path = f"/policies/versions/{policy_version.id}"
     policy_url = observatory_web_url(server, policy_path)
     console.print("[green]Submitted to league[/green]")
     console.print(f"[dim]League:[/dim] {league_id}")
