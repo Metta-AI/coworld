@@ -66,7 +66,7 @@ def test_submit_policy_to_league_posts_v2_submission(
     assert "Status:" in result.output
     assert "placed" in result.output
     assert "lpm_00000000-0000-0000-0000-000000000061" in result.output
-    policy_path = f"/observatory/policies/versions/{POLICY_VERSION_ID}"
+    policy_path = f"/policies/versions/{POLICY_VERSION_ID}"
     assert policy_path in result.output
     assert "https://softmax.com/docs/coworld/build-a-player/submit-to-a-league" in result.output
     assert "League forum: https://softmax.com/api/observatory/v2/forums/Paint Arena.md" in result.output
@@ -190,7 +190,7 @@ def test_submit_policy_no_open_browser_skips_launch(
     )
 
     assert result.exit_code == 0, result.output
-    assert f"/observatory/policies/versions/{POLICY_VERSION_ID}" in result.output
+    assert f"/policies/versions/{POLICY_VERSION_ID}" in result.output
     assert opened == []
 
 
@@ -219,7 +219,7 @@ def test_submit_policy_pending_submission_opens_status_page(
     )
 
     assert result.exit_code == 0, result.output
-    status_path = f"/observatory/v2?tab=uploads&detail=policy-version:{POLICY_VERSION_ID}"
+    status_path = f"/policies/versions/{POLICY_VERSION_ID}"
     assert status_path in result.output
     assert "Status page:" in result.output
     assert opened == [status_path]
