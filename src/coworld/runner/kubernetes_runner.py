@@ -32,7 +32,6 @@ from collections.abc import Callable
 from concurrent.futures import Future, ThreadPoolExecutor
 from contextlib import ExitStack
 from datetime import UTC, datetime
-from io import BytesIO
 from pathlib import Path
 from typing import Any, BinaryIO, Mapping, cast
 from urllib.parse import urlsplit
@@ -607,9 +606,7 @@ def _upload_debug_logs(artifacts: EpisodeArtifacts) -> None:
 
     debug_uri = os.environ.get("DEBUG_URI")
     if debug_uri is not None and artifacts.logs_dir.exists() and any(artifacts.logs_dir.iterdir()):
-        upload_data(
-            debug_uri, _zip_logs(artifacts.logs_dir, artifacts.policy_log_messages), content_type="application/zip"
-        )
+        _upload_debug_archive(debug_uri, artifacts.logs_dir, artifacts.policy_log_messages)
 
     policy_log_urls = os.environ.get("POLICY_LOG_URLS")
     if policy_log_urls is not None:
@@ -696,9 +693,7 @@ def _upload_outputs(artifacts: EpisodeArtifacts) -> None:
 
     debug_uri = os.environ.get("DEBUG_URI")
     if debug_uri is not None:
-        upload_data(
-            debug_uri, _zip_logs(artifacts.logs_dir, artifacts.policy_log_messages), content_type="application/zip"
-        )
+        _upload_debug_archive(debug_uri, artifacts.logs_dir, artifacts.policy_log_messages)
 
     policy_log_urls = os.environ.get("POLICY_LOG_URLS")
     if policy_log_urls is not None:
@@ -797,23 +792,23 @@ def _upload_player_artifacts(artifacts: EpisodeArtifacts) -> int:
     return oversize_count
 
 
-def _zip_logs(logs_dir: Path, policy_log_messages: dict[str, str]) -> bytes:
-    buf = BytesIO()
-    with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as zf:
-        for path in logs_dir.iterdir():
-            if path.name.startswith("policy_agent_"):
-                # Player logs are capped at _PLAYER_LOG_MAX_BYTES, so holding one is bounded.
-                contents = _read_player_log(path)
-                if contents is not None:
-                    zf.writestr(path.name, policy_log_messages.get(path.name, "").encode() + contents)
-                continue
-            file = _open_game_authored_file(path)
-            if file is None:
-                continue
-            # Game logs are unbounded: stream them into the archive instead of reading whole.
-            with file, zf.open(path.name, "w") as entry:
-                shutil.copyfileobj(file, entry)
-    return buf.getvalue()
+def _upload_debug_archive(uri: str, logs_dir: Path, policy_log_messages: dict[str, str]) -> None:
+    with tempfile.TemporaryFile() as archive:
+        with zipfile.ZipFile(archive, "w", zipfile.ZIP_DEFLATED) as zf:
+            for path in logs_dir.iterdir():
+                if path.name.startswith("policy_agent_"):
+                    # Player logs are capped at _PLAYER_LOG_MAX_BYTES, so holding one is bounded.
+                    contents = _read_player_log(path)
+                    if contents is not None:
+                        zf.writestr(path.name, policy_log_messages.get(path.name, "").encode() + contents)
+                    continue
+                file = _open_game_authored_file(path)
+                if file is None:
+                    continue
+                # Game logs are unbounded; ZIP64 permits streamed entries larger than 2 GiB.
+                with file, zf.open(path.name, "w", force_zip64=True) as entry:
+                    shutil.copyfileobj(file, entry)
+        upload_file(uri, archive, size=archive.tell(), content_type="application/zip")
 
 
 def _prepare_player_pods(job: CoworldEpisodeJobSpec, worker_timings: ProcessTimings) -> None:
