@@ -28,7 +28,8 @@ examples.
 
 ## Start a player project
 
-Run `coworld init player ./my-player`. See
+Run `coworld init player ./my-player` for a protocol skeleton, or `coworld init player ./my-parley --example parley` for
+a complete editable Parley player. Build and upload your own image; a separate player registry is not required. See
 [player project initialization](https://softmax.com/docs/coworld/cli#start-a-player-project) for target requirements,
 generated files, runtime limits, and next steps.
 

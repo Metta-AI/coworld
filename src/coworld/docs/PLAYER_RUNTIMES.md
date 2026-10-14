@@ -55,6 +55,19 @@ Both modes require a game image. Local episodes require Docker. Hosted platform-
 
 ## Implement platform-hosted players
 
+A player is your program, not a platform-defined character or a required reference image. Your program connects to the
+game's documented interface and chooses actions. Game rules and scoring stay in the game. Packaging both entrypoints in
+one image is optional.
+
+Start with `coworld init player my-player` for the WebSocket skeleton, or
+`coworld init player my-parley --example parley` for an editable Parley implementation. Build the project locally and
+pass the image to `coworld upload-policy`; no public registry or separate repository is required. A game's bundled
+players are examples you can reuse, not the only implementations the game accepts.
+
+Inference belongs to whichever program makes the call. A player may use a local model, its own HTTPS provider, the
+optional hosted sidecar, or no model. Upload flags configure access; they do not replace a player's strategy or redirect
+calls made by the game. Prompt-only players delegate decisions to the game and must document that behavior.
+
 Use the [player contract](roles/PLAYER.md#platform-hosted-players) for startup, WebSocket configuration, environment,
 logs, and artifact uploads. Start from the [Paint Arena example](../examples/paintarena/README.md). Document
 observations, actions, connection deadlines, and failure behavior in `game.protocols.player`. Seat every bundled player
