@@ -30,3 +30,9 @@ The existing client accepts `PARLEY_ENDPOINT` and `PARLEY_MODEL` instead of the 
 Parley's bundled `/bin/parley-player` sends `PLAYER_PROMPT` to game-owned inference; endpoint flags cannot redirect it.
 Upload this project's image as a new policy version and move your prompt to `PARLEY_OPERATOR_PROMPT`. `evidence.py`
 records private captures; changing its format or generation settings changes training comparability.
+
+Set `PARLEY_DECODING=legal-actions` for an explicitly constrained player variant. The endpoint must support JSON Schema
+decoding. Each native window supplies the shot menu and side-action allowances used to build its grammar. The player
+still generates the full action; the game validates it. Unsupported legacy windows fail explicitly. The default,
+`PARLEY_DECODING=model`, keeps ordinary JSON-object generation. Compare the variants separately and retain the request
+grammar in private captures; constrained captures are evaluation-only for the model-only training importer.

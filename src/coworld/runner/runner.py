@@ -1210,6 +1210,7 @@ def _wait_for_game_exit(
         raise RunnerEpisodeError(
             f"Game container exited with status {return_code}.\n{_tail(stderr_path)}",
             error_type="game_unhealthy",
+            game_exit_code=return_code,
         )
 
 

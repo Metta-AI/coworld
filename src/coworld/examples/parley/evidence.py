@@ -6,9 +6,21 @@ import zipfile
 from typing import Literal
 from uuid import UUID
 
-from pydantic import AliasPath, BaseModel, ConfigDict, Field, model_validator
+from pydantic import AliasPath, BaseModel, ConfigDict, Field, JsonValue, model_validator
 
 from coworld.examples.parley.inference import InferenceSettings, Message, validate_single_choice
+
+
+class ActionSchema(BaseModel):
+    model_config = ConfigDict(extra="forbid", serialize_by_alias=True)
+    name: Literal["parley_action"]
+    schema_: dict[str, JsonValue] = Field(alias="schema")
+
+
+class SchemaFormat(BaseModel):
+    model_config = ConfigDict(extra="forbid", serialize_by_alias=True)
+    type: Literal["json_schema"]
+    json_schema: ActionSchema
 
 
 class ChatRequest(BaseModel):
@@ -20,7 +32,7 @@ class ChatRequest(BaseModel):
     reasoning: dict[Literal["effort"], Literal["none"]]
     chat_template_kwargs: dict[Literal["enable_thinking"], Literal[False]]
     max_tokens: int = Field(gt=0)
-    response_format: dict[Literal["type"], Literal["json_object"]]
+    response_format: dict[Literal["type"], Literal["json_object"]] | SchemaFormat
     stop: list[str] = Field(default_factory=list, exclude_if=lambda value: not value)
 
 
@@ -44,6 +56,8 @@ class InferenceCapture(BaseModel):
     platform_call_id: UUID | None
 
     def completion(self) -> str:
+        if isinstance(self.request.response_format, SchemaFormat):
+            raise ValueError("Legal-action constrained captures are evaluation-only, not model-only training labels")
         expected = InferenceSettings(
             output_tokens=self.request.max_tokens, temperature=self.request.temperature, stop=self.request.stop
         )

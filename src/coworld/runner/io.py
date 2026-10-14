@@ -162,10 +162,12 @@ class RunnerEpisodeError(RuntimeError):
         *,
         error_type: RunnerErrorType,
         failed_policy_index: int | None = None,
+        game_exit_code: int | None = None,
     ):
         super().__init__(message)
         self.error_type = error_type
         self.failed_policy_index = failed_policy_index
+        self.game_exit_code = game_exit_code
 
 
 def redact_uri(uri: str) -> str:
