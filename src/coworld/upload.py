@@ -1785,6 +1785,7 @@ def upload_policy_cmd(
     if name is None:
         typer.echo(f"Policy name: {result.name} (your player's name; pass --name to choose another)")
     typer.echo(f"Upload complete: {result.name}:v{result.version}")
+    typer.echo(f"Policy version ID: {result.id}")
     typer.echo("Next: run hosted episodes against live opponents with an Experience Request:")
     typer.echo("  uv run coworld xp-request --help")
     typer.echo(f"Docs: {DOCS_PAGES['upload-and-evaluate']}")
