@@ -27,8 +27,8 @@ chain, grader philosophy, player policy design, schema contracts) and can be ins
 
 ## Before Editing
 
-- Read this file, `LESSONS.md`, the package [README](README.md), and the [Coworld docs map](src/coworld/docs/README.md)
-  before changing user-facing Coworld behavior or docs.
+- Read this file, the [development guide](CONTRIBUTING.md), the package [README](README.md), and the
+  [Coworld docs map](src/coworld/docs/README.md) before changing user-facing Coworld behavior or docs.
 - Keep package docs public-package-facing. Avoid private Metta backend paths unless the document is intentionally
   explaining a platform integration boundary.
 - Treat Paint Arena under `src/coworld/examples/paintarena/` as the canonical in-tree example.
