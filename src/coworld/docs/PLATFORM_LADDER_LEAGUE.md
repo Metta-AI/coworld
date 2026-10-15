@@ -144,7 +144,7 @@ changes and pause take effect within that window.
 | Board you want                             | Config                 | Notes                                                                                                                                       |
 | ------------------------------------------ | ---------------------- | ------------------------------------------------------------------------------------------------------------------------------------------- |
 | Pairwise skill (win/loss / relative score) | `algorithm: elo`       | Default. `k_factor`, `initial_rating`, `round_scoring_rule: mean \| ewma`, `margin_scale`, `new_version_k_multiplier`, `new_version_rounds` |
-| Multi-player skill with uncertainty        | `algorithm: openskill` | `mu`, `sigma` (default 25, 25/3), `margin_scale`, `new_version_sigma`; supports `elo_softmax`; no dynamic handicaps                         |
+| Multi-player skill with uncertainty        | `algorithm: openskill` | `mu`, `sigma` (default 25, 25/3), `margin_scale`, `new_version_sigma`, `role_advantage_sigma`; supports `elo_softmax`; no dynamic handicaps |
 | Continuous score / ATH / glory             | `algorithm: score`     | `standing_aggregation: ewma \| mean \| max \| min \| rated \| latest`; `half_life_hours` required for EWMA; `latest` = the newest grade     |
 
 For OpenSkill rating-based matchmaking, set `scheduler.matchmaking: elo_softmax`. Opponent selection uses the skill
@@ -168,6 +168,42 @@ boost.
 Movement rules gate on rating thresholds (`minimum_rating` / `maximum_rating`: the Elo rating, or the OpenSkill
 `mu - 3 * sigma` ordinal) or, for `score`, standing thresholds (`minimum_standing` / `maximum_standing`). Use the JSON
 examples in this guide as the working schema.
+
+### Role advantages
+
+For asymmetric games, set a positive `ranking.role_advantage_sigma` under `algorithm: openskill` to learn role
+advantages alongside player skill. The value is each new role's initial uncertainty; roles start at zero advantage.
+Games supply per-seat [`roles` in results.json](artifacts/RESULTS.md#seat-roles). Raw scores remain unchanged.
+
+Each retained side is rated as its players plus one hidden teammate per distinct role on its counted, non-filler seats.
+This applies to ranked matches and two-side margin updates. The pool belongs to the league, spans divisions, and keys
+each role by variant ID and the seat's role entry; a composite seat role (a list of labels) is one role, distinct from
+any single label. Published ratings, matchmaking, and movement rules still use player ratings only.
+
+Several sides can share a role, such as three `dps` seats. That role's rating then takes the sum of the mean shifts and
+information gains it receives from each side, so a winning and a losing `dps` side partly cancel. A role present on
+every retained side carries no evidence and is not updated in that episode.
+
+The league reads `roles` only when role fitting is on. A role-fitting league requires each episode's `roles` to be
+absent, `null`, or one string-or-string-list entry per seat; any other shape fails that round's settlement. Leagues
+without the setting never read the field.
+
+Forfeits, solo benchmarks, episodes missing roles or a variant, and recorded-episode rounds (which seat policies per
+agent, so per-slot roles cannot be aligned) use players only. They do not create or update role ratings. Sides dropped
+because they share a cloned subject with an earlier retained side contribute no roles. Existing player-side filler
+handling is unchanged.
+
+Unset or `null` disables role fitting. Existing role ratings remain stored and resume if the setting is re-enabled;
+resetting league rounds clears them with the other standings. Enabling works forward from current player ratings,
+without a reset or historical replay. Players retain the influence of earlier unadjusted results.
+
+Roles share OpenSkill's `tau`: variance inflation per update, not a wall-clock half-life. Rotating players across roles
+helps separate their effects; perfectly confounded player-role exposure is not identifiable. Choose sigma using
+predictive backtesting on the league population before enabling it in production.
+
+Role `mu`, `sigma`, and `episodes_rated` are readable in commissioner state; there is no role leaderboard. Empty role
+pools are omitted from state. Deploy readers that accept `role_ratings` before enabling any league. Once a non-empty
+pool exists, rollback to older readers requires a state migration.
 
 ## Continuous grading leagues (grade on arrival)
 

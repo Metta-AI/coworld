@@ -56,8 +56,12 @@ The platform adds no cross-game check of `roles` at hosted finalization: only th
 as for any other field it declares. The raw value is stored with the results, and a consumer that uses roles checks
 their shape, so a game whose `roles` field means something else keeps working everywhere else.
 
-**Planned OpenSkill integration:** enabled leagues will learn role advantages separately from player ratings, keyed by
-variant and role within each league. Exporting roles currently records them; it does not change league ratings.
+**OpenSkill integration:** leagues with `ranking.role_advantage_sigma` set learn role advantages separately from player
+ratings, keyed by variant and role within each league. A list entry is one composite role, distinct from every single
+label. These leagues check `roles` when they load an episode: it must be a list with one entry per seat in the shape
+above, or settlement of that round fails loudly. Forfeits, solo benchmarks, and episodes without roles or a variant rate
+players only. Roles come from non-filler seats of retained subjects; dropped sides contribute no roles. Published
+ratings remain player-only. See [platform ladder settings](../PLATFORM_LADDER_LEAGUE.md#role-advantages).
 
 ## See Also
 
