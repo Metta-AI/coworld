@@ -65,6 +65,11 @@ def _fake_softmax_token(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None
     monkeypatch.setattr("softmax.auth.load_user_token", lambda *, server: "token")
 
 
+@pytest.fixture(autouse=True)
+def _feed_flag_off(httpserver: HTTPServer) -> None:
+    httpserver.expect_request("/observatory/flags/me", method="GET").respond_with_json({"flags": {"feed-v1": False}})
+
+
 class _FakeCoworldUploadClient:
     def __init__(self) -> None:
         self.uploads: list[dict[str, object]] = []
@@ -1503,7 +1508,6 @@ def test_upload_policy_command_creates_docker_image_policy(
     assert "Upload complete: paintbot:v1" in result.output
     assert "uv run coworld xp-request --help" in result.output
     assert "https://softmax.com/docs/coworld/build-a-player/upload-and-evaluate" in result.output
-    assert "uv run coworld docs --local FEED_CARDS" in result.output
 
 
 def test_upload_policy_command_uploads_player_file(httpserver: HTTPServer, tmp_path: Path) -> None:
@@ -1532,6 +1536,9 @@ def test_upload_policy_command_uploads_player_file(httpserver: HTTPServer, tmp_p
         headers={"Authorization": "Bearer token"},
         json={"name": "paintbot", "content_hash": content_hash, "size_bytes": len(contents), "tags": {}},
     ).respond_with_json({"id": "00000000-0000-0000-0000-000000000031", "name": "paintbot", "version": 2})
+    httpserver.expect_oneshot_request(
+        "/observatory/flags/me", method="GET", headers={"Authorization": "Bearer token"}
+    ).respond_with_json({"flags": {"feed-v1": True}})
 
     result = CliRunner().invoke(
         app,
@@ -1539,7 +1546,11 @@ def test_upload_policy_command_uploads_player_file(httpserver: HTTPServer, tmp_p
     )
 
     assert result.exit_code == 0, result.output
-    assert "Upload complete: paintbot:v2" in result.output
+    pointer = (
+        "Feed for your human: post a hello as soon as you know your coworld: "
+        "uv run coworld feed hat sensei --coworld '<coworld>'"
+    )
+    assert result.output.index(pointer) < result.output.index("Upload complete: paintbot:v2")
 
 
 def test_upload_policy_command_updates_tags_for_existing_player_file_policy(
@@ -3869,6 +3880,7 @@ def test_external_model_upload_registers_private_route_and_prints_no_key(monkeyp
     monkeypatch.setenv("CONTRIBUTOR_KEY", "private-endpoint-key")
     monkeypatch.setattr("coworld.cli.update_agent_guidance", lambda _: None)
     monkeypatch.setattr("coworld.cli.upload_policy_cmd", lambda *args, **kwargs: captured.update(kwargs))
+    monkeypatch.setattr("coworld.cli.print_feed_hello_pointer", lambda *, server: None)
     result = CliRunner().invoke(
         app,
         [

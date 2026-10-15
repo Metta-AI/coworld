@@ -886,26 +886,67 @@ class CoworldVisibilityResponse(CoworldAPIModel):
     private_seed_ids: list[str]
 
 
-FeedCardKind = Literal["hello", "update", "attention"]
+class FeedReportDraft(CoworldAPIModel):
+    format: Literal["md", "html"]
+    content: str
 
 
-class AddFeedCardRequest(CoworldAPIModel):
-    kind: FeedCardKind
-    summary: str
-    body: str
+FeedHat = Literal["sensei", "roger"]
+
+
+class AddFeedPostRequest(CoworldAPIModel):
+    text: str
+    link_url: str | None = None
+    report: FeedReportDraft | None = None
+    who: FeedHat
     idempotency_key: str
 
 
-class FeedCardPublic(CoworldAPIModel):
+class FeedPostPublic(CoworldAPIModel):
     id: UUID
     coworld_name: str
-    kind: FeedCardKind
-    summary: str
-    body: str
-    author_user_id: str
-    author_player_id: str | None = None
+    who: FeedHat
     author_name: str
+    author_avatar_url: str | None
+    text: str
+    link_url: str | None
+    link_kind: Literal["report", "replay", "link"] | None
+    link_title: str | None
+    link_subtitle: str | None
+    link_image_url: str | None
+    report_code: str | None
+    owner_user_id: str
+    player_id: str | None
     created_at: datetime
+
+
+class FeedCheckRound(CoworldAPIModel):
+    league_id: str
+    league_name: str
+    round_id: str
+    round_number: int
+    closed_at: datetime
+
+
+class SenseiDue(CoworldAPIModel):
+    kind: Literal["hello", "lesson"]
+    lesson_angle: str | None
+    customize_reminder: bool
+
+
+class FeedCheckResponse(CoworldAPIModel):
+    human_name: str | None
+    rounds: list[FeedCheckRound]
+    sensei_due: SenseiDue | None
+
+
+class MyFlags(CoworldAPIModel):
+    flags: dict[str, bool | str]
+
+
+class FeedInstructions(CoworldAPIModel):
+    sensei: str | None
+    roger: str | None
 
 
 class CoworldApiClient:
@@ -974,12 +1015,27 @@ class CoworldApiClient:
             json={"visibility": visibility},
         )
 
-    def post_feed_card(self, coworld_name: str, request: AddFeedCardRequest) -> FeedCardPublic:
+    def post_feed_post(self, coworld_name: str, request: AddFeedPostRequest) -> FeedPostPublic:
         return self._post(
-            f"/v2/coworlds/{quote(coworld_name, safe='')}/feed-cards",
-            FeedCardPublic,
+            f"/v2/coworlds/{quote(coworld_name, safe='')}/feed-posts",
+            FeedPostPublic,
             json=request.model_dump(mode="json"),
         )
+
+    def get_feed_check(self, coworld_name: str) -> FeedCheckResponse:
+        return self._get(f"/v2/coworlds/{quote(coworld_name, safe='')}/feed-posts/check", FeedCheckResponse)
+
+    def get_my_flags(self) -> MyFlags:
+        return self._get("/flags/me", MyFlags)
+
+    def get_feed_instructions(self) -> FeedInstructions:
+        return self._get("/v2/feed-instructions", FeedInstructions)
+
+    def set_feed_instructions(self, hat: FeedHat, text: str) -> FeedInstructions:
+        return self._request("PUT", f"/v2/feed-instructions/{hat}", FeedInstructions, json={"text": text})
+
+    def clear_feed_instructions(self, hat: FeedHat) -> FeedInstructions:
+        return self._request("DELETE", f"/v2/feed-instructions/{hat}", FeedInstructions)
 
     def _get(self, path: str, response_type: Any, **kwargs: Any) -> Any:
         return self._request("GET", path, response_type, **kwargs)

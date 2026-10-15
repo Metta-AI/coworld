@@ -1,6 +1,10 @@
+import json
+from pathlib import Path
+
 import pytest
 from pytest_httpserver import HTTPServer
 from typer.testing import CliRunner
+from werkzeug import Response
 
 from coworld.cli import app
 
@@ -24,6 +28,7 @@ def test_submit_policy_to_league_posts_v2_submission(
     monkeypatch.setattr("softmax.auth.load_user_token", lambda *, server: pytest.fail("used user token"))
     monkeypatch.setattr("coworld.submit.webbrowser.open", lambda url: opened.append(url) or True)
     _expect_policy_versions(httpserver, [_policy_version(version=3)], token="player-token")
+    _expect_league(httpserver)
     httpserver.expect_request(
         "/observatory/v2/league-submissions",
         method="POST",
@@ -71,7 +76,6 @@ def test_submit_policy_to_league_posts_v2_submission(
     assert "https://softmax.com/docs/coworld/build-a-player/submit-to-a-league" in result.output
     assert "League forum: https://softmax.com/api/observatory/v2/forums/Paint Arena.md" in result.output
     assert "League wiki: https://softmax.com/api/observatory/v2/wikis/Paint Arena/pages.md" in result.output
-    assert "uv run coworld docs --local FEED_CARDS" in result.output
     assert opened == [policy_path]
     policy_query = next(
         request for request, _ in httpserver.log if request.path == "/observatory/stats/policy-versions"
@@ -79,6 +83,56 @@ def test_submit_policy_to_league_posts_v2_submission(
     assert policy_query.args["name_exact"] == "paintbot"
     assert policy_query.args["version"] == "3"
     assert not any(request.path == "/observatory/v2/leagues" for request, _ in httpserver.log)
+
+
+def test_submit_policy_prints_feed_reminder_before_submitting(
+    httpserver: HTTPServer, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("XDG_CACHE_HOME", str(tmp_path))
+    checks = [
+        {
+            "human_name": "Pawel",
+            "rounds": [
+                {
+                    "league_id": LEAGUE_ID,
+                    "league_name": "Paint Arena",
+                    "round_id": f"round_{number}",
+                    "round_number": number,
+                    "closed_at": f"2026-10-{number:02d}T12:00:00Z",
+                }
+            ],
+            "sensei_due": None,
+        }
+        for number in (1, 2)
+    ]
+    checks_left_at_open: list[int] = []
+    monkeypatch.setattr("coworld.submit.webbrowser.open", lambda url: checks_left_at_open.append(len(checks)) or True)
+    _expect_policy_versions(httpserver, [_policy_version(version=3)])
+    _expect_league(httpserver, coworld_name="paintarena")
+    httpserver.expect_request("/observatory/v2/league-submissions", method="POST").respond_with_json(
+        _submission(status="placed", coworld_name="paintarena")
+    )
+    httpserver.expect_request(
+        "/observatory/v2/coworlds/paintarena/feed-posts/check", method="GET"
+    ).respond_with_handler(lambda request: Response(json.dumps(checks.pop(0)), content_type="application/json"))
+    args = ["submit", "paintbot:v3", "--league", LEAGUE_ID, "--server", httpserver.url_for("")]
+
+    first = CliRunner().invoke(app, args)
+    second = CliRunner().invoke(app, args)
+
+    assert first.exit_code == 0, first.output
+    assert "Feed for" not in first.output
+    assert second.exit_code == 0, second.output
+    reminder = (
+        "Feed for Pawel: lesson due? uv run coworld feed hat sensei --coworld 'paintarena' · "
+        "urgent? uv run coworld feed hat roger"
+    )
+    assert second.output.index(reminder) < second.output.index("Submitted to league")
+    paths = [request.path for request, _ in httpserver.log]
+    assert paths.index("/observatory/v2/coworlds/paintarena/feed-posts/check") < paths.index(
+        "/observatory/v2/league-submissions"
+    )
+    assert checks_left_at_open == [1, 0]
 
 
 def test_submit_policy_rejects_malformed_preference() -> None:
@@ -104,6 +158,7 @@ def test_submit_policy_can_disable_auto_champion(
 ) -> None:
     monkeypatch.setattr("coworld.submit.webbrowser.open", lambda url: True)
     _expect_policy_versions(httpserver, [_policy_version(version=3)])
+    _expect_league(httpserver)
     httpserver.expect_request(
         "/observatory/v2/league-submissions",
         method="POST",
@@ -137,6 +192,7 @@ def test_submit_policy_can_request_lineage_auto_champion(
 ) -> None:
     monkeypatch.setattr("coworld.submit.webbrowser.open", lambda url: True)
     _expect_policy_versions(httpserver, [_policy_version(version=3)])
+    _expect_league(httpserver)
     httpserver.expect_request(
         "/observatory/v2/league-submissions",
         method="POST",
@@ -171,6 +227,7 @@ def test_submit_policy_no_open_browser_skips_launch(
     opened: list[str] = []
     monkeypatch.setattr("coworld.submit.webbrowser.open", lambda url: opened.append(url) or True)
     _expect_policy_versions(httpserver, [_policy_version(version=3)])
+    _expect_league(httpserver)
     httpserver.expect_request(
         "/observatory/v2/league-submissions",
         method="POST",
@@ -201,6 +258,7 @@ def test_submit_policy_pending_submission_opens_status_page(
     opened: list[str] = []
     monkeypatch.setattr("coworld.submit.webbrowser.open", lambda url: opened.append(url) or True)
     _expect_policy_versions(httpserver, [_policy_version(version=3)])
+    _expect_league(httpserver)
     httpserver.expect_request(
         "/observatory/v2/league-submissions",
         method="POST",
@@ -296,23 +354,12 @@ def _submission(
     status: str,
     id: str = "sub_1",
     membership_id: str | None = None,
+    coworld_name: str | None = None,
 ) -> dict[str, object]:
     return {
         "id": id,
         "status": status,
-        "league": {
-            "id": LEAGUE_ID,
-            "name": "Paint Arena",
-            "game": {
-                "id": "game_1",
-                "name": "Paint Arena",
-                "created_at": "2026-05-11T10:00:00Z",
-            },
-            "created_at": "2026-05-11T10:00:00Z",
-            "participation_url": f"https://softmax.com/api/observatory/v2/leagues/{LEAGUE_ID}.md",
-            "forum_markdown_url": "https://softmax.com/api/observatory/v2/forums/Paint Arena.md",
-            "wiki_markdown_url": "https://softmax.com/api/observatory/v2/wikis/Paint Arena/pages.md",
-        },
+        "league": _league(coworld_name=coworld_name),
         "policy_version": {
             "id": POLICY_VERSION_ID,
             "policy": {"id": POLICY_ID, "name": "paintbot"},
@@ -320,6 +367,29 @@ def _submission(
         },
         "league_policy_membership_id": membership_id,
         "created_at": "2026-05-11T12:00:00Z",
+    }
+
+
+def _expect_league(httpserver: HTTPServer, *, coworld_name: str | None = None) -> None:
+    httpserver.expect_request(f"/observatory/v2/leagues/{LEAGUE_ID}", method="GET").respond_with_json(
+        _league(coworld_name=coworld_name)
+    )
+
+
+def _league(*, coworld_name: str | None = None) -> dict[str, object]:
+    return {
+        "id": LEAGUE_ID,
+        "name": "Paint Arena",
+        "game": {
+            "id": "game_1",
+            "name": "Paint Arena",
+            "coworld_name": coworld_name,
+            "created_at": "2026-05-11T10:00:00Z",
+        },
+        "created_at": "2026-05-11T10:00:00Z",
+        "participation_url": f"https://softmax.com/api/observatory/v2/leagues/{LEAGUE_ID}.md",
+        "forum_markdown_url": "https://softmax.com/api/observatory/v2/forums/Paint Arena.md",
+        "wiki_markdown_url": "https://softmax.com/api/observatory/v2/wikis/Paint Arena/pages.md",
     }
 
 

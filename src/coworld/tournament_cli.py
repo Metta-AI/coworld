@@ -44,7 +44,7 @@ from coworld.config import DEFAULT_SUBMIT_SERVER, docs_epilog, participation_gui
 from coworld.episode_downloads import DownloadResult, download_episodes
 from coworld.episode_replays import materialized_episode_replay
 from coworld.episode_workflows import register_episode_workflows
-from coworld.feed_cli import FEED_CARD_REMINDER
+from coworld.feed_cli import print_feed_reminder
 from coworld.manifest import read_downloaded_manifest
 from coworld.play import ReplaySession, replay_coworld
 from coworld.submit import parse_policy_identifier
@@ -276,7 +276,7 @@ def register_tournament_commands(app: typer.Typer) -> None:
             return
         _print_experience_request_detail(detail)
         if detail.status == "completed":
-            console.print(FEED_CARD_REMINDER, soft_wrap=True, markup=False)
+            print_feed_reminder(server=server, coworld_name=detail.coworld_name)
 
     register_episode_workflows(xp_request_app)
 
@@ -413,25 +413,25 @@ def register_tournament_commands(app: typer.Typer) -> None:
                     emit_json(_dump_models(rows))
                     return
                 _print_division_ladder(target_id, rows)
-                console.print(FEED_CARD_REMINDER, soft_wrap=True, markup=False)
-                return
-            if target_id.startswith("div_"):
+                game = client.get_league(target_id).game
+            elif target_id.startswith("div_"):
                 rows = client.get_division_leaderboard(target_id)
                 if json_output:
                     emit_json(_dump_models(rows))
                     return
                 _print_division_leaderboard(target_id, rows)
-                console.print(FEED_CARD_REMINDER, soft_wrap=True, markup=False)
-                return
-            if target_id.startswith("round_"):
+                game = client.get_division(target_id).league.game
+            elif target_id.startswith("round_"):
                 round_detail = client.get_round(target_id)
                 if json_output:
                     emit_json(round_detail.model_dump(mode="json"))
                     return
                 _print_round_results(round_detail)
-                console.print(FEED_CARD_REMINDER, soft_wrap=True, markup=False)
-                return
-        raise typer.BadParameter("target_id must start with league_, div_, or round_")
+                game = round_detail.division.league.game
+            else:
+                raise typer.BadParameter("target_id must start with league_, div_, or round_")
+        if game.coworld_name is not None:
+            print_feed_reminder(server=server, coworld_name=game.coworld_name)
 
     @app.command("rounds", help="List rounds, or show one.", epilog=docs_epilog("competition"))
     def rounds(

@@ -187,8 +187,6 @@ py_library(
         "src/coworld/py.typed",
         # certifier.py reads the transcript next to its source at runtime.
         "src/coworld/transcripts/coworld-executable.transcript.md",
-        # observatory_competitions.v2.participation_guide embeds the feed-card rules at import time.
-        "src/coworld/docs/FEED_CARDS.md",
     ],
     imports = ["src"],
     visibility = ["//visibility:public"],

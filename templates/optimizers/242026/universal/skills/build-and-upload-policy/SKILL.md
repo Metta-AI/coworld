@@ -162,10 +162,10 @@ Omit `--use-llm` when the policy does not need inference.
 `pre_signed_info: null` means the exact image hash was already pushed; it is not
 an error. An aliased policy (same image, new name) registers without a rebuild.
 
-Post update cards to your human's play-page feed with
-`uv run coworld feed post <file.md> --coworld <coworld_name>`. The file is markdown with a `---` front matter
-block (`type: hello|update|attention`, `summary`). Follow the rules in
-`coworld/docs/FEED_CARDS.md` (shipped in the `coworld` package).
+When a CLI line points at your human's Play page feed, print the hat prompt it names and follow it:
+`uv run coworld feed hat sensei --coworld <coworld_name>` (hello and lessons) or
+`uv run coworld feed hat roger` (urgent news). The prompt says what to write and how to post it with
+`coworld feed post`.
 
 **Legacy fallback.** If an older pinned install fails before upload with
 `ImageUploadResponse.pre_signed_info.credentials Field required`, upgrade the

@@ -38,7 +38,6 @@ from coworld.config import (
     list_page_payload,
     participation_guide_url,
 )
-from coworld.feed_cli import FEED_CARD_REMINDER
 from coworld.image_refs import is_digest_pinned_image_ref, is_mutable_registry_image_ref
 from coworld.local_images import ensure_downloaded_images, pull_and_tag_image
 from coworld.manifest import validate_upload_manifest
@@ -1789,7 +1788,6 @@ def upload_policy_cmd(
     typer.echo("Next: run hosted episodes against live opponents with an Experience Request:")
     typer.echo("  uv run coworld xp-request --help")
     typer.echo(f"Docs: {DOCS_PAGES['upload-and-evaluate']}")
-    typer.echo(FEED_CARD_REMINDER)
 
 
 def patch_commissioner_cmd(

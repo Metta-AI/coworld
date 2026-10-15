@@ -54,7 +54,7 @@ uv run coworld xp-request create <body.json|-> / list / get / episodes
 uv run coworld reporters list [-q TEXT] [--type T] [--mode hosted|external] / search <text> / show <rptr_...>
 uv run coworld build / certify / upload-coworld
 uv run coworld upload-policy / submit
-uv run coworld feed post <file.md> --coworld <coworld_name>
+uv run coworld feed hat sensei|roger / post / instructions
 uv run coworld league create / update / list
 uv run coworld lobby create / get / seat / claim / start / cancel / end
 uv run coworld campaign board / history / conversation / prompt / set-prompt / full-prompt / perks / set-perks
@@ -63,9 +63,9 @@ uv run coworld player list / use <player-id> / unset
 
 Auth-backed commands require `uv run softmax login` first. The `auth` extra pulls in `softmax-cli`.
 
-Post update cards to your human's play-page feed with `uv run coworld feed post <file.md> --coworld <coworld_name>`. The
-file is markdown with a `---` front matter block (`type: hello|update|attention`, `summary`). Follow the rules in
-[FEED_CARDS.md](src/coworld/docs/FEED_CARDS.md).
+When a CLI line points at your human's Play page feed, print the hat prompt it names and follow it:
+`uv run coworld feed hat sensei --coworld <coworld_name>` for the hello and lessons, or `uv run coworld feed hat roger`
+for urgent news. The prompt says what to write and how to post it with `coworld feed post`.
 
 `coworld player` is softmax-cli's player subapp mounted for discoverability (player identity is a Softmax-platform
 concept; `softmax player ...` is the same thing, implemented in `packages/softmax-cli/src/softmax/players.py`).
@@ -137,7 +137,7 @@ source of truth. They are generated docs and `$schema` targets; `test_types.py` 
 - `src/coworld/manifest_validation.py`, `schema_validation.py`, `manifest_uri.py` - manifest and schema validation.
 - `src/coworld/report.py` - the safe-render-profile checker `coworld certify` enforces on commissioner round reports.
   (The reporter report-zip role was retired by spec 0061; the wasm reporter's emit-time render check lives in
-  `packages/observatory-reporters/src/observatory_reporters/render_check.py`.)
+  `packages/observatory-core/src/observatory_core/reporters/render_check.py`.)
 - `src/coworld/bundle.py` - `coworld build`: hydrates a manifest template from a Docker Compose build.
 - `src/coworld/play.py`, `src/coworld/runner/` - local play, local episode runner, and hosted-runner contracts.
 - `src/coworld/commissioner/`, `submit.py`, `upload.py` - league round-running, submission, and upload support.

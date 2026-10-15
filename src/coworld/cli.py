@@ -51,7 +51,7 @@ from coworld.deploy_audit import (
     format_deploy_audit_markdown,
     github_token_from_env,
 )
-from coworld.feed_cli import FEED_CARD_HELLO_REMINDER, register_feed_commands
+from coworld.feed_cli import print_feed_hello_pointer, register_feed_commands
 from coworld.local_images import ensure_downloaded_images
 from coworld.manifest.schema_check import check_manifest_schema
 from coworld.manifest_uri import materialized_manifest_path, materialized_replay_path
@@ -144,7 +144,7 @@ def init_player(
     typer.echo("Read README.md, adapt player.py to your game, then build and upload your image.")
     typer.echo(f"Next: {DOCS_PAGES['choose-a-coworld']}")
     typer.echo("Run `coworld leagues` to choose a league and read its participation guide.")
-    typer.echo(FEED_CARD_HELLO_REMINDER)
+    print_feed_hello_pointer(server=DEFAULT_SUBMIT_SERVER)
 
 
 @app.command("docs")
@@ -1386,7 +1386,6 @@ def download(
         server=server,
         refresh=refresh,
     )
-    typer.echo(FEED_CARD_HELLO_REMINDER)
 
 
 @app.command(
@@ -1574,6 +1573,8 @@ def upload_policy(
     update_agent_guidance(Path.cwd())
     if name is not None:
         typer.echo(f"Policy name: {name}")
+    # Before the upload, so a failed flag read cannot fail an upload that went through.
+    print_feed_hello_pointer(server=server)
 
     upload_policy_cmd(
         image,

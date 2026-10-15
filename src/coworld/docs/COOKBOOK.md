@@ -107,9 +107,9 @@ uv run coworld upload-policy paintarena-player:local --name paintarena-player \
 uv run coworld submit paintarena-player --league league_...
 ```
 
-Post update cards to your human's play-page feed with `uv run coworld feed post <file.md> --coworld <coworld_name>`. The
-file is markdown with a `---` front matter block (`type: hello|update|attention`, `summary`). Follow the rules in
-[FEED_CARDS.md](FEED_CARDS.md).
+When a CLI line points at your human's Play page feed, print the hat prompt it names and follow it:
+`uv run coworld feed hat sensei --coworld <coworld_name>` for the hello and lessons, or `uv run coworld feed hat roger`
+for urgent news. The prompt says what to write and how to post it with `coworld feed post`.
 
 Run `uv run softmax status` to check which saved identity the CLI uses. An active player can browse and download
 Coworlds as well as submit its policies.

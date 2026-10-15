@@ -10,7 +10,6 @@ from werkzeug.wrappers import Response
 
 from coworld.api_client import CoworldApiClient
 from coworld.cli import app
-from coworld.feed_cli import FEED_CARD_REMINDER
 
 NOW = "2026-05-12T12:00:00Z"
 GAME_ID = "game_00000000-0000-0000-0000-000000000010"
@@ -200,17 +199,35 @@ def test_results_handles_empty_division_leaderboard(httpserver: HTTPServer) -> N
     assert json.loads(result.output) == []
 
 
-def test_results_ends_with_feed_reminder(httpserver: HTTPServer) -> None:
+def test_results_ends_with_feed_reminder(
+    httpserver: HTTPServer, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("XDG_CACHE_HOME", str(tmp_path))
     httpserver.expect_request(
         f"/observatory/v2/divisions/{DIVISION_ID}/leaderboard",
         method="GET",
         headers={"Authorization": "Bearer token"},
     ).respond_with_json(None)
+    httpserver.expect_request(f"/observatory/v2/divisions/{DIVISION_ID}", method="GET").respond_with_json(_division())
+    checks = [
+        {"human_name": None, "rounds": [_closed_round(number=1)], "sensei_due": None},
+        {"human_name": None, "rounds": [_closed_round(number=2)], "sensei_due": None},
+    ]
+    httpserver.expect_request(
+        "/observatory/v2/coworlds/paint-arena/feed-posts/check", method="GET"
+    ).respond_with_handler(lambda request: Response(json.dumps(checks.pop(0)), content_type="application/json"))
+    args = ["results", DIVISION_ID, "--server", httpserver.url_for("")]
 
-    result = CliRunner().invoke(app, ["results", DIVISION_ID, "--server", httpserver.url_for("")])
+    first = CliRunner().invoke(app, args)
+    second = CliRunner().invoke(app, args)
 
-    assert result.exit_code == 0, result.output
-    assert result.output.rstrip().endswith(FEED_CARD_REMINDER)
+    assert first.exit_code == 0, first.output
+    assert "Feed for" not in first.output
+    assert second.exit_code == 0, second.output
+    assert second.output.rstrip().endswith(
+        "Feed for your human: lesson due? uv run coworld feed hat sensei --coworld 'paint-arena' · "
+        "urgent? uv run coworld feed hat roger"
+    )
 
 
 def test_episodes_accepts_bulk_rows_without_assignments(
@@ -1157,6 +1174,16 @@ def _division(division_id: str = DIVISION_ID) -> dict[str, object]:
         "league": _league(),
         "description": "Bronze division",
         "created_at": NOW,
+    }
+
+
+def _closed_round(*, number: int) -> dict[str, object]:
+    return {
+        "league_id": LEAGUE_ID,
+        "league_name": "Paint League",
+        "round_id": f"round_{number}",
+        "round_number": number,
+        "closed_at": f"2026-10-{number:02d}T12:00:00Z",
     }
 
 

@@ -1,4 +1,5 @@
 import json
+from pathlib import Path
 
 import pytest
 from pytest_httpserver import HTTPServer
@@ -6,7 +7,6 @@ from typer.testing import CliRunner
 from werkzeug import Request, Response
 
 from coworld.cli import app
-from coworld.feed_cli import FEED_CARD_REMINDER
 
 NOW = "2026-05-12T12:00:00Z"
 COWORLD_ID = "cow_00000000-0000-0000-0000-000000000015"
@@ -70,6 +70,16 @@ def _experience_request_row() -> dict[str, object]:
 
 def _experience_request_detail() -> dict[str, object]:
     return {**_experience_request_row(), "episodes": [_episode_request()]}
+
+
+def _closed_round(round_id: str, number: int) -> dict[str, object]:
+    return {
+        "league_id": "league_1",
+        "league_name": "Paint League",
+        "round_id": round_id,
+        "round_number": number,
+        "closed_at": f"2026-10-{number:02d}T12:00:00Z",
+    }
 
 
 def test_xp_request_help_documents_request_shapes() -> None:
@@ -213,21 +223,36 @@ def test_xp_request_get_renders_detail_and_episodes(httpserver: HTTPServer) -> N
     assert result.exit_code == 0, result.output
     assert XP_REQUEST_ID in result.output
     assert EPISODE_REQUEST_ID in result.output
-    assert FEED_CARD_REMINDER not in result.output
+    assert not any(request.path.endswith("/feed-posts/check") for request, _ in httpserver.log)
 
 
-def test_xp_request_get_completed_ends_with_feed_reminder(httpserver: HTTPServer) -> None:
+def test_xp_request_get_completed_ends_with_feed_reminder(
+    httpserver: HTTPServer, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("XDG_CACHE_HOME", str(tmp_path))
     detail = {**_experience_request_detail(), "status": "completed", "completed_at": NOW}
     httpserver.expect_request(f"/observatory/v2/experience-requests/{XP_REQUEST_ID}", method="GET").respond_with_json(
         detail
     )
+    checks = [
+        {"human_name": "Pawel", "rounds": [_closed_round("round_1", 1)], "sensei_due": None},
+        {"human_name": "Pawel", "rounds": [_closed_round("round_2", 2)], "sensei_due": None},
+    ]
+    httpserver.expect_request(
+        "/observatory/v2/coworlds/paintarena/feed-posts/check", method="GET"
+    ).respond_with_handler(lambda request: Response(json.dumps(checks.pop(0)), content_type="application/json"))
+    args = ["xp-request", "get", XP_REQUEST_ID, "--server", httpserver.url_for("/")]
 
-    result = CliRunner().invoke(
-        app, ["xp-request", "get", XP_REQUEST_ID, "--server", httpserver.url_for("/")], env={"COLUMNS": "200"}
+    first = CliRunner().invoke(app, args, env={"COLUMNS": "200"})
+    second = CliRunner().invoke(app, args, env={"COLUMNS": "200"})
+
+    assert first.exit_code == 0, first.output
+    assert "Feed for" not in first.output
+    assert second.exit_code == 0, second.output
+    assert second.output.rstrip().endswith(
+        "Feed for Pawel: lesson due? uv run coworld feed hat sensei --coworld 'paintarena' · "
+        "urgent? uv run coworld feed hat roger"
     )
-
-    assert result.exit_code == 0, result.output
-    assert result.output.rstrip().endswith(FEED_CARD_REMINDER)
 
 
 def test_xp_request_episodes_renders_children(httpserver: HTTPServer) -> None:

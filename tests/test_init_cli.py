@@ -12,6 +12,7 @@ def test_init_copies_packaged_player_and_explicit_guidance(tmp_path, monkeypatch
     monkeypatch.chdir(tmp_path)
     monkeypatch.setenv("COWORLD_AGENT_GUIDANCE", "0")
     monkeypatch.setattr("coworld.agent_guidance.detect_coding_agent", lambda: None)
+    monkeypatch.setattr("softmax.auth.load_current_token", lambda *, server: None)
     if target == "empty":
         (tmp_path / target).mkdir()
     args = ["init", "player"] + ([] if target == "." else [target])
@@ -37,7 +38,7 @@ def test_init_copies_packaged_player_and_explicit_guidance(tmp_path, monkeypatch
     assert "game-hosted file player" in result.output
     assert "https://softmax.com/docs/coworld/build-a-player/choose-a-coworld" in result.output
     assert "coworld leagues" in result.output
-    assert "uv run coworld docs --local FEED_CARDS" in result.output
+    assert "Feed for" not in result.output
     before = {p.name: p.read_bytes() for p in project.iterdir()}
     assert CliRunner().invoke(app, args).exit_code == 2
     assert before == {p.name: p.read_bytes() for p in project.iterdir()}
