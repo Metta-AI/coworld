@@ -252,6 +252,10 @@ datasets or model artifacts.
 results object to include a `scores` array with one numeric score per player slot. Game-specific result fields belong in
 the Coworld's own `results_schema`.
 
+Games may also declare `roles`, an optional array with one variant-local seat-role entry per player slot in score order:
+a non-empty string, or a non-empty list of strings. See [Seat roles](artifacts/RESULTS.md#seat-roles). No manifest role
+catalog is required, and the platform adds no cross-game check of the field beyond the game's own schema.
+
 See [Results Artifact](artifacts/RESULTS.md) for the artifact contract.
 
 ### Optional `x-display` Display Hints
