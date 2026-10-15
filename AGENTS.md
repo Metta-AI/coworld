@@ -195,5 +195,3 @@ source of truth. They are generated docs and `$schema` targets; `test_types.py` 
 - `pyproject.toml` deliberately ships `coworld/templates/**/*` and the complete Paint Arena example surface, including
   Dockerfile and README assets. Treat those files as public package data because `metta publish coworld` includes them
   in the wheel.
-- Antfarm hosts Coworld game containers; keep `packages/antfarm/README.md` aligned when the game-container contract
-  changes.
