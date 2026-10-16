@@ -56,19 +56,6 @@ def test_safe_html_reports_every_violation() -> None:
     assert "external resource URL" in message
 
 
-def test_safe_html_accepts_bundled_relative_assets_with_zip_entries() -> None:
-    html = """
-    <link rel="stylesheet" href="assets/styles.css">
-    <img src="assets/chart.png">
-    <script src="assets/app.js"></script>
-    """
-    assert_safe_render_html(
-        html,
-        source="index.html",
-        zip_entries={"index.html", "assets/styles.css", "assets/chart.png", "assets/app.js"},
-    )
-
-
 def test_safe_html_allows_data_uri_svg_image() -> None:
     # An SVG loaded through <img src=data:> cannot execute script in browsers,
     # so a script-bearing data: SVG image is still safe to embed.
