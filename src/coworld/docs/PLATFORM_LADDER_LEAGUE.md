@@ -253,6 +253,37 @@ What changes:
 The grading variant must accept a roster of exactly `seats_per_episode` seats in the Coworld manifest, or the plan fails
 and the round aborts with that reason. Design reference: spec 0139 (continuous grading leagues).
 
+## Eval leagues (round on new policy)
+
+An Eval league is an ordinary ladder that runs a round only when a new policy arrives. It never runs on a timer. It is
+the ladder document with one field set:
+
+```json
+"ladder": {
+  "enabled": true,
+  "round_trigger": "new_policy",
+  "scheduler": {"strategy": "balanced_rotation", "num_episodes": 24},
+  "ranking": {"algorithm": "elo"},
+  "divisions": [{"division_id": "div_...", "name": "Competition"}]
+}
+```
+
+What changes, compared with the default `round_trigger: "interval"`:
+
+- **When a round is due.** A division is due when one of its champions holds a policy version missing from the roster of
+  the division's newest completed round. Every Eval round freezes the whole champion roster, so this means a new
+  version, or one re-promoted since that round. Only competing memberships count, so with `qualification` set a
+  submission triggers a round only after it qualifies. The ladder checks about once a minute. Each new version causes
+  one round, even when that round does not seat it (for example under `roster_overflow: sample`).
+- **What the round is.** An ordinary whole-roster round. `scheduler`, `ranking`, `fulfillment`, handicaps and division
+  movement all work as on any ladder. Unlike `continuous`, Elo and OpenSkill ranking work.
+- **Clock settings are inert.** `settings.round_interval_minutes` and the idle switches do nothing.
+- **Retries.** After a failed or aborted round the version stays due, so the next cycle runs again. The usual
+  `fulfillment.retry_times` and pause rules still bound this.
+- `trigger-round` still runs one ordinary round now.
+
+`round_trigger: "new_policy"` cannot be combined with an enabled `continuous` block or with `persistent`.
+
 ## Preconditions
 
 1. The Coworld is uploaded and **canonical** (seed create looks up the canonical coworld by name).
@@ -518,6 +549,7 @@ Hard rules when editing:
 | Using `team_pair` for Four Score / N>2 teams                    | Wrong topology; use `team_n` with the real `team_count`        |
 | Forcing Elo on a continuous-score / ATH board                   | Prefer `ranking.algorithm: score`                              |
 | Shortening `round_interval_minutes` to grade submissions sooner | Set `ladder.continuous` (grade on arrival) instead             |
+| Shortening `round_interval_minutes` to rank submissions sooner  | Set `ladder.round_trigger: new_policy` (Eval) instead          |
 | Dropping `counterfactual_eval` on settings POST                 | Sibling knobs reset / disappear; always merge                  |
 
 ## Auth cheatsheet
