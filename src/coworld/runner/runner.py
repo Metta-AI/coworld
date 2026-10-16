@@ -18,7 +18,7 @@ from contextlib import ExitStack
 from dataclasses import dataclass, field, replace
 from json import JSONDecodeError
 from pathlib import Path
-from typing import Callable, Mapping, Self, Sequence
+from typing import Annotated, Callable, Mapping, Self, Sequence
 from urllib.parse import urlencode
 from uuid import uuid4
 
@@ -65,6 +65,7 @@ LOCAL_EPISODE_CONTAINER_PREFIX = "coworld-cert"
 LOCAL_EXTRA_PORTS_ENV_VAR = "COWORLD_LOCAL_EXTRA_PORTS"
 LOCAL_PORT_ENV_PREFIX = "COWORLD_LOCAL_PORT_"
 LOCAL_PORTS_JSON_ENV_VAR = "COWORLD_LOCAL_PORTS_JSON"
+LOCAL_SECRET_URIS_ENV_VAR = "COWORLD_LOCAL_SECRET_URIS"
 LOCAL_PORT_HOST = "127.0.0.1"
 MAX_TCP_PORT = 65535
 DEFAULT_PLAYER_EXIT_TIMEOUT_SECONDS = 30.0
@@ -579,7 +580,7 @@ def game_container_command(
         "-p",
         f"127.0.0.1::{GAME_PORT}",
         *local_port_publish_args(local_ports),
-        *docker_env_args(game_env_with_resolved_local_ports(game.env, local_ports)),
+        *docker_env_args(local_game_env(game.env, local_ports)),
         "-e",
         f"{GAME_HOST_ENV_VAR}={GAME_HOST}",
         "-e",
@@ -921,7 +922,7 @@ def verify_replay_loadable(
     resolved_local_ports: list[ResolvedLocalPort] | None = None,
 ) -> None:
     local_ports = resolved_local_ports if resolved_local_ports is not None else resolve_local_extra_ports(game.env)
-    game_env = game_env_with_resolved_local_ports(game.env, local_ports)
+    game_env = local_game_env(game.env, local_ports)
     replay_container = f"{container_prefix}-replay-{secrets.token_hex(8)}"
     if not artifacts.replay_path.exists():
         raise RunnerEpisodeError(
@@ -1359,6 +1360,8 @@ def _wait_for_published_port(
                 error_type=error_type,
             )
         # docker run creates and starts asynchronously; the mapping appears after start.
+        # Docker can wait behind image imports. The startup deadline owns this
+        # lookup too; a separate short subprocess timeout aborts healthy starts.
         published = subprocess.run(
             ["docker", "port", container_name, f"{container_port}/tcp"],
             capture_output=True,
@@ -1436,11 +1439,19 @@ def local_port_env(ports: list[ResolvedLocalPort]) -> dict[str, str]:
     return env
 
 
-def game_env_with_resolved_local_ports(
+def local_game_env(
     env: Mapping[str, str],
     ports: list[ResolvedLocalPort],
 ) -> dict[str, str]:
     game_env = dict(env)
+    secret_uris = TypeAdapter(dict[str, Annotated[str, Field(pattern=r"^(?:https?|file)://")]]).validate_json(
+        os.environ.get(LOCAL_SECRET_URIS_ENV_VAR, "{}")
+    )
+    for name, uri in env.items():
+        if uri.startswith("secret://"):
+            if uri not in secret_uris:
+                raise ValueError(f"Local Coworld secret {uri} needs a URI in {LOCAL_SECRET_URIS_ENV_VAR}")
+            game_env[name] = secret_uris[uri]
     game_env.update(local_port_env(ports))
     return game_env
 

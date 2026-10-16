@@ -480,3 +480,22 @@ def test_docker_resource_validation_only_applies_to_local_launch(limits) -> None
     launch = runner_module.PlayerLaunchSpec.from_model(runnable)
     with pytest.raises(ValueError):
         launch.docker_resource_args()
+
+
+def test_local_secret_resolution_preserves_manifest_and_requires_explicit_mapping(monkeypatch) -> None:
+    secret = "secret://coworld/example/worker-key"
+    env = {"WORKER_KEY_URI": secret, "OTHER": "unchanged"}
+    monkeypatch.delenv(runner_module.LOCAL_SECRET_URIS_ENV_VAR, raising=False)
+    with pytest.raises(ValueError, match="needs a URI in COWORLD_LOCAL_SECRET_URIS"):
+        runner_module.local_game_env(env, [])
+    monkeypatch.setenv(
+        runner_module.LOCAL_SECRET_URIS_ENV_VAR,
+        json.dumps({secret: "http://local-secret-service/key", "OTHER": "file:///unrelated"}),
+    )
+    resolved = runner_module.local_game_env(env, [])
+    assert resolved["WORKER_KEY_URI"] == "http://local-secret-service/key"
+    assert resolved["OTHER"] == "unchanged"
+    assert env == {"WORKER_KEY_URI": secret, "OTHER": "unchanged"}
+    monkeypatch.setenv(runner_module.LOCAL_SECRET_URIS_ENV_VAR, json.dumps({secret: secret}))
+    with pytest.raises(ValueError, match="String should match pattern"):
+        runner_module.local_game_env(env, [])

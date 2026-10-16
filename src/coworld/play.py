@@ -51,8 +51,8 @@ from coworld.runner.runner import (
     docker_env_args,
     docker_image_command,
     ensure_local_docker_network,
-    game_env_with_resolved_local_ports,
     generate_tokens,
+    local_game_env,
     local_port_publish_args,
     replay_client_url,
     replay_session_path,
@@ -132,7 +132,7 @@ def play_coworld(
     write_coworld_game_config(job_spec, artifacts, tokens)
     players = [PlayerLaunchSpec.from_model(player) for player in cast(list[CoworldRunnableSpec], job_spec.players)]
     local_ports = resolve_local_extra_ports(package.game.env, allocate_port=_free_local_port)
-    game_env = game_env_with_resolved_local_ports(package.game.env, local_ports)
+    game_env = local_game_env(package.game.env, local_ports)
 
     run_id = secrets.token_hex(8)
     game_network_alias = f"{LOCAL_GAME_NETWORK_ALIAS_PREFIX}{run_id}"

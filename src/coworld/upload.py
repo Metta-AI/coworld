@@ -2322,131 +2322,224 @@ def _push_container_image(source_image: str, push_info: EcrPushInfo) -> None:
     repository = f"{prefix}/{push_info.repository}" if prefix else push_info.repository
     base_url = f"{scheme}://{host}/v2/{repository}"
 
-    with tempfile.TemporaryFile() as archive:
-        subprocess.run(["docker", "image", "save", source_image], check=True, stdout=archive)
-        archive.seek(0)
+    with _DockerImageArchive(source_image) as archive:
         _push_archive_to_registry(archive, base_url, push_info.tag, auth_header, source_image)
 
 
-def _push_archive_to_registry(archive: Any, base_url: str, tag: str, auth_header: str, source_image: str) -> None:
-    """Push a docker-save tar archive to a registry via the OCI distribution API."""
-    headers = {"Authorization": f"Basic {auth_header}"}
+class _DockerImageArchive:
+    """Re-export on rewind instead of retaining a second full image on disk."""
 
-    with tarfile.open(fileobj=archive, mode="r:*") as tar, httpx.Client(timeout=_REGISTRY_UPLOAD_TIMEOUT) as client:
-        index_file = tar.extractfile("index.json")
-        if index_file is None:
-            raise RuntimeError("Docker image archive is missing index.json")
-        index = _OciImageIndex.model_validate_json(index_file.read())
-        manifest_bytes, manifest = _select_oci_image_manifest(tar, index)
+    def __init__(self, source_image: str) -> None:
+        self.command = ["docker", "image", "save", source_image]
+        self.process = subprocess.Popen(self.command, stdout=subprocess.PIPE)
+        assert self.process.stdout is not None
+        self.stream = self.process.stdout
 
-        layers: list[_OciDescriptor] = []
-        for descriptor in manifest.layers:
-            if (
-                is_digest_pinned_image_ref(source_image)
-                or descriptor.media_type != "application/vnd.oci.image.layer.v1.tar"
-            ):
-                response = client.head(f"{base_url}/blobs/{descriptor.digest}", headers=headers)
-                if response.status_code == 200:
-                    layers.append(descriptor)
-                    continue
-                if response.status_code != 404:
-                    response.raise_for_status()
-            with _registry_layer(tar, descriptor, source_image, client) as (uploaded, layer_file):
-                resp = client.head(f"{base_url}/blobs/{uploaded.digest}", headers=headers)
-                if resp.status_code == 404:
-                    _push_streaming_blob(
-                        client,
-                        base_url,
-                        headers,
-                        layer_file,
-                        size=uploaded.size,
-                        expected_digest=uploaded.digest,
-                    )
-                    _logger.info("Pushed layer %s (%d bytes)", uploaded.digest, uploaded.size)
-                elif resp.status_code == 200:
-                    _logger.info("Reused layer %s (%d bytes)", uploaded.digest, uploaded.size)
+    def read(self, size: int = -1) -> bytes:
+        return self.stream.read(size)
+
+    def seek(self, offset: int) -> int:
+        if offset != 0:
+            raise ValueError("Docker image exports only support rewinding")
+        self.finish()
+        self.process = subprocess.Popen(self.command, stdout=subprocess.PIPE)
+        assert self.process.stdout is not None
+        self.stream = self.process.stdout
+        return 0
+
+    def finish(self) -> None:
+        # Tar readers stop at end markers, before Docker's stdout necessarily ends.
+        if self.stream.closed:
+            return
+        while self.stream.read(1024 * 1024):
+            pass
+        self.stream.close()
+        returncode = self.process.wait()
+        if returncode:
+            raise subprocess.CalledProcessError(returncode, self.command)
+
+    def __enter__(self) -> Self:
+        return self
+
+    def __exit__(self, exc_type: type[BaseException] | None, *_: object) -> None:
+        if exc_type is None:
+            self.finish()
+        else:
+            self.process.terminate()
+            self.stream.close()
+            self.process.wait()
+
+
+@contextmanager
+def _image_archive_metadata(archive: Any) -> Iterator[tarfile.TarFile]:
+    """Retain only the index and referenced manifests, regardless of tar ordering."""
+    with tempfile.TemporaryFile() as metadata:
+        with tarfile.open(fileobj=metadata, mode="w") as output:
+            with tarfile.open(fileobj=archive, mode="r|*") as source:
+                for member in source:
+                    if member.name == "index.json":
+                        contents = source.extractfile(member)
+                        assert contents is not None
+                        index_bytes = contents.read()
+                        output.addfile(member, io.BytesIO(index_bytes))
+                        break
                 else:
-                    resp.raise_for_status()
-                layers.append(uploaded)
+                    raise RuntimeError("Docker image archive is missing index.json")
+            index = _OciImageIndex.model_validate_json(index_bytes)
+            pending = {
+                _archive_blob_name(d.digest): d
+                for d in index.manifests
+                if d.platform is None or (d.platform.os, d.platform.architecture) == _OCI_TARGET_PLATFORM
+            }
+            seen: set[str] = set()
+            while pending:
+                archive.seek(0)
+                before = set(pending)
+                with tarfile.open(fileobj=archive, mode="r|*") as source:
+                    for member in source:
+                        if member.name not in pending:
+                            continue
+                        descriptor = pending.pop(member.name)
+                        contents = source.extractfile(member)
+                        assert contents is not None
+                        content = contents.read()
+                        if len(content) != descriptor.size or _sha256_digest(content) != descriptor.digest:
+                            raise RuntimeError(f"Docker image archive manifest does not match {descriptor.digest}")
+                        output.addfile(member, io.BytesIO(content))
+                        seen.add(member.name)
+                        if descriptor.media_type == "application/vnd.oci.image.index.v1+json":
+                            nested = _OciImageIndex.model_validate_json(content)
+                            for child in nested.manifests:
+                                if (
+                                    child.platform is not None
+                                    and (child.platform.os, child.platform.architecture) != _OCI_TARGET_PLATFORM
+                                ):
+                                    continue
+                                name = _archive_blob_name(child.digest)
+                                if name not in seen:
+                                    pending[name] = child
+                if before == set(pending):
+                    raise RuntimeError(f"Docker image archive is missing manifests: {sorted(pending)}")
+        metadata.seek(0)
+        with tarfile.open(fileobj=metadata, mode="r:") as result:
+            yield result
+
+
+def _push_archive_to_registry(archive: Any, base_url: str, tag: str, auth_header: str, source_image: str) -> None:
+    """Stream image blobs; stage at most one compressed layer plus OCI metadata."""
+    headers = {"Authorization": f"Basic {auth_header}"}
+    with _image_archive_metadata(archive) as metadata, httpx.Client(timeout=_REGISTRY_UPLOAD_TIMEOUT) as client:
+        index_file = metadata.extractfile("index.json")
+        assert index_file is not None
+        manifest_bytes, manifest = _select_oci_image_manifest(
+            metadata, _OciImageIndex.model_validate_json(index_file.read())
+        )
+        pending = {_archive_blob_name(d.digest): d for d in [*manifest.layers, manifest.config]}
+        uploaded: dict[str, _OciDescriptor] = {}
+        archive.seek(0)
+        with tarfile.open(fileobj=archive, mode="r|*") as source:
+            for member in source:
+                if member.name not in pending:
+                    continue
+                descriptor = pending.pop(member.name)
+                if member.size != descriptor.size:
+                    raise RuntimeError(f"Docker archive blob size does not match {descriptor.digest}")
+                blob = source.extractfile(member)
+                assert blob is not None
+                with blob:
+                    uploaded[descriptor.digest] = _push_image_blob(
+                        blob, descriptor, source_image, client, base_url, headers
+                    )
+        for descriptor in pending.values():
+            response = client.head(f"{base_url}/blobs/{descriptor.digest}", headers=headers)
+            if response.status_code == 200:
+                uploaded[descriptor.digest] = descriptor
+                continue
+            if response.status_code != 404:
+                response.raise_for_status()
+            with _registry_blob(descriptor, source_image, client) as blob:
+                uploaded[descriptor.digest] = _push_image_blob(
+                    blob, descriptor, source_image, client, base_url, headers
+                )
+        layers = [uploaded[d.digest] for d in manifest.layers]
         if layers != manifest.layers:
             manifest.layers = layers
             manifest_bytes = manifest.model_dump_json(by_alias=True, exclude_none=True).encode()
-
-        resp = client.head(f"{base_url}/blobs/{manifest.config.digest}", headers=headers)
-        if resp.status_code == 200:
-            _logger.info("Reused config %s", manifest.config.digest)
-        elif resp.status_code == 404:
-            with _archive_or_registry_blob(tar, manifest.config, source_image, client) as config_file:
-                config_bytes = config_file.read()
-            config_descriptor = _push_blob(client, base_url, headers, config_bytes, manifest.config.media_type)
-            if (
-                config_descriptor["digest"] != manifest.config.digest
-                or config_descriptor["size"] != manifest.config.size
-            ):
-                raise RuntimeError(f"Docker image archive config does not match {manifest.config.digest}")
-            _logger.info("Pushed config %s", manifest.config.digest)
-        else:
-            resp.raise_for_status()
-
-        # PUT the manifest directly — no HEAD pre-check (which is what breaks docker push + ECR).
-        resp = client.put(
+        # Publish only after the export and every referenced blob have been verified.
+        if isinstance(archive, _DockerImageArchive):
+            archive.finish()
+        response = client.put(
             f"{base_url}/manifests/{tag}",
             content=manifest_bytes,
             headers=headers | {"Content-Type": manifest.media_type},
         )
-        resp.raise_for_status()
+        response.raise_for_status()
         _logger.info("Pushed manifest tagged %s", tag)
+
+
+def _push_image_blob(
+    source: IO[bytes],
+    descriptor: _OciDescriptor,
+    source_image: str,
+    client: httpx.Client,
+    base_url: str,
+    headers: dict[str, str],
+) -> _OciDescriptor:
+    with _registry_layer(source, descriptor, source_image) as (uploaded, blob):
+        response = client.head(f"{base_url}/blobs/{uploaded.digest}", headers=headers)
+        if response.status_code == 404:
+            if descriptor.media_type in (
+                "application/vnd.oci.image.config.v1+json",
+                "application/vnd.docker.container.image.v1+json",
+            ):
+                content = blob.read()
+                if len(content) != descriptor.size or _sha256_digest(content) != descriptor.digest:
+                    raise RuntimeError(f"Docker image archive config does not match {descriptor.digest}")
+                _push_blob(client, base_url, headers, content, descriptor.media_type)
+            else:
+                _push_streaming_blob(
+                    client, base_url, headers, blob, size=uploaded.size, expected_digest=uploaded.digest
+                )
+        elif response.status_code == 200:
+            _logger.info("Reused blob %s", uploaded.digest)
+        else:
+            response.raise_for_status()
+        return uploaded
 
 
 @contextmanager
 def _registry_layer(
-    tar: tarfile.TarFile, descriptor: _OciDescriptor, source_image: str, client: httpx.Client
+    source: IO[bytes], descriptor: _OciDescriptor, source_image: str
 ) -> Iterator[tuple[_OciDescriptor, IO[bytes]]]:
     """Compress local Docker layers; preserve explicitly pinned registry manifests."""
-    with _archive_or_registry_blob(tar, descriptor, source_image, client) as source:
-        if (
-            is_digest_pinned_image_ref(source_image)
-            or descriptor.media_type != "application/vnd.oci.image.layer.v1.tar"
-        ):
-            yield descriptor, source
-            return
-        with tempfile.TemporaryFile() as compressed:
-            original_hash = hashlib.sha256()
-            original_size = 0
-            with gzip.GzipFile(fileobj=compressed, mode="wb", compresslevel=1, mtime=0) as output:
-                while chunk := source.read(1024 * 1024):
-                    original_hash.update(chunk)
-                    original_size += len(chunk)
-                    output.write(chunk)
-            if original_size != descriptor.size or "sha256:" + original_hash.hexdigest() != descriptor.digest:
-                raise RuntimeError(f"Docker archive layer does not match {descriptor.digest}")
-            size = compressed.tell()
-            compressed.seek(0)
-            digest = "sha256:" + hashlib.file_digest(compressed, "sha256").hexdigest()
-            compressed.seek(0)
-            yield (
-                descriptor.model_copy(
-                    update={"media_type": "application/vnd.oci.image.layer.v1.tar+gzip", "digest": digest, "size": size}
-                ),
-                compressed,
-            )
+    if is_digest_pinned_image_ref(source_image) or descriptor.media_type != "application/vnd.oci.image.layer.v1.tar":
+        yield descriptor, source
+        return
+    with tempfile.TemporaryFile() as compressed:
+        original_hash = hashlib.sha256()
+        original_size = 0
+        with gzip.GzipFile(fileobj=compressed, mode="wb", compresslevel=1, mtime=0) as output:
+            while chunk := source.read(1024 * 1024):
+                original_hash.update(chunk)
+                original_size += len(chunk)
+                output.write(chunk)
+        if original_size != descriptor.size or "sha256:" + original_hash.hexdigest() != descriptor.digest:
+            raise RuntimeError(f"Docker archive layer does not match {descriptor.digest}")
+        size = compressed.tell()
+        compressed.seek(0)
+        digest = "sha256:" + hashlib.file_digest(compressed, "sha256").hexdigest()
+        compressed.seek(0)
+        yield (
+            descriptor.model_copy(
+                update={"media_type": "application/vnd.oci.image.layer.v1.tar+gzip", "digest": digest, "size": size}
+            ),
+            compressed,
+        )
 
 
 @contextmanager
-def _archive_or_registry_blob(
-    tar: tarfile.TarFile, descriptor: _OciDescriptor, source_image: str, client: httpx.Client
-) -> Iterator[IO[bytes]]:
+def _registry_blob(descriptor: _OciDescriptor, source_image: str, client: httpx.Client) -> Iterator[IO[bytes]]:
     blob_name = _archive_blob_name(descriptor.digest)
-    if blob_name in tar.getnames():
-        blob = tar.extractfile(blob_name)
-        if blob is None:
-            raise RuntimeError(f"Docker image archive is missing {blob_name}")
-        if tar.getmember(blob_name).size != descriptor.size:
-            raise RuntimeError(f"Docker archive blob size does not match {descriptor.digest}")
-        with blob:
-            yield blob
-        return
-
     if not is_digest_pinned_image_ref(source_image):
         raise RuntimeError(f"Docker image archive is missing {blob_name}; source image is not digest pinned")
     registry, _, repository = source_image.split("@", 1)[0].partition("/")

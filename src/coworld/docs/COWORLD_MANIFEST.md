@@ -240,8 +240,18 @@ Secrets are stored in the Coworld uploader's Coworld-name namespace. Passing a n
 canonical Coworld for that name when you own it; pass the `cow_...` id to target a non-canonical candidate version
 explicitly. Softmax team members must pass a `cow_...` id when a Coworld name maps to multiple owner namespaces.
 
-Local users who run the downloaded game image see only the symbolic `secret://` URI and must override the env var with
-their own local `file://`, HTTP(S), or other game-supported URI when they need a development secret.
+Local runs resolve symbolic secret references through `COWORLD_LOCAL_SECRET_URIS`, a JSON map from each `secret://`
+reference to a local HTTP(S) or `file://` URI. This works for local episodes, play, replay checks, and upload
+certification. The manifest remains unchanged; hosted dispatch still uses the Coworld secret store. Only declared
+symbolic references are replaced. Missing mappings fail before the game starts.
+
+```bash
+export COWORLD_LOCAL_SECRET_URIS='{"secret://coworld/example/worker-key":"http://local-secret-service:8080/worker-key"}'
+coworld upload-coworld coworld_manifest.json
+```
+
+The URI must be reachable from the game container. A `file://` URI names a file inside that container, not the host. Use
+development credentials and keep this environment setting out of published manifests and source control.
 
 Coworld secret uploads are capped at 1 MiB. Use them for credentials such as signing keys and tokens, not for large
 datasets or model artifacts.

@@ -18,6 +18,8 @@ class InferenceSettings(BaseModel):
     context_tokens: int = Field(default=32768, gt=1)
     output_tokens: int = Field(default=300, gt=0)
     temperature: float = Field(default=0, ge=0, le=2)
+    top_p: float = Field(default=1, gt=0, le=1, exclude_if=lambda value: value == 1)
+    seed: int | None = Field(default=None, ge=0, le=2**32 - 1, exclude_if=lambda value: value is None)
     timeout_seconds: float = Field(default=40, gt=0)
     output_format: Literal["json", "text"] = "json"
     stop: list[str] = Field(default_factory=list)
@@ -37,7 +39,7 @@ class InferenceSettings(BaseModel):
             "model": model,
             "messages": [message.model_dump() for message in messages],
             "temperature": self.temperature,
-            "top_p": 1,
+            "top_p": self.top_p,
             "reasoning": {"effort": "high" if self.enable_thinking else "none"},
             "chat_template_kwargs": {"enable_thinking": self.enable_thinking},
             "max_tokens": self.output_tokens,
@@ -48,6 +50,8 @@ class InferenceSettings(BaseModel):
             request["custom_params"] = {"thinking_budget": self.thinking_budget}
         if self.stop:
             request["stop"] = self.stop
+        if self.seed is not None:
+            request["seed"] = self.seed
         return request
 
 

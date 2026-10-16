@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from collections.abc import Iterable
+from collections.abc import Iterable, Iterator
 from datetime import datetime
 from enum import Enum
 from typing import Annotated, Any, Literal, Self
@@ -1553,6 +1553,16 @@ class CoworldApiClient:
 
     def get_episode_request_artifact_bytes(self, episode_request_id: str, artifact_type: str) -> bytes:
         return self.get_bytes(f"/v2/episode-requests/{episode_request_id}/artifacts/{artifact_type}")
+
+    def iter_episode_request_artifact_bytes(self, episode_request_id: str, artifact_type: str) -> Iterator[bytes]:
+        """Stream an artifact through the authenticated client without buffering its body."""
+        path = f"/v2/episode-requests/{episode_request_id}/artifacts/{artifact_type}"
+        with self._http_client.stream("GET", path, headers=self._headers()) as response:
+            if response.is_error:
+                response.read()
+                _raise_for_status(response)
+            response.raise_for_status()
+            yield from response.iter_bytes(chunk_size=1024 * 1024)
 
     def list_episode_request_policy_artifacts(self, episode_request_id: str) -> list[EpisodeRequestPolicyArtifactInfo]:
         return self._get(
