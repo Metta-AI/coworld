@@ -1363,7 +1363,7 @@ def _wait_for_published_port(
             ["docker", "port", container_name, f"{container_port}/tcp"],
             capture_output=True,
             text=True,
-            timeout=min(5.0, max(0.001, deadline - time.monotonic())),
+            timeout=max(0.001, deadline - time.monotonic()),
         )
         if published.returncode == 0 and published.stdout.strip():
             host, port = published.stdout.strip().split(":")
