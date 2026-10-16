@@ -255,8 +255,9 @@ and the round aborts with that reason. Design reference: spec 0139 (continuous g
 
 ## Eval leagues (round on new policy)
 
-An Eval league is an ordinary ladder that runs a round only when a new policy arrives. It never runs on a timer. It is
-the ladder document with one field set:
+An Eval league is an ordinary ladder that runs a round only when a new policy arrives. It never runs on a timer. The
+settings page offers it to Softmax team members as the **Eval** league type. Under the hood it is the ladder document
+with one field set:
 
 ```json
 "ladder": {
