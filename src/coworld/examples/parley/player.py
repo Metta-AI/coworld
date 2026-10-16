@@ -25,7 +25,7 @@ from pydantic import (
     model_validator,
 )
 
-from coworld.examples.parley.evidence import ChatRequest, InferenceCapture, capture_archive
+from coworld.examples.parley.evidence import ChatRequest, ChatResponse, InferenceCapture, capture_archive
 from coworld.examples.parley.inference import InferenceSettings, Message, validate_single_choice
 
 
@@ -187,10 +187,7 @@ class TemperedSamplingEvidence(UnitSamplingEvidence):
 SamplingEvidence = Annotated[UnitSamplingEvidence | TemperedSamplingEvidence, Field(discriminator="sampling")]
 
 
-class Completion(PrivateModel):
-    model: str
-    content: str = Field(validation_alias=AliasPath("choices", 0, "message", "content"))
-    finish_reason: Literal["stop"] = Field(validation_alias=AliasPath("choices", 0, "finish_reason"))
+class Completion(ChatResponse, PrivateModel):
     prompt_tokens: StrictInt | None = Field(default=None, ge=0, validation_alias=AliasPath("usage", "prompt_tokens"))
     completion_tokens: StrictInt | None = Field(
         default=None, ge=0, validation_alias=AliasPath("usage", "completion_tokens")
@@ -355,6 +352,7 @@ class Player:
                 if response.status_code != 200:
                     raise ValueError(f"Native inference failed ({response.status_code})")
                 completion = Completion.model_validate_json(raw)
+                completion.validate_thinking(self.settings.enable_thinking, self.settings.thinking_budget)
                 attempt.model = completion.model
                 attempt.response = completion.content
                 attempt.stop_reason = completion.finish_reason
@@ -363,7 +361,8 @@ class Player:
                 if completion.sampling_evidence is not None:
                     sample = completion.sampling_evidence
                     if (
-                        sample.response != attempt.response
+                        self.settings.enable_thinking
+                        or sample.response != attempt.response
                         or len(sample.completion_token_ids) != len(sample.behavior_log_probs)
                         or sample.max_new_tokens != decoder["max_tokens"]
                         or len(sample.prompt_token_ids) + sample.max_new_tokens > sample.max_sequence_length

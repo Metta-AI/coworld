@@ -36,3 +36,8 @@ decoding. Each native window supplies the shot menu and side-action allowances u
 still generates the full action; the game validates it. Unsupported legacy windows fail explicitly. The default,
 `PARLEY_DECODING=model`, keeps ordinary JSON-object generation. Compare the variants separately and retain the request
 grammar in private captures; constrained captures are evaluation-only for the model-only training importer.
+
+Set `enable_thinking: true` in the `PARLEY_INFERENCE` JSON build argument for a reasoning variant. The endpoint must
+return nonempty `message.reasoning_content` separately from final JSON in `message.content`. Only the final action
+reaches the game; the original response remains in the private capture. Missing reasoning or an incomplete response
+fails the decision. Keep the game's ordinary budgets and qualify the actual endpoint before submitting the variant.

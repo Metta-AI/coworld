@@ -2,7 +2,7 @@
 
 from typing import Any, Literal
 
-from pydantic import BaseModel, ConfigDict, Field, JsonValue, TypeAdapter
+from pydantic import BaseModel, ConfigDict, Field, JsonValue, TypeAdapter, model_validator
 
 CHAT_TEMPLATE_KWARGS = {"enable_thinking": False}
 
@@ -21,6 +21,16 @@ class InferenceSettings(BaseModel):
     timeout_seconds: float = Field(default=40, gt=0)
     output_format: Literal["json", "text"] = "json"
     stop: list[str] = Field(default_factory=list)
+    enable_thinking: bool = Field(default=False, exclude_if=lambda value: not value)
+    thinking_budget: int | None = Field(default=None, gt=0, exclude_if=lambda value: value is None)
+
+    @model_validator(mode="after")
+    def validate_thinking_budget(self) -> "InferenceSettings":
+        if self.thinking_budget is not None and (
+            not self.enable_thinking or self.output_format != "json" or self.thinking_budget + 2 >= self.output_tokens
+        ):
+            raise ValueError("A thinking budget requires thinking JSON inference and room for the final action")
+        return self
 
     def request(self, model: str, messages: list[Message]) -> dict[str, JsonValue]:
         request: dict[str, JsonValue] = {
@@ -28,12 +38,14 @@ class InferenceSettings(BaseModel):
             "messages": [message.model_dump() for message in messages],
             "temperature": self.temperature,
             "top_p": 1,
-            "reasoning": {"effort": "none"},
-            "chat_template_kwargs": CHAT_TEMPLATE_KWARGS,
+            "reasoning": {"effort": "high" if self.enable_thinking else "none"},
+            "chat_template_kwargs": {"enable_thinking": self.enable_thinking},
             "max_tokens": self.output_tokens,
         }
         if self.output_format == "json":
             request["response_format"] = {"type": "json_object"}
+        if self.thinking_budget is not None:
+            request["custom_params"] = {"thinking_budget": self.thinking_budget}
         if self.stop:
             request["stop"] = self.stop
         return request
