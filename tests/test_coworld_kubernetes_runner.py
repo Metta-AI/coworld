@@ -254,7 +254,7 @@ class _FakeLogCoreV1:
         self._log_errors = log_errors or {}
         self.log_calls: list[tuple[str, str]] = []
 
-    def read_namespaced_pod(self, *, name: str, namespace: str):
+    def read_namespaced_pod(self, *, name: str, namespace: str, _request_timeout: float = 5):
         if name in self._missing_pods:
             raise ApiException(status=404)
         return SimpleNamespace(status=SimpleNamespace(container_statuses=self._statuses[name]))
@@ -2507,7 +2507,9 @@ def test_game_hosted_kubernetes_episode_skips_player_resources_and_records_zero_
     monkeypatch.setattr(kubernetes_runner, "STATE_PATH", state_path)
     monkeypatch.setattr(kubernetes_runner.time, "monotonic", lambda: clock["now"])
     monkeypatch.setattr(kubernetes_runner.time, "monotonic_ns", lambda: int(clock["now"] * 1_000_000_000))
-    monkeypatch.setattr(kubernetes_runner, "_load_incluster_config", lambda *, egress_enforcement_enabled: None)
+    monkeypatch.setattr(
+        kubernetes_runner, "_load_incluster_config", lambda *, egress_enforcement_enabled, retry_count=5: nullcontext()
+    )
     monkeypatch.setattr(kubernetes_runner.client, "CoreV1Api", lambda _api_client: object())
     monkeypatch.setattr(kubernetes_runner.client, "NetworkingV1Api", forbidden)
     monkeypatch.setattr(kubernetes_runner, "_create_game_service", forbidden)
@@ -2628,7 +2630,7 @@ def test_run_kubernetes_episode_waits_for_player_artifact_finalization(
     monkeypatch.setattr(
         kubernetes_runner,
         "_load_incluster_config",
-        lambda *, egress_enforcement_enabled: None,
+        lambda *, egress_enforcement_enabled, retry_count=5: nullcontext(),
     )
     monkeypatch.setattr(kubernetes_runner.client, "CoreV1Api", lambda _api_client: object())
     # Slow API preparation must not consume the game's player connection timeout.

@@ -1,5 +1,6 @@
 """Inference settings shared by the Parley player and its training consumers."""
 
+from pathlib import Path
 from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, JsonValue, TypeAdapter, model_validator
@@ -53,6 +54,45 @@ class InferenceSettings(BaseModel):
         if self.seed is not None:
             request["seed"] = self.seed
         return request
+
+    def server_arguments(
+        self,
+        model_path: Path,
+        model: str,
+        *,
+        model_type: str,
+        host: str = "127.0.0.1",
+        port: int = 8000,
+        tool_call_parser: str | None = None,
+        reasoning_parser: str | None = None,
+    ) -> list[str]:
+        """Use the same SGLang model and decoding setup locally and in player pods."""
+        arguments = [
+            "--model-path",
+            str(model_path),
+            "--served-model-name",
+            model,
+            "--host",
+            host,
+            "--port",
+            str(port),
+            "--dtype",
+            "bfloat16",
+            "--context-length",
+            str(self.context_tokens),
+            "--mem-fraction-static",
+            "0.8",
+        ]
+        if model_type == "qwen3_5":
+            # Training exports the text backbone, without a vision encoder.
+            arguments.append("--language-only")
+        if tool_call_parser is not None:
+            arguments.extend(["--tool-call-parser", tool_call_parser])
+        if reasoning_parser is not None or self.enable_thinking:
+            arguments.extend(["--reasoning-parser", reasoning_parser or "qwen3"])
+        if self.thinking_budget is not None:
+            arguments.append("--enable-strict-thinking")
+        return arguments
 
 
 def validate_single_choice(value: Any) -> dict[str, JsonValue]:

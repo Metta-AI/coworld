@@ -1154,18 +1154,40 @@ def _run_kubernetes_episode(
         publish_verdict(exc)
         raise
     finally:
-        players_ready.clear()
-        logs_start = time.monotonic_ns()
-        _collect_logs(core_v1, namespace, pod_name, child_names, artifacts, dead_seat_statuses=dead_seat_statuses)
-        worker_timings.record("logs_collect", logs_start)
-        delete_start = time.monotonic_ns()
-        _delete_child_resources(core_v1, namespace, service_name, child_names)
-        worker_timings.record("children_delete", delete_start)
-        if artifact_server is not None:
-            shutdown_start = time.monotonic_ns()
-            artifact_server.shutdown()
-            artifact_server.server_close()
-            worker_timings.record("artifact_server_shutdown", shutdown_start)
+        episode_failure = sys.exception()
+        try:
+            players_ready.clear()
+            try:
+                logs_start = time.monotonic_ns()
+                with _load_incluster_config(
+                    egress_enforcement_enabled=egress_enforcement_enabled, retry_count=0
+                ) as diagnostic_api:
+                    _collect_logs(
+                        client.CoreV1Api(diagnostic_api),
+                        namespace,
+                        pod_name,
+                        child_names,
+                        artifacts,
+                        dead_seat_statuses=dead_seat_statuses,
+                    )
+                worker_timings.record("logs_collect", logs_start)
+            finally:
+                try:
+                    delete_start = time.monotonic_ns()
+                    _delete_child_resources(core_v1, namespace, service_name, child_names)
+                    worker_timings.record("children_delete", delete_start)
+                finally:
+                    if artifact_server is not None:
+                        shutdown_start = time.monotonic_ns()
+                        try:
+                            artifact_server.shutdown()
+                        finally:
+                            artifact_server.server_close()
+                        worker_timings.record("artifact_server_shutdown", shutdown_start)
+        finally:
+            if episode_failure is not None:
+                # Cleanup must not replace the failure that ended gameplay.
+                raise episode_failure
 
 
 def _run_game_hosted_episode(
@@ -1230,9 +1252,18 @@ def _run_game_hosted_episode(
         _validate_results_file(artifacts.results_path, job.results_schema, contents=results)
         worker_timings.record("results_validate", validation_start)
     finally:
-        logs_start = time.monotonic_ns()
-        _collect_game_log(core_v1, namespace, pod_name, artifacts)
-        worker_timings.record("logs_collect", logs_start)
+        episode_failure = sys.exception()
+        try:
+            logs_start = time.monotonic_ns()
+            with _load_incluster_config(
+                egress_enforcement_enabled=os.environ.get("COWORLD_EGRESS_ENFORCEMENT_ENABLED") == "true",
+                retry_count=0,
+            ) as diagnostic_api:
+                _collect_game_log(client.CoreV1Api(diagnostic_api), namespace, pod_name, artifacts)
+            worker_timings.record("logs_collect", logs_start)
+        finally:
+            if episode_failure is not None:
+                raise episode_failure
 
 
 def _load_incluster_config(*, egress_enforcement_enabled: bool, retry_count: int = 5) -> client.ApiClient:
@@ -2152,7 +2183,7 @@ def _collect_logs(
         slot = _player_pod_slot(player_pod_name)
         detected = (dead_seat_statuses or {}).get(slot)
         try:
-            player_pod = core_v1.read_namespaced_pod(name=player_pod_name, namespace=namespace)
+            player_pod = core_v1.read_namespaced_pod(name=player_pod_name, namespace=namespace, _request_timeout=5)
         except (ApiException, HTTPError) as exc:
             player_statuses.append(
                 detected
