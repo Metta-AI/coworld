@@ -259,7 +259,9 @@ class _FakeLogCoreV1:
             raise ApiException(status=404)
         return SimpleNamespace(status=SimpleNamespace(container_statuses=self._statuses[name]))
 
-    def read_namespaced_pod_log(self, *, name: str, namespace: str, container: str, tail_lines: int):
+    def read_namespaced_pod_log(
+        self, *, name: str, namespace: str, container: str, tail_lines: int, _request_timeout: tuple[int, int]
+    ):
         self.log_calls.append((name, container))
         if (name, container) in self._log_errors:
             raise self._log_errors[(name, container)]
@@ -2541,6 +2543,7 @@ def test_game_hosted_kubernetes_episode_skips_player_resources_and_records_zero_
         timeout_seconds=600.0,
         timings=timings,
         upload_timings=lambda current: timing_snapshots.append(current.phase_seconds()),
+        publish_verdict=lambda exc: pytest.fail(f"successful episode published a failure: {exc}"),
     )
 
     assert http_urls == ["http://127.0.0.1:8080/client/global"]
@@ -2743,6 +2746,7 @@ def test_run_kubernetes_episode_waits_for_player_artifact_finalization(
         timeout_seconds=600.0,
         timings=EpisodePhaseTimings(worker=ProcessTimings(clock=TimingClock.capture())),
         upload_timings=record_timing_upload,
+        publish_verdict=lambda exc: pytest.fail(f"successful episode published a failure: {exc}"),
     )
 
     assert not players_ready.is_set()

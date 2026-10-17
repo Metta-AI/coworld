@@ -537,6 +537,19 @@ def run_from_env(*, prepare_players: bool = False) -> None:
         # Prepared exactly once per episode: preparation deletes an invalid status file and
         # writes missing-log placeholders, so a second pass would report clean diagnostics.
         outputs_prepared = False
+        verdict_published = False
+
+        def publish_verdict(exc: Exception) -> None:
+            # The first published failure is the episode's verdict. A later teardown error,
+            # such as the SIGTERM sent when the backend stops waiting, must not replace it.
+            nonlocal verdict_published
+            try:
+                _write_error_info(exc)
+            except Exception as cleanup_exc:
+                logger.warning("Failed to upload error info after episode failure: %s", exception_summary(cleanup_exc))
+                return
+            verdict_published = True
+
         try:
             if prepare_players:
                 _prepare_player_pods(job, worker_timings)
@@ -552,6 +565,7 @@ def run_from_env(*, prepare_players: bool = False) -> None:
                 timeout_seconds=float(os.environ.get("COWORLD_TIMEOUT_SECONDS", "3600")),
                 timings=timings,
                 upload_timings=queue_timings_upload,
+                publish_verdict=publish_verdict,
             )
             # Publishing is part of the episode: a failure here (a replay that is not a
             # regular file, an upload error) must reach the backend as a typed runner error,
@@ -562,10 +576,8 @@ def run_from_env(*, prepare_players: bool = False) -> None:
                 outputs_prepared = True
             _upload_outputs(artifacts)
         except Exception as exc:
-            try:
-                _write_error_info(exc)
-            except Exception as cleanup_exc:
-                logger.warning("Failed to upload error info after episode failure: %s", exception_summary(cleanup_exc))
+            if not verdict_published:
+                publish_verdict(exc)
             if job.manifest.game.player_runtime == "game-hosted" and not outputs_prepared:
                 try:
                     _prepare_game_hosted_outputs(job, artifacts, timings)
@@ -992,6 +1004,7 @@ def _run_kubernetes_episode(
     timeout_seconds: float,
     timings: EpisodePhaseTimings,
     upload_timings: Callable[[EpisodePhaseTimings], None],
+    publish_verdict: Callable[[Exception], None],
 ) -> None:
     assert timings.worker is not None
     worker_start = time.monotonic_ns()
@@ -1134,6 +1147,12 @@ def _run_kubernetes_episode(
             require_clean_exit=job.episode_tags.get("source") == CERTIFICATION_EPISODE_SOURCE,
         )
         worker_timings.record("players_complete", completion_start)
+    except Exception as exc:
+        # Teardown reads each player's log through its node. A seat that died minutes ago may sit
+        # on an empty GPU node that is already being removed, and that read can outlast the
+        # backend's wait for a dead game. Publish the verdict first so attribution survives.
+        publish_verdict(exc)
+        raise
     finally:
         players_ready.clear()
         logs_start = time.monotonic_ns()
@@ -2214,6 +2233,8 @@ def _read_pod_log(core_v1, namespace: str, pod_name: str, container: str) -> str
             namespace=namespace,
             container=container,
             tail_lines=10000,
+            # The kubelet serves logs; one on a node being removed can hold the request open forever.
+            _request_timeout=(5, 15),
         )
     except (ApiException, HTTPError) as exc:
         if isinstance(exc, ApiException) and exc.status == 404:

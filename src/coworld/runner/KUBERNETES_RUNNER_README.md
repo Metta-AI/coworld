@@ -92,10 +92,13 @@ The game receives URI-based artifact environment variables. Today the app backen
 `COWORLD_WORKDIR` so the worker can validate results and upload hosted artifacts, but the game contract is URI-based
 rather than path-based. The worker reaches the game locally for health checks and creates a ClusterIP Service so player
 pods can connect back to the game. On exit — success or failure — the worker writes runner error info, collects logs,
-and deletes any child player pods and Service. After game results arrive, the worker gives platform-hosted players up to
-30 seconds to finish artifact uploads before collecting logs and deleting their pods. Late player failures do not
-replace ordinary game results; certification still requires clean player exits. Failure diagnostics after error info are
-best-effort, so a diagnostic upload failure cannot replace the episode failure.
+and deletes any child player pods and Service. A failed episode publishes its error info before that teardown: the
+backend waits only `GAME_EXIT_GRACE_SECONDS` (90s) after the game container exits, and teardown log reads can be slow.
+The first published error info is final, so a later teardown error, such as the SIGTERM from Job deletion, cannot
+replace an attributed failure. After game results arrive, the worker gives platform-hosted players up to 30 seconds to
+finish artifact uploads before collecting logs and deleting their pods. Late player failures do not replace ordinary
+game results; certification still requires clean player exits. Failure diagnostics after error info are best-effort, so
+a diagnostic upload failure cannot replace the episode failure.
 
 For bounded episodes, worker exit 0 means required publication, including final worker timings, finished. The
 `prepare-players` command runs in a separate init container and is not a completion signal. Results upload happens
@@ -359,7 +362,8 @@ replay upload remain the source of truth for episode success. The adjacent `play
 structured pod state that existed at that same observation point, separately from game-authored scores. Authorized
 episode consumers can fetch it from `/v2/episode-requests/{episode_request_id}/artifacts/player-status`. Kubernetes API
 transport failures during log collection are written into the corresponding diagnostic log artifact and likewise do not
-change the episode outcome.
+change the episode outcome. Each log read has a 5-second connect and 15-second read timeout per attempt, because the
+kubelet on a node that is being removed can otherwise hold the request open indefinitely.
 
 For game-hosted output, an absent slot log becomes a diagnostic placeholder. Optional `player_status.json` is capped at
 1 MiB and validated against the version 1 schema; oversized or invalid JSON is logged, deleted, and not uploaded.
