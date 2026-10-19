@@ -8,7 +8,7 @@ from uuid import UUID
 
 from pydantic import AliasChoices, AliasPath, BaseModel, ConfigDict, Field, JsonValue, StrictInt, model_validator
 
-from coworld.examples.parley.inference import InferenceSettings, Message, validate_single_choice
+from coworld.examples.parley.inference import InferenceSettings, Message, SchemaResponseFormat, validate_single_choice
 
 
 class ActionSchema(BaseModel):
@@ -28,15 +28,17 @@ class ChatRequest(BaseModel):
     model: str = Field(min_length=1)
     messages: list[Message] = Field(min_length=2)
     temperature: float = Field(ge=0, le=2)
-    top_p: int | float = Field(gt=0, le=1)
+    top_p: int | float | None = Field(default=None, gt=0, le=1, exclude_if=lambda value: value is None)
     top_k: int | None = Field(default=None, gt=0, exclude_if=lambda value: value is None)
     reasoning: dict[Literal["effort"], Literal["none", "high"]]
     chat_template_kwargs: dict[Literal["enable_thinking"], bool]
     max_tokens: int = Field(gt=0)
+    response_format: (
+        dict[Literal["type"], Literal["json_object", "text"]] | SchemaResponseFormat | SchemaFormat | None
+    ) = Field(default=None, exclude_if=lambda value: value is None)
     custom_params: dict[Literal["thinking_budget"], int] | None = Field(
         default=None, exclude_if=lambda value: value is None
     )
-    response_format: dict[Literal["type"], Literal["json_object"]] | SchemaFormat
     stop: list[str] = Field(default_factory=list, exclude_if=lambda value: not value)
     stop_regex: list[str] = Field(default_factory=list, exclude_if=lambda value: not value)
     no_stop_trim: bool = Field(default=False, exclude_if=lambda value: not value)
@@ -83,7 +85,8 @@ class InferenceCapture(BaseModel):
     platform_call_id: UUID | None
 
     def completion(self) -> str:
-        if isinstance(self.request.response_format, SchemaFormat):
+        response_format = self.request.response_format
+        if isinstance(response_format, (SchemaFormat, SchemaResponseFormat)):
             raise ValueError("Legal-action constrained captures are evaluation-only, not model-only training labels")
         expected = InferenceSettings(
             output_tokens=self.request.max_tokens,
@@ -93,12 +96,14 @@ class InferenceCapture(BaseModel):
             stop=self.request.stop,
             stop_regex=self.request.stop_regex,
             no_stop_trim=self.request.no_stop_trim,
+            output_format="text" if response_format is None else "json",
+            constrain_json=not isinstance(response_format, dict) or response_format["type"] == "json_object",
             enable_thinking=self.request.chat_template_kwargs["enable_thinking"],
             thinking_budget=None
             if self.request.custom_params is None
             else self.request.custom_params["thinking_budget"],
         )
-        if self.request.model_dump() != expected.request(self.request.model, self.request.messages):
+        if self.request.model_dump(by_alias=True) != expected.request(self.request.model, self.request.messages):
             raise ValueError("Captured request differs from canonical inference settings")
         if self.http_status != 200:
             raise ValueError("Training requires a successful inference response")

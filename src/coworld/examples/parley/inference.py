@@ -1,7 +1,7 @@
 """Inference settings shared by the Parley player and its training consumers."""
 
 from pathlib import Path
-from typing import Any, Literal
+from typing import Any, Literal, Self
 
 from pydantic import BaseModel, ConfigDict, Field, JsonValue, TypeAdapter, model_validator
 
@@ -13,17 +13,32 @@ class Message(BaseModel):
     content: str
 
 
+class ResponseSchema(BaseModel):
+    model_config = ConfigDict(extra="forbid", serialize_by_alias=True)
+    name: str = Field(min_length=1)
+    strict: Literal[True] = True
+    schema_: dict[str, JsonValue] = Field(alias="schema")
+
+
+class SchemaResponseFormat(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    type: Literal["json_schema"] = "json_schema"
+    json_schema: ResponseSchema
+
+
 class InferenceSettings(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
 
     context_tokens: int = Field(default=32768, gt=1)
     output_tokens: int = Field(default=300, gt=0)
     temperature: float = Field(default=0, ge=0, le=2)
-    top_p: int | float = Field(default=1, gt=0, le=1, exclude_if=lambda value: value == 1)
+    top_p: int | float | None = Field(default=1, gt=0, le=1, exclude_if=lambda value: value == 1)
     top_k: int | None = Field(default=None, gt=0, exclude_if=lambda value: value is None)
     seed: int | None = Field(default=None, ge=0, le=2**32 - 1, exclude_if=lambda value: value is None)
     timeout_seconds: float = Field(default=40, gt=0)
     output_format: Literal["json", "text"] = "json"
+    constrain_json: bool = True
+    response_schema: ResponseSchema | None = Field(default=None, exclude_if=lambda value: value is None)
     stop: list[str] = Field(default_factory=list)
     stop_regex: list[str] = Field(default_factory=list)
     no_stop_trim: bool = False
@@ -38,18 +53,29 @@ class InferenceSettings(BaseModel):
             raise ValueError("A thinking budget requires thinking JSON inference and room for the final action")
         return self
 
+    @model_validator(mode="after")
+    def schema_requires_json(self) -> Self:
+        if self.response_schema is not None and (self.output_format != "json" or not self.constrain_json):
+            raise ValueError("A response schema requires constrained JSON output")
+        return self
+
     def request(self, model: str, messages: list[Message]) -> dict[str, JsonValue]:
         request: dict[str, JsonValue] = {
             "model": model,
             "messages": [message.model_dump() for message in messages],
             "temperature": self.temperature,
-            "top_p": self.top_p,
             "reasoning": {"effort": "high" if self.enable_thinking else "none"},
             "chat_template_kwargs": {"enable_thinking": self.enable_thinking},
             "max_tokens": self.output_tokens,
         }
-        if self.output_format == "json":
-            request["response_format"] = {"type": "json_object"}
+        if self.top_p is not None:
+            request["top_p"] = self.top_p
+        if self.response_schema is not None:
+            request["response_format"] = SchemaResponseFormat(json_schema=self.response_schema).model_dump(
+                by_alias=True
+            )
+        elif self.output_format == "json":
+            request["response_format"] = {"type": "json_object" if self.constrain_json else "text"}
         if self.top_k is not None:
             request["top_k"] = self.top_k
         if self.thinking_budget is not None:

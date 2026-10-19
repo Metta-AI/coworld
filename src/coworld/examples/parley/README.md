@@ -27,6 +27,15 @@ The existing client accepts `PARLEY_ENDPOINT` and `PARLEY_MODEL` instead of the 
 `COWORLD_LLM_MODEL`. `PARLEY_API_KEY_ENV` names your credential variable; `PARLEY_COMPLETION_PATH` defaults to
 `/v1/chat/completions`. A loopback model server needs neither `--https-host` nor `--use-llm`.
 
+For providers that reject simultaneous temperature and nucleus sampling, set `"top_p": null` in `PARLEY_INFERENCE`. Set
+`"output_format": "text"` to omit `response_format` when the provider does not support it. The player still requires a
+JSON game action and records the exact request; these settings do not repair illegal responses.
+
+For schema-constrained providers, set `response_schema` to `{"name": "game_action", "strict": true, "schema": {...}}` in
+`PARLEY_INFERENCE`. This sends a Chat Completions `json_schema` response format and requires constrained JSON output.
+Retain the exact schema with the inference configuration. A syntax schema does not establish game legality or qualify
+on-policy training with a different sampling distribution.
+
 Parley's bundled `/bin/parley-player` sends `PLAYER_PROMPT` to game-owned inference; endpoint flags cannot redirect it.
 Upload this project's image as a new policy version and move your prompt to `PARLEY_OPERATOR_PROMPT`. `evidence.py`
 records private captures; changing its format or generation settings changes training comparability.
