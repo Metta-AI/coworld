@@ -5,6 +5,7 @@ import hashlib
 import importlib
 import json
 import subprocess
+import textwrap
 import threading
 import time
 from pathlib import Path
@@ -1571,6 +1572,7 @@ def test_local_certifier_runs_game_hosted_episode_with_fixture_paths(
             {
                 "timeout_seconds": 12.0,
                 "verify_replay": False,
+                "validate_results": False,
                 "player_file_paths": [manifest_path.parent / "players/player.wasm"] * 2,
                 "require_websocket_pong": True,
             },
@@ -2760,7 +2762,8 @@ def _docker_available() -> bool:
 
 @pytest.mark.slow
 @pytest.mark.skipif(not _docker_available(), reason="Docker not available")
-def test_paintarena_example_certifies_with_docker(tmp_path: Path) -> None:
+@pytest.mark.parametrize("results_mode", ["valid", "missing", "malformed", "schema-invalid"])
+def test_paintarena_example_certifies_with_docker(tmp_path: Path, results_mode: str) -> None:
     example_root = _example_root()
     manifest_path = build_coworld_manifest(
         example_root / "compose.yaml",
@@ -2768,6 +2771,54 @@ def test_paintarena_example_certifies_with_docker(tmp_path: Path) -> None:
         "0.1.0",
         tmp_path / "dist" / "coworld_manifest.json",
     )
+
+    events: list[tuple[str, str, str | None]] = []
+    if results_mode != "valid":
+        manifest = json.loads(manifest_path.read_text())
+        game = manifest["game"]["runnable"]
+        game["env"] = game.get("env", {}) | {"CERTIFIER_RESULTS_MODE": results_mode}
+        game["run"] = [
+            "python",
+            "-c",
+            textwrap.dedent("""\
+                import os
+                import uvicorn
+                from coworld.examples.paintarena.game import server as game
+
+                original_write = game.write_data
+                def write_data(uri, data, **kwargs):
+                    if uri == game.RESULTS_URI:
+                        mode = os.environ["CERTIFIER_RESULTS_MODE"]
+                        if mode == "missing":
+                            return
+                        data = "not JSON" if mode == "malformed" else "{}"
+                    original_write(uri, data, **kwargs)
+
+                game.write_data = write_data
+                game.server = uvicorn.Server(uvicorn.Config(game.app, host=game.GAME_HOST, port=game.GAME_PORT))
+                game.server.run()
+            """),
+        ]
+        manifest_path.write_text(json.dumps(manifest))
+        error = {
+            "missing": FileNotFoundError,
+            "malformed": ValueError,
+            "schema-invalid": JsonSchemaValidationError,
+        }[results_mode]
+        with pytest.raises(error):
+            certify_coworld(
+                manifest_path,
+                workspace=tmp_path / "cert",
+                timeout_seconds=60,
+                on_step=lambda result, step: events.append((result.id, result.status, result.failure_reason)),
+            )
+        assert ("smoke-episode", "pass", None) in events
+        assert events[-1] == (
+            "results-conform",
+            "fail",
+            "results_missing" if results_mode == "missing" else "results_malformed",
+        )
+        return
 
     result = certify_coworld(
         manifest_path,

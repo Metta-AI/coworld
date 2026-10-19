@@ -33,7 +33,6 @@ from coworld.commissioner.protocol import (
 from coworld.local_images import ensure_downloaded_images
 from coworld.manifest import read_downloaded_manifest, validate_upload_manifest
 from coworld.manifest_validation import (
-    game_config_with_tokens,
     infer_token_count_for_game_config,
     validate_coworld_manifest_game_configs,
 )
@@ -48,7 +47,6 @@ from coworld.runner.runner import (
     GAME_PORT_ENV_VAR,
     LOCAL_EPISODE_CONTAINER_PREFIX,
     EpisodeArtifacts,
-    EpisodeRunSpec,
     LocalEpisodeNetwork,
     PlayerLaunchSpec,
     RunnableLaunchSpec,
@@ -57,9 +55,7 @@ from coworld.runner.runner import (
     assert_docker_image_reachable,
     docker_env_args,
     docker_image_command,
-    generate_tokens,
     run_coworld_episode,
-    run_episode_containers,
     verify_replay_loadable,
 )
 from coworld.schema_validation import (
@@ -737,30 +733,19 @@ def _run_local_certifier_episode(
     artifacts: EpisodeArtifacts,
     timeout_seconds: float,
 ) -> None:
-    if job.manifest.game.player_runtime == "game-hosted":
-        run_coworld_episode(
-            job,
-            artifacts,
-            timeout_seconds=timeout_seconds,
-            verify_replay=False,
-            player_file_paths=certification_player_file_paths(package, len(job.players)),
-            require_websocket_pong=True,
-        )
-        return
-    assert all(isinstance(player, CoworldRunnableSpec) for player in job.players)
-    players = cast(list[CoworldRunnableSpec], job.players)
-    tokens = generate_tokens(len(job.players))
-    game_config = game_config_with_tokens(job.game_config, tokens)
-    artifacts.config_path.write_text(json.dumps(game_config, indent=2), encoding="utf-8")
-    run_spec = EpisodeRunSpec(
-        game=RunnableLaunchSpec.from_model(job.game_runnable),
-        players=[PlayerLaunchSpec.from_model(player) for player in players],
-        tokens=tokens,
-        artifacts=artifacts,
+    run_coworld_episode(
+        job,
+        artifacts,
         timeout_seconds=timeout_seconds,
+        verify_replay=False,
+        validate_results=False,
+        player_file_paths=(
+            certification_player_file_paths(package, len(job.players))
+            if job.manifest.game.player_runtime == "game-hosted"
+            else None
+        ),
         require_websocket_pong=True,
     )
-    run_episode_containers(run_spec, verify_replay=False)
 
 
 def _assert_replay_present(artifacts: EpisodeArtifacts) -> None:

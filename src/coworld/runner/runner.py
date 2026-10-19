@@ -355,6 +355,7 @@ def run_coworld_episode(
     *,
     timeout_seconds: float,
     verify_replay: bool = False,
+    validate_results: bool = True,
     container_prefix: str = LOCAL_EPISODE_CONTAINER_PREFIX,
     secret_env: Mapping[str, str] | None = None,
     player_secret_env: Mapping[int, Mapping[str, str]] | None = None,
@@ -414,6 +415,7 @@ def run_coworld_episode(
             timeout_seconds=timeout_seconds,
             verify_replay=verify_replay,
             static_replay_viewer=static_replay_viewer,
+            validate_results=validate_results,
             require_websocket_pong=require_websocket_pong,
             container_prefix=container_prefix,
             isolated_network_image=isolated_network_image,
@@ -443,12 +445,13 @@ def run_coworld_episode(
         )
         run_episode_containers(run_spec, verify_replay=verify_replay, static_replay_viewer=static_replay_viewer)
 
-    if not artifacts.results_path.exists():
-        raise RunnerEpisodeError(
-            f"Game container exited without writing results.json: {artifacts.results_path}",
-            error_type="results_missing",
-        )
-    _validate_results_file(artifacts.results_path, job.results_schema)
+    if validate_results:
+        if not artifacts.results_path.exists():
+            raise RunnerEpisodeError(
+                f"Game container exited without writing results.json: {artifacts.results_path}",
+                error_type="results_missing",
+            )
+        _validate_results_file(artifacts.results_path, job.results_schema)
     # Static viewers consume opaque game-owned bytes without booting a replay container.
     # Presence remains required; parsing and rendering belong to the declared viewer.
     if verify_replay and not artifacts.replay_path.is_file():
@@ -906,6 +909,7 @@ def run_game_hosted_container(
     container_prefix: str,
     require_websocket_pong: bool = False,
     static_replay_viewer: bool = False,
+    validate_results: bool = True,
     isolated_network_image: str | None = None,
     resource_admission: LocalResourceAdmission | None = None,
 ) -> None:
@@ -975,6 +979,7 @@ def run_game_hosted_container(
                     required_artifacts,
                     player_count=player_count,
                     timeout_seconds=timeout_seconds,
+                    require_artifacts_on_exit=validate_results,
                 )
 
                 if verify_replay and not static_replay_viewer:
@@ -1576,6 +1581,7 @@ def _wait_for_game_results_or_exit(
     *,
     player_count: int,
     timeout_seconds: float,
+    require_artifacts_on_exit: bool = True,
 ) -> None:
     """Return once the game has written every required artifact.
 
@@ -1599,7 +1605,7 @@ def _wait_for_game_results_or_exit(
                     error_type="game_unhealthy",
                 )
             missing = [path for path in required_artifacts if not path.exists()]
-            if not missing:
+            if not missing or not require_artifacts_on_exit:
                 return
             raise RunnerEpisodeError(
                 f"Game container exited before writing {', '.join(str(path) for path in missing)}.\n"

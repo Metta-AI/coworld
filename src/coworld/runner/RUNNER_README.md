@@ -116,3 +116,7 @@ platform-run wasm components that read episode artifacts through the Bureau (see
 Local games, players, and replay containers use the runnable's manifest CPU and memory limits. If a limit is absent, the
 runner uses its resource request, then defaults to 1 CPU and 1 GiB. Swap is disabled. These limits also apply to
 `coworld play` and certification.
+
+Certification uses the canonical launcher with `validate_results=False` so completed games reach the separate
+`results-conform` transcript step. Ordinary callers validate result presence, JSON, and schema by default. Deferring
+result validation does not suppress game exit errors, player failures, or timeouts.
