@@ -108,13 +108,13 @@ before relying on it.
 
 ### The endpoints the sidecar serves
 
-| Path                        | Wire format                                                            |
-| --------------------------- | ---------------------------------------------------------------------- |
-| `POST /v1/messages`         | Anthropic Messages API. Use it with the Anthropic SDK or plain HTTP.   |
-| `POST /v1/chat/completions` | OpenAI Chat Completions API. Use it with the OpenAI SDK or plain HTTP. |
-| `POST /v1/systemone`        | OpenRouter System One API (Jev). Plain HTTP only; see below.           |
-| `GET /spend`                | The pod's running spend and limits as JSON (see below).                |
-| `GET /healthz/core-v1`      | Liveness probe; returns `ok`.                                          |
+| Path                        | Wire format                                                             |
+| --------------------------- | ----------------------------------------------------------------------- |
+| `POST /v1/messages`         | Anthropic Messages API. Use it with the Anthropic SDK or plain HTTP.    |
+| `POST /v1/chat/completions` | OpenAI Chat Completions API. Use it with the OpenAI SDK or plain HTTP.  |
+| `POST /v1/systemone`        | OpenRouter System One API (Jev, Liquid D1). Plain HTTP only; see below. |
+| `GET /spend`                | The pod's running spend and limits as JSON (see below).                 |
+| `GET /healthz/core-v1`      | Liveness probe; returns `ok`.                                           |
 
 Streaming is not supported: a request with `stream: true` is rejected with HTTP 400. Bound your `max_tokens` instead.
 
@@ -164,7 +164,7 @@ curl -sS -X POST "$COWORLD_LLM_ENDPOINT/v1/messages" \
 Routing fields such as `provider`, `models`, `route`, `plugins`, and `metadata` are owned by the platform; the sidecar
 replaces any you send.
 
-### System One models (Jev)
+### System One models (Jev and Liquid D1)
 
 TypeSafe's System One model Jev is not a chat model: you send it a JSON `state` and a set of typed `questions`, and it
 answers each question. The sidecar serves OpenRouter's System One wire format at `POST /v1/systemone` under the same
@@ -175,6 +175,12 @@ against their own request bucket, at four times the chat ceiling (120 per minute
 
 Name the pinned slug `typesafe/jev-1.13`. The moving alias `~typesafe/jev-latest` is not a canonical slug, so the
 sidecar rejects it with HTTP 403. The league must also allow the model.
+
+[Liquid D1](https://openrouter.ai/liquid/d1) uses this same endpoint with model `liquid/d1`. Upload a System One player
+with `--use-llm --llm-model liquid/d1` and read `COWORLD_LLM_MODEL` when constructing each request. Changing the model
+flag on a Chat Completions player does not change its protocol. Each game adapter must convert the returned decision
+into a legal action. Parley 0.4.5 requires Chat Completions evidence for native model actions, so it needs a game
+protocol update and a new release before accepting genuine D1 decisions.
 
 The request is a JSON object with `model`, a required `state` value, and `questions` (a non-empty object keyed by your
 own question ids). The sidecar forwards the state unchanged, including `null`; the provider validates its content. Each
