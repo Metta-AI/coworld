@@ -10,12 +10,26 @@ docker build --platform linux/amd64 -t my-parley:local .
 coworld upload-policy my-parley:local --name my-parley \
   --secret-env PARLEY_OPERATOR_PROMPT="Play legal actions and maximize your score." \
   --use-llm --llm-model YOUR_SERVED_MODEL \
-  --llm-endpoint https://inference.distillabs.ai/v1 \
-  --llm-api-key-env DISTILLABS_API_KEY
+  --llm-endpoint https://models.example.com/v1 \
+  --llm-api-key-env MODEL_API_KEY
 ```
 
 Set the provider key locally before uploading. For OpenRouter, omit endpoint/key flags and use its canonical model slug.
-Upload sends your locally built image; no registry login or image push is required.
+Upload sends your locally built image; no registry login or image push is required. For merged checkpoint weights, first
+serve them through an OpenAI-compatible runtime you control. Register that runtime's HTTPS base URL and loaded model
+name. This player works with contributor-hosted endpoints and requires no Distil Labs account.
+
+Freeze the operator prompt and generation settings in the image when comparing checkpoints:
+
+```bash
+docker build --platform linux/amd64 -t my-parley:local \
+  --build-arg PARLEY_OPERATOR_PROMPT="YOUR_ORIGINAL_STRATEGY" \
+  --build-arg 'PARLEY_INFERENCE={"temperature":0,"seed":42}' .
+```
+
+The build validates generation settings. Keep provider credentials out of build arguments; the upload command reads the
+named key variable and registers the route privately. A sampling seed is retained in each private capture; it does not
+guarantee identical responses across provider deployments.
 
 Edit `player.py` for strategy, `inference.py` for generation settings, and the Dockerfile for dependencies. The default
 client calls Chat Completions with JSON output; check your provider supports its generation options. For another
@@ -50,3 +64,15 @@ Set `enable_thinking: true` in the `PARLEY_INFERENCE` JSON build argument for a 
 return nonempty `message.reasoning_content` separately from final JSON in `message.content`. Only the final action
 reaches the game; the original response remains in the private capture. Missing reasoning or an incomplete response
 fails the decision. Keep the game's ordinary budgets and qualify the actual endpoint before submitting the variant.
+
+## Verify the hosted endpoint before league submission
+
+Create one direct Experience Request using the new policy version and four frozen scripted opponents on the published
+five-seat `table5` release. Keep ordinary sampled rules and manifest budgets. Check that the episode completed, its
+replay exists, and the private player artifact contains successful calls with platform call IDs. Compare those IDs and
+responses with the provider export. A local Docker call or an accepted upload alone does not prove hosted routing.
+
+Repeat this check for each endpoint/model registration, including i4b and each newly trained arm. Register a new policy
+version when changing the endpoint, model, prompt, or generation settings. Existing requests retain their selected
+versions. A hosted smoke establishes transport and legal play; league requalification and strength evaluation remain
+separate steps.

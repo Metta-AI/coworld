@@ -30,6 +30,7 @@ class ChatRequest(BaseModel):
     temperature: float = Field(ge=0, le=2)
     top_p: int | float | None = Field(default=None, gt=0, le=1, exclude_if=lambda value: value is None)
     top_k: int | None = Field(default=None, gt=0, exclude_if=lambda value: value is None)
+    seed: int | None = Field(default=None, ge=0, le=2**32 - 1, exclude_if=lambda value: value is None)
     reasoning: dict[Literal["effort"], Literal["none", "high"]]
     chat_template_kwargs: dict[Literal["enable_thinking"], bool]
     max_tokens: int = Field(gt=0)
@@ -93,6 +94,7 @@ class InferenceCapture(BaseModel):
             temperature=self.request.temperature,
             top_p=self.request.top_p,
             top_k=self.request.top_k,
+            seed=self.request.seed,
             stop=self.request.stop,
             stop_regex=self.request.stop_regex,
             no_stop_trim=self.request.no_stop_trim,

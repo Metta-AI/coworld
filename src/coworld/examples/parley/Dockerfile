@@ -7,5 +7,6 @@ ARG PARLEY_OPERATOR_PROMPT="Play legal actions and maximize your score."
 ARG PARLEY_INFERENCE="{}"
 ENV PARLEY_OPERATOR_PROMPT=${PARLEY_OPERATOR_PROMPT} PARLEY_INFERENCE=${PARLEY_INFERENCE}
 ENV PYTHONUNBUFFERED=1 PYTHONDONTWRITEBYTECODE=1
+RUN python -c 'import os; from coworld.examples.parley.inference import InferenceSettings; InferenceSettings.model_validate_json(os.environ["PARLEY_INFERENCE"])'
 USER 1000:1000
 CMD ["python", "-m", "coworld.examples.parley.player"]

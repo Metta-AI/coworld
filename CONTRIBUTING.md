@@ -29,3 +29,28 @@ parameters across proxies, and resolve assets against the episode's recorded Cow
 
 For deployed image changes, check build triggers and the running image digest. For Kubernetes authentication failures,
 verify the client headers and token audience in the deployed image before changing permissions.
+
+## Contributor Parley endpoints
+
+`tests/test_parley_endpoint_system.py` exercises player initialization, image building, endpoint registration, a
+complete hosted five-seat game, and private capture readback. Run the real local stack with
+`metta dev up --full-coworld`, upload the published Parley manifest there, and authenticate a local USER at the frontend
+proxy. Enable the backend's explicit
+[local checkpoint routing profile](../observatory-execution/README.md#trusted-trained-model-inference), including its
+trusted routes Secret, sidecar image, mTLS relay, and HTTPS artifact store. An empty checkpoint route map supports
+registered contributor endpoints without a merchant key. The default local stack does not enable hosted inference.
+
+Set `METTA_PARLEY_SYSTEM_SERVER` to that local proxy's API root, `METTA_PARLEY_SYSTEM_COWORLD` to the resulting local
+Coworld ID, and `METTA_PARLEY_SYSTEM_GAME_IMAGE` to its downloaded game image. Set `METTA_PARLEY_SYSTEM_ENDPOINT` to the
+contributor's public HTTPS base URL, including `/v1`, and `METTA_PARLEY_SYSTEM_MODEL` to the served model name.
+`METTA_PARLEY_SYSTEM_API_KEY_ENV` optionally names the environment variable containing its key.
+
+```bash
+nix develop -c uv run metta pytest packages/coworld/tests/test_parley_endpoint_system.py -v -n 0 -p no:importnb
+```
+
+The test creates two local policies and one private request. It leaves command logs, request IDs, and the private player
+artifact under pytest's temporary directory. It requires a successful game, replay, platform call IDs, and exact seeded
+capture validation. The provider must accept sampling seeds and produce legal Parley actions. A protocol simulator can
+diagnose routing separately, but does not qualify a model or establish playing strength. Never use production as the
+test server; league requalification follows successful endpoint verification.
