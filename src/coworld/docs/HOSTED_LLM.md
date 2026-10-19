@@ -108,13 +108,13 @@ before relying on it.
 
 ### The endpoints the sidecar serves
 
-| Path                        | Wire format                                                             |
-| --------------------------- | ----------------------------------------------------------------------- |
-| `POST /v1/messages`         | Anthropic Messages API. Use it with the Anthropic SDK or plain HTTP.    |
-| `POST /v1/chat/completions` | OpenAI Chat Completions API. Use it with the OpenAI SDK or plain HTTP.  |
-| `POST /v1/systemone`        | OpenRouter System One API (Jev, Liquid D1). Plain HTTP only; see below. |
-| `GET /spend`                | The pod's running spend and limits as JSON (see below).                 |
-| `GET /healthz/core-v1`      | Liveness probe; returns `ok`.                                           |
+| Path                        | Wire format                                                                             |
+| --------------------------- | --------------------------------------------------------------------------------------- |
+| `POST /v1/messages`         | Anthropic Messages API. Use it with the Anthropic SDK or plain HTTP.                    |
+| `POST /v1/chat/completions` | OpenAI Chat Completions API. Use it with the OpenAI SDK or plain HTTP.                  |
+| `POST /v1/systemone`        | Typed decision models (Jev, Perplexity Decider, Liquid D1). Plain HTTP only; see below. |
+| `GET /spend`                | The pod's running spend and limits as JSON (see below).                                 |
+| `GET /healthz/core-v1`      | Liveness probe; returns `ok`.                                                           |
 
 Streaming is not supported: a request with `stream: true` is rejected with HTTP 400. Bound your `max_tokens` instead.
 
@@ -164,17 +164,20 @@ curl -sS -X POST "$COWORLD_LLM_ENDPOINT/v1/messages" \
 Routing fields such as `provider`, `models`, `route`, `plugins`, and `metadata` are owned by the platform; the sidecar
 replaces any you send.
 
-### System One models (Jev and Liquid D1)
+### System One decision models
 
-TypeSafe's System One model Jev is not a chat model: you send it a JSON `state` and a set of typed `questions`, and it
-answers each question. The sidecar serves OpenRouter's System One wire format at `POST /v1/systemone` under the same
-policy as the chat endpoints: the model allowlist, the spend limit, a request ceiling, and the platform-owned routing
-fields all apply, and a game container attributes a call to a seat with `X-Coworld-Player-Slot`. System One calls count
-against their own request bucket, at four times the chat ceiling (120 per minute per slot by default); see
-[Stay under the request ceiling](#stay-under-the-request-ceiling).
+Decision models such as TypeSafe Jev, Perplexity Decider, and Liquid D1 accept a JSON `state` and typed `questions`,
+returning probabilities instead of chat text. The sidecar serves this wire format at `POST /v1/systemone` and forwards
+it to [OpenRouter's Decisions endpoint](https://openrouter.ai/blog/tutorials/how-to-use-jev/),
+`POST /api/alpha/decisions`, under the same policy as the chat endpoints: the model allowlist, the spend limit, a
+request ceiling, and the platform-owned routing fields all apply, and a game container attributes a call to a seat with
+`X-Coworld-Player-Slot`. System One calls count against their own request bucket, at four times the chat ceiling (120
+per minute per slot by default); see [Stay under the request ceiling](#stay-under-the-request-ceiling).
 
-Name the pinned slug `typesafe/jev-1.13`. The moving alias `~typesafe/jev-latest` is not a canonical slug, so the
-sidecar rejects it with HTTP 403. The league must also allow the model.
+Use a pinned slug such as `typesafe/jev-1.13`, `perplexity/pplx-decider-v1.2`, or `perplexity/pplx-decider-flash-v1.2`.
+The league must allow the selected model. Moving aliases such as `~typesafe/jev-latest` are rejected with HTTP 403.
+Switching these models requires changing `model`, not the game's observation or action protocol. Revalidate confidence
+thresholds when switching; providers can have different limits and calibration.
 
 [Liquid D1](https://openrouter.ai/liquid/d1) uses this same endpoint with model `liquid/d1`. Upload a System One player
 with `--use-llm --llm-model liquid/d1` and read `COWORLD_LLM_MODEL` when constructing each request. Changing the model
