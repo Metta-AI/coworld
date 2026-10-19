@@ -36,3 +36,7 @@
   kind: compatible
   summary: Optional NVIDIA GPU reservation, EC2 instance selection, and pre-game player startup readiness.
   fixture: packages/coworld/tests/manifest_versions/v1/gpu_player_manifest.json
+- schema_hash: 7104c770495a10a0aeb9dd35035abf4e0d78251f03e240549f691aa8ecf5dea6
+  kind: compatible
+  summary: Allow explicit episode budgets up to 24 hours for long-running native agent evaluations; keep the 20-minute default.
+  fixture: packages/coworld/tests/manifest_versions/v1/extended_episode_timeout_manifest.json

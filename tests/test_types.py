@@ -549,7 +549,7 @@ def test_manifest_accepts_episode_timeout_up_to_max() -> None:
     assert CoworldManifest.model_validate(data).episode_timeout_seconds == 100 * 60
 
 
-@pytest.mark.parametrize("minutes", [-5, 0, 101])
+@pytest.mark.parametrize("minutes", [-5, 0, 1441])
 def test_manifest_rejects_out_of_bounds_episode_timeout(minutes: int) -> None:
     data = _manifest_data()
     data["episode_timeout_minutes"] = minutes

@@ -521,7 +521,7 @@
         "episode_timeout_minutes": {
           "anyOf": [
             {
-              "maximum": 100,
+              "maximum": 1440,
               "minimum": 1,
               "type": "integer"
             },
@@ -530,7 +530,7 @@
             }
           ],
           "default": null,
-          "description": "Maximum wall-clock minutes a hosted episode of this Coworld may run before the platform kills it. Also bounds hosted certification runs. Must be between 1 and 100. Unset means the platform default (20 minutes).",
+          "description": "Maximum wall-clock minutes a hosted episode of this Coworld may run before the platform kills it. Also bounds hosted certification runs. Must be between 1 and 1440. Unset means the platform default (20 minutes).",
           "title": "Episode Timeout Minutes"
         }
       },
