@@ -1281,8 +1281,8 @@ def test_run_episode_containers_verifies_raw_replay_uri(tmp_path, monkeypatch, s
             commands.append(command)
         if command[:2] == ["docker", "create"] and "coworld-run-replay-session-1" in command:
             replay_mount = next(arg for index, arg in enumerate(command) if index > 0 and command[index - 1] == "-v")
-            mounted_replay_dir = Path(replay_mount.removesuffix(":/coworld-replay:ro"))
-            mounted_replay_bytes.append((mounted_replay_dir / "replay").read_bytes())
+            mounted_replay_file = Path(replay_mount.removesuffix(":/coworld-replay/replay:ro"))
+            mounted_replay_bytes.append(mounted_replay_file.read_bytes())
         return subprocess.CompletedProcess(command, 0)
 
     monkeypatch.setattr(subprocess, "Popen", lambda *_args, **_kwargs: FakeProcess())

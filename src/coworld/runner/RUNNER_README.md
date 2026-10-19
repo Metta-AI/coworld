@@ -49,10 +49,12 @@ Container replay verification uses the same episode network and resource admissi
 `replay-isolation.json` records and validates the replay container and its relays before replay requests run.
 
 `isolation.json` records the network configuration and container security settings without environment variables. The
-controller validates this receipt before running the episode. This network boundary does not isolate files from the game
-executing them; game-hosted players still require game-specific sandbox qualification. Isolated resources carry
-`ai.coworld.episode-owner=<container_prefix>` labels. Supervisors must supply a unique prefix before using these labels
-for recovery. Cleanup after forcibly killing a standalone runner requires its supervisor.
+controller validates this receipt before running the episode. Both network receipts remain in controller memory until
+successful network teardown, then replace workspace files atomically without following game-created symlinks. This
+network boundary does not isolate files from the game executing them; game-hosted players still require game-specific
+sandbox qualification. Isolated resources carry `ai.coworld.episode-owner=<container_prefix>` labels. Supervisors must
+supply a unique prefix before using these labels for recovery. Cleanup after forcibly killing a standalone runner
+requires its supervisor.
 
 Controllers can pass `LocalResourceAdmission` as `resource_admission` when using isolated networking. Initialize its
 private directory outside the game workspace, binding the owner and immutable request SHA-256. Every network and
@@ -60,6 +62,27 @@ container creation records intent under an inherited process lock before invokin
 its attached execution starts. `close()` prevents further creation and reports any unresolved operation; callers must
 not declare cleanup complete while unresolved operations remain. The admission record does not itself delete resources
 or authorize replaying an interrupted episode.
+
+## Qualified local file-game containment
+
+Pass `game_sandbox=LocalGameSandbox()` and `isolated_network_image` to `run_coworld_episode` for qualified file-game
+execution. The same profile applies to the game and container replay:
+
+- Non-root UID/GID (default 1000), no capabilities or privilege escalation, and a read-only root filesystem.
+- Bounded processes (default 512) and temporary storage (default 128 MiB); runnable resources set CPU and memory limits.
+- Workspace access through the controller's non-root group, or the profile group for root controllers. Prepared
+  directories use setgid; symlinks and foreign-owned inputs are rejected before permission changes.
+
+Docker inspection checks the profile before execution. The network context owns all inspection receipts and publishes
+`game-sandbox.json`, `replay-sandbox.json`, and network receipts only after successful container and network teardown.
+Publication replaces files and symlinks atomically; obstructing directories are preserved as `.rejected-` siblings.
+
+This contains the game process, not individual players inside its interpreter. Controllers must qualify that boundary
+separately. Hosted Kubernetes does not use this local profile.
+
+Run `tests/test_replay_isolation_system.py` on the Docker host with `METTA_COWORLD_FILE_SYSTEM_JOB` pointing to an
+episode job and adjacent `player-N` files, and `METTA_COWORLD_FILE_CONTROL_IMAGE` selecting a cached, pinned Python
+image.
 
 ## Output Files
 

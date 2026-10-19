@@ -106,6 +106,7 @@ _CORE_SRCS = [
     "src/coworld/runner/https_egress.py",
     "src/coworld/runner/local_admission.py",
     "src/coworld/runner/local_control.py",
+    "src/coworld/runner/local_game_sandbox.py",
     "src/coworld/runner/local_player_status.py",
     "src/coworld/runner/player_artifacts.py",
     "src/coworld/runner/relay_client.py",

@@ -33,6 +33,7 @@ from coworld.player_files import player_file_bytes
 from coworld.runner import local_control
 from coworld.runner.io import GamePlayerFailure, RunnerEpisodeError, RunnerErrorType, redact_uri
 from coworld.runner.local_admission import LocalResourceAdmission
+from coworld.runner.local_game_sandbox import GameSandboxReceipt, LocalGameSandbox
 from coworld.runner.local_player_status import collect_local_player_status
 from coworld.runner.resource_quantity import parse_resource_quantity
 from coworld.schema_validation import validate_json_schema
@@ -210,6 +211,7 @@ class RunnableLaunchSpec:
     env: Mapping[str, str] = field(default_factory=dict)
     resources: CoworldRunnableResources | None = None
     startup: CoworldPlayerStartup | None = None
+    sandbox: LocalGameSandbox | None = None
 
     @classmethod
     def from_model(cls, runnable: CoworldRunnableSpec) -> Self:
@@ -277,8 +279,8 @@ def _reachable_docker_image_platforms(image: str, *, label: str, require_linux_a
         manifest = TypeAdapter(DockerManifestVerboseEntry | list[DockerManifestVerboseEntry]).validate_json(
             remote_result.stdout
         )
-        entries = manifest if isinstance(manifest, list) else [manifest]
-        platforms = {(entry.descriptor.platform.os_name, entry.descriptor.platform.architecture) for entry in entries}
+        manifests = manifest if isinstance(manifest, list) else [manifest]
+        platforms = {(entry.descriptor.platform.os_name, entry.descriptor.platform.architecture) for entry in manifests}
         if require_linux_amd64 and ("linux", "amd64") not in platforms:
             platform_summary = (
                 ", ".join(f"{os_name}/{architecture}" for os_name, architecture in sorted(platforms))
@@ -360,12 +362,17 @@ def run_coworld_episode(
     require_websocket_pong: bool = False,
     isolated_network_image: str | None = None,
     resource_admission: LocalResourceAdmission | None = None,
+    game_sandbox: LocalGameSandbox | None = None,
 ) -> None:
     """Run locally; per-slot private env overrides shared secrets without entering the job artifact."""
     if any(isinstance(player, CoworldHumanPlayerSpec) for player in job.players):
         raise ValueError("Human player seats require the hosted Kubernetes episode runner")
     if resource_admission is not None and resource_admission.root.is_relative_to(artifacts.workspace.resolve()):
         raise ValueError("Resource admission must remain outside the game-mounted workspace")
+    if game_sandbox is not None and (
+        isolated_network_image is None or job.manifest.game.player_runtime != "game-hosted"
+    ):
+        raise ValueError("Game sandbox requires isolated networking and game-hosted file players")
     secrets_by_slot = player_secret_env or {}
     if set(secrets_by_slot) - set(range(len(job.players))):
         raise ValueError("Player secrets name an unoccupied slot")
@@ -381,6 +388,7 @@ def run_coworld_episode(
         image=launch_game.image,
         run=launch_game.run,
         resources=launch_game.resources,
+        sandbox=game_sandbox,
         env={
             **launch_game.env,
             **trajectory_identity_env(job.manifest, str(uuid4())),
@@ -647,6 +655,21 @@ class LocalIsolationReceipt(BaseModel):
                 raise ValueError("Control relay permits forwarding or mutable privileged execution")
 
 
+def _publish_inspection_receipt(output: Path, receipt: GameSandboxReceipt | LocalIsolationReceipt) -> None:
+    """Publish controller-held evidence after teardown without following game-created links."""
+    if output.is_dir() and not output.is_symlink():
+        retained = Path(tempfile.mkdtemp(prefix=f"{output.name}.rejected-", dir=output.parent))
+        retained.rmdir()
+        output.rename(retained)
+    with tempfile.NamedTemporaryFile(mode="w", dir=output.parent, delete=False) as stream:
+        stream.write(receipt.model_dump_json(indent=2) + "\n")
+        temporary = Path(stream.name)
+    try:
+        temporary.replace(output)
+    finally:
+        temporary.unlink(missing_ok=True)
+
+
 @dataclass
 class LocalEpisodeNetwork:
     name: str
@@ -655,6 +678,8 @@ class LocalEpisodeNetwork:
     creation_seconds: float
     controls: list[str] = field(default_factory=list)
     admission: LocalResourceAdmission | None = None
+    receipts: dict[Path, GameSandboxReceipt | LocalIsolationReceipt] = field(default_factory=dict)
+    control_files: ExitStack = field(default_factory=ExitStack)
 
     def create(self, command: list[str], *, env: Mapping[str, str] | None = None) -> None:
         if self.admission is not None:
@@ -663,6 +688,7 @@ class LocalEpisodeNetwork:
             subprocess.run(command, env=env, check=True, stdout=subprocess.DEVNULL, timeout=self.creation_seconds)
 
     def record(self, path: Path, containers: list[str]) -> None:
+        """Inspect now; retain authoritative evidence privately until network teardown."""
         if self.control_image is None:
             return
         inspected = subprocess.check_output(["docker", "network", "inspect", self.name], timeout=30)
@@ -674,11 +700,18 @@ class LocalEpisodeNetwork:
             containers=TypeAdapter(list[DockerContainerReceipt]).validate_json(inspected),
         )
         receipt.verify(players=len(containers) - 1, controls=len(self.controls))
-        path.write_text(receipt.model_dump_json(indent=2) + "\n")
+        self.receipts[path] = receipt
 
     def control_container(self, target: str, port: int, extra_ports: Sequence[ResolvedLocalPort] = ()) -> str:
         if self.control_image is None:
             return target
+        # Installed package files may be owner-only. Stage the public helper with
+        # explicit read permissions for the control image's non-root identity.
+        with tempfile.NamedTemporaryFile(delete=False, suffix="-coworld-control.py") as stream:
+            control_source = Path(stream.name)
+            self.control_files.callback(control_source.unlink)
+            stream.write(Path(local_control.__file__).read_bytes())
+            os.fchmod(stream.fileno(), 0o444)
         name = f"coworld-control-{secrets.token_hex(16)}"
         self.create(
             [
@@ -707,7 +740,7 @@ class LocalEpisodeNetwork:
                 f"127.0.0.1::{port}",
                 *local_port_publish_args(list(extra_ports)),
                 "--mount",
-                f"type=bind,src={Path(local_control.__file__).resolve()},dst=/control.py,readonly",
+                f"type=bind,src={control_source},dst=/control.py,readonly",
                 "--entrypoint",
                 "python3",
                 self.control_image,
@@ -779,6 +812,9 @@ def local_episode_network(
                 subprocess.run(
                     ["docker", "network", "rm", network.name], check=True, stdout=subprocess.DEVNULL, timeout=30
                 )
+        network.control_files.close()
+        for path, receipt in network.receipts.items():
+            _publish_inspection_receipt(path, receipt)
 
 
 def game_container_command(
@@ -800,6 +836,7 @@ def game_container_command(
         "docker",
         "create",
         *game.docker_resource_args(),
+        *(game.sandbox.docker_args() if game.sandbox is not None else []),
         "--name",
         container_name,
         "--network",
@@ -877,6 +914,9 @@ def run_game_hosted_container(
     game_network_alias = f"{LOCAL_GAME_NETWORK_ALIAS_PREFIX}{run_id}"
     game_container = f"{container_prefix}-game-{run_id}"
 
+    if game.sandbox is not None:
+        game.sandbox.prepare_workspace(artifacts.workspace)
+
     with local_episode_network(
         isolated_network_image,
         artifacts.logs_dir,
@@ -901,6 +941,8 @@ def run_game_hosted_container(
                         isolation_owner=network.owner if network.control_image is not None else None,
                     ),
                 )
+                if game.sandbox is not None:
+                    network.receipts[artifacts.workspace / "game-sandbox.json"] = game.sandbox.inspect(game_container)
                 game_process = subprocess.Popen(
                     ["docker", "start", "--attach", game_container],
                     stdout=game_stdout,
@@ -942,6 +984,7 @@ def run_game_hosted_container(
                         ["docker", "stop", "--time", "0", game_container],
                         stdout=subprocess.DEVNULL,
                         stderr=subprocess.DEVNULL,
+                        check=True,
                     )
                     verify_replay_loadable(
                         game,
@@ -955,9 +998,11 @@ def run_game_hosted_container(
             try:
                 collect_game_trajectory(game_container, artifacts)
             finally:
-                subprocess.run(
+                removed = subprocess.run(
                     ["docker", "rm", "-f", game_container], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL
                 )
+                if artifacts.workspace / "game-sandbox.json" in network.receipts:
+                    removed.check_returncode()
 
 
 def run_episode_containers(
@@ -1226,12 +1271,16 @@ def verify_replay_loadable(
             replay_load_dir = Path(stack.enter_context(tempfile.TemporaryDirectory(prefix="coworld-replay-load-")))
             replay_load_path = replay_load_dir / artifacts.replay_path.name
             replay_load_path.write_bytes(artifacts.replay_path.read_bytes())
+            # Mount only the readable file; keep its host parent private while
+            # allowing a replay container with a different UID to load it.
+            replay_load_path.chmod(0o644)
             replay_uri = f"file:///coworld-replay/{replay_load_path.name}"
             network.create(
                 [
                     "docker",
                     "create",
                     *game.docker_resource_args(),
+                    *(game.sandbox.docker_args() if game.sandbox is not None else []),
                     "--name",
                     replay_container,
                     "--network",
@@ -1252,10 +1301,12 @@ def verify_replay_loadable(
                     "-e",
                     f"{REPLAY_LOAD_ENV_VAR}={replay_uri}",
                     "-v",
-                    f"{replay_load_dir}:/coworld-replay:ro",
+                    f"{replay_load_path}:/coworld-replay/{replay_load_path.name}:ro",
                     *docker_image_command(game),
                 ],
             )
+            if game.sandbox is not None:
+                network.receipts[artifacts.workspace / "replay-sandbox.json"] = game.sandbox.inspect(replay_container)
             replay_process = subprocess.Popen(
                 ["docker", "start", "--attach", replay_container],
                 stdout=game_stdout,
@@ -1285,7 +1336,11 @@ def verify_replay_loadable(
                 )
             )
     finally:
-        subprocess.run(["docker", "rm", "-f", replay_container], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        removed = subprocess.run(
+            ["docker", "rm", "-f", replay_container], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL
+        )
+        if artifacts.workspace / "replay-sandbox.json" in network.receipts:
+            removed.check_returncode()
 
 
 def _player_container_ws_url(host: str, slot: int, token: str) -> str:
