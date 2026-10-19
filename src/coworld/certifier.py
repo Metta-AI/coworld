@@ -46,8 +46,10 @@ from coworld.runner.runner import (
     GAME_HOSTED_PLAYER_LOG_MISSING,
     GAME_PORT,
     GAME_PORT_ENV_VAR,
+    LOCAL_EPISODE_CONTAINER_PREFIX,
     EpisodeArtifacts,
     EpisodeRunSpec,
+    LocalEpisodeNetwork,
     PlayerLaunchSpec,
     RunnableLaunchSpec,
     _wait_for_health,
@@ -551,7 +553,14 @@ def certify_coworld(
     step_results: list[StepResult] = []
     check_images_reachable = image_reachability_checker or _local_image_reachability_checker
     check_replay_loadable = replay_loadable_checker or (
-        lambda package, artifacts: verify_replay_loadable(package.game, artifacts, timeout_seconds=timeout_seconds)
+        lambda package, artifacts: verify_replay_loadable(
+            package.game,
+            artifacts,
+            network=LocalEpisodeNetwork(
+                "bridge", None, LOCAL_EPISODE_CONTAINER_PREFIX, creation_seconds=timeout_seconds
+            ),
+            timeout_seconds=timeout_seconds,
+        )
     )
     run_supporting_roles = supporting_roles_runner or (
         lambda package, artifacts, timeout: run_certification_supporting_roles(

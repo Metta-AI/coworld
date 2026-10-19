@@ -28,7 +28,8 @@ class ChatRequest(BaseModel):
     model: str = Field(min_length=1)
     messages: list[Message] = Field(min_length=2)
     temperature: float = Field(ge=0, le=2)
-    top_p: Literal[1]
+    top_p: int | float = Field(gt=0, le=1)
+    top_k: int | None = Field(default=None, gt=0, exclude_if=lambda value: value is None)
     reasoning: dict[Literal["effort"], Literal["none", "high"]]
     chat_template_kwargs: dict[Literal["enable_thinking"], bool]
     max_tokens: int = Field(gt=0)
@@ -37,6 +38,8 @@ class ChatRequest(BaseModel):
     )
     response_format: dict[Literal["type"], Literal["json_object"]] | SchemaFormat
     stop: list[str] = Field(default_factory=list, exclude_if=lambda value: not value)
+    stop_regex: list[str] = Field(default_factory=list, exclude_if=lambda value: not value)
+    no_stop_trim: bool = Field(default=False, exclude_if=lambda value: not value)
 
 
 class ChatResponse(BaseModel):
@@ -85,7 +88,11 @@ class InferenceCapture(BaseModel):
         expected = InferenceSettings(
             output_tokens=self.request.max_tokens,
             temperature=self.request.temperature,
+            top_p=self.request.top_p,
+            top_k=self.request.top_k,
             stop=self.request.stop,
+            stop_regex=self.request.stop_regex,
+            no_stop_trim=self.request.no_stop_trim,
             enable_thinking=self.request.chat_template_kwargs["enable_thinking"],
             thinking_budget=None
             if self.request.custom_params is None

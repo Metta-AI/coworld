@@ -1007,7 +1007,10 @@ def test_run_episode_containers_uses_docker_dns_and_omits_policy_names_env(
         verify_replay=False,
     )
 
-    game_command, start_command = commands
+    _, start_command = commands
+    game_command = next(
+        command for command in run_commands if command[:2] == ["docker", "create"] and "game:latest" in command
+    )
     player_command = next(command for command in run_commands if command[:2] == ["docker", "create"])
     assert start_command == ["docker", "start", "--attach", "coworld-run-player-session-1-0"]
     env_values = [value for index, value in enumerate(game_command) if index > 0 and game_command[index - 1] == "-e"]
@@ -1052,12 +1055,12 @@ def test_run_episode_containers_adds_fixed_extra_local_ports(tmp_path, monkeypat
         commands.append(command)
         return FakeProcess()
 
+    def fake_run(command, **_kwargs):
+        commands.append(command)
+        return subprocess.CompletedProcess(command, 0)
+
     monkeypatch.setattr(subprocess, "Popen", fake_popen)
-    monkeypatch.setattr(
-        subprocess,
-        "run",
-        lambda command, **_kwargs: subprocess.CompletedProcess(command, 0),
-    )
+    monkeypatch.setattr(subprocess, "run", fake_run)
 
     runner_module.run_episode_containers(
         EpisodeRunSpec(
@@ -1074,7 +1077,7 @@ def test_run_episode_containers_adds_fixed_extra_local_ports(tmp_path, monkeypat
         verify_replay=False,
     )
 
-    game_command = commands[0]
+    game_command = next(command for command in commands if command[:2] == ["docker", "create"])
     assert _docker_publish_values(game_command) == [
         "127.0.0.1::8080",
         "127.0.0.1:3724:3724",
@@ -1114,12 +1117,12 @@ def test_run_episode_containers_allocates_dynamic_extra_local_ports(tmp_path, mo
         commands.append(command)
         return FakeProcess()
 
+    def fake_run(command, **_kwargs):
+        commands.append(command)
+        return subprocess.CompletedProcess(command, 0)
+
     monkeypatch.setattr(subprocess, "Popen", fake_popen)
-    monkeypatch.setattr(
-        subprocess,
-        "run",
-        lambda command, **_kwargs: subprocess.CompletedProcess(command, 0),
-    )
+    monkeypatch.setattr(subprocess, "run", fake_run)
 
     runner_module.run_episode_containers(
         EpisodeRunSpec(
@@ -1136,7 +1139,7 @@ def test_run_episode_containers_allocates_dynamic_extra_local_ports(tmp_path, mo
         verify_replay=False,
     )
 
-    game_command = commands[0]
+    game_command = next(command for command in commands if command[:2] == ["docker", "create"])
     assert _docker_publish_values(game_command) == [
         "127.0.0.1::8080",
         "127.0.0.1:41000:3724",
@@ -1273,20 +1276,17 @@ def test_run_episode_containers_verifies_raw_replay_uri(tmp_path, monkeypatch, s
     monkeypatch.setattr(runner_module, "_require_replay_message", noop_async)
     monkeypatch.setattr(runner_module, "_wait_for_game_exit", lambda *_args, **_kwargs: None)
 
-    def fake_popen(command, **_kwargs):
-        commands.append(command)
-        if "coworld-run-replay-session-1" in command:
+    def fake_run(command, **_kwargs):
+        if command[:2] == ["docker", "create"]:
+            commands.append(command)
+        if command[:2] == ["docker", "create"] and "coworld-run-replay-session-1" in command:
             replay_mount = next(arg for index, arg in enumerate(command) if index > 0 and command[index - 1] == "-v")
             mounted_replay_dir = Path(replay_mount.removesuffix(":/coworld-replay:ro"))
             mounted_replay_bytes.append((mounted_replay_dir / "replay").read_bytes())
-        return FakeProcess()
+        return subprocess.CompletedProcess(command, 0)
 
-    monkeypatch.setattr(subprocess, "Popen", fake_popen)
-    monkeypatch.setattr(
-        subprocess,
-        "run",
-        lambda command, **_kwargs: subprocess.CompletedProcess(command, 0),
-    )
+    monkeypatch.setattr(subprocess, "Popen", lambda *_args, **_kwargs: FakeProcess())
+    monkeypatch.setattr(subprocess, "run", fake_run)
 
     runner_module.run_episode_containers(
         EpisodeRunSpec(

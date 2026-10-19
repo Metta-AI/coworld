@@ -19,11 +19,14 @@ class InferenceSettings(BaseModel):
     context_tokens: int = Field(default=32768, gt=1)
     output_tokens: int = Field(default=300, gt=0)
     temperature: float = Field(default=0, ge=0, le=2)
-    top_p: float = Field(default=1, gt=0, le=1, exclude_if=lambda value: value == 1)
+    top_p: int | float = Field(default=1, gt=0, le=1, exclude_if=lambda value: value == 1)
+    top_k: int | None = Field(default=None, gt=0, exclude_if=lambda value: value is None)
     seed: int | None = Field(default=None, ge=0, le=2**32 - 1, exclude_if=lambda value: value is None)
     timeout_seconds: float = Field(default=40, gt=0)
     output_format: Literal["json", "text"] = "json"
     stop: list[str] = Field(default_factory=list)
+    stop_regex: list[str] = Field(default_factory=list)
+    no_stop_trim: bool = False
     enable_thinking: bool = Field(default=False, exclude_if=lambda value: not value)
     thinking_budget: int | None = Field(default=None, gt=0, exclude_if=lambda value: value is None)
 
@@ -47,12 +50,18 @@ class InferenceSettings(BaseModel):
         }
         if self.output_format == "json":
             request["response_format"] = {"type": "json_object"}
+        if self.top_k is not None:
+            request["top_k"] = self.top_k
         if self.thinking_budget is not None:
             request["custom_params"] = {"thinking_budget": self.thinking_budget}
         if self.stop:
             request["stop"] = self.stop
         if self.seed is not None:
             request["seed"] = self.seed
+        if self.stop_regex:
+            request["stop_regex"] = self.stop_regex
+        if self.no_stop_trim:
+            request["no_stop_trim"] = True
         return request
 
     def server_arguments(

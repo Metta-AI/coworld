@@ -1047,7 +1047,7 @@ def _stub_executable_pipeline(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr("coworld.certifier.load_results", lambda package, artifacts: {})
     monkeypatch.setattr(
         "coworld.certifier.verify_replay_loadable",
-        lambda game, artifacts, *, timeout_seconds: None,
+        lambda game, artifacts, *, network, timeout_seconds: None,
     )
     monkeypatch.setattr(
         "coworld.certifier.run_certification_supporting_roles",
@@ -1235,7 +1235,7 @@ def test_certify_coworld_records_replay_loadable_failure(tmp_path: Path, monkeyp
     coworld_manifest_path = _write_package_files(tmp_path)
     _stub_executable_pipeline(monkeypatch)
 
-    def fail_replay(game, artifacts, *, timeout_seconds):
+    def fail_replay(game, artifacts, *, network, timeout_seconds):
         raise RunnerEpisodeError("replay bad", error_type="replay_unloadable")
 
     monkeypatch.setattr("coworld.certifier.verify_replay_loadable", fail_replay)

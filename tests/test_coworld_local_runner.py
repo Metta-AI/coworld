@@ -132,7 +132,7 @@ def test_game_hosted_local_runner_stages_files_and_starts_only_game(
     monkeypatch.setattr(
         runner_module.subprocess,
         "run",
-        lambda *_args, **_kwargs: SimpleNamespace(returncode=0),
+        lambda command, **_kwargs: (docker_commands.append(command), SimpleNamespace(returncode=0))[1],
     )
     monkeypatch.setattr(
         runner_module,
@@ -148,14 +148,15 @@ def test_game_hosted_local_runner_stages_files_and_starts_only_game(
         require_websocket_pong=True,
     )
 
-    assert len(docker_commands) == 1
-    command = docker_commands[0]
+    creation_commands = [command for command in docker_commands if command[:2] == ["docker", "create"]]
+    assert len(creation_commands) == 1
+    command = creation_commands[0]
     assert command[command.index("--cpus") + 1] == "1.5"
     assert command[command.index("--memory") + 1] == str(384 * 1024**2)
     assert command[command.index("--memory-swap") + 1] == str(384 * 1024**2)
     # Certification's pong requirement reaches the game-hosted lifecycle too.
     assert global_message_kwargs[0]["require_pong"] is True
-    assert "COGAME_PLAYER_SEATS_URI=file:///coworld/player_seats.json" in docker_commands[0]
+    assert "COGAME_PLAYER_SEATS_URI=file:///coworld/player_seats.json" in command
     assert [artifacts.player_file_path(slot).read_bytes() for slot in range(2)] == contents
     seats = json.loads(artifacts.player_seats_path.read_text(encoding="utf-8"))
     assert seats["schema"] == player_seats_schema
@@ -401,12 +402,14 @@ def test_local_resource_admission_preserves_declared_limits_and_bounds_replay(mo
         commands.append(command)
         raise RuntimeError("test stops before Docker allocation")
 
-    monkeypatch.setattr(runner_module.subprocess, "Popen", stop_before_launch)
+    network = runner_module.LocalEpisodeNetwork("bridge", None, "test", creation_seconds=30)
+    monkeypatch.setattr(network, "create", stop_before_launch)
     monkeypatch.setattr(runner_module.subprocess, "run", lambda *args, **kwargs: None)
     with pytest.raises(RuntimeError, match="before Docker allocation"):
         runner_module.verify_replay_loadable(
             launch,
             artifacts,
+            network=network,
             timeout_seconds=30,
         )
     assert len(commands) == 2

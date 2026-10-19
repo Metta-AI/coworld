@@ -3,9 +3,9 @@
 `coworld.runner.runner` is the local Docker runner for one Coworld episode. It always starts the game container. It
 starts player containers only when `game.player_runtime` is `platform-hosted`.
 
-The runner creates or reuses one Docker network named `coworld-local`. Game containers publish browser/debug routes on
-`127.0.0.1:<port>` and also join that network as `coworld-game-<run-id>`. Player containers join the same network and
-receive `COWORLD_PLAYER_WS_URL=ws://coworld-game-<run-id>:8080/player?...`.
+By default, the runner creates or reuses one Docker network named `coworld-local`. Game containers publish browser/debug
+routes on `127.0.0.1:<port>` and also join that network as `coworld-game-<run-id>`. Player containers join the same
+network and receive `COWORLD_PLAYER_WS_URL=ws://coworld-game-<run-id>:8080/player?...`.
 
 Games can request additional host-visible TCP ports for local runs by setting `COWORLD_LOCAL_EXTRA_PORTS` in
 `manifest.game.runnable.env`, using `container_port[:host_port]` entries separated by commas. For example,
@@ -31,6 +31,35 @@ the trusted init container and executed by the game.
 
 A game may write a typed `GamePlayerFailure` to the runner-supplied `COGAME_PLAYER_FAILURE_URI` when its own rules make
 a player failure terminal. The runner validates and reports it without imposing that policy on other games.
+
+## Isolated local episodes
+
+Python callers can pass `isolated_network_image` to `run_coworld_episode`. Supply a trusted, pinned image containing
+Python 3.11 or later. This mode creates one internal Docker network per episode with isolated IPv4 and IPv6 gateways. It
+requires a Docker engine supporting the `isolated` bridge gateway mode. Unsupported network creation fails closed. Game
+and player containers receive no external DNS. Player containers drop all capabilities, prohibit privilege escalation,
+and limit process count to 128.
+
+A fixed-destination TCP relay exposes the game controller, declared local TCP ports, and player startup endpoints on
+host loopback. Relays use the supplied image with a read-only root, dropped capabilities, and disabled IP forwarding.
+They cannot select destinations from request contents. Their logs are bounded and retained in the episode output. Normal
+teardown removes relays and the episode network after removing game and player containers.
+
+Container replay verification uses the same episode network and resource admission as the game and players.
+`replay-isolation.json` records and validates the replay container and its relays before replay requests run.
+
+`isolation.json` records the network configuration and container security settings without environment variables. The
+controller validates this receipt before running the episode. This network boundary does not isolate files from the game
+executing them; game-hosted players still require game-specific sandbox qualification. Isolated resources carry
+`ai.coworld.episode-owner=<container_prefix>` labels. Supervisors must supply a unique prefix before using these labels
+for recovery. Cleanup after forcibly killing a standalone runner requires its supervisor.
+
+Controllers can pass `LocalResourceAdmission` as `resource_admission` when using isolated networking. Initialize its
+private directory outside the game workspace, binding the owner and immutable request SHA-256. Every network and
+container creation records intent under an inherited process lock before invoking Docker. Game creation completes before
+its attached execution starts. `close()` prevents further creation and reports any unresolved operation; callers must
+not declare cleanup complete while unresolved operations remain. The admission record does not itself delete resources
+or authorize replaying an interrupted episode.
 
 ## Output Files
 

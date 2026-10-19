@@ -14,11 +14,11 @@ import sys
 import tarfile
 import tempfile
 import time
-from contextlib import ExitStack
+from contextlib import ExitStack, contextmanager
 from dataclasses import dataclass, field, replace
 from json import JSONDecodeError
 from pathlib import Path
-from typing import Annotated, Callable, Mapping, Self, Sequence
+from typing import Annotated, Callable, Iterator, Mapping, Self, Sequence
 from urllib.parse import urlencode
 from uuid import uuid4
 
@@ -30,7 +30,9 @@ from websockets.asyncio.client import ClientConnection
 from websockets.exceptions import ConnectionClosed, InvalidHandshake, InvalidStatus
 
 from coworld.player_files import player_file_bytes
+from coworld.runner import local_control
 from coworld.runner.io import GamePlayerFailure, RunnerEpisodeError, RunnerErrorType, redact_uri
+from coworld.runner.local_admission import LocalResourceAdmission
 from coworld.runner.local_player_status import collect_local_player_status
 from coworld.runner.resource_quantity import parse_resource_quantity
 from coworld.schema_validation import validate_json_schema
@@ -197,6 +199,8 @@ class EpisodeRunSpec:
     container_prefix: str = LOCAL_EPISODE_CONTAINER_PREFIX
     secret_env: Mapping[str, str] = field(default_factory=dict, repr=False)
     require_websocket_pong: bool = False
+    isolated_network_image: str | None = None
+    resource_admission: LocalResourceAdmission | None = None
 
 
 @dataclass(frozen=True)
@@ -354,10 +358,14 @@ def run_coworld_episode(
     player_secret_env: Mapping[int, Mapping[str, str]] | None = None,
     player_file_paths: Sequence[Path] | None = None,
     require_websocket_pong: bool = False,
+    isolated_network_image: str | None = None,
+    resource_admission: LocalResourceAdmission | None = None,
 ) -> None:
     """Run locally; per-slot private env overrides shared secrets without entering the job artifact."""
     if any(isinstance(player, CoworldHumanPlayerSpec) for player in job.players):
         raise ValueError("Human player seats require the hosted Kubernetes episode runner")
+    if resource_admission is not None and resource_admission.root.is_relative_to(artifacts.workspace.resolve()):
+        raise ValueError("Resource admission must remain outside the game-mounted workspace")
     secrets_by_slot = player_secret_env or {}
     if set(secrets_by_slot) - set(range(len(job.players))):
         raise ValueError("Player secrets name an unoccupied slot")
@@ -400,11 +408,15 @@ def run_coworld_episode(
             static_replay_viewer=static_replay_viewer,
             require_websocket_pong=require_websocket_pong,
             container_prefix=container_prefix,
+            isolated_network_image=isolated_network_image,
+            resource_admission=resource_admission,
         )
     else:
         if player_file_paths is not None:
             raise ValueError("player_file_paths are supported only for game-hosted execution")
         run_spec = EpisodeRunSpec(
+            isolated_network_image=isolated_network_image,
+            resource_admission=resource_admission,
             require_websocket_pong=require_websocket_pong,
             game=launch_game,
             players=[
@@ -555,6 +567,220 @@ def ensure_local_docker_network() -> None:
         raise RuntimeError(f"Failed to create Docker network {LOCAL_DOCKER_NETWORK}.\n{create_result.stderr[-2000:]}")
 
 
+class DockerNetworkReceipt(BaseModel):
+    Id: str
+    Name: str
+    Internal: bool
+    Options: dict[str, str]
+
+
+class DockerNetworkEndpoint(BaseModel):
+    NetworkID: str
+    IPAddress: str
+
+
+class DockerNetworkSettings(BaseModel):
+    Networks: dict[str, DockerNetworkEndpoint]
+
+
+class DockerIsolationSettings(BaseModel):
+    NetworkMode: str
+    Dns: list[str]
+    CapDrop: list[str] | None
+    SecurityOpt: list[str] | None
+    Privileged: bool
+    ReadonlyRootfs: bool
+    PidsLimit: int | None
+    Sysctls: dict[str, str] | None = None
+
+
+class DockerContainerReceipt(BaseModel):
+    Id: str
+    Name: str
+    Image: str
+    HostConfig: DockerIsolationSettings
+    NetworkSettings: DockerNetworkSettings
+
+
+class LocalIsolationReceipt(BaseModel):
+    network: DockerNetworkReceipt
+    control_image: str
+    containers: list[DockerContainerReceipt]
+
+    def verify(self, *, players: int, controls: int) -> None:
+        if (
+            not self.network.Internal
+            or self.network.Options["com.docker.network.bridge.gateway_mode_ipv4"] != "isolated"
+            or self.network.Options["com.docker.network.bridge.gateway_mode_ipv6"] != "isolated"
+            or len(self.containers) != 1 + players + controls
+            or controls < 1
+            or len({container.Id for container in self.containers}) != len(self.containers)
+        ):
+            raise ValueError("Episode isolation receipt differs from the required network boundary")
+        for index, container in enumerate(self.containers):
+            settings = container.HostConfig
+            networks = container.NetworkSettings.Networks
+            if settings.Privileged or settings.Dns != ["127.0.0.1"]:
+                raise ValueError("An isolated episode container permits privilege or external DNS")
+            # Docker resolves the configured name to an endpoint ID when a created
+            # player starts. The immutable create settings are captured before then.
+            if networks[self.network.Name].NetworkID not in {"", self.network.Id}:
+                raise ValueError("Container belongs to another episode network")
+            if index <= players:
+                if set(networks) != {self.network.Name} or settings.NetworkMode != self.network.Name:
+                    raise ValueError("Game or player has an external network")
+                if index > 0 and (
+                    settings.CapDrop != ["ALL"]
+                    or settings.SecurityOpt != ["no-new-privileges"]
+                    or settings.PidsLimit != 128
+                ):
+                    raise ValueError("Player container can exceed the isolated runtime boundary")
+            elif (
+                set(networks) != {self.network.Name, "bridge"}
+                or settings.NetworkMode != "bridge"
+                or settings.CapDrop != ["ALL"]
+                or settings.SecurityOpt != ["no-new-privileges"]
+                or not settings.ReadonlyRootfs
+                or settings.PidsLimit != 32
+                or settings.Sysctls != {"net.ipv4.ip_forward": "0", "net.ipv6.conf.all.forwarding": "0"}
+            ):
+                raise ValueError("Control relay permits forwarding or mutable privileged execution")
+
+
+@dataclass
+class LocalEpisodeNetwork:
+    name: str
+    control_image: str | None
+    owner: str
+    creation_seconds: float
+    controls: list[str] = field(default_factory=list)
+    admission: LocalResourceAdmission | None = None
+
+    def create(self, command: list[str], *, env: Mapping[str, str] | None = None) -> None:
+        if self.admission is not None:
+            self.admission.run(command, timeout_seconds=self.creation_seconds, env=env)
+        else:
+            subprocess.run(command, env=env, check=True, stdout=subprocess.DEVNULL, timeout=self.creation_seconds)
+
+    def record(self, path: Path, containers: list[str]) -> None:
+        if self.control_image is None:
+            return
+        inspected = subprocess.check_output(["docker", "network", "inspect", self.name], timeout=30)
+        network = TypeAdapter(list[DockerNetworkReceipt]).validate_json(inspected)[0]
+        inspected = subprocess.check_output(["docker", "inspect", *containers, *self.controls], timeout=30)
+        receipt = LocalIsolationReceipt(
+            network=network,
+            control_image=self.control_image,
+            containers=TypeAdapter(list[DockerContainerReceipt]).validate_json(inspected),
+        )
+        receipt.verify(players=len(containers) - 1, controls=len(self.controls))
+        path.write_text(receipt.model_dump_json(indent=2) + "\n")
+
+    def control_container(self, target: str, port: int, extra_ports: Sequence[ResolvedLocalPort] = ()) -> str:
+        if self.control_image is None:
+            return target
+        name = f"coworld-control-{secrets.token_hex(16)}"
+        self.create(
+            [
+                "docker",
+                "create",
+                "--name",
+                name,
+                "--label",
+                f"ai.coworld.episode-owner={self.owner}",
+                "--network",
+                "bridge",
+                "--dns=127.0.0.1",
+                "--cap-drop=ALL",
+                "--security-opt=no-new-privileges",
+                "--read-only",
+                "--pids-limit=32",
+                "--memory=64m",
+                "--cpus=0.25",
+                "--log-driver=local",
+                "--log-opt=max-size=1m",
+                "--log-opt=max-file=1",
+                "--log-opt=compress=false",
+                "--sysctl=net.ipv4.ip_forward=0",
+                "--sysctl=net.ipv6.conf.all.forwarding=0",
+                "-p",
+                f"127.0.0.1::{port}",
+                *local_port_publish_args(list(extra_ports)),
+                "--mount",
+                f"type=bind,src={Path(local_control.__file__).resolve()},dst=/control.py,readonly",
+                "--entrypoint",
+                "python3",
+                self.control_image,
+                "/control.py",
+                target,
+                str(port),
+                *(str(extra.container_port) for extra in extra_ports),
+            ],
+        )
+        self.controls.append(name)
+        subprocess.run(["docker", "network", "connect", self.name, name], check=True)
+        subprocess.run(["docker", "start", name], check=True, stdout=subprocess.DEVNULL)
+        return name
+
+
+@contextmanager
+def local_episode_network(
+    control_image: str | None,
+    logs_dir: Path,
+    owner: str,
+    admission: LocalResourceAdmission | None = None,
+    *,
+    creation_seconds: float,
+) -> Iterator[LocalEpisodeNetwork]:
+    if admission is not None and (control_image is None or admission.owner != owner):
+        raise ValueError("Resource admission requires an isolated network with the same owner")
+    if control_image is None:
+        ensure_local_docker_network()
+        yield LocalEpisodeNetwork(LOCAL_DOCKER_NETWORK, None, owner, creation_seconds=creation_seconds)
+        return
+    network = LocalEpisodeNetwork(
+        f"coworld-isolated-{secrets.token_hex(16)}",
+        control_image,
+        owner,
+        admission=admission,
+        creation_seconds=creation_seconds,
+    )
+    network.create(
+        [
+            "docker",
+            "network",
+            "create",
+            "--internal",
+            "--label",
+            f"ai.coworld.episode-owner={owner}",
+            "--opt",
+            "com.docker.network.bridge.gateway_mode_ipv4=isolated",
+            "--opt",
+            "com.docker.network.bridge.gateway_mode_ipv6=isolated",
+            network.name,
+        ],
+    )
+    try:
+        yield network
+    finally:
+        try:
+            for control in network.controls:
+                with (logs_dir / f"{control}.log").open("wb") as log:
+                    subprocess.run(
+                        ["docker", "logs", control], check=True, stdout=log, stderr=subprocess.STDOUT, timeout=30
+                    )
+        finally:
+            try:
+                if network.controls:
+                    subprocess.run(
+                        ["docker", "rm", "-f", *network.controls], check=True, stdout=subprocess.DEVNULL, timeout=30
+                    )
+            finally:
+                subprocess.run(
+                    ["docker", "network", "rm", network.name], check=True, stdout=subprocess.DEVNULL, timeout=30
+                )
+
+
 def game_container_command(
     game: RunnableLaunchSpec,
     artifacts: EpisodeArtifacts,
@@ -563,18 +789,23 @@ def game_container_command(
     network_alias: str,
     local_ports: list[ResolvedLocalPort],
     include_player_seats: bool,
+    network: str = LOCAL_DOCKER_NETWORK,
+    offline_dns: bool = False,
+    isolation_owner: str | None = None,
 ) -> list[str]:
     player_seats_args = (
         ["-e", f"COGAME_PLAYER_SEATS_URI=file://{CONTAINER_WORKDIR}/player_seats.json"] if include_player_seats else []
     )
     return [
         "docker",
-        "run",
+        "create",
         *game.docker_resource_args(),
         "--name",
         container_name,
         "--network",
-        LOCAL_DOCKER_NETWORK,
+        network,
+        *(["--dns=127.0.0.1"] if offline_dns else []),
+        *(["--label", f"ai.coworld.episode-owner={isolation_owner}"] if isolation_owner is not None else []),
         "--network-alias",
         network_alias,
         "-p",
@@ -638,74 +869,95 @@ def run_game_hosted_container(
     container_prefix: str,
     require_websocket_pong: bool = False,
     static_replay_viewer: bool = False,
+    isolated_network_image: str | None = None,
+    resource_admission: LocalResourceAdmission | None = None,
 ) -> None:
     local_ports = resolve_local_extra_ports(game.env)
     run_id = secrets.token_hex(8)
     game_network_alias = f"{LOCAL_GAME_NETWORK_ALIAS_PREFIX}{run_id}"
     game_container = f"{container_prefix}-game-{run_id}"
 
-    ensure_local_docker_network()
-    try:
-        with ExitStack() as stack:
-            game_stdout = stack.enter_context(artifacts.game_stdout_path.open("w"))
-            game_stderr = stack.enter_context(artifacts.game_stderr_path.open("w"))
-            game_process = subprocess.Popen(
-                game_container_command(
-                    game,
-                    artifacts,
-                    container_name=game_container,
-                    network_alias=game_network_alias,
-                    local_ports=local_ports,
-                    include_player_seats=True,
-                ),
-                stdout=game_stdout,
-                stderr=game_stderr,
-                text=True,
-            )
-
-            port = _wait_for_published_port(
-                game_container, game_process, artifacts.game_stderr_path, timeout_seconds=timeout_seconds
-            )
-            _wait_for_health(port, game_process, artifacts.game_stderr_path, timeout_seconds=timeout_seconds)
-            _require_http_ok(f"http://127.0.0.1:{port}/client/global")
-            asyncio.run(
-                _require_global_message(
-                    f"ws://127.0.0.1:{port}/global",
-                    timeout_seconds=timeout_seconds,
-                    require_pong=require_websocket_pong,
-                )
-            )
-            required_artifacts = (
-                (artifacts.results_path, artifacts.replay_path) if verify_replay else (artifacts.results_path,)
-            )
-            _wait_for_game_results_or_exit(
-                game_process,
-                artifacts,
-                required_artifacts,
-                player_count=player_count,
-                timeout_seconds=timeout_seconds,
-            )
-
-            if verify_replay and not static_replay_viewer:
-                # The game may still be serving after writing results; the replay container
-                # reuses its published ports, so stop it first.
-                subprocess.run(
-                    ["docker", "stop", "--time", "0", game_container],
-                    stdout=subprocess.DEVNULL,
-                    stderr=subprocess.DEVNULL,
-                )
-                verify_replay_loadable(
-                    game,
-                    artifacts,
-                    timeout_seconds=timeout_seconds,
-                    container_prefix=container_prefix,
-                    resolved_local_ports=local_ports,
-                )
-    finally:
+    with local_episode_network(
+        isolated_network_image,
+        artifacts.logs_dir,
+        container_prefix,
+        resource_admission,
+        creation_seconds=timeout_seconds,
+    ) as network:
         try:
-            collect_game_trajectory(game_container, artifacts)
+            with ExitStack() as stack:
+                game_stdout = stack.enter_context(artifacts.game_stdout_path.open("w"))
+                game_stderr = stack.enter_context(artifacts.game_stderr_path.open("w"))
+                network.create(
+                    game_container_command(
+                        game,
+                        artifacts,
+                        container_name=game_container,
+                        network_alias=game_network_alias,
+                        local_ports=local_ports,
+                        include_player_seats=True,
+                        network=network.name,
+                        offline_dns=network.control_image is not None,
+                        isolation_owner=network.owner if network.control_image is not None else None,
+                    ),
+                )
+                game_process = subprocess.Popen(
+                    ["docker", "start", "--attach", game_container],
+                    stdout=game_stdout,
+                    stderr=game_stderr,
+                    text=True,
+                )
+
+                port = _wait_for_published_port(
+                    network.control_container(game_container, GAME_PORT, local_ports),
+                    game_process,
+                    artifacts.game_stderr_path,
+                    timeout_seconds=timeout_seconds,
+                )
+                _wait_for_health(port, game_process, artifacts.game_stderr_path, timeout_seconds=timeout_seconds)
+                network.record(artifacts.workspace / "isolation.json", [game_container])
+                _require_http_ok(f"http://127.0.0.1:{port}/client/global")
+                asyncio.run(
+                    _require_global_message(
+                        f"ws://127.0.0.1:{port}/global",
+                        timeout_seconds=timeout_seconds,
+                        require_pong=require_websocket_pong,
+                    )
+                )
+                required_artifacts = (
+                    (artifacts.results_path, artifacts.replay_path) if verify_replay else (artifacts.results_path,)
+                )
+                _wait_for_game_results_or_exit(
+                    game_process,
+                    artifacts,
+                    required_artifacts,
+                    player_count=player_count,
+                    timeout_seconds=timeout_seconds,
+                )
+
+                if verify_replay and not static_replay_viewer:
+                    # The game may still be serving after writing results; the replay container
+                    # reuses its published ports, so stop it first.
+                    subprocess.run(
+                        ["docker", "stop", "--time", "0", game_container],
+                        stdout=subprocess.DEVNULL,
+                        stderr=subprocess.DEVNULL,
+                    )
+                    verify_replay_loadable(
+                        game,
+                        artifacts,
+                        network=network,
+                        timeout_seconds=timeout_seconds,
+                        container_prefix=container_prefix,
+                        resolved_local_ports=local_ports,
+                    )
         finally:
-            subprocess.run(["docker", "rm", "-f", game_container], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            try:
+                collect_game_trajectory(game_container, artifacts)
+            finally:
+                subprocess.run(
+                    ["docker", "rm", "-f", game_container], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL
+                )
 
 
 def run_episode_containers(
@@ -718,205 +970,242 @@ def run_episode_containers(
     player_containers: list[str] = []
     player_processes: list[tuple[subprocess.Popen[str], Path]] = []
 
-    ensure_local_docker_network()
-    try:
-        with ExitStack() as stack:
-            game_stdout = stack.enter_context(spec.artifacts.game_stdout_path.open("w"))
-            game_stderr = stack.enter_context(spec.artifacts.game_stderr_path.open("w"))
-            player_logs = []
-            for slot, player in enumerate(spec.players):
-                private_env = {**spec.secret_env, **player.secret_env}
-                secret_env_key_args = [arg for key in private_env for arg in ("-e", key)]
-                player_subprocess_env = {**os.environ, **private_env} if private_env else None
-                container_name = f"{spec.container_prefix}-player-{run_id}-{slot}"
-                engine_ws_url = _player_container_ws_url(game_network_alias, slot, spec.tokens[slot])
-                player_log_path = spec.artifacts.policy_log_path(slot)
-                player_log = stack.enter_context(player_log_path.open("w"))
-                # Docker owns the private volume, including files written by arbitrary container UIDs.
-                artifact_filename = spec.artifacts.policy_artifact_path(slot).name
-                artifact_upload_url = f"file:///coworld-artifact/{artifact_filename}"
-                subprocess.run(
-                    [
-                        "docker",
-                        "create",
-                        *player.docker_resource_args(),
-                        *(
-                            [
-                                "-p",
-                                f"127.0.0.1::{player.startup.port}",
-                                "-e",
-                                f"COWORLD_PLAYER_START_URL=http://{game_network_alias}:{GAME_PORT}/healthz",
-                            ]
-                            if player.startup is not None
-                            else []
-                        ),
-                        "--name",
-                        container_name,
-                        "--network",
-                        LOCAL_DOCKER_NETWORK,
-                        "-v",
-                        "/coworld-artifact",
-                        *docker_env_args(player.env),
-                        *secret_env_key_args,
-                        "-e",
-                        f"COWORLD_PLAYER_WS_URL={engine_ws_url}",
-                        "-e",
-                        f"COGAMES_ENGINE_WS_URL={engine_ws_url}",
-                        "-e",
-                        f"COWORLD_PLAYER_ARTIFACT_UPLOAD_URL={artifact_upload_url}",
-                        *docker_image_command(player),
-                    ],
-                    check=True,
-                    stdout=subprocess.DEVNULL,
-                    env=player_subprocess_env,
-                )
-                player_containers.append(container_name)
-                with tempfile.TemporaryDirectory(prefix="coworld-artifact-init-") as staging:
-                    artifact_dir = Path(staging) / "coworld-artifact"
-                    artifact_dir.mkdir(mode=0o777)
-                    artifact_dir.chmod(0o777)
-                    subprocess.run(
-                        ["docker", "cp", str(artifact_dir), f"{container_name}:/"],
-                        check=True,
+    with local_episode_network(
+        spec.isolated_network_image,
+        spec.artifacts.logs_dir,
+        spec.container_prefix,
+        spec.resource_admission,
+        creation_seconds=spec.timeout_seconds,
+    ) as network:
+        try:
+            with ExitStack() as stack:
+                game_stdout = stack.enter_context(spec.artifacts.game_stdout_path.open("w"))
+                game_stderr = stack.enter_context(spec.artifacts.game_stderr_path.open("w"))
+                player_logs = []
+                for slot, player in enumerate(spec.players):
+                    private_env = {**spec.secret_env, **player.secret_env}
+                    secret_env_key_args = [arg for key in private_env for arg in ("-e", key)]
+                    player_subprocess_env = {**os.environ, **private_env} if private_env else None
+                    container_name = f"{spec.container_prefix}-player-{run_id}-{slot}"
+                    engine_ws_url = _player_container_ws_url(game_network_alias, slot, spec.tokens[slot])
+                    player_log_path = spec.artifacts.policy_log_path(slot)
+                    player_log = stack.enter_context(player_log_path.open("w"))
+                    # Docker owns the private volume, including files written by arbitrary container UIDs.
+                    artifact_filename = spec.artifacts.policy_artifact_path(slot).name
+                    artifact_upload_url = f"file:///coworld-artifact/{artifact_filename}"
+                    network.create(
+                        [
+                            "docker",
+                            "create",
+                            *player.docker_resource_args(),
+                            *(
+                                [
+                                    "--label",
+                                    f"ai.coworld.episode-owner={network.owner}",
+                                    "--dns=127.0.0.1",
+                                    "--cap-drop=ALL",
+                                    "--security-opt=no-new-privileges",
+                                    "--pids-limit=128",
+                                ]
+                                if spec.isolated_network_image is not None
+                                else []
+                            ),
+                            *(
+                                [
+                                    "-p",
+                                    f"127.0.0.1::{player.startup.port}",
+                                    "-e",
+                                    f"COWORLD_PLAYER_START_URL=http://{game_network_alias}:{GAME_PORT}/healthz",
+                                ]
+                                if player.startup is not None
+                                else []
+                            ),
+                            "--name",
+                            container_name,
+                            "--network",
+                            network.name,
+                            "-v",
+                            "/coworld-artifact",
+                            *docker_env_args(player.env),
+                            *secret_env_key_args,
+                            "-e",
+                            f"COWORLD_PLAYER_WS_URL={engine_ws_url}",
+                            "-e",
+                            f"COGAMES_ENGINE_WS_URL={engine_ws_url}",
+                            "-e",
+                            f"COWORLD_PLAYER_ARTIFACT_UPLOAD_URL={artifact_upload_url}",
+                            *docker_image_command(player),
+                        ],
+                        env=player_subprocess_env,
                     )
-                player_logs.append(player_log)
+                    player_containers.append(container_name)
+                    with tempfile.TemporaryDirectory(prefix="coworld-artifact-init-") as staging:
+                        artifact_dir = Path(staging) / "coworld-artifact"
+                        artifact_dir.mkdir(mode=0o777)
+                        artifact_dir.chmod(0o777)
+                        subprocess.run(
+                            ["docker", "cp", str(artifact_dir), f"{container_name}:/"],
+                            check=True,
+                        )
+                    player_logs.append(player_log)
 
-            def start_player(slot: int) -> tuple[subprocess.Popen[str], Path]:
-                return (
-                    subprocess.Popen(
-                        ["docker", "start", "--attach", player_containers[slot]],
-                        stdout=player_logs[slot],
-                        stderr=subprocess.STDOUT,
-                        text=True,
+                def start_player(slot: int) -> tuple[subprocess.Popen[str], Path]:
+                    return (
+                        subprocess.Popen(
+                            ["docker", "start", "--attach", player_containers[slot]],
+                            stdout=player_logs[slot],
+                            stderr=subprocess.STDOUT,
+                            text=True,
+                        ),
+                        spec.artifacts.policy_log_path(slot),
+                    )
+
+                warming = {
+                    slot: start_player(slot) for slot, player in enumerate(spec.players) if player.startup is not None
+                }
+                warmup_started = time.monotonic()
+                for slot, (process, log_path) in warming.items():
+                    startup = spec.players[slot].startup
+                    assert startup is not None
+                    deadline = warmup_started + startup.timeout_seconds
+                    readiness_port = _wait_for_published_port(
+                        network.control_container(player_containers[slot], startup.port),
+                        process,
+                        log_path,
+                        container_port=startup.port,
+                        timeout_seconds=max(0, deadline - time.monotonic()),
+                        error_type="player_error",
+                    )
+                    _wait_for_health(
+                        readiness_port,
+                        process,
+                        log_path,
+                        path=startup.path,
+                        timeout_seconds=max(0, deadline - time.monotonic()),
+                        error_type="player_error",
+                    )
+
+                network.create(
+                    game_container_command(
+                        spec.game,
+                        spec.artifacts,
+                        container_name=game_container,
+                        network_alias=game_network_alias,
+                        local_ports=local_ports,
+                        include_player_seats=False,
+                        network=network.name,
+                        offline_dns=network.control_image is not None,
+                        isolation_owner=network.owner if network.control_image is not None else None,
                     ),
-                    spec.artifacts.policy_log_path(slot),
+                )
+                game_process = subprocess.Popen(
+                    ["docker", "start", "--attach", game_container],
+                    stdout=game_stdout,
+                    stderr=game_stderr,
+                    text=True,
                 )
 
-            warming = {
-                slot: start_player(slot) for slot, player in enumerate(spec.players) if player.startup is not None
-            }
-            warmup_started = time.monotonic()
-            for slot, (process, log_path) in warming.items():
-                startup = spec.players[slot].startup
-                assert startup is not None
-                deadline = warmup_started + startup.timeout_seconds
-                readiness_port = _wait_for_published_port(
-                    player_containers[slot],
-                    process,
-                    log_path,
-                    container_port=startup.port,
-                    timeout_seconds=max(0, deadline - time.monotonic()),
-                    error_type="player_error",
+                port = _wait_for_published_port(
+                    network.control_container(game_container, GAME_PORT, local_ports),
+                    game_process,
+                    spec.artifacts.game_stderr_path,
+                    timeout_seconds=spec.timeout_seconds,
                 )
                 _wait_for_health(
-                    readiness_port,
-                    process,
-                    log_path,
-                    path=startup.path,
-                    timeout_seconds=max(0, deadline - time.monotonic()),
-                    error_type="player_error",
+                    port, game_process, spec.artifacts.game_stderr_path, timeout_seconds=spec.timeout_seconds
+                )
+                network.record(spec.artifacts.workspace / "isolation.json", [game_container, *player_containers])
+                if spec.players:
+                    _require_http_ok(_player_client_url(port, 0, spec.tokens[0]))
+                    asyncio.run(_require_bad_player_rejected(f"ws://127.0.0.1:{port}/player?slot=0&token=bad"))
+                _require_http_ok(f"http://127.0.0.1:{port}/client/global")
+
+                player_processes = [
+                    warming[slot] if slot in warming else start_player(slot) for slot in range(len(spec.players))
+                ]
+
+                asyncio.run(
+                    _require_global_message(
+                        f"ws://127.0.0.1:{port}/global",
+                        timeout_seconds=spec.timeout_seconds,
+                        on_connect_failure=lambda: _raise_if_local_player_exited(player_processes),
+                        require_pong=spec.require_websocket_pong,
+                    )
+                )
+                _wait_for_game_exit(game_process, spec.artifacts.game_stderr_path, timeout_seconds=spec.timeout_seconds)
+                required_artifacts = (
+                    (spec.artifacts.results_path, spec.artifacts.replay_path)
+                    if verify_replay
+                    else (spec.artifacts.results_path,)
+                )
+                _raise_if_game_declared_player_failure(
+                    spec.artifacts, required_artifacts, player_count=len(spec.players)
                 )
 
-            game_process = subprocess.Popen(
-                game_container_command(
+                for slot, (player_process, player_stderr_path) in enumerate(player_processes):
+                    _wait_for_player_exit(player_process, player_stderr_path, failed_policy_index=slot)
+
+                if not verify_replay or static_replay_viewer:
+                    return
+
+                verify_replay_loadable(
                     spec.game,
                     spec.artifacts,
-                    container_name=game_container,
-                    network_alias=game_network_alias,
-                    local_ports=local_ports,
-                    include_player_seats=False,
-                ),
-                stdout=game_stdout,
-                stderr=game_stderr,
-                text=True,
-            )
-
-            port = _wait_for_published_port(
-                game_container, game_process, spec.artifacts.game_stderr_path, timeout_seconds=spec.timeout_seconds
-            )
-            _wait_for_health(port, game_process, spec.artifacts.game_stderr_path, timeout_seconds=spec.timeout_seconds)
-            if spec.players:
-                _require_http_ok(_player_client_url(port, 0, spec.tokens[0]))
-                asyncio.run(_require_bad_player_rejected(f"ws://127.0.0.1:{port}/player?slot=0&token=bad"))
-            _require_http_ok(f"http://127.0.0.1:{port}/client/global")
-
-            player_processes = [
-                warming[slot] if slot in warming else start_player(slot) for slot in range(len(spec.players))
-            ]
-
-            asyncio.run(
-                _require_global_message(
-                    f"ws://127.0.0.1:{port}/global",
+                    network=network,
                     timeout_seconds=spec.timeout_seconds,
-                    on_connect_failure=lambda: _raise_if_local_player_exited(player_processes),
-                    require_pong=spec.require_websocket_pong,
+                    container_prefix=spec.container_prefix,
+                    resolved_local_ports=local_ports,
                 )
-            )
-            _wait_for_game_exit(game_process, spec.artifacts.game_stderr_path, timeout_seconds=spec.timeout_seconds)
-            required_artifacts = (
-                (spec.artifacts.results_path, spec.artifacts.replay_path)
-                if verify_replay
-                else (spec.artifacts.results_path,)
-            )
-            _raise_if_game_declared_player_failure(spec.artifacts, required_artifacts, player_count=len(spec.players))
-
-            for slot, (player_process, player_stderr_path) in enumerate(player_processes):
-                _wait_for_player_exit(player_process, player_stderr_path, failed_policy_index=slot)
-
-            if not verify_replay or static_replay_viewer:
-                return
-
-            verify_replay_loadable(
-                spec.game,
-                spec.artifacts,
-                timeout_seconds=spec.timeout_seconds,
-                container_prefix=spec.container_prefix,
-                resolved_local_ports=local_ports,
-            )
-    finally:
-        try:
+        finally:
             try:
-                collect_local_player_status(player_containers, len(spec.players), spec.artifacts.workspace)
+                try:
+                    collect_local_player_status(player_containers, len(spec.players), spec.artifacts.workspace)
+                finally:
+                    collect_game_trajectory(game_container, spec.artifacts)
+                    for slot, container_name in enumerate(player_containers):
+                        subprocess.run(
+                            ["docker", "stop", "--time", "0", container_name],
+                            stdout=subprocess.DEVNULL,
+                            stderr=subprocess.DEVNULL,
+                        )
+                        # Read through Docker so root-owned output never needs host cleanup privileges.
+                        with tempfile.TemporaryFile() as archive_file:
+                            copied = subprocess.run(
+                                ["docker", "cp", f"{container_name}:/coworld-artifact", "-"],
+                                stdout=archive_file,
+                                stderr=subprocess.PIPE,
+                            )
+                            if copied.returncode:
+                                raise RuntimeError(copied.stderr.decode())
+                            archive_file.seek(0)
+                            with tarfile.open(fileobj=archive_file) as archive:
+                                artifact_name = f"coworld-artifact/{spec.artifacts.policy_artifact_path(slot).name}"
+                                for member in archive:
+                                    if member.name == artifact_name and member.isfile():
+                                        source = archive.extractfile(member)
+                                        assert source is not None
+                                        with (
+                                            source,
+                                            spec.artifacts.policy_artifact_path(slot).open("wb") as destination,
+                                        ):
+                                            shutil.copyfileobj(source, destination)
             finally:
-                collect_game_trajectory(game_container, spec.artifacts)
-                for slot, container_name in enumerate(player_containers):
+                for container_name in player_containers:
                     subprocess.run(
-                        ["docker", "stop", "--time", "0", container_name],
+                        ["docker", "rm", "-f", "-v", container_name],
                         stdout=subprocess.DEVNULL,
                         stderr=subprocess.DEVNULL,
                     )
-                    # Read through Docker so root-owned output never needs host cleanup privileges.
-                    with tempfile.TemporaryFile() as archive_file:
-                        copied = subprocess.run(
-                            ["docker", "cp", f"{container_name}:/coworld-artifact", "-"],
-                            stdout=archive_file,
-                            stderr=subprocess.PIPE,
-                        )
-                        if copied.returncode:
-                            raise RuntimeError(copied.stderr.decode())
-                        archive_file.seek(0)
-                        with tarfile.open(fileobj=archive_file) as archive:
-                            artifact_name = f"coworld-artifact/{spec.artifacts.policy_artifact_path(slot).name}"
-                            for member in archive:
-                                if member.name == artifact_name and member.isfile():
-                                    source = archive.extractfile(member)
-                                    assert source is not None
-                                    with source, spec.artifacts.policy_artifact_path(slot).open("wb") as destination:
-                                        shutil.copyfileobj(source, destination)
-        finally:
-            for container_name in player_containers:
                 subprocess.run(
-                    ["docker", "rm", "-f", "-v", container_name],
-                    stdout=subprocess.DEVNULL,
-                    stderr=subprocess.DEVNULL,
+                    ["docker", "rm", "-f", game_container], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL
                 )
-            subprocess.run(["docker", "rm", "-f", game_container], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
 
 
 def verify_replay_loadable(
     game: RunnableLaunchSpec,
     artifacts: EpisodeArtifacts,
     *,
+    network: LocalEpisodeNetwork,
     timeout_seconds: float,
     container_prefix: str = LOCAL_EPISODE_CONTAINER_PREFIX,
     resolved_local_ports: list[ResolvedLocalPort] | None = None,
@@ -938,14 +1227,20 @@ def verify_replay_loadable(
             replay_load_path = replay_load_dir / artifacts.replay_path.name
             replay_load_path.write_bytes(artifacts.replay_path.read_bytes())
             replay_uri = f"file:///coworld-replay/{replay_load_path.name}"
-            replay_process = subprocess.Popen(
+            network.create(
                 [
                     "docker",
-                    "run",
-                    "--rm",
+                    "create",
                     *game.docker_resource_args(),
                     "--name",
                     replay_container,
+                    "--network",
+                    network.name,
+                    *(
+                        ["--dns=127.0.0.1", "--label", f"ai.coworld.episode-owner={network.owner}"]
+                        if network.control_image is not None
+                        else []
+                    ),
                     "-p",
                     f"127.0.0.1::{GAME_PORT}",
                     *local_port_publish_args(local_ports),
@@ -960,12 +1255,15 @@ def verify_replay_loadable(
                     f"{replay_load_dir}:/coworld-replay:ro",
                     *docker_image_command(game),
                 ],
+            )
+            replay_process = subprocess.Popen(
+                ["docker", "start", "--attach", replay_container],
                 stdout=game_stdout,
                 stderr=game_stderr,
                 text=True,
             )
             replay_port = _wait_for_published_port(
-                replay_container,
+                network.control_container(replay_container, GAME_PORT, local_ports),
                 replay_process,
                 artifacts.game_stderr_path,
                 timeout_seconds=timeout_seconds,
@@ -978,6 +1276,7 @@ def verify_replay_loadable(
                 timeout_seconds=timeout_seconds,
                 error_type="replay_unloadable",
             )
+            network.record(artifacts.workspace / "replay-isolation.json", [replay_container])
             _require_http_ok(replay_client_url(replay_port), allow_redirect=True, error_type="replay_unloadable")
             asyncio.run(
                 _require_replay_message(
