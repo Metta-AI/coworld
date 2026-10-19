@@ -90,8 +90,6 @@ def test_parley_custom_endpoint_preserves_seeded_inference(tmp_path: Path) -> No
             "PLAYER_SCRIPTED=1",
         )
         with CoworldApiClient.from_login(server_url=server) as client:
-            policy = client.lookup_policy_version(name=name, version=1)
-            assert policy is not None
             request = {
                 "idempotency_key": name,
                 "private": True,
@@ -129,7 +127,8 @@ def test_parley_custom_endpoint_preserves_seeded_inference(tmp_path: Path) -> No
             replay = client.get_episode_request_artifact_bytes(episode.id, "replay")
             assert replay
             (tmp_path / "replay").write_bytes(replay)
-            archive = client.get_episode_request_policy_artifact(episode.id, policy.id, 0)
+            policy = next(p for p in client.list_episode_request_policy_artifacts(episode.id) if p.position == 0)
+            archive = client.get_episode_request_policy_artifact(episode.id, policy.policy_version_id, 0)
             (tmp_path / "player-artifact.zip").write_bytes(archive)
             captures = read_capture_archive(archive)
             assert captures
