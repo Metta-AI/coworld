@@ -253,6 +253,20 @@ What changes:
 The grading variant must accept a roster of exactly `seats_per_episode` seats in the Coworld manifest, or the plan fails
 and the round aborts with that reason. Design reference: spec 0139 (continuous grading leagues).
 
+For benchmark games requiring reference opponents or partners, set `continuous.fixed_policy_version_ids` to an ordered
+list of exact policy-version UUIDs. Register those policies in the league's filler-policy pool first. Seat zero contains
+the submitted policy; the remaining seats contain the fixed policies in the declared order. The list must contain
+exactly `seats_per_episode - 1` entries. Repeating a UUID uses that fixed policy in multiple seats.
+
+Reference policy versions cannot also be live entrants. To evaluate the same checkpoint used in reference seats, upload
+a separate policy registration of that frozen player image for submissions.
+
+Fixed seats run as ordinary hosted player pods and are excluded from grading standings. Their resources and inference
+costs still count toward the episode budget. An empty list preserves the existing solo or self-play behavior. The round
+freezes the configured versions, so later policy uploads do not change the reference roster of an admitted episode. Use
+the benchmark's released reference policies where available; a substitute roster defines a different evaluation
+condition.
+
 ## Eval leagues (round on new policy)
 
 An Eval league is an ordinary ladder that runs a round only when a new policy arrives. It never runs on a timer. The
