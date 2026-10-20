@@ -45,6 +45,13 @@ uv run coworld run-episode packages/coworld/src/coworld/examples/paintarena/dist
 
 This is the same local smoke-test shape a league player would use with their own image.
 
+## Replay statistics
+
+`coworld stats extract-paintarena inputs.json output` extracts a batch of native replays and opens its HTML evidence
+table. The [stats contract guide](../../docs/artifacts/STATS.md) shows how to prepare replay receipts, resume
+extraction, and publish the resulting JSON through reporters. Movement commands are explicitly missing because replays
+only retain state; executed movement and final territory are measured from recorded frames.
+
 ## Reference Optimizer
 
 The manifest declares `paint-arena-reference-optimizer`, a minimal optimizer role that writes a deterministic JSON plan

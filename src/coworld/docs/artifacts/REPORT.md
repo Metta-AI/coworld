@@ -28,8 +28,16 @@ catalog extends only when a real need arrives (additions are additive releases).
 | `render-html`     | self-contained HTML string | `.html`, `text/html`        | Must pass the safe [render profile](RENDER.md) at submission time; inline assets as `data:` URIs. Platform UI surfaces embed this part.                                                                                                                                       |
 | `render-markdown` | Markdown string            | `.md`, `text/markdown`      |                                                                                                                                                                                                                                                                               |
 | `event-log`       | list of events             | `.parquet`                  | The fixed 4-column [event log](EVENT_LOG.md) schema (`ts, player, key, value`); on the Bureau `output.emit` path the host writes the Parquet with pinned deterministic settings, while external reporters submit their own Parquet, validated server-side against the schema. |
-| `json`            | JSON string                | `.json`, `application/json` | Validated against the schema URI declared for that part.                                                                                                                                                                                                                      |
+| `json`            | JSON string                | `.json`, `application/json` | Must be valid JSON; the built-in Coworld stats schema also enforces its typed semantics.                                                                                                                                                                                      |
 | `file`            | media-type + bytes         | raw object                  | The escape hatch for anything else. A reporter needing "a directory of stuff" emits multiple named `file` parts — still enumerated, described, and typed at the envelope level.                                                                                               |
+
+JSON parts declare a `schema` URI. Parts declaring
+`https://softmax.com/api/observatory/v2/reporters/schemas/coworld.stats.v1.json` must satisfy the
+[Coworld stats contract](STATS.md), including its semantic checks. Both submission modes enforce it before storing
+bytes. Other schema URIs identify the producer's contract; the API checks JSON syntax without fetching arbitrary
+schemas. The versioned stats schema is publicly downloadable from its URI. Discover reporters declaring it with the
+`schema_uri` filter on `GET /v2/reporters`, or `CoworldApiClient.list_reporters(schema_uri=...)`. This filter matches
+the reporter's current advertised outputs contract; individual older hosted versions may declare different outputs.
 
 ## Submission semantics
 

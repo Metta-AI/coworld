@@ -114,6 +114,7 @@ _CORE_SRCS = [
     "src/coworld/runner/runner.py",
     "src/coworld/runner/resource_quantity.py",
     "src/coworld/schema_validation.py",
+    "src/coworld/stats.py",
     "src/coworld/trajectory.py",
     "src/coworld/types.py",
 ]
@@ -124,6 +125,7 @@ filegroup(
     name = "generated_schema_files",
     srcs = [
         "src/coworld/coworld_manifest_schema.json",
+        "src/coworld/coworld_stats_schema.json",
         "src/coworld/manifest/v0/schema.json",
         "src/coworld/manifest/v1/schema.json",
         "src/coworld/runner/episode_request_schema.json",

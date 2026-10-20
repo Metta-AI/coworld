@@ -66,6 +66,7 @@ pyproject_test(
         "test_log_richness": {"data": [":manifest_version_fixtures"]},
         "test_paintarena_static_replay": {"data": ["//packages/coworld:paintarena_static_replay_files"]},
         "test_types": {"data": ["//packages/coworld:generated_schema_files"]},
+        "test_stats_system": {"data": ["//packages/coworld:generated_schema_files"]},
     },
     # `coworld` isn't in .ruff.toml's known-first-party (third-party from
     # app_backend); ship its src tree so the ruff lint sorts the tests'

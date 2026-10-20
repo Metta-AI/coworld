@@ -1,0 +1,410 @@
+{
+  "$defs": {
+    "EpisodeStats": {
+      "additionalProperties": false,
+      "description": "One episode's registry and complete per-seat observations, including unavailable measurements.",
+      "properties": {
+        "provenance": {
+          "$ref": "#/$defs/StatsProvenance"
+        },
+        "metrics": {
+          "items": {
+            "$ref": "#/$defs/MetricDefinition"
+          },
+          "minItems": 1,
+          "title": "Metrics",
+          "type": "array"
+        },
+        "seats": {
+          "items": {
+            "$ref": "#/$defs/SeatStats"
+          },
+          "minItems": 1,
+          "title": "Seats",
+          "type": "array"
+        }
+      },
+      "required": ["provenance", "metrics", "seats"],
+      "title": "EpisodeStats",
+      "type": "object"
+    },
+    "JsonValue": {},
+    "MeasuredValue": {
+      "additionalProperties": false,
+      "properties": {
+        "metric_id": {
+          "minLength": 1,
+          "pattern": "\\S",
+          "title": "Metric Id",
+          "type": "string"
+        },
+        "status": {
+          "const": "measured",
+          "title": "Status",
+          "type": "string"
+        },
+        "value": {
+          "title": "Value",
+          "type": "number"
+        },
+        "count": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Count"
+        },
+        "denominator": {
+          "anyOf": [
+            {
+              "exclusiveMinimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Denominator"
+        }
+      },
+      "required": ["metric_id", "status", "value"],
+      "title": "MeasuredValue",
+      "type": "object"
+    },
+    "MetricDefinition": {
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "minLength": 1,
+          "pattern": "\\S",
+          "title": "Id",
+          "type": "string"
+        },
+        "version": {
+          "minimum": 1,
+          "title": "Version",
+          "type": "integer"
+        },
+        "name": {
+          "minLength": 1,
+          "pattern": "\\S",
+          "title": "Name",
+          "type": "string"
+        },
+        "category": {
+          "enum": ["direct", "opportunity_dependent", "outcome"],
+          "title": "Category",
+          "type": "string"
+        },
+        "unit": {
+          "minLength": 1,
+          "pattern": "\\S",
+          "title": "Unit",
+          "type": "string"
+        },
+        "kind": {
+          "description": "Rate is a fraction of eligible opportunities in [0, 1]; use value for other ratios or frequencies.",
+          "enum": ["count", "rate", "value"],
+          "title": "Kind",
+          "type": "string"
+        },
+        "description": {
+          "minLength": 1,
+          "pattern": "\\S",
+          "title": "Description",
+          "type": "string"
+        },
+        "eligibility": {
+          "description": "Which events or decisions qualify for this metric.",
+          "minLength": 1,
+          "pattern": "\\S",
+          "title": "Eligibility",
+          "type": "string"
+        },
+        "denominator": {
+          "anyOf": [
+            {
+              "minLength": 1,
+              "pattern": "\\S",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "Rate denominator semantics; null for counts and values.",
+          "title": "Denominator"
+        },
+        "aggregation": {
+          "description": "How observations may be combined, including weighting and exclusions.",
+          "minLength": 1,
+          "pattern": "\\S",
+          "title": "Aggregation",
+          "type": "string"
+        },
+        "interpretation": {
+          "description": "Meaning and limits; behavior statistics do not establish intent.",
+          "minLength": 1,
+          "pattern": "\\S",
+          "title": "Interpretation",
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "version",
+        "name",
+        "category",
+        "unit",
+        "kind",
+        "description",
+        "eligibility",
+        "denominator",
+        "aggregation",
+        "interpretation"
+      ],
+      "title": "MetricDefinition",
+      "type": "object"
+    },
+    "MissingValue": {
+      "additionalProperties": false,
+      "properties": {
+        "metric_id": {
+          "minLength": 1,
+          "pattern": "\\S",
+          "title": "Metric Id",
+          "type": "string"
+        },
+        "status": {
+          "enum": ["missing", "unsupported"],
+          "title": "Status",
+          "type": "string"
+        },
+        "reason": {
+          "minLength": 1,
+          "pattern": "\\S",
+          "title": "Reason",
+          "type": "string"
+        }
+      },
+      "required": ["metric_id", "status", "reason"],
+      "title": "MissingValue",
+      "type": "object"
+    },
+    "NoOpportunities": {
+      "additionalProperties": false,
+      "properties": {
+        "metric_id": {
+          "minLength": 1,
+          "pattern": "\\S",
+          "title": "Metric Id",
+          "type": "string"
+        },
+        "status": {
+          "const": "no_opportunities",
+          "title": "Status",
+          "type": "string"
+        },
+        "count": {
+          "default": 0,
+          "maximum": 0,
+          "minimum": 0,
+          "title": "Count",
+          "type": "integer"
+        },
+        "denominator": {
+          "default": 0,
+          "maximum": 0,
+          "minimum": 0,
+          "title": "Denominator",
+          "type": "integer"
+        }
+      },
+      "required": ["metric_id", "status"],
+      "title": "NoOpportunities",
+      "type": "object"
+    },
+    "SeatStats": {
+      "additionalProperties": false,
+      "properties": {
+        "seat_id": {
+          "minLength": 1,
+          "pattern": "\\S",
+          "title": "Seat Id",
+          "type": "string"
+        },
+        "policy_id": {
+          "anyOf": [
+            {
+              "minLength": 1,
+              "pattern": "\\S",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "Recorded policy identity, or null when absent from the source.",
+          "title": "Policy Id"
+        },
+        "policy_sha256": {
+          "anyOf": [
+            {
+              "pattern": "^[0-9a-f]{64}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "Policy artifact SHA-256, or null when unavailable.",
+          "title": "Policy Sha256"
+        },
+        "measurements": {
+          "items": {
+            "discriminator": {
+              "mapping": {
+                "measured": "#/$defs/MeasuredValue",
+                "missing": "#/$defs/MissingValue",
+                "no_opportunities": "#/$defs/NoOpportunities",
+                "unsupported": "#/$defs/MissingValue"
+              },
+              "propertyName": "status"
+            },
+            "oneOf": [
+              {
+                "$ref": "#/$defs/MeasuredValue"
+              },
+              {
+                "$ref": "#/$defs/MissingValue"
+              },
+              {
+                "$ref": "#/$defs/NoOpportunities"
+              }
+            ]
+          },
+          "minItems": 1,
+          "title": "Measurements",
+          "type": "array"
+        }
+      },
+      "required": ["seat_id", "policy_id", "policy_sha256", "measurements"],
+      "title": "SeatStats",
+      "type": "object"
+    },
+    "StatsFailure": {
+      "additionalProperties": false,
+      "properties": {
+        "provenance": {
+          "$ref": "#/$defs/StatsProvenance"
+        },
+        "reason": {
+          "minLength": 1,
+          "pattern": "\\S",
+          "title": "Reason",
+          "type": "string"
+        }
+      },
+      "required": ["provenance", "reason"],
+      "title": "StatsFailure",
+      "type": "object"
+    },
+    "StatsProvenance": {
+      "additionalProperties": false,
+      "properties": {
+        "episode_id": {
+          "description": "Recorded episode ID, or replay-sha256:<digest> for an unlabelled replay.",
+          "minLength": 1,
+          "pattern": "\\S",
+          "title": "Episode Id",
+          "type": "string"
+        },
+        "game_id": {
+          "minLength": 1,
+          "pattern": "\\S",
+          "title": "Game Id",
+          "type": "string"
+        },
+        "game_build_id": {
+          "anyOf": [
+            {
+              "minLength": 1,
+              "pattern": "\\S",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "Immutable game build identity, or null when unavailable.",
+          "title": "Game Build Id"
+        },
+        "replay_sha256": {
+          "description": "SHA-256 of the exact replay bytes consumed by the extractor.",
+          "pattern": "^[0-9a-f]{64}$",
+          "title": "Replay Sha256",
+          "type": "string"
+        },
+        "extractor_id": {
+          "minLength": 1,
+          "pattern": "\\S",
+          "title": "Extractor Id",
+          "type": "string"
+        },
+        "extractor_version": {
+          "description": "Version identifying the extraction algorithm and semantics.",
+          "minLength": 1,
+          "pattern": "\\S",
+          "title": "Extractor Version",
+          "type": "string"
+        },
+        "context": {
+          "additionalProperties": {
+            "$ref": "#/$defs/JsonValue"
+          },
+          "description": "Recorded variant, scenario seed, or evaluation protocol. Missing keys cannot establish matching.",
+          "title": "Context",
+          "type": "object"
+        }
+      },
+      "required": ["episode_id", "game_id", "game_build_id", "replay_sha256", "extractor_id", "extractor_version"],
+      "title": "StatsProvenance",
+      "type": "object"
+    }
+  },
+  "$id": "https://softmax.com/api/observatory/v2/reporters/schemas/coworld.stats.v1.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "description": "A reporter's episode statistics and explicit extraction failures.",
+  "properties": {
+    "schema_version": {
+      "const": "coworld.stats.v1",
+      "title": "Schema Version",
+      "type": "string"
+    },
+    "episodes": {
+      "items": {
+        "$ref": "#/$defs/EpisodeStats"
+      },
+      "title": "Episodes",
+      "type": "array"
+    },
+    "failures": {
+      "items": {
+        "$ref": "#/$defs/StatsFailure"
+      },
+      "title": "Failures",
+      "type": "array"
+    }
+  },
+  "required": ["schema_version", "episodes", "failures"],
+  "title": "StatsBlock",
+  "type": "object"
+}

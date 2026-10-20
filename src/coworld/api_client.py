@@ -1600,11 +1600,18 @@ class CoworldApiClient:
         types: Iterable[str] | None = None,
         mode: str = "all",
         author: str | None = None,
+        schema_uri: str | None = None,
         limit: int = 200,
         cursor: str | None = None,
     ) -> ReporterListPage:
         params = _query_params(
-            mode=mode, limit=limit, q=q, type=list(types) if types is not None else None, author=author, cursor=cursor
+            mode=mode,
+            limit=limit,
+            q=q,
+            type=list(types) if types is not None else None,
+            author=author,
+            schema_uri=schema_uri,
+            cursor=cursor,
         )
         return self._get_page("/v2/reporters", ReporterListPage, ReporterPublic, params=params)
 

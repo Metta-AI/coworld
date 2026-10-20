@@ -134,6 +134,10 @@ selection, qualifying roots, ancestor opt-outs, managed blocks, and manual remov
 
 Record optional policy decisions with [episode annotations](src/coworld/docs/artifacts/EPISODE_ANNOTATIONS.md).
 
+Publish comparable replay measurements with the [behavior statistics contract](src/coworld/docs/artifacts/STATS.md).
+`coworld stats` provides offline schema validation and a batch Paint Arena replay extractor with an HTML evidence
+report.
+
 For the optional Conductor native integration, see the [local adapter guide](src/coworld/runner/conductor/README.md).
 
 ## Contributing

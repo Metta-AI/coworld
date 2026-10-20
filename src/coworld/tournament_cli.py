@@ -286,7 +286,7 @@ def register_tournament_commands(app: typer.Typer) -> None:
     )
     app.add_typer(reporters_app, name="reporters")
 
-    @reporters_app.command("list", help="List reporters, filtered by query, type, or mode.")
+    @reporters_app.command("list", help="List reporters, filtered by query, output type, schema, or mode.")
     def reporters_list(
         query: Annotated[
             str | None,
@@ -304,10 +304,13 @@ def register_tournament_commands(app: typer.Typer) -> None:
         ] = None,
         server: Annotated[str, typer.Option("--server", help="Observatory API server URL.")] = DEFAULT_SUBMIT_SERVER,
         json_output: Annotated[bool, typer.Option("--json", help="Print raw JSON.")] = False,
+        schema_uri: Annotated[
+            str | None, typer.Option("--schema", help="Exact declared JSON output schema URI.")
+        ] = None,
     ) -> None:
         with CoworldApiClient.from_login(server_url=server) as client:
             page = client.list_reporters(
-                q=query, types=type_filter, mode=mode, author=author, limit=limit, cursor=cursor
+                q=query, types=type_filter, mode=mode, author=author, limit=limit, cursor=cursor, schema_uri=schema_uri
             )
         if json_output:
             emit_json(page.model_dump(mode="json"))

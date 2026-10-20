@@ -60,6 +60,7 @@ from coworld.play import PlaySession, ReplaySession, _resolve_local_llm_env, pla
 from coworld.runner.external_llm import EXTERNAL_LLM_SECRET_KEY, ExternalLlmRoute
 from coworld.runner.https_egress import HTTPS_HOSTS_SECRET_KEY, HttpsHosts
 from coworld.runner.runner import DEFAULT_PLAYER_EXIT_TIMEOUT_SECONDS, EpisodeArtifacts, run_coworld_episode
+from coworld.stats_cli import stats_app
 from coworld.submit import submit_policy_to_league_cmd
 from coworld.tournament_cli import register_tournament_commands
 from coworld.types import (
@@ -107,6 +108,7 @@ app = typer.Typer(
 register_tournament_commands(app)
 register_campaign_commands(app)
 register_feed_commands(app)
+app.add_typer(stats_app, name="stats")
 hosted_game_app = typer.Typer(no_args_is_help=True, help="Create and join hosted Coworld games.")
 app.add_typer(hosted_game_app, name="hosted-game")
 manifest_schema_app = typer.Typer(no_args_is_help=True, help="Check versioned Coworld manifest schemas.")
