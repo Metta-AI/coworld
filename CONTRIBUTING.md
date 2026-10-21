@@ -36,9 +36,10 @@ verify the client headers and token audience in the deployed image before changi
 complete hosted five-seat game, and private capture readback. Run the real local stack with
 `metta dev up --full-coworld`, upload the published Parley manifest there, and authenticate a local USER at the frontend
 proxy. Enable the backend's explicit
-[local checkpoint routing profile](../observatory-execution/README.md#trusted-trained-model-inference), including its
-trusted routes Secret, sidecar image, mTLS relay, and HTTPS artifact store. An empty checkpoint route map supports
-registered contributor endpoints without a merchant key. The default local stack does not enable hosted inference.
+[local checkpoint routing profile](../../workspaces/observatory/platform/packages/execution/README.md#trusted-trained-model-inference),
+including its trusted routes Secret, sidecar image, mTLS relay, and HTTPS artifact store. An empty checkpoint route map
+supports registered contributor endpoints without a merchant key. The default local stack does not enable hosted
+inference.
 
 Set `METTA_PARLEY_SYSTEM_SERVER` to that local proxy's API root, `METTA_PARLEY_SYSTEM_COWORLD` to the resulting local
 Coworld ID, and `METTA_PARLEY_SYSTEM_GAME_IMAGE` to its downloaded game image. Set `METTA_PARLEY_SYSTEM_ENDPOINT` to the
