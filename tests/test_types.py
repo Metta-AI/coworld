@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import inspect
 import json
+from contextlib import nullcontext
 from pathlib import Path
 from typing import Any
 
@@ -407,7 +408,7 @@ def test_episode_job_accepts_player_file_seats() -> None:
         ("platform-hosted", "file"),
     ],
 )
-def test_episode_job_rejects_runtime_seat_kind_mismatch(runtime: str, seat_kind: str) -> None:
+def test_episode_job_validates_runtime_seat_kind(runtime: str, seat_kind: str) -> None:
     manifest_data = _game_hosted_manifest_data() if runtime == "game-hosted" else _manifest_data()
     players = {
         "image": CoworldRunnableSpec(type="player", image="player"),
@@ -419,7 +420,8 @@ def test_episode_job_rejects_runtime_seat_kind_mismatch(runtime: str, seat_kind:
         ),
     }
 
-    with pytest.raises(ValidationError, match=runtime):
+    expectation = nullcontext() if seat_kind == "human" else pytest.raises(ValidationError, match=runtime)
+    with expectation:
         CoworldEpisodeJobSpec(
             manifest=CoworldManifest.model_validate(manifest_data),
             game_config={},

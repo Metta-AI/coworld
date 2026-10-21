@@ -524,6 +524,43 @@ def test_stage_player_files_exposes_annotations_for_opted_in_v2_game(tmp_path):
     assert seats["seats"][0]["annotations_uri"] == "file:///coworld/policy_annotations_0.jsonl"
 
 
+def test_stage_player_files_writes_a_mixed_roster_as_play_seats(tmp_path):
+    """A human seat stages no file and switches the roster to the hosted-play document the game already reads."""
+    contents = [b"west policy", b"east policy"]
+    job = _game_hosted_job(contents)
+    job = job.model_copy(
+        update={
+            "players": [
+                job.players[0],
+                CoworldHumanPlayerSpec(type="human", token=secrets.token_urlsafe(16)),
+                job.players[1],
+            ]
+        }
+    )
+    artifacts = EpisodeArtifacts.create(tmp_path)
+    reads: list[int] = []
+
+    def read_player_file(file_index: int) -> bytes:
+        reads.append(file_index)
+        return contents[file_index]
+
+    bytes_total = runner_module.stage_player_files(
+        job.players, read_player_file, artifacts, player_seats_schema="coworld-player-seats/2"
+    )
+
+    assert bytes_total == sum(map(len, contents))
+    # PLAYER_FILE_URLS is keyed by the seat's index among file seats, not its slot.
+    assert reads == [0, 1]
+    assert (tmp_path / "players" / "2" / "file").read_bytes() == contents[1]
+    assert not (tmp_path / "players" / "1").exists()
+    seats = json.loads(artifacts.player_seats_path.read_text())
+    assert seats["schema"] == "coworld-play-seats/1"
+    assert [(seat["slot"], seat["kind"]) for seat in seats["seats"]] == [(0, "policy"), (1, "human"), (2, "policy")]
+    assert seats["seats"][1] == {"slot": 1, "kind": "human"}
+    assert seats["seats"][2]["file_uri"] == "file:///coworld/players/2/file"
+    assert seats["seats"][2]["annotations_uri"] == "file:///coworld/policy_annotations_2.jsonl"
+
+
 def test_stage_player_files_writes_each_slot_before_reading_the_next(tmp_path):
     contents = [b"alpha player", b"beta player", b"gamma player"]
     job = _game_hosted_job(contents)

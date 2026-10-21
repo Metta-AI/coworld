@@ -48,6 +48,15 @@ the required replay exist, without waiting for the game server to exit.
 The document contains no policy name, player identity, owner identity, signed download URL, or upload capability. The
 trusted init container downloads and verifies the player bytes before writing local `file://` references.
 
+## Human Seats
+
+A game-hosted game that can seat people in lobbies declares `"COGAME_PLAY_SEATS_SCHEMA": "coworld-play-seats/1"` in
+`game.runnable.env`. Without that declaration the platform offers no lobbies for it, because the strict file roster
+above is all a game-hosted game is promised. When a roster has a human seat, the runner writes it as
+`coworld-play-seats/1`, the document hosted play uses: every seat carries `kind`, policy seats (`"policy"`) keep the
+fields above, and a human seat (`"human"`) has only `slot`. The person connects over the game's websocket with that
+slot's token from `game_config.tokens`.
+
 ## Ownership And Privacy
 
 The game process can read every staged player file. Submitting a file policy to a game-hosted Coworld therefore shares

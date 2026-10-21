@@ -47,6 +47,8 @@ from coworld.types import (
     CoworldPlayerSeats,
     CoworldPlayerSeatsSchema,
     CoworldPlayerStartup,
+    CoworldPlayHumanSeat,
+    CoworldPlayPolicySeat,
     CoworldResourceLimits,
     CoworldRunnableResources,
     CoworldRunnableSpec,
@@ -462,27 +464,36 @@ def run_coworld_episode(
 
 
 def stage_player_files(
-    player_files: Sequence[CoworldPlayerFileSpec],
+    players: Sequence[CoworldPlayerFileSpec | CoworldHumanPlayerSpec],
     read_player_file: Callable[[int], bytes],
     artifacts: EpisodeArtifacts,
     *,
     player_seats_schema: CoworldPlayerSeatsSchema = "coworld-player-seats/1",
 ) -> int:
-    """Stage one file per seat and write the seats document; returns the bytes fetched.
+    """Stage one file per policy seat and write the seats document; returns the bytes fetched.
 
-    Seats that share a content hash are fetched and verified once and copied to the
-    other seat paths, so a roster of one policy costs one download.
+    ``read_player_file`` is keyed by the seat's index among the player-file seats, the
+    way ``PLAYER_FILE_URLS`` is written. Seats that share a content hash are fetched
+    and verified once and copied to the other seat paths, so a roster of one policy
+    costs one download. A human seat stages nothing: the roster is then written as
+    ``coworld-play-seats/1`` (the hosted-play document) with the seat tagged
+    ``kind: "human"`` and every policy seat tagged ``kind: "policy"``.
     """
-    seats = []
+    seats: list[CoworldPlayerSeat | CoworldPlayPolicySeat | CoworldPlayHumanSeat] = []
     bytes_total = 0
     staged_by_hash: dict[str, Path] = {}
-    for slot, player in enumerate(player_files):
+    mixed = any(isinstance(player, CoworldHumanPlayerSpec) for player in players)
+    file_index = 0
+    for slot, player in enumerate(players):
+        if isinstance(player, CoworldHumanPlayerSpec):
+            seats.append(CoworldPlayHumanSeat(slot=slot))
+            continue
         player_path = artifacts.player_file_path(slot)
         player_path.parent.mkdir(parents=True, exist_ok=True)
         if player.content_hash in staged_by_hash:
             shutil.copyfile(staged_by_hash[player.content_hash], player_path)
         else:
-            data = read_player_file(slot)
+            data = read_player_file(file_index)
             if len(data) != player.size_bytes or hashlib.sha256(data).hexdigest() != player.content_hash:
                 raise RunnerEpisodeError(
                     f"Player file for slot {slot} does not match its declared size and SHA-256 digest",
@@ -491,24 +502,24 @@ def stage_player_files(
             player_path.write_bytes(data)
             bytes_total += len(data)
             staged_by_hash[player.content_hash] = player_path
-        seats.append(
-            CoworldPlayerSeat(
-                slot=slot,
-                file_uri=artifacts.player_file_uri(slot),
-                content_hash=f"sha256:{player.content_hash}",
-                size_bytes=player.size_bytes,
-                log_uri=f"file://{CONTAINER_WORKDIR}/logs/policy_agent_{slot}.log",
-                artifact_uri=f"file://{CONTAINER_WORKDIR}/policy_artifact_{slot}.zip",
-                annotations_uri=(
-                    f"file://{CONTAINER_WORKDIR}/policy_annotations_{slot}.jsonl"
-                    if player_seats_schema == "coworld-player-seats/2"
-                    else None
-                ),
-            )
-        )
+        file_index += 1
+        seat_fields = {
+            "slot": slot,
+            "file_uri": artifacts.player_file_uri(slot),
+            "content_hash": f"sha256:{player.content_hash}",
+            "size_bytes": player.size_bytes,
+            "log_uri": f"file://{CONTAINER_WORKDIR}/logs/policy_agent_{slot}.log",
+            "artifact_uri": f"file://{CONTAINER_WORKDIR}/policy_artifact_{slot}.zip",
+            "annotations_uri": (
+                f"file://{CONTAINER_WORKDIR}/policy_annotations_{slot}.jsonl"
+                if player_seats_schema == "coworld-player-seats/2"
+                else None
+            ),
+        }
+        seats.append(CoworldPlayPolicySeat(**seat_fields) if mixed else CoworldPlayerSeat(**seat_fields))
     artifacts.player_seats_path.write_text(
         CoworldPlayerSeats(
-            schema=player_seats_schema,
+            schema="coworld-play-seats/1" if mixed else player_seats_schema,
             seats=seats,
             player_status_uri=f"file://{CONTAINER_WORKDIR}/player_status.json",
         ).model_dump_json(by_alias=True, exclude_none=True, indent=2),

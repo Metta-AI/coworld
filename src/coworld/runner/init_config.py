@@ -84,7 +84,7 @@ def init_config_from_env() -> None:
 
             artifacts = EpisodeArtifacts.create(WORKDIR, prefix="coworld-job-")
             bytes_total = stage_player_files(
-                player_files,
+                job.players,
                 read_player_file,
                 artifacts,
                 player_seats_schema=TypeAdapter(CoworldPlayerSeatsSchema).validate_python(

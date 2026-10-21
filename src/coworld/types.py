@@ -269,7 +269,25 @@ class CoworldPlayerSeat(BaseModel):
     artifact_uri: str = Field(min_length=1, description="URI where the game writes this slot's optional artifact.")
 
 
-CoworldPlayerSeatsSchema = Literal["coworld-player-seats/1", "coworld-player-seats/2"]
+class CoworldPlayPolicySeat(CoworldPlayerSeat):
+    """A staged player file in a mixed roster (``coworld-play-seats/1``), tagged apart from the human seats."""
+
+    kind: Literal["policy"] = "policy"
+
+
+class CoworldPlayHumanSeat(BaseModel):
+    """A seat a person drives over the game's websocket; the game stages no file for it."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    slot: int = Field(ge=0, description="Zero-based episode player slot.")
+    kind: Literal["human"] = "human"
+
+
+# Pure policy rosters keep the shipped player-seats documents; a roster with a
+# human seat is written as ``coworld-play-seats/1``, the document hosted play
+# already stages, so a game that supports play sessions supports it unchanged.
+CoworldPlayerSeatsSchema = Literal["coworld-player-seats/1", "coworld-player-seats/2", "coworld-play-seats/1"]
 
 
 class CoworldPlayerSeats(BaseModel):
@@ -279,7 +297,9 @@ class CoworldPlayerSeats(BaseModel):
         alias="schema",
         description="Player seats document schema version.",
     )
-    seats: list[CoworldPlayerSeat] = Field(min_length=1, description="Ordered game-hosted player seats.")
+    seats: list[CoworldPlayerSeat | CoworldPlayPolicySeat | CoworldPlayHumanSeat] = Field(
+        min_length=1, description="Ordered game-hosted player seats."
+    )
     player_status_uri: str = Field(min_length=1, description="URI where the game writes player process statuses.")
 
 
@@ -797,8 +817,10 @@ class CoworldEpisodeJobSpec(BaseModel):
         for index, player in enumerate(self.players):
             if isinstance(player, CoworldRunnableSpec) and player.type != "player":
                 raise ValueError(f"players.{index}.type must be 'player'")
-            if self.manifest.game.player_runtime == "game-hosted" and not isinstance(player, CoworldPlayerFileSpec):
-                raise ValueError(f"players.{index} must be 'player-file' for game-hosted player runtime")
+            if self.manifest.game.player_runtime == "game-hosted" and not isinstance(
+                player, CoworldPlayerFileSpec | CoworldHumanPlayerSpec
+            ):
+                raise ValueError(f"players.{index} must be a player file or human seat for game-hosted player runtime")
             if self.manifest.game.player_runtime == "platform-hosted" and isinstance(player, CoworldPlayerFileSpec):
                 raise ValueError(f"players.{index} must be an image or human seat for platform-hosted player runtime")
         return self
