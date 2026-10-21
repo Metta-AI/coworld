@@ -144,7 +144,7 @@ filegroup(
     ],
     visibility = [
         "//packages/observatory-api/tests:__pkg__",
-        "//packages/observatory-core/tests:__pkg__",
+        "//workspaces/observatory/platform/packages/core/tests:__pkg__",
     ],
 )
 
