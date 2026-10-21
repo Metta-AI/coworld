@@ -54,3 +54,22 @@ artifact under pytest's temporary directory. It requires a successful game, repl
 capture validation. The provider must accept sampling seeds and produce legal Parley actions. A protocol simulator can
 diagnose routing separately, but does not qualify a model or establish playing strength. Never use production as the
 test server; league requalification follows successful endpoint verification.
+
+## Hosted artifact resource proof
+
+`tests/test_hosted_artifact_resources_system.py` submits a private two-seat Paint Arena episode to an isolated local
+`metta dev up --full-coworld` stack. It checks live pod requests and limits, completion, replay, scores, and exact
+streamed artifact sizes and hashes. Authenticate a local team USER through the frontend proxy first; artifact checks use
+explicit elevated reads against that same local server.
+
+Set `METTA_COWORLD_ARTIFACT_SYSTEM_CONFIG` to a JSON file containing `server`, `namespace`, `coworld_id`, `policy_ref`,
+and `expected_artifacts`. Each expected artifact has `kind`, `size_bytes`, and `sha256`. Upload the game and policy
+through the normal CLI before running the test; use a fixture that emits large events and trajectory files. The test
+accepts only a localhost server and an isolated `jobs-*` namespace on OrbStack. It saves the request, episode, and
+observed pod specifications in pytest's temporary directory. To verify a lowered deployment default, start the stack
+with `COWORLD_PLAYER_MEMORY_LIMIT=256Mi` and set the proof's `player_memory_limit` to `512Mi`. The admitted local player
+request must remain schedulable.
+
+```bash
+nix develop -c uv run metta pytest packages/coworld/tests/test_hosted_artifact_resources_system.py -v -n 0 -p no:importnb
+```

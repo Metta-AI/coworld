@@ -679,25 +679,15 @@ def test_upload_outputs_uploads_raw_replay_bytes(tmp_path, monkeypatch):
     artifacts.results_path.write_text("{}", encoding="utf-8")
     replay_payload = b"\x00crewrift-replay-bytes\xff"
     artifacts.replay_path.write_bytes(replay_payload)
-    uploads: list[tuple[str, bytes, str]] = []
-
-    monkeypatch.setattr(
-        kubernetes_runner,
-        "upload_data",
-        lambda uri, data, *, content_type: uploads.append((uri, data, content_type)),
-    )
-    monkeypatch.setenv("RESULTS_URI", "file:///tmp/results-out.json")
-    monkeypatch.setenv("REPLAY_URI", "file:///tmp/replay-out.bin")
+    destination = tmp_path / "replay-out.bin"
+    monkeypatch.setenv("RESULTS_URI", (tmp_path / "results-out.json").as_uri())
+    monkeypatch.setenv("REPLAY_URI", destination.as_uri())
     monkeypatch.delenv("DEBUG_URI", raising=False)
     monkeypatch.delenv("POLICY_LOG_URLS", raising=False)
 
     _upload_outputs(artifacts)
 
-    replay_uploads = [upload for upload in uploads if upload[0] == "file:///tmp/replay-out.bin"]
-    assert len(replay_uploads) == 1
-    _, replay_bytes, content_type = replay_uploads[0]
-    assert content_type == "application/octet-stream"
-    assert replay_bytes == replay_payload
+    assert destination.read_bytes() == replay_payload
     assert not (artifacts.workspace / "replay.z").exists()
 
 
@@ -3425,7 +3415,7 @@ def test_create_player_pod_applies_cpu_limit_and_pins_thread_pools(monkeypatch):
     pod: Any = created["body"]
     container: Any = pod.spec.containers[0]
     assert container.resources.requests == {"cpu": "250m", "memory": "256Mi"}
-    assert container.resources.limits == {"cpu": "8"}
+    assert container.resources.limits == {"cpu": "8", "memory": "80Gi"}
     env = {ev.name: ev.value for ev in container.env}
     assert env["MKL_NUM_THREADS"] == "8"
     assert env["OPENBLAS_NUM_THREADS"] == "8"
@@ -3434,7 +3424,7 @@ def test_create_player_pod_applies_cpu_limit_and_pins_thread_pools(monkeypatch):
     assert env["OMP_NUM_THREADS"] == "3"
 
 
-def test_create_player_pod_without_cpu_limit_omits_limit_and_thread_env(monkeypatch):
+def test_create_player_pod_without_cpu_limit_keeps_memory_limit_and_omits_thread_env(monkeypatch):
     created: dict[str, Any] = {}
     core_v1 = SimpleNamespace(create_namespaced_pod=lambda *, namespace, body: created.update({"body": body}))
     player = PlayerLaunchSpec(image="paintbot:latest", run=(), env={})
@@ -3445,7 +3435,7 @@ def test_create_player_pod_without_cpu_limit_omits_limit_and_thread_env(monkeypa
 
     pod: Any = created["body"]
     container: Any = pod.spec.containers[0]
-    assert container.resources.limits is None
+    assert container.resources.limits == {"memory": "80Gi"}
     env = {ev.name: ev.value for ev in container.env}
     assert "OMP_NUM_THREADS" not in env
     assert "MKL_NUM_THREADS" not in env
@@ -4537,11 +4527,12 @@ def test_upload_outputs_uploads_the_event_stream_when_the_game_wrote_one(tmp_pat
     artifacts = EpisodeArtifacts.create(tmp_path)
     payload = b'{"tick":364,"kind":"shot","x":478.0,"y":411.0}\n'
     artifacts.events_path.write_bytes(payload)
-    uploads = _upload_env(monkeypatch, EVENTS_URI="file:///tmp/events-out.json")
+    destination = tmp_path / "events-out.json"
+    _upload_env(monkeypatch, EVENTS_URI=destination.as_uri())
 
     _upload_outputs(artifacts)
 
-    assert uploads == [("file:///tmp/events-out.json", payload, "application/json")]
+    assert destination.read_bytes() == payload
 
 
 def test_upload_outputs_skips_the_event_stream_when_the_game_wrote_none(tmp_path, monkeypatch):
@@ -4565,11 +4556,12 @@ def test_upload_outputs_uploads_private_trajectory(tmp_path, monkeypatch):
     artifacts = EpisodeArtifacts.create(tmp_path)
     payload = b'{"episode":{"status":"completed"},"decisions":[]}\n'
     artifacts.trajectory_path.write_bytes(payload)
-    uploads = _upload_env(monkeypatch, TRAJECTORY_URI="file:///tmp/trajectory.jsonl")
+    destination = tmp_path / "uploaded" / "trajectory.jsonl"
+    _upload_env(monkeypatch, TRAJECTORY_URI=destination.as_uri())
 
     _upload_outputs(artifacts)
 
-    assert uploads == [("file:///tmp/trajectory.jsonl", payload, "application/x-ndjson")]
+    assert destination.read_bytes() == payload
 
 
 def test_upload_outputs_uploads_player_status(tmp_path, monkeypatch):
@@ -5183,7 +5175,7 @@ def test_player_warms_before_game_and_keeps_normal_pod_ownership(monkeypatch, gp
     container = pod.spec.containers[0]
     gpu_resources = {"nvidia.com/gpu": "1"} if gpu is not None else {}
     assert container.resources.requests == {"cpu": "2", "memory": "12Gi"} | gpu_resources
-    assert container.resources.limits == (gpu_resources or None)
+    assert container.resources.limits == {"memory": "80Gi"} | gpu_resources
     assert container.readiness_probe.http_get.port == 8080
     assert pod.spec.init_containers == []
     assert pod.metadata.owner_references == owners

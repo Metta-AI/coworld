@@ -22,16 +22,33 @@ capacity:
 | Each platform-hosted player container | 250m CPU and 256Mi memory |
 | Replay container                      | 2 CPU and 2Gi memory      |
 
-These are scheduling **requests**, not CPU or memory limits. A container may use more if the node has spare capacity,
-but game and player authors should treat the requested capacity as the portable baseline available in hosted runs.
-Hosted deployments resolve each policy’s resource profile into its seat in the episode specification. Policies without a
+These scheduling **requests** are unchanged by the memory ceilings below. A container may use more up to its limit, but
+game and player authors should treat the requested capacity as the portable baseline available in hosted runs. Hosted
+deployments resolve each policy’s resource profile into its seat in the episode specification. Policies without a
 profile inherit the Coworld’s player profile. Direct runner invocations can use `COWORLD_PLAYER_CPU_REQUEST` and
 `COWORLD_PLAYER_MEMORY_REQUEST` as defaults; without either source, the coordinator requests 2 CPU and 2Gi per player.
 
-The trusted coordinator and certification containers each have a 4Gi memory limit. This bounds memory consumed while
-reading game output without imposing a new viewer-message size limit. Deployment settings `COWORLD_WORKER_MEMORY_LIMIT`
-and `CERTIFIER_RUNNER_MEMORY_LIMIT` control these budgets. Exceeding the budget can terminate that container and fail
-its job; these limits do not reserve additional node capacity.
+Hosted memory defaults are 24Gi for games and replay containers, 80Gi for players, and 4Gi for the coordinator,
+initializers, LLM sidecars, and HTTP proxies. Existing smaller final-log and egress-proxy limits remain unchanged. Game
+and player defaults leave 2x headroom above their largest admitted memory requests (12Gi and 40Gi). Explicit
+author-selected limits retain their existing bounds. These safety ceilings are not measured usage percentiles.
+Deployment settings `COWORLD_GAME_MEMORY_LIMIT`, `COWORLD_PLAYER_MEMORY_LIMIT`, and `COWORLD_REPLAY_MEMORY_LIMIT`
+control game, player, and replay defaults. Player and replay limits are at least their admitted memory requests,
+including when an operator lowers the default. Existing request admission bounds remain the authority for supported
+allocations. `COWORLD_WORKER_MEMORY_LIMIT` controls the coordinator and its config initializer. LLM sidecars, HTTP
+proxies, and player wait initializers use fixed 4Gi limits. Certification retains its existing 4Gi
+`CERTIFIER_RUNNER_MEMORY_LIMIT`. Limits do not increase scheduling requests. Exceeding one can terminate its container
+and fail its job; existing job outcomes and telemetry report that failure.
+
+Episode files and temporary debug archives share a disk-backed 32Gi `emptyDir`, controlled by
+`COWORLD_WORKDIR_SIZE_LIMIT`. Persistent player runtimes retain their existing storage behavior; their workspace spans
+many episodes and needs a separate retention policy. For bounded episodes, this leaves room for a 15Gi game output and
+its incompressible archive. Kubernetes checks volume usage periodically and can evict an oversized pod; this is not an
+instantaneous filesystem quota or a cluster spending cap. Archives keep a visible temporary file while open so ordinary
+volume accounting includes them. Replays, event streams, and trajectories upload from file descriptors in bounded
+chunks. Debug logs are compressed only up to their initial length, so continued writes cannot keep archiving alive
+indefinitely. Results JSON validation and publication still run within the coordinator's memory budget. Artifact
+formats, player-log truncation, optional-output behavior, and existing player artifact limits remain unchanged.
 
 A player pod gets **no CPU limit by default**, so it may burst to every core on the node it lands on — meaning a policy
 that reads `os.cpu_count()`/`nproc` sees 8/12/16/32 cores depending on placement. A Coworld that wants deterministic,
@@ -41,8 +58,8 @@ limit and pins the player's math-library thread pools
 (`OMP_NUM_THREADS`/`MKL_NUM_THREADS`/`OPENBLAS_NUM_THREADS`/`NUMEXPR_NUM_THREADS`) to `floor(limit)` cores so the player
 behaves like an N-core box on any node. The player image's own thread-env wins if it sets these explicitly.
 
-A game pod similarly gets **no CPU or memory limit by default**. A Coworld that wants a hard compute ceiling on the game
-container declares `game.runnable.resources.limits.cpu` and/or `game.runnable.resources.limits.memory` in its manifest;
+A game pod has **no CPU limit by default** and a 24Gi memory ceiling. A Coworld can declare a lower memory ceiling or a
+CPU limit through `game.runnable.resources.limits.cpu` and/or `game.runnable.resources.limits.memory` in its manifest;
 the backend clamps each declared field to its own bound envelope and applies it to the game container's
 `V1Container.resources`. Unlike the player CPU limit, no math-library thread-pool pinning happens for the game role —
 that convention is player/ML-policy specific. A declared limit must resolve to at least as much as that field's resolved

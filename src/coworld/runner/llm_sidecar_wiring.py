@@ -310,7 +310,10 @@ def build_llm_sidecar(
             period_seconds=5,
             failure_threshold=3,
         ),
-        resources=client.V1ResourceRequirements(requests={"cpu": "100m", "memory": "128Mi"}),
+        resources=client.V1ResourceRequirements(
+            requests={"cpu": "100m", "memory": "128Mi"},
+            limits={"memory": "4Gi"},
+        ),
         volume_mounts=[
             client.V1VolumeMount(
                 name=LLM_SIDECAR_TOKEN_VOLUME_NAME,

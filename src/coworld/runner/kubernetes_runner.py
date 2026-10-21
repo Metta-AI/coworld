@@ -17,7 +17,6 @@ import http.server
 import json
 import logging
 import os
-import shutil
 import signal
 import socket
 import socketserver
@@ -297,6 +296,7 @@ class _PlayerArtifactUploadServer(socketserver.ThreadingMixIn, http.server.HTTPS
     daemon_threads = True
 
     def __init__(self, targets: dict[int, str], tokens: list[str]) -> None:
+        self.request_queue_size = max(self.request_queue_size, len(targets))
         super().__init__(("0.0.0.0", PLAYER_ARTIFACT_PORT), _PlayerArtifactUploadHandler)
         self.targets = targets
         self.tokens = tokens
@@ -654,67 +654,74 @@ def _upload_player_status(artifacts: EpisodeArtifacts) -> None:
 
 
 def _upload_outputs(artifacts: EpisodeArtifacts) -> None:
-    # Validate the replay before publishing results so incomplete output never reaches scoring.
-    replay_uri = os.environ.get("REPLAY_URI")
-    replay_contents = None
-    if replay_uri is not None:
-        replay_contents = _read_game_authored_file(artifacts.replay_path, None)
-        if replay_contents is None:
-            raise RunnerEpisodeError(
-                f"Required replay artifact is missing or is not a regular file: {artifacts.replay_path}",
-                error_type="replay_missing",
+    with ExitStack() as opened_files:
+        # Validate the replay before publishing results so incomplete output never reaches scoring.
+        replay_uri = os.environ.get("REPLAY_URI")
+        replay_file = None
+        if replay_uri is not None:
+            replay_file = _open_game_authored_file(artifacts.replay_path)
+            if replay_file is None:
+                raise RunnerEpisodeError(
+                    f"Required replay artifact is missing or is not a regular file: {artifacts.replay_path}",
+                    error_type="replay_missing",
+                )
+
+            opened_files.enter_context(replay_file)
+
+        _upload_player_status(artifacts)
+
+        scratchpad_uri = os.environ.get("SCRATCHPAD_OUTPUT_URI")
+        if scratchpad_uri is not None:
+            contents = _read_game_authored_file(artifacts.workspace / "memory-output.json", 16 * 1024 * 1024)
+            # Missing output is an explicit no-contribution episode. Publish even the empty
+            # document before results so successful jobs always have a private output object.
+            upload_data(
+                scratchpad_uri,
+                contents if contents is not None else b'{"protocol":"append-v1","notes":{}}',
+                content_type="application/json",
             )
 
-    _upload_player_status(artifacts)
+        results_uri = os.environ.get("RESULTS_URI")
+        if results_uri is not None:
+            contents = _read_game_authored_file(artifacts.results_path, None)
+            if contents is None:
+                raise RunnerEpisodeError(
+                    "Required results disappeared before publication", error_type="results_missing"
+                )
+            upload_data(results_uri, contents, content_type="application/json")
 
-    scratchpad_uri = os.environ.get("SCRATCHPAD_OUTPUT_URI")
-    if scratchpad_uri is not None:
-        contents = _read_game_authored_file(artifacts.workspace / "memory-output.json", 16 * 1024 * 1024)
-        # Missing output is an explicit no-contribution episode. Publish even the empty
-        # document before results so successful jobs always have a private output object.
-        upload_data(
-            scratchpad_uri,
-            contents if contents is not None else b'{"protocol":"append-v1","notes":{}}',
-            content_type="application/json",
-        )
+        if replay_uri is not None and replay_file is not None:
+            upload_file(
+                replay_uri,
+                replay_file,
+                size=os.fstat(replay_file.fileno()).st_size,
+                content_type="application/octet-stream",
+            )
 
-    results_uri = os.environ.get("RESULTS_URI")
-    if results_uri is not None:
-        contents = _read_game_authored_file(artifacts.results_path, None)
-        if contents is None:
-            raise RunnerEpisodeError("Required results disappeared before publication", error_type="results_missing")
-        upload_data(results_uri, contents, content_type="application/json")
+        # Optional streams may be absent or empty after a successful episode.
+        for env_name, path, content_type in (
+            ("EVENTS_URI", artifacts.events_path, "application/json"),
+            ("TRAJECTORY_URI", artifacts.trajectory_path, "application/x-ndjson"),
+        ):
+            uri = os.environ.get(env_name)
+            if uri is not None:
+                file = _open_game_authored_file(path)
+                if file is not None:
+                    with file:
+                        upload_file(uri, file, size=os.fstat(file.fileno()).st_size, content_type=content_type)
 
-    if replay_uri is not None and replay_contents is not None:
-        upload_data(replay_uri, replay_contents, content_type="application/octet-stream")
+        debug_uri = os.environ.get("DEBUG_URI")
+        if debug_uri is not None:
+            _upload_debug_archive(debug_uri, artifacts.logs_dir, artifacts.policy_log_messages)
 
-    # Existence-gated, unlike results/replay: most coworlds emit no event stream
-    # at all, and a coworld that emits one may still finish an episode without a
-    # single event. Both are ordinary outcomes, not a failed upload.
-    events_uri = os.environ.get("EVENTS_URI")
-    if events_uri is not None:
-        contents = _read_game_authored_file(artifacts.events_path, None)
-        if contents is not None:
-            upload_data(events_uri, contents, content_type="application/json")
-
-    trajectory_uri = os.environ.get("TRAJECTORY_URI")
-    if trajectory_uri is not None:
-        contents = _read_game_authored_file(artifacts.trajectory_path, None)
-        if contents is not None:
-            upload_data(trajectory_uri, contents, content_type="application/x-ndjson")
-
-    debug_uri = os.environ.get("DEBUG_URI")
-    if debug_uri is not None:
-        _upload_debug_archive(debug_uri, artifacts.logs_dir, artifacts.policy_log_messages)
-
-    policy_log_urls = os.environ.get("POLICY_LOG_URLS")
-    if policy_log_urls is not None:
-        for slot, log_uri in json.loads(policy_log_urls).items():
-            log_path = artifacts.policy_log_path(int(slot))
-            contents = _read_player_log(log_path)
-            if contents is not None:
-                contents = artifacts.policy_log_messages.get(log_path.name, "").encode() + contents
-                upload_data(log_uri, contents, content_type="text/plain")
+        policy_log_urls = os.environ.get("POLICY_LOG_URLS")
+        if policy_log_urls is not None:
+            for slot, log_uri in json.loads(policy_log_urls).items():
+                log_path = artifacts.policy_log_path(int(slot))
+                contents = _read_player_log(log_path)
+                if contents is not None:
+                    contents = artifacts.policy_log_messages.get(log_path.name, "").encode() + contents
+                    upload_data(log_uri, contents, content_type="text/plain")
 
 
 def _prepare_game_hosted_outputs(
@@ -805,7 +812,8 @@ def _upload_player_artifacts(artifacts: EpisodeArtifacts) -> int:
 
 
 def _upload_debug_archive(uri: str, logs_dir: Path, policy_log_messages: dict[str, str]) -> None:
-    with tempfile.TemporaryFile() as archive:
+    # Charge the archive to the same bounded volume as its source logs.
+    with tempfile.NamedTemporaryFile(dir=logs_dir.parent) as archive:
         with zipfile.ZipFile(archive, "w", zipfile.ZIP_DEFLATED) as zf:
             for path in logs_dir.iterdir():
                 if path.name.startswith("policy_agent_"):
@@ -817,9 +825,15 @@ def _upload_debug_archive(uri: str, logs_dir: Path, policy_log_messages: dict[st
                 file = _open_game_authored_file(path)
                 if file is None:
                     continue
-                # Game logs are unbounded; ZIP64 permits streamed entries larger than 2 GiB.
+                # Snapshot the length so a game still writing cannot extend archiving indefinitely.
                 with file, zf.open(path.name, "w", force_zip64=True) as entry:
-                    shutil.copyfileobj(file, entry)
+                    remaining = os.fstat(file.fileno()).st_size
+                    while remaining:
+                        chunk = file.read(min(remaining, 1024 * 1024))
+                        if not chunk:
+                            break
+                        entry.write(chunk)
+                        remaining -= len(chunk)
         upload_file(uri, archive, size=archive.tell(), content_type="application/zip")
 
 
@@ -1393,7 +1407,13 @@ def _create_player_pod(
     gpu = player.resources.requests.gpu if player.resources is not None else None
     instance_type = player.resources.requests.instance_type if player.resources is not None else None
     requests = {"cpu": player_cpu_request, "memory": player_memory_request}
-    limits = {"cpu": player_cpu_limit} if player_cpu_limit else {}
+    # Admitted requests remain usable when the deployment default is lowered.
+    memory_limit = max(
+        os.environ.get("COWORLD_PLAYER_MEMORY_LIMIT", "80Gi"), player_memory_request, key=parse_resource_quantity
+    )
+    limits = {"memory": memory_limit}
+    if player_cpu_limit:
+        limits["cpu"] = player_cpu_limit
     if gpu is not None:
         requests["nvidia.com/gpu"] = str(gpu)
         limits["nvidia.com/gpu"] = str(gpu)
@@ -1502,6 +1522,7 @@ def _create_player_pod(
             image=os.environ["COWORLD_COORDINATOR_IMAGE"],
             image_pull_policy=_player_image_pull_policy(os.environ["COWORLD_COORDINATOR_IMAGE"]),
             command=["python", "-c", _WAIT_FOR_GAME_SERVICE_SCRIPT],
+            resources=client.V1ResourceRequirements(requests={"memory": "0"}, limits={"memory": "4Gi"}),
             env=[
                 client.V1EnvVar(
                     name="COWORLD_GAME_HOST",
