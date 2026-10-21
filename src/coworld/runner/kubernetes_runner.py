@@ -853,7 +853,7 @@ def _prepare_player_pods(job: CoworldEpisodeJobSpec, worker_timings: ProcessTimi
     ]
     policy_secrets = _policy_secrets_from_env()
     private_models = requested_self_hosted_models(
-        policy_secrets[slot] for slot, _ in policy_players if slot in policy_secrets
+        dict(player.env) | policy_secrets.get(slot, {}) for slot, player in policy_players
     )
     if private_models:
         deployments = TypeAdapter(dict[str, str]).validate_json(os.environ.get("COWORLD_SELF_HOSTED_DEPLOYMENTS", "{}"))
@@ -1395,13 +1395,13 @@ def _create_player_pod(
     timings: ProcessTimings | None = None,
 ) -> None:
     command, args = _command_args(player.run)
-    llm_enablement = resolve_player_llm(policy_secret_env)
     # A CPU limit caps compute but does NOT change what os.cpu_count()/nproc report (those read
     # the host's /proc/cpuinfo), so a policy that sizes its math-library thread pools off the CPU
     # count would still spawn one-per-node-core and thrash against the quota. Pin the standard
     # thread-pool env to the limit so the player behaves like an N-core box on any node size; the
     # author's own env still wins if they set these explicitly.
     player_env = _player_thread_pool_env(player_cpu_limit) | dict(player.env) | dict(policy_secret_env)
+    llm_enablement = resolve_player_llm(player_env)
     if player.startup is not None:
         player_env["COWORLD_PLAYER_START_URL"] = f"http://{service_name}:{HEALTH_PORT}/players-ready"
     gpu = player.resources.requests.gpu if player.resources is not None else None

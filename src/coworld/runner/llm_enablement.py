@@ -10,8 +10,8 @@ class LlmEnablement(BaseModel):
     model: str | None = None
 
 
-def resolve_player_llm(policy_secret_env: Mapping[str, str]) -> LlmEnablement:
+def resolve_player_llm(env: Mapping[str, str]) -> LlmEnablement:
     return LlmEnablement(
-        enabled=policy_secret_env.get("COWORLD_LLM_ENABLED") == "true",
-        model=policy_secret_env.get("COWORLD_LLM_MODEL"),
+        enabled=env.get("COWORLD_LLM_ENABLED") == "true",
+        model=env.get("COWORLD_LLM_MODEL"),
     )
