@@ -91,12 +91,13 @@ class RunnerError(BaseModel):
 
 
 class GamePlayerFailure(BaseModel):
-    """Terminal player failure declared by the game runnable."""
+    """Terminal player interruption and its game-observed attribution."""
 
     model_config = ConfigDict(extra="forbid")
 
     message: str = Field(min_length=1, max_length=2000)
     failed_policy_index: int = Field(ge=0)
+    kind: Literal["player_error", "episode_inconclusive"] = "player_error"
 
 
 class PlayerRuntimeStatus(BaseModel):

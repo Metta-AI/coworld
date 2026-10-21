@@ -9,8 +9,10 @@ It writes the first failure before pod teardown, and a later teardown error, suc
 not replace it. The local runner does not currently produce a separate error-info file.
 
 A game may declare that its own rules make a player failure terminal by writing a `GamePlayerFailure` to the separate
-`COGAME_PLAYER_FAILURE_URI`. The coordinator validates that input, assigns `error_type: "player_error"`, and remains the
-sole producer of this final artifact. Games never infer or write `ERROR_INFO_URI`.
+`COGAME_PLAYER_FAILURE_URI`. The coordinator validates that input and remains the sole producer of this final artifact.
+The declaration defaults to `kind: "player_error"`; `kind: "episode_inconclusive"` reports an interrupted inference
+request without establishing a player fault. The latter produces no `failed_policy_index`. Games never infer or write
+`ERROR_INFO_URI`.
 
 ## Contract
 

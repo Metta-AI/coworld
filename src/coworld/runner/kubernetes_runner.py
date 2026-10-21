@@ -1875,6 +1875,9 @@ def _raise_if_game_declared_kubernetes_player_failure(
 
     if all(path.exists() for path in required_artifacts):
         return
+    if failure.kind == "episode_inconclusive":
+        raise RunnerEpisodeError(failure.message, error_type="episode_inconclusive")
+
     raise RunnerEpisodeError(
         failure.message,
         error_type="player_error",

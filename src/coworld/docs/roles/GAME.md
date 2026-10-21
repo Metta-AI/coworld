@@ -82,8 +82,10 @@ validates, archives, and submits the bundle referenced by that manifest.
 
 See [Static Replay Viewers](../STATIC_REPLAY_VIEWERS.md) for the complete authoring and verification contract.
 
-`GamePlayerFailure` is deliberately narrower than the runner's final error artifact: a game can declare only the player
-failure it observed, not infrastructure or coordinator failures owned by the runner.
+`GamePlayerFailure` describes a terminal player interruption. Its optional `kind` is `player_error` by default. Use
+`episode_inconclusive` when an inference transport failure prevents an action without establishing a player fault.
+Invalid actions, malformed completed responses, and exhausted player budgets remain `player_error`. The game cannot
+declare infrastructure or coordinator failures owned by the runner.
 
 ```json
 {
@@ -94,6 +96,10 @@ failure it observed, not infrastructure or coordinator failures owned by the run
 
 Both fields are required, unknown fields are rejected, `message` is 1–2000 characters, and `failed_policy_index` is a
 non-negative player slot.
+
+An inconclusive declaration also names the interrupted slot for validation, but the runner omits policy blame from its
+final error artifact. Inconclusive episodes do not change competitive ratings or player failure streaks. Deploy a runner
+that accepts `kind` before publishing a game that emits it; older runners reject unknown declaration fields.
 
 Publish the declaration atomically (for a file URI, write a temporary file and rename it), then shut down gracefully. Do
 not also finalize normal results or replay output for that failure. If every required success artifact is already

@@ -1646,8 +1646,8 @@ def _raise_if_game_declared_player_failure(
         return
     raise RunnerEpisodeError(
         failure.message,
-        error_type="player_error",
-        failed_policy_index=failure.failed_policy_index,
+        error_type=failure.kind,
+        failed_policy_index=failure.failed_policy_index if failure.kind == "player_error" else None,
     )
 
 
