@@ -82,6 +82,7 @@ def _player_service_wait_env(monkeypatch):
     monkeypatch.setenv("COWORLD_COORDINATOR_IMAGE", "coworld-coordinator:latest")
     monkeypatch.setenv("COWORLD_OPENROUTER_KEY_SECRET_NAME", "episode-llm-key-test")
     monkeypatch.setenv("COWORLD_TIMEOUT_SECONDS", "60")
+    monkeypatch.setenv("COWORLD_CHILD_POD_LIFETIME_SECONDS", "120")
     monkeypatch.setenv(
         "LLM_REQUEST_METADATA",
         '{"episode_request_id":"11111111-1111-1111-1111-111111111111","image_digest":"sha256:game",'

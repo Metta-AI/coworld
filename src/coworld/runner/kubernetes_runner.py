@@ -1735,6 +1735,7 @@ def _create_player_pod(
         ),
         spec=client.V1PodSpec(
             restart_policy="Never",
+            active_deadline_seconds=int(os.environ["COWORLD_CHILD_POD_LIFETIME_SECONDS"]),
             service_account_name=_LLM_SERVICE_ACCOUNT if uses_sidecar else None,
             automount_service_account_token=False,
             host_aliases=host_aliases,

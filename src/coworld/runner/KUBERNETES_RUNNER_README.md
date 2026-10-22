@@ -69,11 +69,10 @@ below its request, so registration rejects a manifest whose game limit would und
 Per-player resource settings apply only to platform-hosted child pods. Game-hosted player execution consumes the game
 container's requested and limited resources. Authors must size the game for the full roster.
 
-Hosted episode Jobs have a 20 minute active deadline. The coordinator's per-episode wait defaults to
-`COWORLD_TIMEOUT_SECONDS=3600`; hosted dispatch currently sets the Kubernetes Job deadline to 20 minutes and gives
-presigned artifact URLs one extra hour of validity. A game may end an episode early by writing a typed
-`player_failure.json` to `COGAME_PLAYER_FAILURE_URI`; otherwise player pod failures remain diagnostic until the episode
-times out.
+Hosted episode Job deadlines include the episode timeout, player readiness allowance, and cleanup allowance. Dispatch
+sets `COWORLD_TIMEOUT_SECONDS` to the episode timeout and gives child player pods the Job's maximum lifetime. A game may
+end an episode early by writing a typed `player_failure.json` to `COGAME_PLAYER_FAILURE_URI`; otherwise player pod
+failures remain diagnostic until the episode times out.
 
 ## Parent Job Shape
 
@@ -171,6 +170,9 @@ COWORLD_SERVICE_NAME
 POD_NAME
 POD_UID
 ```
+
+Creating platform-hosted player pods also requires `COWORLD_CHILD_POD_LIFETIME_SECONDS`, supplied by dispatch as the
+Job's maximum lifetime. Each child's Kubernetes deadline runs from that child's own start time.
 
 For a game-hosted init container, `PLAYER_FILE_URLS` is required. It is a JSON object mapping every zero-based slot to a
 trusted download URL. Its key set must equal `0..len(players)-1`; an absent variable, missing slots, or extra slots are
@@ -320,7 +322,7 @@ optionally adds a Karpenter capacity-type node selector, such as `on-demand`, to
 `COWORLD_PLAYER_CPU_REQUEST` and `COWORLD_PLAYER_MEMORY_REQUEST` override the resource requests applied to each child
 player pod. `COWORLD_PLAYER_CPU_LIMIT` (empty/unset means no limit) sets a hard CPU ceiling on each child player pod and
 pins its math-library thread pools to `floor(limit)` cores. `COWORLD_TIMEOUT_SECONDS` controls coordinator waits inside
-the Job; the hosted parent Job also has its own 20 minute Kubernetes active deadline.
+the Job; the hosted parent Job also has its own Kubernetes active deadline, including startup and cleanup allowances.
 
 The three `COWORLD_PLAYER_*` resource variables are ignored when no player pods exist.
 
@@ -423,6 +425,11 @@ tolerations:
 The coordinator deletes any child player pods and the game Service in a `finally` block. Child resources also have owner
 references pointing at the parent pod, so Kubernetes garbage collection can clean them up if the coordinator exits
 early.
+
+Each child player Pod also has `activeDeadlineSeconds`, using the dispatched Job's maximum lifetime, including model
+startup and cleanup allowances. Kubernetes stops its containers even if the coordinator crashes while the parent Pod
+remains retained for final logs. This is a runtime bound, not an artifact retention policy. Owner references and normal
+cleanup still remove the child resources; `restartPolicy: Never` prevents a failed player from restarting itself.
 
 The backend gracefully deletes bounded episode Jobs after the terminal decision. The Pod finalizer remains until final
 log capture or an explicit coverage failure is durable. `ttlSecondsAfterFinished` provides Job cleanup as a fallback;
