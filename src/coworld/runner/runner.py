@@ -80,7 +80,7 @@ CERTIFICATION_EPISODE_SOURCE = "coworld_certification"
 GAME_HOSTED_PLAYER_LOG_MISSING = "No player log was written by the game-hosted runtime.\n"
 
 # Hosted Coworld manifests store images as backend container-image ids: the "img_" prefix followed by a
-# UUID (see ContainerImageId / PrefixedId in metta-app-backend-client). The backend substitutes a pullable
+# UUID (see ContainerImageId / PrefixedId in observatory-protocol). The backend substitutes a pullable
 # URI when serving a manifest, but only once the image has been mirrored to the public registry; until then
 # it leaves the raw id in place. Such an id is not a Docker reference, so guard against it reaching `docker`
 # and surface the real cause. Match the full id shape so legitimate local tags like "img_game:latest" run.
