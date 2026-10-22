@@ -150,16 +150,7 @@ filegroup(
 
 filegroup(
     name = "docs_files",
-    srcs = [
-        "README.md",
-        "agents/coworlds-expert-agent/skills/upload-player-artifact/SKILL.md",
-    ] + glob(["src/coworld/docs/**/*.md"]),
-    visibility = ["//packages/coworld/tests:__pkg__"],
-)
-
-filegroup(
-    name = "package_metadata_files",
-    srcs = ["pyproject.toml"],
+    srcs = glob(["src/coworld/docs/**/*.md"]),
     visibility = ["//packages/coworld/tests:__pkg__"],
 )
 

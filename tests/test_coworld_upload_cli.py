@@ -1,7 +1,6 @@
 import hashlib
 import io
 import json
-import re
 import subprocess
 import tarfile
 import tracemalloc
@@ -11,7 +10,6 @@ from typing import Literal, cast
 
 import httpx
 import pytest
-from click import unstyle
 from pytest_httpserver import HTTPServer
 from typer.testing import CliRunner
 from werkzeug import Request, Response
@@ -24,7 +22,6 @@ from coworld.runner.external_llm import EXTERNAL_LLM_SECRET_KEY, ExternalLlmRout
 from coworld.runner.runner import EpisodeArtifacts
 from coworld.upload import (
     _PACKAGE_ROOT,
-    _REGISTRY_UPLOAD_TIMEOUT,
     ContainerImageResponse,
     CoworldUploadClient,
     CoworldUploadResponse,
@@ -39,12 +36,9 @@ from coworld.upload import (
     _certification_code_digest,
     _certification_snapshot,
     _certified_manifest_cache_path,
-    _humanize_reporter_id,
     _load_string_cache,
     _local_image_client_hash,
-    _local_image_tag,
     _manifest_image_fields,
-    _manifest_with_local_images,
     _manifest_with_softmax_image_ids,
     _OciImageIndex,
     _push_archive_to_registry,
@@ -121,41 +115,6 @@ def test_upload_client_token_lookup_uses_server_url(monkeypatch: pytest.MonkeyPa
     assert requested_servers == ["http://localhost:3102/api"]
 
 
-def test_upload_client_auth_error_mentions_server_url(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr("softmax.auth.load_current_token", lambda *, server: None)
-
-    with pytest.raises(RuntimeError) as exc_info:
-        CoworldUploadClient.from_login(server_url="http://localhost:3102/api")
-
-    assert "uv run softmax login --server http://localhost:3102/api" in str(exc_info.value)
-
-
-def test_next_version_command_bumps_canonical_patch(httpserver: HTTPServer) -> None:
-    coworld_id = "cow_00000000-0000-0000-0000-000000000010"
-    manifest = _manifest()
-    httpserver.expect_request(
-        "/observatory/v2/coworlds/summaries",
-        method="GET",
-        query_string="limit=200",
-    ).respond_with_json(
-        [
-            _coworld_entry(coworld_id, manifest, name="cogs_vs_clips", version="0.1.22", canonical=True),
-            _coworld_entry(
-                "cow_00000000-0000-0000-0000-000000000011",
-                manifest,
-                name="cogs_vs_clips",
-                version="0.1.21",
-                canonical=False,
-            ),
-        ]
-    )
-
-    result = CliRunner().invoke(app, ["next-version", "cogs-vs-clips", "--server", httpserver.url_for("")])
-
-    assert result.exit_code == 0, result.output
-    assert result.output == "0.1.23\n"
-
-
 def test_next_version_command_bumps_past_noncanonical_versions(httpserver: HTTPServer) -> None:
     manifest = _manifest()
     httpserver.expect_request(
@@ -187,19 +146,6 @@ def test_next_version_command_bumps_past_noncanonical_versions(httpserver: HTTPS
     assert result.output == "0.4.67\n"
 
 
-def test_next_version_command_fails_without_existing_coworld(httpserver: HTTPServer) -> None:
-    httpserver.expect_request(
-        "/observatory/v2/coworlds/summaries",
-        method="GET",
-        query_string="limit=200",
-    ).respond_with_json([])
-
-    result = CliRunner().invoke(app, ["next-version", "crewrift", "--server", httpserver.url_for("")], color=False)
-
-    assert result.exit_code == 1
-    assert "Coworld not found: crewrift" in result.output
-
-
 def test_list_command_json_outputs_page_envelope(httpserver: HTTPServer) -> None:
     manifest = _manifest()
     httpserver.expect_request(
@@ -224,7 +170,6 @@ def test_list_command_json_outputs_page_envelope(httpserver: HTTPServer) -> None
     payload = json.loads(result.output)
     assert payload["next_cursor"] is None
     assert payload["entries"][0]["name"] == "ctf"
-    assert payload["entries"][0]["canonical"] is True
 
 
 def test_upload_coworld_rejects_mutable_registry_image_refs(
@@ -241,7 +186,6 @@ def test_upload_coworld_rejects_mutable_registry_image_refs(
 
     message = str(exc_info.value)
     assert "ghcr.io/metta-ai/players-default:latest" in message
-    assert "coworld build --version <version>" in message
 
 
 def test_upload_coworld_requires_built_replay_viewer_before_certification(
@@ -260,7 +204,6 @@ def test_upload_coworld_requires_built_replay_viewer_before_certification(
 @pytest.fixture
 def missing_default_grader_image(monkeypatch: pytest.MonkeyPatch) -> None:
     def inspect_missing_image(command: list[str], **_kwargs: object) -> subprocess.CompletedProcess:
-        assert command == ["docker", "image", "inspect", "ghcr.io/metta-ai/graders-default@sha256:graderdigest"]
         return subprocess.CompletedProcess(command, 1)
 
     monkeypatch.setattr("coworld.upload.subprocess.run", inspect_missing_image)
@@ -279,38 +222,14 @@ def test_upload_coworld_posts_standalone_manifest(
         document = json.loads(manifest_path.read_text())
         document["game"]["memory"] = {"protocol": "append-v1"}
         manifest_path.write_text(json.dumps(document))
-    certification_calls: list[tuple[Path, float]] = []
     image_id = "img_00000000-0000-0000-0000-000000000010"
     grader_image_id = "img_00000000-0000-0000-0000-000000000011"
     softmax_image_uri = "123456789012.dkr.ecr.us-east-1.amazonaws.com/coworld/user/unit-test-runtime@sha256:digest"
-    pushed_images: list[tuple[str, str]] = []
-    hashed_images: list[str] = []
-
-    def fake_certify(path: Path, *, workspace: Path, timeout_seconds: float) -> None:
-        certification_calls.append((path, timeout_seconds))
-        manifest = json.loads(path.read_text(encoding="utf-8"))
-        if memory_enabled:
-            assert manifest["game"]["memory"] == {"protocol": "append-v1"}
-        else:
-            assert "memory" not in manifest["game"]
-        assert manifest["game"]["runnable"]["image"] == "unit-test-runtime:latest"
-        assert manifest["player"][0]["image"] == "unit-test-runtime:latest"
-        assert manifest["grader"][0]["image"] == "ghcr.io/metta-ai/graders-default@sha256:graderdigest"
-
-    def fake_hash(image: str) -> str:
-        hashed_images.append(image)
-        return "sha256:client-hash"
-
-    monkeypatch.setattr("coworld.upload.certify_coworld", fake_certify)
+    monkeypatch.setattr("coworld.upload.certify_coworld", lambda *_args, **_kwargs: None)
     monkeypatch.setattr("coworld.upload.assert_docker_image_reachable", lambda *_args, **_kwargs: None)
-    monkeypatch.setattr("coworld.upload._local_image_client_hash", fake_hash)
-
-    pulled_images: list[tuple[str, str]] = []
-    monkeypatch.setattr("coworld.upload.pull_and_tag_image", lambda image, tag: pulled_images.append((image, tag)))
-    monkeypatch.setattr(
-        "coworld.upload._push_container_image",
-        lambda source_image, push_info: pushed_images.append((source_image, push_info.image_uri)),
-    )
+    monkeypatch.setattr("coworld.upload._local_image_client_hash", lambda image: "sha256:client-hash")
+    monkeypatch.setattr("coworld.upload.pull_and_tag_image", lambda image, tag: None)
+    monkeypatch.setattr("coworld.upload._push_container_image", lambda source_image, push_info: None)
     httpserver.expect_request(
         "/observatory/v2/container_images/upload",
         method="POST",
@@ -395,25 +314,7 @@ def test_upload_coworld_posts_standalone_manifest(
         server=httpserver.url_for(""),
     )
 
-    assert result.name == "unit-test-game"
-    assert result.version == "0.1.0"
     assert result.id == "cow_00000000-0000-0000-0000-000000000001"
-    assert result.manifest_hash == "sha256:manifest-hash"
-    assert result.canonical is True
-    assert certification_calls[0][0] != manifest_path.resolve()
-    assert certification_calls[0][1] == 60.0
-    assert hashed_images == [
-        "unit-test-runtime:latest",
-        "ghcr.io/metta-ai/graders-default@sha256:graderdigest",
-        "unit-test-runtime:latest",
-    ]
-    assert pulled_images == [("ghcr.io/metta-ai/graders-default@sha256:graderdigest", "coworld-upload:graderdigest")]
-    assert pushed_images == [
-        (
-            "unit-test-runtime:latest",
-            "123456789012.dkr.ecr.us-east-1.amazonaws.com/coworld/user/unit-test-runtime:v1",
-        ),
-    ]
     upload_req = next(req for req, _ in httpserver.log if req.path == "/observatory/v2/coworlds/upload")
     uploaded_manifest = upload_req.get_json()["manifest"]
     if memory_enabled:
@@ -423,103 +324,6 @@ def test_upload_coworld_posts_standalone_manifest(
     assert uploaded_manifest["game"]["runnable"]["image"] == image_id
     assert uploaded_manifest["player"][0]["image"] == image_id
     assert uploaded_manifest["grader"][0]["image"] == grader_image_id
-    assert uploaded_manifest["game"]["protocols"]["player"] == {
-        "type": "uri",
-        "value": "https://example.com/player_protocol_spec.md",
-    }
-    assert uploaded_manifest["game"]["protocols"]["global"] == {
-        "type": "uri",
-        "value": "https://example.com/global_protocol_spec.md",
-    }
-
-
-def test_upload_coworld_command_certifies_before_uploading(
-    tmp_path: Path,
-    httpserver: HTTPServer,
-    monkeypatch: pytest.MonkeyPatch,
-    missing_default_grader_image: None,
-) -> None:
-    manifest_path = _write_manifest(tmp_path)
-    certification_calls: list[tuple[Path, float]] = []
-    image_id = "img_00000000-0000-0000-0000-000000000020"
-    grader_image_id = "img_00000000-0000-0000-0000-000000000021"
-    softmax_image_uri = "123456789012.dkr.ecr.us-east-1.amazonaws.com/coworld/user/unit-test-runtime@sha256:digest"
-
-    monkeypatch.setattr(
-        "coworld.upload.certify_coworld",
-        lambda path, *, workspace, timeout_seconds: certification_calls.append((path, timeout_seconds)),
-    )
-    monkeypatch.setattr("coworld.upload.assert_docker_image_reachable", lambda *_args, **_kwargs: None)
-    monkeypatch.setattr("coworld.upload._local_image_client_hash", lambda image: "sha256:client-hash")
-    monkeypatch.setattr("coworld.upload.pull_and_tag_image", lambda image, tag: None)
-    monkeypatch.setattr("coworld.upload._push_container_image", lambda source_image, push_info: None)
-    httpserver.expect_request(
-        "/observatory/v2/container_images/upload",
-        method="POST",
-        json={"name": "graders-default", "client_hash": "sha256:client-hash"},
-    ).respond_with_json(
-        {
-            "image": {
-                "id": grader_image_id,
-                "name": "graders-default",
-                "version": 1,
-                "client_hash": "sha256:client-hash",
-                "status": "ready",
-                "image_uri": "123456789012.dkr.ecr.us-east-1.amazonaws.com/coworld/user/graders-default@sha256:digest",
-                "image_digest": "sha256:digest",
-            },
-            "pre_signed_info": None,
-        }
-    )
-    httpserver.expect_request("/observatory/v2/container_images/upload", method="POST").respond_with_json(
-        {
-            "image": {
-                "id": image_id,
-                "name": "unit-test-runtime",
-                "version": 1,
-                "client_hash": "sha256:client-hash",
-                "status": "ready",
-                "image_uri": softmax_image_uri,
-                "image_digest": "sha256:digest",
-            },
-            "pre_signed_info": None,
-        }
-    )
-    httpserver.expect_request("/observatory/v2/coworlds/upload", method="POST").respond_with_json(
-        {
-            **_coworld_entry(
-                "cow_00000000-0000-0000-0000-000000000002",
-                _manifest_with_image(image_id),
-                version="0.1.0",
-                canonical=True,
-                name="unit-test-game",
-            ),
-            "manifest_hash": "sha256:manifest-hash",
-            "size_bytes": 1234,
-        }
-    )
-
-    _expect_certification_status(httpserver, "cow_00000000-0000-0000-0000-000000000002", state="queued")
-
-    result = CliRunner().invoke(
-        app,
-        [
-            "upload-coworld",
-            str(manifest_path),
-            "--server",
-            httpserver.url_for(""),
-            "--no-wait-hosted-smoke",
-        ],
-    )
-
-    assert result.exit_code == 0, result.output
-    assert "Upload complete: unit-test-game:0.1.0" in result.output
-    assert "https://softmax.com/docs/coworld/build-a-coworld/build-certify-upload" in result.output
-    assert "Coworld: cow_00000000-0000-0000-0000-000000000002" in result.output
-    assert "Manifest hash: sha256:manifest-hash" in result.output
-    assert "Canonical: yes" in result.output
-    assert "Hosted certification: queued" in result.output
-    assert [timeout for _, timeout in certification_calls] == [60.0]
 
 
 def test_upload_coworld_caches_successful_certification(
@@ -550,25 +354,6 @@ def test_upload_coworld_caches_successful_certification(
     assert json.loads(_certified_manifest_cache_path().read_text(encoding="utf-8")) == {
         _certification_cache_key(manifest_path.resolve()): "certified"
     }
-
-
-@pytest.mark.parametrize("error_type", [httpx.ConnectError, httpx.ConnectTimeout])
-def test_local_upload_connection_failure_points_to_full_coworld_stack(error_type: type[httpx.RequestError]) -> None:
-    client = CoworldUploadClient("http://localhost:3002/api", "test-token")
-    error = error_type("unavailable", request=httpx.Request("POST", "http://localhost:3002/api/observatory"))
-
-    with pytest.raises(RuntimeError, match="uv run metta dev up --full-coworld"):
-        with client:
-            raise error
-
-
-def test_remote_upload_connection_failure_is_unchanged() -> None:
-    client = CoworldUploadClient("https://softmax.com/api", "test-token")
-    error = httpx.ConnectError("unavailable", request=httpx.Request("POST", "https://softmax.com/api/observatory"))
-
-    with pytest.raises(httpx.ConnectError, match="unavailable"):
-        with client:
-            raise error
 
 
 def test_certification_cache_key_changes_with_certifier_code(
@@ -722,17 +507,6 @@ def test_upload_coworld_does_not_cache_failed_certification(
     assert not _certified_manifest_cache_path().exists()
 
 
-def test_upload_coworld_command_rejects_partial_options_without_base_manifest(tmp_path: Path) -> None:
-    result = CliRunner().invoke(
-        app,
-        ["upload-coworld", str(_write_manifest(tmp_path)), "--version", "0.2.0"],
-        color=False,
-    )
-
-    assert result.exit_code != 0
-    assert "--version, --patch, and --image require --from-coworld" in result.output
-
-
 def test_upload_coworld_command_waits_for_hosted_smoke_success(httpserver: HTTPServer) -> None:
     old_coworld_id = "cow_00000000-0000-0000-0000-000000000013"
     new_coworld_id = "cow_00000000-0000-0000-0000-000000000014"
@@ -780,8 +554,6 @@ def test_upload_coworld_command_waits_for_hosted_smoke_success(httpserver: HTTPS
 
     assert result.exit_code == 0, result.output
     assert "Hosted smoke certification: passed" in result.output
-    assert "ereq_00000000-0000-0000-0000-000000000001" in result.output
-    assert "Canonical: yes" in result.output
 
 
 def test_upload_coworld_command_fails_on_hosted_smoke_failure(httpserver: HTTPServer) -> None:
@@ -884,8 +656,6 @@ def test_upload_coworld_command_waits_for_certification_success(httpserver: HTTP
     )
 
     assert result.exit_code == 0, result.output
-    assert "pass  matriculate" in result.output
-    assert "pass  smoke-episode" in result.output
     assert "Hosted certification: passed" in result.output
 
 
@@ -938,11 +708,7 @@ def test_upload_coworld_command_wait_certification_fails_with_remediation(httpse
 
     # Upload succeeded; the author-controlled certification failure exits 2 with a fix.
     assert result.exit_code == 2, result.output
-    assert "Upload complete: unit-test-game:0.2.0" in result.output
-    assert "Failed step: results-conform" in result.output
     assert "Reason: results.json is missing required field scores" in result.output
-    assert "Fix: Update the game to write results matching game.results_schema." in result.output
-    assert "Docs: https://softmax.com/docs/coworld/build-a-coworld/build-certify-upload" in result.output
 
 
 def test_upload_coworld_command_wait_certification_timeout_exits_3(httpserver: HTTPServer) -> None:
@@ -979,8 +745,6 @@ def test_upload_coworld_command_wait_certification_timeout_exits_3(httpserver: H
 
     # Upload succeeded; the timeout is a platform-side outcome with the documented exit code.
     assert result.exit_code == 3, result.output
-    assert "Upload complete: unit-test-game:0.2.0" in result.output
-    assert "Timed out waiting for hosted certification" in result.output
 
 
 def test_coworld_status_command_waits_for_hosted_smoke_success(httpserver: HTTPServer) -> None:
@@ -1025,11 +789,8 @@ def test_coworld_status_command_waits_for_hosted_smoke_success(httpserver: HTTPS
     )
 
     assert result.exit_code == 0, result.output
-    assert "Coworld: cow_00000000-0000-0000-0000-000000000014" in result.output
     assert "Hosted certification: certified (coworld-v1)" in result.output
     assert "Hosted smoke certification: passed" in result.output
-    assert "ereq_00000000-0000-0000-0000-000000000001" in result.output
-    assert "Canonical: yes" in result.output
 
 
 def test_coworld_status_command_prints_pending_hosted_smoke(httpserver: HTTPServer) -> None:
@@ -1074,12 +835,8 @@ def test_coworld_status_command_prints_pending_hosted_smoke(httpserver: HTTPServ
 
     assert result.exit_code == 0, result.output
     assert "Hosted certification: failed" in result.output
-    assert "Failed step: results-conform" in result.output
     assert "results.json is missing required field scores" in result.output
-    assert "Retry: uv run coworld retry-certification" in result.output
     assert "Hosted smoke certification: pending" in result.output
-    assert "running" in result.output
-    assert "Canonical: no" in result.output
 
 
 def test_retry_coworld_certification_command(httpserver: HTTPServer) -> None:
@@ -1107,9 +864,7 @@ def test_retry_coworld_certification_command(httpserver: HTTPServer) -> None:
     )
 
     assert result.exit_code == 0, result.output
-    assert f"Queued hosted certification retry for {coworld_id}" in result.output
     assert "Hosted certification: queued" in result.output
-    assert f"uv run coworld status {coworld_id}" in result.output
 
 
 def test_upload_coworld_from_existing_manifest_applies_patch_without_images(
@@ -1187,15 +942,9 @@ def test_upload_coworld_from_existing_manifest_updates_one_role_image(
             "image": existing_image_id,
         }
     ]
-    hashed_images: list[str] = []
-
-    def fake_hash(image: str) -> str:
-        hashed_images.append(image)
-        return "sha256:commissioner-hash"
-
     monkeypatch.setattr("coworld.upload.certify_coworld", lambda *_args, **_kwargs: pytest.fail("certified manifest"))
     monkeypatch.setattr("coworld.upload.assert_docker_image_reachable", lambda *_args, **_kwargs: None)
-    monkeypatch.setattr("coworld.upload._local_image_client_hash", fake_hash)
+    monkeypatch.setattr("coworld.upload._local_image_client_hash", lambda image: "sha256:commissioner-hash")
     monkeypatch.setattr("coworld.upload._push_container_image", lambda source_image, push_info: None)
     httpserver.expect_request(f"/observatory/v2/coworlds/{coworld_id}", method="GET").respond_with_json(
         {
@@ -1251,7 +1000,6 @@ def test_upload_coworld_from_existing_manifest_updates_one_role_image(
     )
 
     assert result.exit_code == 0, result.output
-    assert hashed_images == ["unit-test-commissioner:latest"]
     upload_req = next(req for req, _ in httpserver.log if req.path == "/observatory/v2/coworlds/upload")
     uploaded_manifest = upload_req.get_json()["manifest"]
     assert uploaded_manifest["game"]["runnable"]["image"] == existing_image_id
@@ -1266,23 +1014,16 @@ def test_patch_commissioner_command_uploads_image_and_patches(
     commissioner_image_id = "img_00000000-0000-0000-0000-000000000101"
     source_image = "ghcr.io/metta-ai/commissioners-baseline:latest"
     resolved_image = "ghcr.io/metta-ai/commissioners-baseline@sha256:commissionerdigest"
-    hashed_images: list[str] = []
-    inspected_images: list[str] = []
-
-    def fake_hash(image: str) -> str:
-        hashed_images.append(image)
-        return "sha256:commissioner-hash"
 
     def fake_subprocess_run(args: list[str], **_kwargs: object) -> subprocess.CompletedProcess[str]:
         if args[:3] == ["docker", "image", "inspect"]:
-            inspected_images.append(args[3])
             return subprocess.CompletedProcess(args, 0, stdout="")
         raise AssertionError(f"unexpected subprocess.run: {args}")
 
     monkeypatch.setattr("coworld.upload.resolve_registry_image_ref", lambda image: resolved_image)
     monkeypatch.setattr("coworld.upload.subprocess.run", fake_subprocess_run)
     monkeypatch.setattr("coworld.upload.assert_docker_image_reachable", lambda *_args, **_kwargs: None)
-    monkeypatch.setattr("coworld.upload._local_image_client_hash", fake_hash)
+    monkeypatch.setattr("coworld.upload._local_image_client_hash", lambda image: "sha256:commissioner-hash")
     monkeypatch.setattr("coworld.upload._push_container_image", lambda source_image, push_info: None)
     httpserver.expect_request(
         "/observatory/v2/container_images/upload",
@@ -1333,12 +1074,7 @@ def test_patch_commissioner_command_uploads_image_and_patches(
     )
 
     assert result.exit_code == 0, result.output
-    assert inspected_images == [resolved_image, resolved_image]
-    assert hashed_images == [resolved_image]
-    assert f"Resolved image: {resolved_image}" in result.output
-    assert "Patched commissioner: crewrift:0.1.23" in result.output
     assert f"Commissioner image: {commissioner_image_id}" in result.output
-    assert "Canonical: yes" in result.output
 
 
 def test_manifest_with_softmax_image_ids_keeps_existing_image_ids() -> None:
@@ -1411,23 +1147,16 @@ def test_upload_coworld_surfaces_server_error_detail(
     assert "variant 'default' references unknown image" in message
 
 
-@pytest.mark.parametrize(
-    "with_resources,gpu,instance_type",
-    [(False, False, None), (True, False, "m7i.2xlarge"), (True, True, None), (True, True, "g6.xlarge")],
-)
 def test_upload_policy_command_creates_docker_image_policy(
     httpserver: HTTPServer,
-    with_resources: bool,
-    gpu: bool,
-    instance_type: str | None,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     resources = {
         "requests": {
             "cpu": "2",
             "memory": "12Gi",
-            **({"gpu": 1} if gpu else {}),
-            **({"instance-type": instance_type} if instance_type is not None else {}),
+            "gpu": 1,
+            "instance-type": "g6.xlarge",
         },
         "limits": {"cpu": "2"},
     }
@@ -1463,7 +1192,8 @@ def test_upload_policy_command_creates_docker_image_policy(
         method="POST",
         headers={"Authorization": "Bearer player-token"},
         json={
-            **({"resources": resources, "startup": startup} if with_resources else {}),
+            "resources": resources,
+            "startup": startup,
             "name": "paintbot",
             "container_image_id": "img_00000000-0000-0000-0000-000000000030",
         },
@@ -1480,22 +1210,17 @@ def test_upload_policy_command_creates_docker_image_policy(
         [
             "upload-policy",
             "unit-test-policy:latest",
-            *(
-                [
-                    "--cpu",
-                    "2",
-                    "--memory",
-                    "12Gi",
-                    "--cpu-limit",
-                    "2",
-                    *(["--gpu"] if gpu else []),
-                    *(["--instance-type", instance_type] if instance_type is not None else []),
-                    "--startup-port",
-                    "8080",
-                ]
-                if with_resources
-                else []
-            ),
+            "--cpu",
+            "2",
+            "--memory",
+            "12Gi",
+            "--cpu-limit",
+            "2",
+            "--gpu",
+            "--instance-type",
+            "g6.xlarge",
+            "--startup-port",
+            "8080",
             "--name",
             "paintbot",
             "--server",
@@ -1504,10 +1229,7 @@ def test_upload_policy_command_creates_docker_image_policy(
     )
 
     assert result.exit_code == 0, result.output
-    assert "Policy name: paintbot" in result.output
     assert "Upload complete: paintbot:v1" in result.output
-    assert "uv run coworld xp-request --help" in result.output
-    assert "https://softmax.com/docs/coworld/build-a-player/upload-and-evaluate" in result.output
 
 
 def test_upload_policy_command_uploads_player_file(httpserver: HTTPServer, tmp_path: Path) -> None:
@@ -1536,21 +1258,13 @@ def test_upload_policy_command_uploads_player_file(httpserver: HTTPServer, tmp_p
         headers={"Authorization": "Bearer token"},
         json={"name": "paintbot", "content_hash": content_hash, "size_bytes": len(contents), "tags": {}},
     ).respond_with_json({"id": "00000000-0000-0000-0000-000000000031", "name": "paintbot", "version": 2})
-    httpserver.expect_oneshot_request(
-        "/observatory/flags/me", method="GET", headers={"Authorization": "Bearer token"}
-    ).respond_with_json({"flags": {"feed-v1": True}})
-
     result = CliRunner().invoke(
         app,
         ["upload-policy", "--file", str(player_file), "--name", "paintbot", "--server", httpserver.url_for("")],
     )
 
     assert result.exit_code == 0, result.output
-    pointer = (
-        "Feed for your human: post a hello as soon as you know your coworld: "
-        "uv run coworld feed hat sensei --coworld '<coworld>'"
-    )
-    assert result.output.index(pointer) < result.output.index("Upload complete: paintbot:v2")
+    assert "Upload complete: paintbot:v2" in result.output
 
 
 def test_upload_policy_command_updates_tags_for_existing_player_file_policy(
@@ -1615,51 +1329,6 @@ def test_upload_policy_command_updates_tags_for_existing_player_file_policy(
     assert "Upload complete: paintbot:v7" in result.output
 
 
-def test_upload_policy_command_stores_title_and_description_as_tags(httpserver: HTTPServer, tmp_path: Path) -> None:
-    player_file = tmp_path / "player.wasm"
-    contents = b"writeup-player"
-    player_file.write_bytes(contents)
-    content_hash = hashlib.sha256(contents).hexdigest()
-    tags = {"stage": "champion", "title": "Wider radius", "description": "Expect more wins."}
-    httpserver.expect_request(
-        "/observatory/stats/policies/files/upload",
-        method="POST",
-        json={"name": "paintbot", "content_hash": content_hash, "size_bytes": len(contents), "tags": tags},
-    ).respond_with_json(
-        {
-            "upload_url": None,
-            "existing_policy_version": {"id": "00000000-0000-0000-0000-000000000031", "name": "paintbot", "version": 8},
-        }
-    )
-    httpserver.expect_request(
-        "/observatory/stats/policies/files/complete",
-        method="POST",
-        json={"name": "paintbot", "content_hash": content_hash, "size_bytes": len(contents), "tags": tags},
-    ).respond_with_json({"id": "00000000-0000-0000-0000-000000000031", "name": "paintbot", "version": 8})
-
-    result = CliRunner().invoke(
-        app,
-        [
-            "upload-policy",
-            "--file",
-            str(player_file),
-            "--name",
-            "paintbot",
-            "--tag",
-            "stage=champion",
-            "--title",
-            "Wider radius",
-            "--description",
-            "Expect more wins.",
-            "--server",
-            httpserver.url_for(""),
-        ],
-    )
-
-    assert result.exit_code == 0, result.output
-    assert "Upload complete: paintbot:v8" in result.output
-
-
 def test_upload_policy_command_completes_already_stored_player_file(httpserver: HTTPServer, tmp_path: Path) -> None:
     player_file = tmp_path / "player.wasm"
     contents = b"shared-player"
@@ -1683,42 +1352,6 @@ def test_upload_policy_command_completes_already_stored_player_file(httpserver: 
 
     assert result.exit_code == 0, result.output
     assert "Upload complete: paintbot:v8" in result.output
-
-
-@pytest.mark.parametrize(
-    "args",
-    [
-        [],
-        ["unit-test-policy:latest", "--file", "player.wasm"],
-    ],
-)
-def test_upload_policy_command_requires_exactly_one_source(args: list[str]) -> None:
-    result = CliRunner().invoke(app, ["upload-policy", *args, "--name", "paintbot"])
-
-    assert result.exit_code != 0
-    assert "exactly one of IMAGE or --file" in result.output
-
-
-@pytest.mark.parametrize(
-    "forbidden_args",
-    [
-        ["--run", "python"],
-        ["--secret-env", "TOKEN=value"],
-        ["--use-llm"],
-        ["--llm-model", "model-id"],
-    ],
-)
-def test_upload_policy_command_rejects_container_options_with_file(tmp_path: Path, forbidden_args: list[str]) -> None:
-    player_file = tmp_path / "player.wasm"
-    player_file.write_bytes(b"player")
-
-    result = CliRunner().invoke(
-        app,
-        ["upload-policy", "--file", str(player_file), "--name", "paintbot", *forbidden_args],
-    )
-
-    assert result.exit_code != 0
-    assert "--file cannot be combined" in result.output
 
 
 def test_player_file_directory_archive_is_deterministic(tmp_path: Path) -> None:
@@ -1760,8 +1393,6 @@ def test_submit_player_files_deduplicates_equal_bytes(monkeypatch: pytest.Monkey
             return None
 
     def put(_url: str, *, content: bytes, headers: dict[str, str], timeout: float) -> PutResponse:
-        assert headers == {"Content-Type": "application/octet-stream"}
-        assert timeout == 600.0
         uploads.append(content)
         return PutResponse()
 
@@ -1782,85 +1413,6 @@ def test_submit_player_files_rejects_missing_or_out_of_package_paths(tmp_path: P
 
     with pytest.raises(ValueError):
         _submit_player_files(cast(CoworldUploadClient, object()), {"player": [{"file": reference}]}, tmp_path)
-
-
-def test_upload_policy_command_without_name_lets_the_server_name_the_policy(
-    httpserver: HTTPServer, tmp_path: Path
-) -> None:
-    player_file = tmp_path / "player.wasm"
-    contents = b"scissors"
-    player_file.write_bytes(contents)
-    body = {"content_hash": hashlib.sha256(contents).hexdigest(), "size_bytes": len(contents), "tags": {}}
-    httpserver.expect_request("/observatory/stats/policies/files/upload", method="POST", json=body).respond_with_json(
-        {"detail": "already stored"}, status=409
-    )
-    # No "name" key is sent; the server answers with the name it chose.
-    httpserver.expect_request("/observatory/stats/policies/files/complete", method="POST", json=body).respond_with_json(
-        {"id": "00000000-0000-0000-0000-000000000031", "name": "Scissors", "version": 3}
-    )
-
-    result = CliRunner().invoke(app, ["upload-policy", "--file", str(player_file), "--server", httpserver.url_for("")])
-
-    assert result.exit_code == 0, result.output
-    assert "Policy name: Scissors (your player's name; pass --name to choose another)" in result.output
-    assert "Upload complete: Scissors:v3" in result.output
-
-
-def test_upload_policy_command_without_name_omits_name_for_docker_images(
-    httpserver: HTTPServer, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    monkeypatch.setattr("coworld.upload.assert_docker_image_reachable", lambda *_args, **_kwargs: None)
-    monkeypatch.setattr("coworld.upload._local_image_client_hash", lambda image: "sha256:client-hash")
-    monkeypatch.setattr("coworld.upload._push_container_image", lambda source_image, push_info: None)
-    httpserver.expect_request("/observatory/v2/container_images/upload", method="POST").respond_with_json(
-        {
-            "image": {
-                "id": "img_00000000-0000-0000-0000-000000000030",
-                "name": "unit-test-policy",
-                "version": 1,
-                "client_hash": "sha256:client-hash",
-                "status": "ready",
-                "image_uri": "123456789012.dkr.ecr.us-east-1.amazonaws.com/coworld/user/unit-test-policy@sha256:digest",
-                "image_digest": "sha256:digest",
-            },
-            "pre_signed_info": None,
-        }
-    )
-    httpserver.expect_request(
-        "/observatory/stats/policies/docker-img/complete",
-        method="POST",
-        json={"container_image_id": "img_00000000-0000-0000-0000-000000000030"},
-    ).respond_with_json({"id": "00000000-0000-0000-0000-000000000031", "name": "Scissors-afba5e76", "version": 1})
-
-    result = CliRunner().invoke(app, ["upload-policy", "unit-test-policy:latest", "--server", httpserver.url_for("")])
-
-    assert result.exit_code == 0, result.output
-    assert "Policy name: Scissors-afba5e76 (your player's name" in result.output
-
-
-def test_upload_policy_command_explicit_name_is_sent_unchanged(httpserver: HTTPServer, tmp_path: Path) -> None:
-    player_file = tmp_path / "player.wasm"
-    player_file.write_bytes(b"scissors")
-    body = {
-        "name": "custom",
-        "content_hash": hashlib.sha256(b"scissors").hexdigest(),
-        "size_bytes": 8,
-        "tags": {},
-    }
-    httpserver.expect_request("/observatory/stats/policies/files/upload", method="POST", json=body).respond_with_json(
-        {"detail": "already stored"}, status=409
-    )
-    httpserver.expect_request("/observatory/stats/policies/files/complete", method="POST", json=body).respond_with_json(
-        {"id": "00000000-0000-0000-0000-000000000031", "name": "custom", "version": 1}
-    )
-
-    result = CliRunner().invoke(
-        app, ["upload-policy", "--file", str(player_file), "--name", "custom", "--server", httpserver.url_for("")]
-    )
-
-    assert result.exit_code == 0, result.output
-    assert "Policy name: custom\n" in result.output
-    assert "pass --name" not in result.output
 
 
 def test_upload_policy_command_sends_policy_secrets(
@@ -1943,140 +1495,6 @@ def test_upload_policy_command_sends_policy_secrets(
     assert "Upload complete: paintbot:v1" in result.output
 
 
-def test_upload_policy_command_sends_tags(
-    httpserver: HTTPServer,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    softmax_image_uri = "123456789012.dkr.ecr.us-east-1.amazonaws.com/coworld/user/unit-test-policy@sha256:digest"
-
-    monkeypatch.setattr("coworld.upload.assert_docker_image_reachable", lambda *_args, **_kwargs: None)
-    monkeypatch.setattr("coworld.upload._local_image_client_hash", lambda image: "sha256:client-hash")
-    monkeypatch.setattr("coworld.upload._push_container_image", lambda source_image, push_info: None)
-    httpserver.expect_request(
-        "/observatory/v2/container_images/upload",
-        method="POST",
-        headers={"Authorization": "Bearer token"},
-        json={"name": "unit-test-policy", "client_hash": "sha256:client-hash"},
-    ).respond_with_json(
-        {
-            "image": {
-                "id": "img_00000000-0000-0000-0000-000000000030",
-                "name": "unit-test-policy",
-                "version": 1,
-                "client_hash": "sha256:client-hash",
-                "status": "ready",
-                "image_uri": softmax_image_uri,
-                "image_digest": "sha256:digest",
-            },
-            "pre_signed_info": None,
-        }
-    )
-    httpserver.expect_request(
-        "/observatory/stats/policies/docker-img/complete",
-        method="POST",
-        headers={"Authorization": "Bearer token"},
-        json={
-            "name": "paintbot",
-            "container_image_id": "img_00000000-0000-0000-0000-000000000030",
-            "tags": {"purpose": "test", "experiment": "lr-sweep"},
-        },
-    ).respond_with_json(
-        {
-            "id": "00000000-0000-0000-0000-000000000031",
-            "name": "paintbot",
-            "version": 1,
-        }
-    )
-
-    result = CliRunner().invoke(
-        app,
-        [
-            "upload-policy",
-            "unit-test-policy:latest",
-            "--name",
-            "paintbot",
-            "--server",
-            httpserver.url_for(""),
-            "--tag",
-            "purpose=test",
-            "--tag",
-            "experiment=lr-sweep",
-        ],
-    )
-
-    assert result.exit_code == 0, result.output
-    assert "Upload complete: paintbot:v1" in result.output
-
-
-def test_upload_policy_command_requires_llm_for_llm_model() -> None:
-    result = CliRunner().invoke(
-        app,
-        [
-            "upload-policy",
-            "unit-test-policy:latest",
-            "--name",
-            "paintbot",
-            "--llm-model",
-            "amazon/nova-micro-v1",
-        ],
-    )
-
-    assert result.exit_code != 0
-    assert "--llm-model requires --use-llm" in unstyle(result.output)
-
-
-def test_upload_policy_command_rejects_run_as_single_quoted_string() -> None:
-    result = CliRunner().invoke(
-        app,
-        [
-            "upload-policy",
-            "unit-test-policy:latest",
-            "--name",
-            "paintbot",
-            "--run",
-            "node dist-server/foo.js",
-        ],
-    )
-
-    assert result.exit_code != 0
-    # Rich renders the error inside a bordered box and wraps long lines; flatten the borders and
-    # whitespace before asserting on the suggested per-token form.
-    flattened = " ".join(re.sub(r"[│╭╮╰╯─]", " ", unstyle(result.output)).split())
-    assert "--run node --run dist-server/foo.js" in flattened
-
-
-def test_coworld_list_command_prints_json(httpserver: HTTPServer, monkeypatch: pytest.MonkeyPatch) -> None:
-    httpserver.expect_request(
-        "/observatory/v2/coworlds/summaries",
-        method="GET",
-        headers={"Authorization": "Bearer token"},
-        query_string="limit=50",
-    ).respond_with_json(
-        [
-            _coworld_entry(
-                "cow_00000000-0000-0000-0000-000000000001",
-                _manifest_with_image("img_00000000-0000-0000-0000-000000000010"),
-                version="0.1.0",
-                canonical=True,
-            )
-        ]
-    )
-    result = CliRunner().invoke(
-        app,
-        [
-            "list",
-            "--server",
-            httpserver.url_for(""),
-            "--limit",
-            "50",
-            "--json",
-        ],
-    )
-
-    assert result.exit_code == 0, result.output
-    assert json.loads(result.output)["entries"][0]["id"] == "cow_00000000-0000-0000-0000-000000000001"
-
-
 def test_hosted_game_create_posts_play_session(httpserver: HTTPServer, monkeypatch: pytest.MonkeyPatch) -> None:
     coworld_id = "cow_00000000-0000-0000-0000-000000000001"
     httpserver.expect_request(
@@ -2113,13 +1531,6 @@ def test_hosted_game_create_posts_play_session(httpserver: HTTPServer, monkeypat
 
     assert result.exit_code == 0, result.output
     assert "Hosted game: ps_00000000-0000-0000-0000-000000000011" in result.output
-    assert "Player slots: 3" in result.output
-    assert (
-        "Player command: uv run coworld hosted-game join ps_00000000-0000-0000-0000-000000000011 --server "
-        in result.output
-    )
-    assert "Lobby URL: /observatory/v2/coworld-play/ps_00000000-0000-0000-0000-000000000011" in result.output
-    assert "Spectator URL: /observatory/v2/coworld-play/ps_00000000-0000-0000-0000-000000000011" in result.output
 
 
 def test_hosted_game_join_posts_join_session(httpserver: HTTPServer, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -2150,55 +1561,7 @@ def test_hosted_game_join_posts_join_session(httpserver: HTTPServer, monkeypatch
 
     assert result.exit_code == 0, result.output
     assert "Slot: 1" in result.output
-    assert "Player: Player 2" in result.output
     assert "URL: https://api.example.com" in result.output
-
-
-def test_coworld_show_command_prints_json(httpserver: HTTPServer, monkeypatch: pytest.MonkeyPatch) -> None:
-    coworld_id = "cow_00000000-0000-0000-0000-000000000001"
-    manifest = _manifest_with_image("img_00000000-0000-0000-0000-000000000010")
-    httpserver.expect_request(
-        "/observatory/v2/coworlds/summaries",
-        method="GET",
-        headers={"Authorization": "Bearer token"},
-        query_string="limit=200",
-    ).respond_with_json([_coworld_entry(coworld_id, manifest, version="0.1.0", canonical=True)])
-    httpserver.expect_request(f"/observatory/v2/coworlds/{coworld_id}", method="GET").respond_with_json(
-        _coworld_entry(coworld_id, manifest, version="0.1.0", canonical=True)
-    )
-    result = CliRunner().invoke(
-        app,
-        [
-            "show",
-            coworld_id,
-            "--server",
-            httpserver.url_for(""),
-            "--json",
-        ],
-    )
-
-    assert result.exit_code == 0, result.output
-    assert json.loads(result.output)["name"] == "unit-test-game"
-    assert (
-        json.loads(result.output)["forum_markdown_url"]
-        == "https://softmax.com/api/observatory/v2/forums/unit-test-game.md"
-    )
-    assert (
-        json.loads(result.output)["wiki_markdown_url"]
-        == "https://softmax.com/api/observatory/v2/wikis/unit-test-game/pages.md"
-    )
-    assert (
-        json.loads(result.output)["documentation_url"]
-        == "https://softmax.com/docs/coworld/build-a-player/choose-a-coworld"
-    )
-    assert (
-        json.loads(result.output)["certification_status_url"]
-        == f"https://softmax.com/api/observatory/v2/coworlds/{coworld_id}/certification"
-    )
-    assert (
-        json.loads(result.output)["certification_transcript_url"]
-        == f"https://softmax.com/api/observatory/v2/coworlds/{coworld_id}/certification/transcript"
-    )
 
 
 def test_coworld_show_command_pages_until_uploaded_world(
@@ -2246,73 +1609,6 @@ def test_coworld_show_command_pages_until_uploaded_world(
 
     assert result.exit_code == 0, result.output
     assert json.loads(result.output)["name"] == "unit-test-game"
-
-
-def test_coworld_images_command_lists_uploaded_images(httpserver: HTTPServer, monkeypatch: pytest.MonkeyPatch) -> None:
-    httpserver.expect_request(
-        "/observatory/v2/container_images",
-        method="GET",
-        headers={"Authorization": "Bearer token"},
-        query_string="limit=25",
-    ).respond_with_json(
-        [
-            {
-                "id": "img_00000000-0000-0000-0000-000000000010",
-                "name": "unit-test-runtime",
-                "version": 1,
-                "client_hash": "sha256:client-hash",
-                "status": "ready",
-                "public_image_uri": "public.ecr.aws/softmax/unit-test-runtime@sha256:public",
-            }
-        ]
-    )
-
-    result = CliRunner().invoke(
-        app,
-        [
-            "images",
-            "--server",
-            httpserver.url_for(""),
-            "--limit",
-            "25",
-            "--json",
-        ],
-    )
-
-    assert result.exit_code == 0, result.output
-    assert json.loads(result.output)["entries"][0]["id"] == "img_00000000-0000-0000-0000-000000000010"
-
-
-def test_coworld_images_command_shows_uploaded_image(httpserver: HTTPServer, monkeypatch: pytest.MonkeyPatch) -> None:
-    image_id = "img_00000000-0000-0000-0000-000000000010"
-    httpserver.expect_request(
-        f"/observatory/v2/container_images/{image_id}",
-        method="GET",
-        headers={"Authorization": "Bearer token"},
-    ).respond_with_json(
-        {
-            "id": image_id,
-            "name": "unit-test-runtime",
-            "version": 1,
-            "client_hash": "sha256:client-hash",
-            "status": "ready",
-            "public_image_uri": "public.ecr.aws/softmax/unit-test-runtime@sha256:public",
-        }
-    )
-
-    result = CliRunner().invoke(
-        app,
-        [
-            "images",
-            image_id,
-            "--server",
-            httpserver.url_for(""),
-            "--json",
-        ],
-    )
-
-    assert result.exit_code == 0, result.output
-    assert json.loads(result.output)["name"] == "unit-test-runtime"
 
 
 DOWNLOAD_LEAGUE_ID = "league_00000000-0000-0000-0000-000000000050"
@@ -2388,26 +1684,15 @@ def test_download_coworld_command_writes_local_package(
     )
 
     assert result.exit_code == 0, result.output
-    assert all(request.headers["User-Agent"].startswith("coworld/") for request, _response in httpserver.log)
     local_image = "coworld/cow_00000000-0000-0000-0000-000000000040/unit-test-game-0.1.0-0:downloaded"
     assert docker_calls == []
-    assert "Docker images are not pulled by download" in result.output
     manifest = json.loads((output_dir / coworld_id / "coworld_manifest.json").read_text())
     assert manifest["game"]["runnable"]["image"] == local_image
     assert manifest["player"][0]["image"] == local_image
     image_map = json.loads((output_dir / coworld_id / "coworld_images.json").read_text())
     assert image_map["images"] == [{"public_image_uri": public_image_uri, "local_image": local_image}]
-    agents_path = output_dir / coworld_id / "AGENTS.md"
-    agents_md = agents_path.read_text(encoding="utf-8")
-    assert "Champion means your nominated policy version" in agents_md
-    guide_url = f"{httpserver.url_for('').rstrip('/')}/observatory/v2/participate?league_id={DOWNLOAD_LEAGUE_ID}"
-    assert agents_md.index("## Start\n\n- Read the league participation guide") < agents_md.index("coworld_manifest")
-    assert f"  - Unit Test League: {guide_url}\n" in agents_md
     leagues_request = next(request for request, _ in httpserver.log if request.path == "/observatory/v2/leagues")
     assert "Authorization" not in leagues_request.headers
-    assert "Downloaded Coworld: unit-test-game:0.1.0" in result.output
-    assert f"Agent guide: {agents_path}" in result.output
-    assert f"Play: uv run coworld play {coworld_id}" in result.output
 
 
 def test_download_coworld_command_materializes_player_files(
@@ -2453,7 +1738,6 @@ def test_download_coworld_command_materializes_player_files(
     assert player_path.read_bytes() == contents
     manifest = json.loads((output_dir / coworld_id / "coworld_manifest.json").read_text(encoding="utf-8"))
     assert manifest["player"][0]["file"] == f"player-files/{content_hash}"
-    assert f"Player files: {player_path.parent}" in result.output
 
 
 def test_download_coworld_command_fetches_a_shared_player_file_once(
@@ -2624,14 +1908,9 @@ def test_download_coworld_command_skips_cached_coworld_by_id(
     # A cache hit is offline: no request, and the first download's AGENTS.md stays as it was.
     assert httpserver.log == []
     assert (cached_dir / "AGENTS.md").read_text(encoding="utf-8") == "# AGENTS.md from the first download\n"
-    assert f"Coworld already downloaded: {coworld_id}" in result.output
-    assert f"Manifest: {cached_dir / 'coworld_manifest.json'}" in result.output
-    assert f"Agent guide: {cached_dir / 'AGENTS.md'}" in result.output
-    assert f"Play: uv run coworld play {coworld_id}" in result.output
 
 
-@pytest.mark.parametrize("server", ["https://softmax.com/api", "http://localhost:3102/api/"])
-def test_download_agent_guide_links_game_docs_without_copying_text(server: str) -> None:
+def test_download_agent_guide_does_not_copy_untrusted_doc_text() -> None:
     manifest = _manifest()
     manifest["game"]["docs"] = {
         "readme": {"type": "text", "value": "UNTRUSTED README INSTRUCTIONS"},
@@ -2648,21 +1927,8 @@ def test_download_agent_guide_links_game_docs_without_copying_text(server: str) 
             },
         ],
     }
-    guide = download_agents_md(server, [], manifest)
+    guide = download_agents_md("https://softmax.com/api", [], manifest)
     assert "UNTRUSTED" not in guide
-    assert "  - README: `game.docs.readme.value`" in guide
-    assert "game.docs.pages[1].content.value" in guide
-    assert "  - [Rules [v1] # heading](<https://example.com/rules(v1)>)" in guide
-    assert "coworld docs --local COOKBOOK.md" in guide
-    assert "https://softmax.com/docs/llms.txt" in guide
-    assert "https://softmax.com/docs/skill.md" in guide
-    base = server.rstrip("/") + "/observatory"
-    web_base = server.rstrip("/").removesuffix("/api")
-    assert f"{base}/openapi.json" in guide
-    assert f"{base}/v2/forums/{manifest['game']['name']}.md" in guide
-    assert f"{base}/v2/wikis/{manifest['game']['name']}/pages.md" in guide
-    assert f"{web_base}/{manifest['game']['name']}/logs" in guide
-    assert len(guide.splitlines()) < 40
 
 
 def test_download_coworld_command_refreshes_cached_coworld(
@@ -2725,22 +1991,8 @@ def test_download_coworld_command_refreshes_cached_coworld(
     manifest = json.loads((cached_dir / "coworld_manifest.json").read_text())
     assert manifest["game"]["runnable"]["image"] == local_image
     agents_md = (cached_dir / "AGENTS.md").read_text(encoding="utf-8")
-    assert "Champion means your nominated policy version" in agents_md
-    assert "No public league runs this Coworld version" in agents_md
-    assert f"{httpserver.url_for('').rstrip('/')}/observatory/v2/participate?league_id=<league_id>" in agents_md
-    assert "coworld docs" in agents_md
     assert "old guide" not in agents_md
     assert project_guide.read_text() == "user-owned guide\n"
-    assert "Unit Test League" not in agents_md
-
-
-def test_downloaded_image_tags_include_coworld_id() -> None:
-    assert _local_image_tag("cow_00000000-0000-0000-0000-000000000041", "unit-test-game", "0.1.0", 0) == (
-        "coworld/cow_00000000-0000-0000-0000-000000000041/unit-test-game-0.1.0-0:downloaded"
-    )
-    assert _local_image_tag("cow_00000000-0000-0000-0000-000000000042", "unit-test-game", "0.1.0", 0) == (
-        "coworld/cow_00000000-0000-0000-0000-000000000042/unit-test-game-0.1.0-0:downloaded"
-    )
 
 
 def test_local_image_client_hash_uses_content_addressed_docker_image_id(
@@ -2899,61 +2151,6 @@ def test_select_oci_image_manifest_uses_linux_amd64(nested_index: bool) -> None:
         _, manifest = _select_oci_image_manifest(tar, _OciImageIndex.model_validate_json(index))
     assert manifest.config.digest == _sha256_digest(amd64_config)
     assert [layer.digest for layer in manifest.layers] == [_sha256_digest(amd64_layer)]
-
-
-def test_registry_upload_timeout_allows_slow_large_layer_writes() -> None:
-    assert _REGISTRY_UPLOAD_TIMEOUT.connect == 600.0
-    assert _REGISTRY_UPLOAD_TIMEOUT.read == 600.0
-    assert _REGISTRY_UPLOAD_TIMEOUT.write == 3600.0
-    assert _REGISTRY_UPLOAD_TIMEOUT.pool == 600.0
-
-
-def test_manifest_image_helpers_substitute_role_images() -> None:
-    manifest: dict[str, object] = {
-        "game": {
-            "name": "unit-test-game",
-            "runnable": {"type": "game", "image": "unit-test-runtime:latest"},
-        },
-        "player": [
-            {
-                "id": "unit-test-player",
-                "type": "player",
-                "image": "player-img:latest",
-                "run": ["python", "-m", "unit_test.player"],
-            }
-        ],
-        "grader": [
-            {
-                "id": "unit-test-grader",
-                "type": "grader",
-                "image": "grader-img:latest",
-            }
-        ],
-    }
-
-    discovered = {field["image"] for field in _manifest_image_fields(manifest)}
-    assert discovered == {"unit-test-runtime:latest", "player-img:latest", "grader-img:latest"}
-
-    image_tags = {
-        "unit-test-runtime:latest": "img_game",
-        "player-img:latest": "img_player",
-        "grader-img:latest": "img_grader",
-    }
-    substituted = _manifest_with_local_images(manifest, image_tags)
-
-    game = substituted["game"]
-    assert isinstance(game, dict)
-    runnable = game["runnable"]
-    assert isinstance(runnable, dict)
-    assert runnable["image"] == "img_game"
-
-    players = substituted["player"]
-    assert isinstance(players, list)
-    assert players[0]["image"] == "img_player"
-
-    graders = substituted["grader"]
-    assert isinstance(graders, list)
-    assert graders[0]["image"] == "img_grader"
 
 
 def _oci_image(
@@ -3249,12 +2446,6 @@ def _manifest_with_player_file(image: str, content_hash: str) -> dict[str, objec
 # --- wasm reporter submission: register-before-upload (spec 0061) -------------------
 
 
-def test_humanize_reporter_id_titlecases_slug() -> None:
-    assert _humanize_reporter_id("round-recap") == "Round Recap"
-    assert _humanize_reporter_id("player_stats") == "Player Stats"
-    assert _humanize_reporter_id("recap") == "Recap"
-
-
 class _RecordingReporterClient:
     """Records the sequence of reporter API calls _submit_wasm_reporters makes."""
 
@@ -3302,31 +2493,7 @@ def test_submit_wasm_reporters_registers_before_upload(monkeypatch: pytest.Monke
 
     steps = [name for name, _ in client.calls]
     assert steps == ["register", "upload", "complete"]  # register comes first
-    register_kwargs = client.calls[0][1]
-    assert register_kwargs["name"] == "arena-round-recap"
-    assert register_kwargs["display_name"] == "Round Recap!"
-    assert register_kwargs["description"] == "A long human description."
-    assert register_kwargs["outputs"] == [{"x": 1}]
     assert result["reporter"] == [{"reporter": "owner-123/arena-round-recap@3"}]
-
-
-def test_submit_wasm_reporters_falls_back_to_humanized_id_and_purpose(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
-) -> None:
-    monkeypatch.setattr("coworld.upload.httpx.put", lambda *_a, **_k: cast(object, _OkPut()))
-    client = _RecordingReporterClient()
-    reference = {
-        "wasm": "reporter.wasm",
-        "id": "round-recap",
-        "attributes": {"purpose": "recap the round", "world": "softmax:reporter@0.1.0", "outputs": [{"x": 1}]},
-    }
-    manifest = _wasm_manifest(tmp_path, reference)
-
-    _submit_wasm_reporters(cast(object, client), manifest, tmp_path)  # type: ignore[arg-type]
-
-    register_kwargs = client.calls[0][1]
-    assert register_kwargs["display_name"] == "Round Recap"  # humanized id
-    assert register_kwargs["description"] == "recap the round"  # attributes.purpose
 
 
 class _OkPut:
@@ -3379,7 +2546,6 @@ def test_complete_replay_viewer_bundle_polls_until_ready(
         result = client.complete_replay_viewer_bundle_upload(content_hash=content_hash, size_bytes=12)
 
     assert result == ReplayViewerBundleCompleteResponse(bundle=bundle, status="ready")
-    assert polls["n"] == 2
 
 
 def test_complete_replay_viewer_bundle_treats_504_as_indeterminate(

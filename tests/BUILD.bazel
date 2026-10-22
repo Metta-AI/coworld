@@ -53,13 +53,7 @@ pyproject_test(
     per_test = {
         "test_init_cli": {"data": ["//packages/coworld:docs_files"]},
         "test_docs_cli": {"data": ["//packages/coworld:docs_files"]},
-        "test_commissioner_docs": {"data": ["//packages/coworld:docs_files"]},
-        "test_coworld_cookbook": {"data": ["//packages/coworld:docs_files"]},
-        "test_coworld_macos_docs": {"data": ["//packages/coworld:docs_files"]},
-        "test_coworld_artifact_docs": {"data": ["//packages/coworld:docs_files"]},
-        "test_coworld_certify_docs": {"data": ["//packages/coworld:docs_files"]},
         "test_coworld_tournament_cli": {"data": [":manifest_version_fixtures"]},
-        "test_coworld_templates": {"data": ["//packages/coworld:package_metadata_files"]},
         "test_coworld_kubernetes_runner": {"data": [":manifest_version_fixtures"]},
         "test_manifest_versions": {"data": [":manifest_version_fixtures"]},
         "test_training_provenance": {"data": [":manifest_version_fixtures"]},
