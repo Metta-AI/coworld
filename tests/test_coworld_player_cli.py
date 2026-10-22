@@ -1,5 +1,5 @@
 """`coworld player` mounts softmax-cli's player app; the full command suite is
-tested in packages/softmax-cli/tests/test_player_cli.py. This covers the mount
+tested in workspaces/softmax/cli/tests/test_player_cli.py. This covers the mount
 and the end-to-end inheritance coworld relies on."""
 
 from __future__ import annotations

@@ -261,7 +261,7 @@ py_library(
         ":coworld_core",
         ":llm_sidecar_wiring",
         ":self_hosted_inference",
-        "//packages/softmax-cli:softmax",
+        "//workspaces/softmax/cli:softmax",
         "//workspaces/softmax/client/python:softmax_client",
         "@pypi//cogsguard",
         "@pypi//fastapi",
