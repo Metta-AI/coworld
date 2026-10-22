@@ -120,7 +120,7 @@ class LeagueLockSettings(CoworldAPIModel):
     following whichever Coworld row is canonical for its game.
 
     Hand-maintained mirror of ``LeagueLockSettings`` in
-    ``packages/observatory-api/src/observatory_api/routes/app/v2/league_submissions/service.py`` — change both together.
+    ``workspaces/observatory/platform/api/src/observatory_api/routes/app/v2/league_submissions/service.py`` — change both together.
     OpenAPI marks all five required (nullable, but never absent), so none carry a default
     here: a server-side rename should fail loudly rather than silently read as None.
     """
