@@ -1218,7 +1218,16 @@ def _run_game_hosted_episode(
 ) -> None:
     assert timings.worker is not None
     worker_timings = timings.worker
+    human_game_service = os.environ.get("COWORLD_HUMAN_PLAYER_PROXY_PORT") is not None
     try:
+        if human_game_service:
+            _create_game_service(
+                core_v1,
+                namespace,
+                os.environ["COWORLD_SERVICE_NAME"],
+                os.environ["JOB_ID"],
+                _owner_references(),
+            )
         health_start = time.monotonic_ns()
         worker_timings.record("setup", worker_start, health_start)
         worker_timings.record("bootstrap", worker_timings.clock.monotonic_ns, health_start)
@@ -1268,6 +1277,8 @@ def _run_game_hosted_episode(
     finally:
         episode_failure = sys.exception()
         try:
+            # The game pod owns its Service; Kubernetes removes it with the pod.
+            # A Service delete failure must not prevent completed results uploading.
             logs_start = time.monotonic_ns()
             with _load_incluster_config(
                 egress_enforcement_enabled=os.environ.get("COWORLD_EGRESS_ENFORCEMENT_ENABLED") == "true",
