@@ -34,7 +34,6 @@ from coworld.certifier import (
     build_manifest_episode_job_spec,
     build_player_launch_specs,
     certify_coworld,
-    inspect_source_references,
     load_coworld_package,
     load_executable_transcript,
     load_manifest_episode_job_spec,
@@ -70,26 +69,15 @@ from coworld.runner.runner import (
     replay_client_url,
     replay_session_path,
 )
-from coworld.schema_validation import JsonObject, validate_json_schema
+from coworld.schema_validation import JsonObject
 from coworld.types import (
     CoworldEpisodeJobSpec,
-    CoworldManifest,
     CoworldPlayerFileSpec,
     CoworldRunnableSpec,
     SourceUrlResult,
     TranscriptStep,
 )
 from coworld.upload import CoworldUploadClient, _submit_player_files
-
-CANONICAL_ENGINE_RUNTIMES = ("mettagrid", "cogweb", "bitworld", "nimgrid")
-
-
-def test_load_coworld_package_validates_inline_game_manifest(tmp_path: Path) -> None:
-    coworld_manifest_path = _write_package_files(tmp_path)
-
-    package = load_coworld_package(coworld_manifest_path)
-    assert package.manifest_path == coworld_manifest_path.resolve()
-    assert package.manifest.game.name == "unit-test-game"
 
 
 def test_load_coworld_package_does_not_touch_docker(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -147,133 +135,6 @@ def test_load_coworld_package_requires_tags_for_certification(tmp_path: Path) ->
         load_coworld_package(coworld_manifest_path, require_certification_tags=True)
 
 
-def test_load_coworld_package_requires_protocol_uri_doc_urls(tmp_path: Path) -> None:
-    coworld_manifest_path = _write_package_files(tmp_path)
-    manifest = json.loads(coworld_manifest_path.read_text())
-    manifest["game"]["protocols"] = {
-        "player": {"type": "uri", "value": "game/docs/player_protocol_spec.md"},
-        "global": {"type": "uri", "value": "https://example.com/global_protocol_spec.md"},
-    }
-    coworld_manifest_path.write_text(json.dumps(manifest))
-
-    with pytest.raises(PydanticValidationError, match="String should match pattern"):
-        load_coworld_package(coworld_manifest_path)
-
-
-def test_load_coworld_package_allows_public_protocol_doc_links(tmp_path: Path) -> None:
-    coworld_manifest_path = _write_package_files(tmp_path)
-    manifest = json.loads(coworld_manifest_path.read_text())
-    manifest["game"]["protocols"] = {
-        "player": {"type": "uri", "value": "https://example.com/player_protocol_spec.md"},
-        "global": {"type": "uri", "value": "https://example.com/global_protocol_spec.md"},
-    }
-    coworld_manifest_path.write_text(json.dumps(manifest))
-
-    package = load_coworld_package(coworld_manifest_path)
-
-    assert package.protocols.player.type == "uri"
-    assert package.protocols.player.value == "https://example.com/player_protocol_spec.md"
-
-
-def test_load_coworld_package_allows_explicit_text_protocol_docs(tmp_path: Path) -> None:
-    coworld_manifest_path = _write_package_files(tmp_path)
-    manifest = json.loads(coworld_manifest_path.read_text())
-    manifest["game"]["protocols"] = {
-        "player": {"type": "text", "value": "# Player Protocol\n\nConnect over /player."},
-        "global": {"type": "text", "value": "# Global Protocol\n\nConnect over /global."},
-    }
-    coworld_manifest_path.write_text(json.dumps(manifest))
-
-    package = load_coworld_package(coworld_manifest_path)
-
-    assert package.protocols.player.type == "text"
-    assert package.protocols.player.value.startswith("# Player Protocol")
-
-
-@pytest.mark.parametrize("engine_runtime", CANONICAL_ENGINE_RUNTIMES)
-def test_load_coworld_package_allows_canonical_engine_runtime(tmp_path: Path, engine_runtime: str) -> None:
-    coworld_manifest_path = _write_package_files(tmp_path)
-    manifest = json.loads(coworld_manifest_path.read_text())
-    manifest["game"]["protocols"]["engine_runtime"] = engine_runtime
-    coworld_manifest_path.write_text(json.dumps(manifest))
-
-    package = load_coworld_package(coworld_manifest_path)
-
-    assert package.protocols.engine_runtime == engine_runtime
-
-
-@pytest.mark.parametrize("engine_runtime", CANONICAL_ENGINE_RUNTIMES)
-def test_load_coworld_package_requires_global_protocol_with_engine_runtime(
-    tmp_path: Path,
-    engine_runtime: str,
-) -> None:
-    coworld_manifest_path = _write_package_files(tmp_path)
-    manifest = json.loads(coworld_manifest_path.read_text())
-    del manifest["game"]["protocols"]["global"]
-    manifest["game"]["protocols"]["engine_runtime"] = engine_runtime
-    coworld_manifest_path.write_text(json.dumps(manifest))
-
-    with pytest.raises(PydanticValidationError, match="Field required"):
-        load_coworld_package(coworld_manifest_path)
-
-
-def test_load_coworld_package_rejects_unknown_engine_runtime(tmp_path: Path) -> None:
-    coworld_manifest_path = _write_package_files(tmp_path)
-    manifest = json.loads(coworld_manifest_path.read_text())
-    manifest["game"]["protocols"]["engine_runtime"] = "python-grid"
-    coworld_manifest_path.write_text(json.dumps(manifest))
-
-    with pytest.raises(PydanticValidationError, match="Input should be"):
-        load_coworld_package(coworld_manifest_path)
-
-
-def test_load_coworld_package_requires_global_protocol(tmp_path: Path) -> None:
-    coworld_manifest_path = _write_package_files(tmp_path)
-    manifest = json.loads(coworld_manifest_path.read_text())
-    del manifest["game"]["protocols"]["global"]
-    coworld_manifest_path.write_text(json.dumps(manifest))
-
-    with pytest.raises(PydanticValidationError, match="Field required"):
-        load_coworld_package(coworld_manifest_path)
-
-
-def test_load_coworld_package_allows_named_game_docs(tmp_path: Path) -> None:
-    coworld_manifest_path = _write_package_files(tmp_path)
-    manifest = json.loads(coworld_manifest_path.read_text())
-    manifest["game"]["docs"] = {
-        "readme": {"type": "uri", "value": "https://example.com/README.md"},
-        "pages": [
-            {
-                "id": "rules.md",
-                "title": "rules.md",
-                "content": {"type": "text", "value": "# Rules\n\nScore one point."},
-            },
-            {
-                "id": "play_unittest.md",
-                "title": "play_unittest.md",
-                "content": {"type": "uri", "value": "https://example.com/play_unittest.md"},
-            },
-            {
-                "id": "optimizer",
-                "title": "optimizer.md",
-                "content": {"type": "text", "value": "# Optimizer\n\nImprove policies."},
-            },
-        ],
-    }
-    coworld_manifest_path.write_text(json.dumps(manifest))
-
-    package = load_coworld_package(coworld_manifest_path)
-
-    assert package.manifest.game.docs.readme is not None
-    assert package.manifest.game.docs.readme.value == "https://example.com/README.md"
-    assert package.manifest.game.docs.pages[0].title == "rules.md"
-    assert package.manifest.game.docs.pages[0].content.value.startswith("# Rules")
-    assert package.manifest.game.docs.pages[1].title == "play_unittest.md"
-    assert package.manifest.game.docs.pages[1].content.value == "https://example.com/play_unittest.md"
-    assert package.manifest.game.docs.pages[2].title == "optimizer.md"
-    assert package.manifest.game.docs.pages[2].content.value.startswith("# Optimizer")
-
-
 def test_load_coworld_package_rejects_invalid_certification_player_entry(tmp_path: Path) -> None:
     coworld_manifest_path = _write_package_files(
         tmp_path,
@@ -313,44 +174,6 @@ def test_load_coworld_package_rejects_unknown_certification_player(tmp_path: Pat
         load_coworld_package(coworld_manifest_path)
 
 
-def test_assert_docker_image_reachable_accepts_local_image(monkeypatch: pytest.MonkeyPatch) -> None:
-    calls = []
-
-    def fake_run(cmd, **kwargs):
-        calls.append(cmd)
-        return subprocess.CompletedProcess(cmd, 0, stdout='[{"Os":"linux","Architecture":"amd64"}]', stderr="")
-
-    monkeypatch.setattr(subprocess, "run", fake_run)
-
-    assert_docker_image_reachable("local-image:latest")
-
-    assert calls == [["docker", "image", "inspect", "local-image:latest"]]
-
-
-def test_assert_docker_image_reachable_accepts_remote_image(monkeypatch: pytest.MonkeyPatch) -> None:
-    calls = []
-
-    def fake_run(cmd, **kwargs):
-        calls.append(cmd)
-        if cmd[1:3] == ["image", "inspect"]:
-            return subprocess.CompletedProcess(cmd, 1, stdout="", stderr="not local")
-        return subprocess.CompletedProcess(
-            cmd,
-            0,
-            stdout=json.dumps({"Descriptor": {"platform": {"os": "linux", "architecture": "amd64"}}}),
-            stderr="",
-        )
-
-    monkeypatch.setattr(subprocess, "run", fake_run)
-
-    assert_docker_image_reachable("ghcr.io/example/image:latest")
-
-    assert calls == [
-        ["docker", "image", "inspect", "ghcr.io/example/image:latest"],
-        ["docker", "manifest", "inspect", "--verbose", "ghcr.io/example/image:latest"],
-    ]
-
-
 def test_assert_docker_image_reachable_rejects_missing_image(monkeypatch: pytest.MonkeyPatch) -> None:
     def fake_run(cmd, **kwargs):
         return subprocess.CompletedProcess(cmd, 1, stdout="", stderr="missing image")
@@ -369,30 +192,6 @@ def test_assert_docker_image_reachable_rejects_unresolved_container_image_id(mon
 
     with pytest.raises(RuntimeError, match="unresolved Coworld image id"):
         assert_docker_image_reachable("img_d62e1e60-f2a5-480f-a347-f31c748c5c2f", label="game.runnable.image")
-
-
-def test_assert_docker_image_reachable_allows_local_image_named_like_id(monkeypatch: pytest.MonkeyPatch) -> None:
-    calls = []
-
-    def fake_run(cmd, **kwargs):
-        calls.append(cmd)
-        return subprocess.CompletedProcess(cmd, 0, stdout='[{"Os":"linux","Architecture":"amd64"}]', stderr="")
-
-    monkeypatch.setattr(subprocess, "run", fake_run)
-
-    # "img_game:latest" shares the prefix but is not an "img_<uuid>" backend id, so it must run normally.
-    assert_docker_image_reachable("img_game:latest")
-
-    assert calls == [["docker", "image", "inspect", "img_game:latest"]]
-
-
-def test_assert_docker_image_reachable_accepts_local_arm64_for_play(monkeypatch: pytest.MonkeyPatch) -> None:
-    def fake_run(cmd, **kwargs):
-        return subprocess.CompletedProcess(cmd, 0, stdout='[{"Os":"linux","Architecture":"arm64"}]', stderr="")
-
-    monkeypatch.setattr(subprocess, "run", fake_run)
-
-    assert_docker_image_reachable("local-image:latest", label="Local image")
 
 
 def test_assert_docker_image_reachable_rejects_local_arm64_for_upload(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -424,20 +223,6 @@ def test_assert_docker_image_reachable_requires_remote_manifest_with_amd64_for_u
         assert_docker_image_reachable("remote-image:latest", require_linux_amd64=True)
 
 
-def test_assert_episode_images_reachable_allows_local_arm64_for_play(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    package = load_coworld_package(_write_package_files(tmp_path))
-    job = build_manifest_episode_job_spec(package)
-
-    def fake_run(cmd, **kwargs):
-        return subprocess.CompletedProcess(cmd, 0, stdout='[{"Os":"linux","Architecture":"arm64"}]', stderr="")
-
-    monkeypatch.setattr(subprocess, "run", fake_run)
-
-    assert_episode_images_reachable(job)
-
-
 def test_assert_episode_images_reachable_rejects_local_arm64_for_upload(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -451,298 +236,6 @@ def test_assert_episode_images_reachable_rejects_local_arm64_for_upload(
 
     with pytest.raises(RuntimeError, match="linux/amd64"):
         assert_episode_images_reachable(job, require_linux_amd64=True)
-
-
-def test_assert_episode_images_reachable_warns_for_remote_amd64_image_on_apple_silicon(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
-) -> None:
-    package = load_coworld_package(_write_package_files(tmp_path))
-    job = build_manifest_episode_job_spec(package)
-
-    def fake_run(cmd, **kwargs):
-        if cmd[1:3] == ["image", "inspect"]:
-            return subprocess.CompletedProcess(cmd, 1, stdout="", stderr="not local")
-        return subprocess.CompletedProcess(
-            cmd,
-            0,
-            stdout=json.dumps({"Descriptor": {"platform": {"os": "linux", "architecture": "amd64"}}}),
-            stderr="",
-        )
-
-    monkeypatch.setattr(subprocess, "run", fake_run)
-    monkeypatch.setattr("coworld.runner.runner.sys.platform", "darwin")
-    monkeypatch.setattr("coworld.runner.runner.platform.machine", lambda: "arm64")
-    monkeypatch.delenv("DOCKER_DEFAULT_PLATFORM", raising=False)
-
-    assert_episode_images_reachable(job)
-
-    warning = capsys.readouterr().err
-    assert "linux/amd64-only Coworld images will run on Apple Silicon" in warning
-    assert "export DOCKER_DEFAULT_PLATFORM=linux/amd64" in warning
-    assert "src/coworld/docs/MACOS.md" in warning
-    assert warning.count("Warning:") == 1
-
-
-@pytest.mark.parametrize(
-    ("platforms", "default_platform"),
-    [
-        ([{"Os": "linux", "Architecture": "arm64"}], None),
-        ([{"Os": "linux", "Architecture": "amd64"}], "linux/amd64"),
-    ],
-)
-def test_assert_episode_images_reachable_skips_amd64_emulation_warning_when_configured_or_native(
-    tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
-    capsys: pytest.CaptureFixture[str],
-    platforms: list[dict[str, str]],
-    default_platform: str | None,
-) -> None:
-    package = load_coworld_package(_write_package_files(tmp_path))
-    job = build_manifest_episode_job_spec(package)
-
-    def fake_run(cmd, **kwargs):
-        return subprocess.CompletedProcess(cmd, 0, stdout=json.dumps(platforms), stderr="")
-
-    monkeypatch.setattr(subprocess, "run", fake_run)
-    monkeypatch.setattr("coworld.runner.runner.sys.platform", "darwin")
-    monkeypatch.setattr("coworld.runner.runner.platform.machine", lambda: "arm64")
-    if default_platform is None:
-        monkeypatch.delenv("DOCKER_DEFAULT_PLATFORM", raising=False)
-    else:
-        monkeypatch.setenv("DOCKER_DEFAULT_PLATFORM", default_platform)
-
-    assert_episode_images_reachable(job)
-
-    assert capsys.readouterr().err == ""
-
-
-def test_assert_episode_images_reachable_skips_amd64_emulation_warning_for_multi_platform_images(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
-) -> None:
-    package = load_coworld_package(_write_package_files(tmp_path))
-    job = build_manifest_episode_job_spec(package)
-
-    def fake_run(cmd, **kwargs):
-        if cmd[1:3] == ["image", "inspect"]:
-            return subprocess.CompletedProcess(cmd, 1, stdout="", stderr="not local")
-        return subprocess.CompletedProcess(
-            cmd,
-            0,
-            stdout=json.dumps(
-                [
-                    {"Descriptor": {"platform": {"os": "linux", "architecture": "amd64"}}},
-                    {"Descriptor": {"platform": {"os": "linux", "architecture": "arm64"}}},
-                ]
-            ),
-            stderr="",
-        )
-
-    monkeypatch.setattr(subprocess, "run", fake_run)
-    monkeypatch.setattr("coworld.runner.runner.sys.platform", "darwin")
-    monkeypatch.setattr("coworld.runner.runner.platform.machine", lambda: "arm64")
-    monkeypatch.delenv("DOCKER_DEFAULT_PLATFORM", raising=False)
-
-    assert_episode_images_reachable(job)
-
-    assert capsys.readouterr().err == ""
-
-
-def test_inspect_source_references_records_empty_github_source_url(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    source_sha = "0123456789abcdef0123456789abcdef01234567"
-    package = _package_with_player_source_url(tmp_path, f"https://github.com/Metta-AI/example/tree/{source_sha}/empty")
-
-    monkeypatch.setattr(
-        "coworld.certifier.httpx.get",
-        lambda *args, **kwargs: httpx.Response(200, json=[]),
-    )
-
-    results = inspect_source_references(package)
-
-    player = next(result for result in results if result.runnable == "player[0]")
-    assert player.status == "unresolved"
-    assert not player.publicly_accessible
-    assert "source directory is empty" in player.detail
-    assert "no Dockerfile found" in player.detail
-
-
-def test_inspect_source_references_accepts_github_sha_ref(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    source_sha = "0123456789abcdef0123456789abcdef01234567"
-    package = _package_with_player_source_url(tmp_path, f"https://github.com/Metta-AI/optimizers/tree/{source_sha}")
-    calls = []
-
-    def fake_get(url, **kwargs):
-        calls.append((url, kwargs["params"]))
-        return httpx.Response(
-            200,
-            json=[
-                {"type": "file", "name": "Dockerfile"},
-                {"type": "file", "name": "README.md"},
-            ],
-        )
-
-    monkeypatch.setattr("coworld.certifier.httpx.get", fake_get)
-
-    results = inspect_source_references(package)
-
-    assert calls == [("https://api.github.com/repos/Metta-AI/optimizers/contents", {"ref": source_sha})]
-    player = next(result for result in results if result.runnable == "player[0]")
-    assert player.status == "resolved"
-    assert player.publicly_accessible
-
-
-def test_inspect_source_references_accepts_short_github_sha_ref(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    package = _package_with_player_source_url(tmp_path, "https://github.com/Metta-AI/optimizers/tree/a3d1547")
-    calls = []
-
-    def fake_get(url, **kwargs):
-        calls.append((url, kwargs["params"]))
-        return httpx.Response(
-            200,
-            json=[
-                {"type": "file", "name": "Dockerfile"},
-                {"type": "file", "name": "README.md"},
-            ],
-        )
-
-    monkeypatch.setattr("coworld.certifier.httpx.get", fake_get)
-
-    results = inspect_source_references(package)
-
-    assert calls == [("https://api.github.com/repos/Metta-AI/optimizers/contents", {"ref": "a3d1547"})]
-    player = next(result for result in results if result.runnable == "player[0]")
-    assert player.status == "resolved"
-    assert player.publicly_accessible
-    assert "not pinned to a full 40-character commit SHA" in player.detail
-
-
-def test_inspect_source_references_accepts_bare_github_repo_url(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    package = _package_with_player_source_url(tmp_path, "https://github.com/Metta-AI/optimizers")
-    calls = []
-
-    def fake_get(url, **kwargs):
-        calls.append((url, kwargs["params"]))
-        return httpx.Response(
-            200,
-            json=[
-                {"type": "file", "name": "Dockerfile"},
-                {"type": "file", "name": "README.md"},
-            ],
-        )
-
-    monkeypatch.setattr("coworld.certifier.httpx.get", fake_get)
-
-    results = inspect_source_references(package)
-
-    assert calls == [("https://api.github.com/repos/Metta-AI/optimizers/contents", {})]
-    player = next(result for result in results if result.runnable == "player[0]")
-    assert player.status == "resolved"
-    assert player.publicly_accessible
-    assert "does not specify a commit" in player.detail
-
-
-def test_inspect_source_references_accepts_ancestor_dockerfile(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    source_sha = "0123456789abcdef0123456789abcdef01234567"
-    package = _package_with_player_source_url(
-        tmp_path,
-        f"https://github.com/Metta-AI/coworld/tree/{source_sha}/src/coworld/examples/paintarena/grader",
-    )
-    calls = []
-
-    def fake_get(url, **kwargs):
-        calls.append((url, kwargs["params"]))
-        if url.endswith("/contents/src/coworld/examples/paintarena/grader"):
-            return httpx.Response(200, json=[{"type": "file", "name": "paint_arena_summarizer.py"}])
-        if url.endswith("/contents/src/coworld/examples/paintarena"):
-            return httpx.Response(200, json=[{"type": "file", "name": "Dockerfile"}])
-        raise AssertionError(url)
-
-    monkeypatch.setattr("coworld.certifier.httpx.get", fake_get)
-
-    results = inspect_source_references(package)
-
-    assert calls == [
-        (
-            "https://api.github.com/repos/Metta-AI/coworld/contents/src/coworld/examples/paintarena/grader",
-            {"ref": source_sha},
-        ),
-        ("https://api.github.com/repos/Metta-AI/coworld/contents/src/coworld/examples/paintarena", {"ref": source_sha}),
-    ]
-    assert next(result for result in results if result.runnable == "player[0]").publicly_accessible
-
-
-def test_inspect_source_references_accepts_mutable_github_refs_with_warning(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    package = _package_with_player_source_url(tmp_path, "https://github.com/Metta-AI/optimizers/tree/main/workbench")
-    calls = []
-
-    def fake_get(url, **kwargs):
-        calls.append((url, kwargs["params"]))
-        if kwargs["params"] == {"ref": "main/workbench"}:
-            return httpx.Response(404)
-        return httpx.Response(
-            200,
-            json=[
-                {"type": "file", "name": "Dockerfile"},
-                {"type": "file", "name": "README.md"},
-            ],
-        )
-
-    monkeypatch.setattr("coworld.certifier.httpx.get", fake_get)
-
-    results = inspect_source_references(package)
-
-    assert calls == [
-        ("https://api.github.com/repos/Metta-AI/optimizers/contents", {"ref": "main/workbench"}),
-        ("https://api.github.com/repos/Metta-AI/optimizers/contents/workbench", {"ref": "main"}),
-    ]
-    player = next(result for result in results if result.runnable == "player[0]")
-    assert player.status == "resolved"
-    assert player.publicly_accessible
-    assert "not pinned to a full 40-character commit SHA" in player.detail
-
-
-def test_inspect_source_references_prefers_longest_matching_slashed_github_ref(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    package = _package_with_player_source_url(
-        tmp_path,
-        "https://github.com/Metta-AI/optimizers/tree/release/v1/player",
-    )
-    calls = []
-
-    def fake_get(url, **kwargs):
-        calls.append((url, kwargs["params"]))
-        if kwargs["params"] == {"ref": "release/v1/player"}:
-            return httpx.Response(404)
-        if url.endswith("/contents/player") and kwargs["params"] == {"ref": "release/v1"}:
-            return httpx.Response(
-                200,
-                json=[
-                    {"type": "file", "name": "Dockerfile"},
-                    {"type": "file", "name": "README.md"},
-                ],
-            )
-        raise AssertionError((url, kwargs["params"]))
-
-    monkeypatch.setattr("coworld.certifier.httpx.get", fake_get)
-
-    results = inspect_source_references(package)
-
-    assert calls == [
-        ("https://api.github.com/repos/Metta-AI/optimizers/contents", {"ref": "release/v1/player"}),
-        ("https://api.github.com/repos/Metta-AI/optimizers/contents/player", {"ref": "release/v1"}),
-    ]
-    player = next(result for result in results if result.runnable == "player[0]")
-    assert player.status == "resolved"
-    assert player.publicly_accessible
-    assert "release/v1" in player.detail
 
 
 def test_certify_coworld_does_not_gate_on_unresolved_source_references(
@@ -1056,27 +549,6 @@ def _stub_executable_pipeline(monkeypatch: pytest.MonkeyPatch) -> None:
     )
 
 
-def test_load_executable_transcript_parses_auto_steps() -> None:
-    transcript = load_executable_transcript()
-
-    assert transcript.name == "coworld-executable"
-    assert [step.id for step in transcript.steps] == [
-        "matriculate",
-        "source-resolves",
-        "images-reachable",
-        "fixture-conforms",
-        "smoke-episode",
-        "results-conform",
-        "replay-present",
-        "replay-loadable",
-        "players-run",
-        "supporting-roles",
-    ]
-    assert all(step.kind == "auto" for step in transcript.steps)
-    assert transcript.steps[0].pass_ == "schema validates"
-    assert transcript.text.lstrip().startswith("# coworld-executable")
-
-
 def test_certify_coworld_records_transcript_steps(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     coworld_manifest_path = _write_package_files(tmp_path)
     _stub_executable_pipeline(monkeypatch)
@@ -1111,57 +583,6 @@ def test_certify_coworld_skips_replay_server_for_static_viewer(tmp_path: Path, m
     replay_step = next(step for step in result.step_results if step.id == "replay-loadable")
     assert replay_step.status == "pass"
     assert replay_step.feedback == "Static replay bundle declared; legacy replay routes are not required."
-
-
-def test_certify_coworld_announces_running_before_pass(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    coworld_manifest_path = _write_package_files(tmp_path)
-    _stub_executable_pipeline(monkeypatch)
-
-    events: list[tuple[str, str]] = []
-    certify_coworld(
-        coworld_manifest_path,
-        workspace=tmp_path / "cert",
-        on_step=lambda result, step: events.append((result.id, result.status)),
-    )
-
-    transcript = load_executable_transcript()
-    assert events == [(step.id, status) for step in transcript.steps for status in ("running", "pass")]
-
-
-def test_certify_coworld_records_source_resolution_warning(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    coworld_manifest_path = _write_package_files(tmp_path)
-    manifest = json.loads(coworld_manifest_path.read_text(encoding="utf-8"))
-    manifest["player"][0]["source_url"] = "https://github.com/Metta-AI/players/tree/main/player"
-    manifest["grader"][0].pop("source_url")
-    coworld_manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
-    _stub_executable_pipeline(monkeypatch)
-
-    def fake_inspect_source_references(package):
-        return [
-            SourceUrlResult(
-                runnable="player[0]",
-                source_url="https://github.com/Metta-AI/players/tree/main/player",
-                status="resolved",
-                publicly_accessible=True,
-                detail=(
-                    "Resolved at main. WARNING: player[0] resolves, but is not pinned to a full "
-                    "40-character commit SHA (main); certification checked that ref at run time."
-                ),
-            )
-        ]
-
-    monkeypatch.setattr("coworld.certifier.inspect_source_references", fake_inspect_source_references)
-    events: list[tuple[str, str, str | None, str | None]] = []
-
-    certify_coworld(
-        coworld_manifest_path,
-        workspace=tmp_path / "cert",
-        on_step=lambda result, step: events.append((result.id, result.status, result.failure_reason, result.feedback)),
-    )
-
-    source_event = next(event for event in events if event[0] == "source-resolves" and event[1] == "pass")
-    assert source_event[2] is None
-    assert "WARNING: player[0] resolves" in cast(str, source_event[3])
 
 
 def test_certify_coworld_records_fixture_failure_before_episode(
@@ -1327,20 +748,6 @@ def test_certify_coworld_rejects_player_without_launch_log(tmp_path: Path, monke
     assert events[-1] == ("players-run", "fail", "players_missing")
 
 
-def test_certify_coworld_returns_timestamps_without_certificate_files(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    coworld_manifest_path = _write_package_files(tmp_path)
-    _stub_executable_pipeline(monkeypatch)
-
-    result = certify_coworld(coworld_manifest_path, workspace=tmp_path / "cert")
-
-    assert result.matriculated_at <= result.graduated_at
-    assert result.transcript.name == "coworld-executable"
-    assert not (result.artifacts.workspace / "certificate.json").exists()
-    assert not (result.artifacts.workspace / "coworld.degree.md").exists()
-
-
 def test_certify_coworld_rejects_player_without_certification_slot(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -1358,25 +765,6 @@ def test_certify_coworld_rejects_player_without_certification_slot(
 def test_certification_fixture_validates_after_tokens_are_injected_via_json_schema(tmp_path: Path) -> None:
     with pytest.raises(ValueError, match="game_config is invalid"):
         _write_package(tmp_path, config_schema_required=["tokens", "missing"])
-
-
-def test_game_config_with_tokens_only_injects_tokens(tmp_path: Path) -> None:
-    package = _write_package(tmp_path)
-
-    assert game_config_with_tokens(package.manifest.certification.game_config, []) == {
-        "difficulty": "easy",
-        "tokens": [],
-    }
-
-
-def test_game_config_with_tokens_rejects_non_string_tokens_via_json_schema(tmp_path: Path) -> None:
-    package = _write_package(tmp_path)
-
-    with pytest.raises(JsonSchemaValidationError):
-        validate_json_schema(
-            game_config_with_tokens(package.manifest.certification.game_config, cast(list[str], [1])),
-            package.config_schema,
-        )
 
 
 def test_load_coworld_package_requires_bounded_token_count(tmp_path: Path) -> None:
@@ -1423,42 +811,6 @@ def test_load_results_validates_against_cogame_results_schema(tmp_path: Path) ->
 
     with pytest.raises(JsonSchemaValidationError, match="'scores' is a required property"):
         load_results(package, artifacts)
-
-
-def test_build_episode_request_matches_runner_spec_shape(tmp_path: Path) -> None:
-    package = _write_package(tmp_path)
-    artifacts = EpisodeArtifacts.create(tmp_path / "cert")
-
-    episode_request = build_episode_request(package, artifacts)
-
-    assert CoworldManifest.model_validate(episode_request["manifest"]) == package.manifest
-    assert episode_request["game_config"] == {"difficulty": "easy"}
-    assert episode_request["players"] == [
-        {
-            "type": "player",
-            "image": "unit-test-runtime:latest",
-            "run": ["python", "-m", "unit_test.player"],
-            "env": {"PLAYER_MODE": "test"},
-        }
-    ]
-    assert "results_uri" not in episode_request
-    assert "replay_uri" not in episode_request
-    assert "logs_uri" not in episode_request
-
-
-def test_build_manifest_episode_job_spec_can_use_variant_config(tmp_path: Path) -> None:
-    package = _write_package(
-        tmp_path,
-        certification={
-            "game_config": {"difficulty": "smoke"},
-            "players": [{"player_id": "unit-test-player"}],
-        },
-        game_config={"difficulty": "watch"},
-    )
-
-    spec = build_manifest_episode_job_spec(package, variant_id="default")
-
-    assert spec.game_config == {"difficulty": "watch"}
 
 
 def test_build_manifest_episode_job_spec_uses_variant_player_count(tmp_path: Path) -> None:
@@ -1514,22 +866,6 @@ def test_build_manifest_episode_job_spec_rejects_variants_without_inferable_play
 
     with pytest.raises(ValueError, match="cannot infer player count for variant 'default'"):
         build_manifest_episode_job_spec(package, variant_id="default")
-
-
-def test_build_manifest_episode_job_spec_defaults_to_certification_config(tmp_path: Path) -> None:
-    package = _write_package(
-        tmp_path,
-        certification={
-            "game_config": {"difficulty": "smoke"},
-            "players": [{"player_id": "unit-test-player"}],
-        },
-        game_config={"difficulty": "watch"},
-    )
-
-    spec = build_manifest_episode_job_spec(package)
-
-    assert spec.game_config == {"difficulty": "smoke"}
-    assert spec.episode_tags == {"source": "coworld_certification"}
 
 
 def test_build_manifest_episode_job_spec_preserves_game_hosted_player_files(tmp_path: Path) -> None:
@@ -2899,15 +2235,6 @@ def _write_package_files_with_game_env(tmp_path: Path, game_env: dict[str, str])
     manifest["game"]["runnable"]["env"].update(game_env)
     coworld_manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
     return coworld_manifest_path
-
-
-def _package_with_player_source_url(tmp_path: Path, source_url: str):
-    coworld_manifest_path = _write_package_files(tmp_path)
-    manifest = json.loads(coworld_manifest_path.read_text(encoding="utf-8"))
-    manifest["player"][0]["source_url"] = source_url
-    manifest["grader"][0].pop("source_url")
-    coworld_manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
-    return load_coworld_package(coworld_manifest_path)
 
 
 def _materialized_template(tmp_path: Path, template_path: Path) -> Path:

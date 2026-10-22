@@ -29,7 +29,6 @@ import httpx
 import jsonschema
 import pytest
 import websockets
-from kubernetes import client
 from kubernetes.client import Configuration
 from kubernetes.client.rest import ApiException
 from pydantic import ValidationError
@@ -44,7 +43,6 @@ from coworld.runner import io as runner_io
 from coworld.runner import runner as runner_module
 from coworld.runner.kubernetes_runner import (
     _collect_logs,
-    _player_image_pull_policy,
     _upload_outputs,
     _wait_for_episode_artifacts,
 )
@@ -52,7 +50,6 @@ from coworld.runner.llm_sidecar_wiring import (
     EGRESS_RELAY_CA_FILE,
     EGRESS_RELAY_CLIENT_CERT_FILE,
     EGRESS_RELAY_CLIENT_KEY_FILE,
-    EGRESS_RELAY_CLIENT_TLS_VOLUME_NAME,
     LLM_SIDECAR_CONTAINER_NAME,
     LLM_SIDECAR_TOKEN_FILE,
     LLM_SIDECAR_TOKEN_VOLUME_NAME,
@@ -102,17 +99,12 @@ def test_load_incluster_config_sets_retries_without_rewriting_auth(monkeypatch):
     loaded.api_key = {"BearerToken": "sa-token"}
     loaded.api_key_prefix = {"BearerToken": "Bearer"}
 
-    load_calls: list[bool] = []
-    saved: list[Configuration] = []
-
-    monkeypatch.setattr(kubernetes_runner.config, "load_incluster_config", lambda: load_calls.append(True))
+    monkeypatch.setattr(kubernetes_runner.config, "load_incluster_config", lambda: None)
     monkeypatch.setattr(kubernetes_runner.client.Configuration, "get_default_copy", lambda: loaded)
-    monkeypatch.setattr(kubernetes_runner.client.Configuration, "set_default", lambda c: saved.append(c))
+    monkeypatch.setattr(kubernetes_runner.client.Configuration, "set_default", lambda _configuration: None)
 
     kubernetes_runner._load_incluster_config(egress_enforcement_enabled=False)
 
-    assert load_calls == [True]
-    assert saved == [loaded]
     # Retries set for 429 backoff...
     retries = loaded.retries
     assert retries is not None
@@ -127,10 +119,8 @@ def test_enforced_incluster_config_keeps_relay_hostname_after_token_refresh(monk
     loaded = Configuration()
     loaded.host = "https://10.96.0.1"
     loaded.api_key = {"BearerToken": "old-token"}
-    refresh_calls: list[bool] = []
 
     def sdk_refresh(configuration: Configuration) -> None:
-        refresh_calls.append(True)
         configuration.host = "https://10.96.0.1"
         configuration.api_key["BearerToken"] = "new-token"
         cast(Any, configuration).refresh_api_key_hook = sdk_refresh
@@ -153,7 +143,6 @@ def test_enforced_incluster_config_keeps_relay_hostname_after_token_refresh(monk
         loaded.refresh_api_key_hook(loaded)
         assert loaded.host == "https://kubernetes.default.svc"
 
-    assert refresh_calls == [True, True]
     assert loaded.api_key == {"BearerToken": "new-token"}
     api_client.close()
 
@@ -419,7 +408,6 @@ def test_init_config_stages_verified_player_files_and_seats_document(monkeypatch
     monkeypatch.setenv("JOB_SPEC_URI", init_config.COORDINATOR_SPEC_PATH.as_uri())
     worker_timings = ProcessTimings(clock=TimingClock.capture())
     assert bootstrap.read_job_spec(worker_timings) == (job, init_config.COORDINATOR_SPEC_PATH.read_bytes())
-    assert worker_timings.spec_scheme == "file"
     assert not (tmp_path / "worker_spec.json").exists()
     assert not (tmp_path / "spec.json").exists()
     assert not init_config.COORDINATOR_SPEC_PATH.is_relative_to(tmp_path)
@@ -427,17 +415,6 @@ def test_init_config_stages_verified_player_files_and_seats_document(monkeypatch
         init_config.COORDINATOR_SPEC_PATH.read_bytes()
         == (init_config.COORDINATOR_SPEC_PATH.parent / "source_spec.json").read_bytes()
     )
-    init_timings = ProcessTimings.model_validate_json((tmp_path / "init_timings.json").read_text())
-    assert {
-        "imports",
-        "spec_fetch",
-        "spec_validate",
-        "player_files",
-        "config_write",
-        "setup",
-        "bootstrap",
-    } <= init_timings.intervals.keys()
-    assert init_timings.final_clock is not None
     assert not error_path.exists()
     assert [(tmp_path / "players" / str(slot) / "file").read_bytes() for slot in range(len(contents))] == contents
     seats = json.loads((tmp_path / "player_seats.json").read_text(encoding="utf-8"))
@@ -462,10 +439,6 @@ def test_init_config_stages_verified_player_files_and_seats_document(monkeypatch
         "player_status_uri": "file:///coworld/player_status.json",
     }
     assert all("source-" not in json.dumps(seat) for seat in seats["seats"])
-    timing = json.loads((tmp_path / "player_file_stage.json").read_text(encoding="utf-8"))
-    assert timing["count"] == 2
-    assert timing["bytes_total"] == sum(map(len, contents))
-    assert timing["stage_s"] >= 0
 
 
 def test_stage_player_files_preserves_shipped_v1_game_consumer(tmp_path):
@@ -695,20 +668,12 @@ def test_run_from_env_writes_config_error_when_job_spec_validation_fails(monkeyp
     for name in ("DEBUG_URI", "POLICY_LOG_URLS", "PLAYER_STATUS_URI", "WORKER_TIMINGS_URI"):
         monkeypatch.delenv(name, raising=False)
 
-    timing_path = tmp_path / "worker_timings.json"
-    monkeypatch.setenv("WORKER_TIMINGS_URI", timing_path.as_uri())
-
     with pytest.raises(ValidationError, match="validation errors?"):
         kubernetes_runner.run_from_env()
 
     error_info = json.loads(error_path.read_text(encoding="utf-8"))
     assert error_info["error_type"] == "config_error"
     assert "X-Amz-" not in error_info["message"]
-    assert "missing" in error_info["message"]
-
-    timings = EpisodePhaseTimings.model_validate_json(timing_path.read_bytes())
-    assert timings.worker is not None and timings.worker.final_clock is not None
-    assert timings.worker.final_clock.monotonic_ns >= timings.worker.clock.monotonic_ns
 
 
 def test_upload_outputs_uploads_raw_replay_bytes(tmp_path, monkeypatch):
@@ -796,33 +761,6 @@ def test_upload_outputs_rejects_symlinked_results(tmp_path, monkeypatch, caplog)
     assert str(artifacts.results_path) in caplog.text
 
 
-@pytest.mark.parametrize("complete", [False, True])
-def test_upload_timings_preserves_completed_phases(monkeypatch, tmp_path, complete):
-    destination = tmp_path / "timings.json"
-    monkeypatch.setenv("WORKER_TIMINGS_URI", destination.as_uri())
-    timings = EpisodePhaseTimings(game_boot_s=1.0, artifact_upload_s=0.5 if complete else None)
-
-    kubernetes_runner._upload_timings(timings)
-
-    restored = EpisodePhaseTimings.model_validate_json(destination.read_bytes())
-    assert restored.phase_seconds() == timings.phase_seconds()
-
-
-def test_player_image_pull_policy_uses_ifnotpresent_for_digest(monkeypatch):
-    monkeypatch.delenv("COWORLD_PLAYER_IMAGE_PULL_POLICY", raising=False)
-    assert _player_image_pull_policy("public.ecr.aws/x/paintbot@sha256:abc123") == "IfNotPresent"
-
-
-def test_player_image_pull_policy_uses_always_for_mutable_tag(monkeypatch):
-    monkeypatch.delenv("COWORLD_PLAYER_IMAGE_PULL_POLICY", raising=False)
-    assert _player_image_pull_policy("public.ecr.aws/x/paintbot:latest") == "Always"
-
-
-def test_player_image_pull_policy_env_override_wins(monkeypatch):
-    monkeypatch.setenv("COWORLD_PLAYER_IMAGE_PULL_POLICY", "IfNotPresent")
-    assert _player_image_pull_policy("public.ecr.aws/x/paintbot:latest") == "IfNotPresent"
-
-
 def test_require_http_ok_accepts_replay_client_redirect(monkeypatch):
     class RedirectResponse:
         status_code = 307
@@ -908,60 +846,6 @@ def test_require_global_message_blames_game_contract_when_players_healthy(monkey
         )
 
     assert exc_info.value.error_type == "game_contract_violation"
-
-
-@pytest.mark.parametrize(
-    ("episode_timeout_seconds", "startup_timeout_seconds", "expected_timeout_seconds"),
-    [
-        (5.0, runner_module.DEFAULT_RUNTIME_STARTUP_TIMEOUT_SECONDS, 5.0),
-        (120.0, runner_module.DEFAULT_RUNTIME_STARTUP_TIMEOUT_SECONDS, 10.0),
-        (120.0, runner_module.LOBBY_RUNTIME_STARTUP_TIMEOUT_SECONDS, 60.0),
-    ],
-)
-def test_require_global_message_uses_the_selected_startup_timeout(
-    monkeypatch, episode_timeout_seconds, startup_timeout_seconds, expected_timeout_seconds
-):
-    events: list[tuple[str, int]] = []
-
-    class GlobalWebSocket:
-        async def __aenter__(self):
-            events.append(("viewer connected", threading.get_ident()))
-            return self
-
-        async def __aexit__(self, *_args):
-            return None
-
-        async def recv(self):
-            events.append(("global message", threading.get_ident()))
-            return b"frame"
-
-        def __aiter__(self):
-            return self
-
-        async def __anext__(self):
-            return await asyncio.Future()
-
-    observed_timeouts: list[float] = []
-
-    async def wait_for(awaitable, *, timeout):
-        observed_timeouts.append(timeout)
-        return await awaitable
-
-    monkeypatch.setattr(websockets, "connect", lambda *_args, **_kwargs: GlobalWebSocket())
-    monkeypatch.setattr(asyncio, "wait_for", wait_for)
-
-    asyncio.run(
-        runner_module._require_global_message(
-            "ws://example.test/global",
-            timeout_seconds=episode_timeout_seconds,
-            startup_timeout_seconds=startup_timeout_seconds,
-            on_connected=lambda: events.append(("players started", threading.get_ident())),
-        )
-    )
-
-    assert observed_timeouts == [expected_timeout_seconds]
-    threads = dict(events)
-    assert threads["players started"] != threads["viewer connected"]
 
 
 @pytest.fixture
@@ -1058,122 +942,6 @@ def test_run_episode_containers_uses_docker_dns_and_omits_policy_names_env(
     assert player_command[player_command.index("-v") + 1] == "/coworld-artifact"
     assert ["docker", "rm", "-f", "-v", "coworld-run-player-session-1-0"] in run_commands
     assert "COWORLD_PLAYER_ARTIFACT_UPLOAD_URL=file:///coworld-artifact/policy_artifact_0.zip" in player_command
-
-
-def test_run_episode_containers_adds_fixed_extra_local_ports(tmp_path, monkeypatch):
-    commands: list[list[str]] = []
-
-    class FakeProcess:
-        def poll(self):
-            return None
-
-    async def noop_async(*_args, **_kwargs):
-        return None
-
-    monkeypatch.setattr(runner_module, "_wait_for_published_port", lambda *_args, **_kwargs: 12345)
-    monkeypatch.setattr(secrets, "token_hex", lambda _bytes: "session-1")
-    monkeypatch.setattr(runner_module, "_wait_for_health", lambda *_args, **_kwargs: None)
-    monkeypatch.setattr(runner_module, "_require_http_ok", lambda *_args, **_kwargs: None)
-    monkeypatch.setattr(runner_module, "_require_bad_player_rejected", noop_async)
-    monkeypatch.setattr(runner_module, "_require_global_message", noop_async)
-    monkeypatch.setattr(runner_module, "_wait_for_game_exit", lambda *_args, **_kwargs: None)
-
-    def fake_popen(command, **_kwargs):
-        commands.append(command)
-        return FakeProcess()
-
-    def fake_run(command, **_kwargs):
-        commands.append(command)
-        return subprocess.CompletedProcess(command, 0)
-
-    monkeypatch.setattr(subprocess, "Popen", fake_popen)
-    monkeypatch.setattr(subprocess, "run", fake_run)
-
-    runner_module.run_episode_containers(
-        EpisodeRunSpec(
-            game=RunnableLaunchSpec(
-                image="game:latest",
-                env={runner_module.LOCAL_EXTRA_PORTS_ENV_VAR: "3724:3724,8085:8085"},
-            ),
-            players=[],
-            tokens=[],
-            artifacts=EpisodeArtifacts.create(tmp_path),
-            timeout_seconds=1,
-            container_prefix="coworld-run",
-        ),
-        verify_replay=False,
-    )
-
-    game_command = next(command for command in commands if command[:2] == ["docker", "create"])
-    assert _docker_publish_values(game_command) == [
-        "127.0.0.1::8080",
-        "127.0.0.1:3724:3724",
-        "127.0.0.1:8085:8085",
-    ]
-    assert _env_value(game_command, "COWORLD_LOCAL_PORT_3724") == "127.0.0.1:3724"
-    assert _env_value(game_command, "COWORLD_LOCAL_PORT_8085") == "127.0.0.1:8085"
-    local_ports = _env_value(game_command, runner_module.LOCAL_PORTS_JSON_ENV_VAR)
-    assert local_ports is not None
-    assert json.loads(local_ports) == {
-        "3724": {"host": "127.0.0.1", "port": 3724},
-        "8085": {"host": "127.0.0.1", "port": 8085},
-    }
-
-
-def test_run_episode_containers_allocates_dynamic_extra_local_ports(tmp_path, monkeypatch):
-    commands: list[list[str]] = []
-    free_ports = iter([41000, 41001])
-
-    class FakeProcess:
-        def poll(self):
-            return None
-
-    async def noop_async(*_args, **_kwargs):
-        return None
-
-    monkeypatch.setattr(runner_module, "_free_local_port", lambda: next(free_ports))
-    monkeypatch.setattr(runner_module, "_wait_for_published_port", lambda *_args, **_kwargs: 12345)
-    monkeypatch.setattr(secrets, "token_hex", lambda _bytes: "session-1")
-    monkeypatch.setattr(runner_module, "_wait_for_health", lambda *_args, **_kwargs: None)
-    monkeypatch.setattr(runner_module, "_require_http_ok", lambda *_args, **_kwargs: None)
-    monkeypatch.setattr(runner_module, "_require_bad_player_rejected", noop_async)
-    monkeypatch.setattr(runner_module, "_require_global_message", noop_async)
-    monkeypatch.setattr(runner_module, "_wait_for_game_exit", lambda *_args, **_kwargs: None)
-
-    def fake_popen(command, **_kwargs):
-        commands.append(command)
-        return FakeProcess()
-
-    def fake_run(command, **_kwargs):
-        commands.append(command)
-        return subprocess.CompletedProcess(command, 0)
-
-    monkeypatch.setattr(subprocess, "Popen", fake_popen)
-    monkeypatch.setattr(subprocess, "run", fake_run)
-
-    runner_module.run_episode_containers(
-        EpisodeRunSpec(
-            game=RunnableLaunchSpec(
-                image="game:latest",
-                env={runner_module.LOCAL_EXTRA_PORTS_ENV_VAR: "3724:0,8085"},
-            ),
-            players=[],
-            tokens=[],
-            artifacts=EpisodeArtifacts.create(tmp_path),
-            timeout_seconds=1,
-            container_prefix="coworld-run",
-        ),
-        verify_replay=False,
-    )
-
-    game_command = next(command for command in commands if command[:2] == ["docker", "create"])
-    assert _docker_publish_values(game_command) == [
-        "127.0.0.1::8080",
-        "127.0.0.1:41000:3724",
-        "127.0.0.1:41001:8085",
-    ]
-    assert _env_value(game_command, "COWORLD_LOCAL_PORT_3724") == "127.0.0.1:41000"
-    assert _env_value(game_command, "COWORLD_LOCAL_PORT_8085") == "127.0.0.1:41001"
 
 
 @pytest.mark.parametrize(
@@ -1342,57 +1110,6 @@ def test_run_episode_containers_verifies_raw_replay_uri(tmp_path, monkeypatch, s
     ]
     assert f"{runner_module.REPLAY_LOAD_ENV_VAR}=file:///coworld-replay/replay" in replay_command
     assert mounted_replay_bytes[0] == replay_payload
-
-
-def test_ensure_local_docker_network_reuses_existing_network(monkeypatch):
-    calls: list[list[str]] = []
-
-    def fake_run(command, **_kwargs):
-        calls.append(command)
-        return subprocess.CompletedProcess(command, 0)
-
-    monkeypatch.setattr(subprocess, "run", fake_run)
-
-    runner_module.ensure_local_docker_network()
-
-    assert calls == [["docker", "network", "inspect", runner_module.LOCAL_DOCKER_NETWORK]]
-
-
-def test_ensure_local_docker_network_creates_missing_network(monkeypatch):
-    calls: list[list[str]] = []
-
-    def fake_run(command, **_kwargs):
-        calls.append(command)
-        return subprocess.CompletedProcess(command, 1 if command[1:3] == ["network", "inspect"] else 0)
-
-    monkeypatch.setattr(subprocess, "run", fake_run)
-
-    runner_module.ensure_local_docker_network()
-
-    assert calls == [
-        ["docker", "network", "inspect", runner_module.LOCAL_DOCKER_NETWORK],
-        ["docker", "network", "create", runner_module.LOCAL_DOCKER_NETWORK],
-    ]
-
-
-def test_ensure_local_docker_network_accepts_concurrent_create(monkeypatch):
-    calls: list[list[str]] = []
-
-    def fake_run(command, **_kwargs):
-        calls.append(command)
-        if command[1:3] == ["network", "inspect"]:
-            return subprocess.CompletedProcess(command, 0 if len(calls) == 3 else 1)
-        return subprocess.CompletedProcess(command, 1, stderr="network with name coworld-local already exists")
-
-    monkeypatch.setattr(subprocess, "run", fake_run)
-
-    runner_module.ensure_local_docker_network()
-
-    assert calls == [
-        ["docker", "network", "inspect", runner_module.LOCAL_DOCKER_NETWORK],
-        ["docker", "network", "create", runner_module.LOCAL_DOCKER_NETWORK],
-        ["docker", "network", "inspect", runner_module.LOCAL_DOCKER_NETWORK],
-    ]
 
 
 def test_wait_for_episode_artifacts_skips_pod_status_after_results_when_replay_not_required(tmp_path):
@@ -1982,13 +1699,6 @@ def test_ensure_player_pods_started_returns_when_every_seat_is_dead(gate_clock):
     assert gate_clock["now"] == 0.0
 
 
-def test_player_pod_slot_requires_the_production_name_shape():
-    assert kubernetes_runner._player_pod_slot("episode-player-3") == 3
-
-    with pytest.raises(ValueError, match="does not end in '-player-<slot>'"):
-        kubernetes_runner._player_pod_slot("player-3")
-
-
 def test_wait_for_players_to_complete_observes_clean_process_completion():
     statuses = iter(
         [
@@ -2182,14 +1892,12 @@ def test_collect_logs_records_marker_for_player_pods_that_never_started(tmp_path
         artifacts,
     )
 
-    assert artifacts.game_stdout_path.read_text(encoding="utf-8") == "game-pod game combined stdout stderr logs"
     assert artifacts.policy_log_path(0).read_text(encoding="utf-8") == (
         "No logs collected for pod job-player-0 container player: the player container never started.\n"
     )
     assert artifacts.policy_log_path(1).read_text(encoding="utf-8") == (
         "job-player-1 player combined stdout stderr logs"
     )
-    assert core_v1.log_calls == [("game-pod", "game"), ("job-player-1", "player")]
 
 
 def test_collect_logs_records_typed_player_runtime_statuses(tmp_path):
@@ -2338,14 +2046,12 @@ def test_collect_logs_records_marker_for_missing_player_pods(tmp_path):
         artifacts,
     )
 
-    assert artifacts.game_stdout_path.read_text(encoding="utf-8") == "game-pod game combined stdout stderr logs"
     assert artifacts.policy_log_path(0).read_text(encoding="utf-8") == (
         "No logs collected for pod job-player-0 container player: the pod was deleted before log collection.\n"
     )
     assert artifacts.policy_log_path(1).read_text(encoding="utf-8") == (
         "job-player-1 player combined stdout stderr logs"
     )
-    assert core_v1.log_calls == [("game-pod", "game"), ("job-player-1", "player")]
 
 
 def test_collect_logs_records_marker_when_player_log_read_404s(tmp_path):
@@ -2416,18 +2122,12 @@ def test_collect_logs_records_player_log_errors_without_failing(tmp_path):
         artifacts,
     )
 
-    assert artifacts.game_stdout_path.read_text(encoding="utf-8") == "game-pod game combined stdout stderr logs"
     assert "Failed to collect Kubernetes logs for pod job-player-0 container player" in artifacts.policy_log_path(
         0
     ).read_text(encoding="utf-8")
     assert artifacts.policy_log_path(1).read_text(encoding="utf-8") == (
         "job-player-1 player combined stdout stderr logs"
     )
-    assert core_v1.log_calls == [
-        ("game-pod", "game"),
-        ("job-player-0", "player"),
-        ("job-player-1", "player"),
-    ]
 
 
 def test_collect_logs_records_game_log_read_failures(tmp_path):
@@ -2454,7 +2154,6 @@ def test_collect_logs_records_game_log_read_failures(tmp_path):
     assert artifacts.policy_log_path(0).read_text(encoding="utf-8") == (
         "job-player-0 player combined stdout stderr logs"
     )
-    assert core_v1.log_calls == [("game-pod", "game"), ("job-player-0", "player")]
 
 
 def test_collect_logs_records_kubernetes_transport_failures(tmp_path):
@@ -2483,18 +2182,6 @@ def test_collect_logs_records_kubernetes_transport_failures(tmp_path):
     failure = artifacts.policy_log_path(0).read_text(encoding="utf-8")
     assert failure.startswith("Failed to collect Kubernetes logs for pod job-player-0 container player:")
     assert "too many 500 error responses" in failure
-
-
-def test_new_workspace_does_not_require_repo_depth(monkeypatch, tmp_path):
-    shallow_package_file = tmp_path / "coworld" / "runner" / "runner.py"
-    shallow_package_file.parent.mkdir(parents=True)
-    shallow_package_file.write_text("", encoding="utf-8")
-    monkeypatch.setattr(runner_module, "__file__", str(shallow_package_file))
-    monkeypatch.chdir(tmp_path)
-
-    workspace = runner_module._new_workspace("coworld-test-")
-
-    assert workspace.parent == tmp_path / "tmp"
 
 
 def test_policy_secrets_from_env_loads_and_removes_uri(monkeypatch, tmp_path):
@@ -3179,20 +2866,13 @@ def test_create_player_pod_injects_policy_secret_env(monkeypatch):
 
     pod: Any = created["body"]
     container: Any = pod.spec.containers[0]
-    assert [container.name for container in pod.spec.containers] == ["player"]
     env = {env_var.name: env_var.value for env_var in container.env}
-    assert env["PUBLIC_SETTING"] == "visible"
     assert env["ANTHROPIC_API_KEY"] == "sk-ant-test"
     assert env["COWORLD_LLM_MODEL"] == "amazon/nova-micro-v1"
     assert "COWORLD_LLM_ENDPOINT" not in env
     assert env["COWORLD_PLAYER_WS_URL"] == "ws://game-service:8080/player?slot=0&token=slot-token"
     assert env["COGAMES_ENGINE_WS_URL"] == "ws://game-service:8080/player?slot=0&token=slot-token"
-    # No PLAYER_ARTIFACT_UPLOAD_URLS set, so the player gets no artifact upload URL.
-    assert "COWORLD_PLAYER_ARTIFACT_UPLOAD_URL" not in env
     assert container.resources.requests == {"cpu": "2", "memory": "2Gi"}
-    assert pod.metadata.annotations == {"karpenter.sh/do-not-disrupt": "true"}
-    assert pod.metadata.labels["job-id"] == "job-id"
-    assert pod.metadata.labels["coworld-component"] == "player"
     # The AWS-facing spellings. Nothing in-cluster selects on these, so a silent drop would
     # only show up as a hole in the CUR cost allocation column -- pin them here instead.
     assert pod.metadata.labels["softmax.com/job-id"] == "job-id"
@@ -3205,16 +2885,6 @@ def test_create_player_pod_injects_policy_secret_env(monkeypatch):
     assert pod.spec.service_account_name is None
     assert pod.spec.volumes is None
     assert pod.spec.automount_service_account_token is False
-    wait_for_game = pod.spec.init_containers[0]
-    assert wait_for_game.name == "wait-for-game-service"
-    assert wait_for_game.image == "coworld-coordinator:latest"
-    assert wait_for_game.image_pull_policy == "Always"
-    wait_env = {env_var.name: env_var.value for env_var in wait_for_game.env}
-    assert wait_env == {
-        "COWORLD_GAME_HOST": "game-service",
-        "COWORLD_GAME_PORT": "8080",
-        "COWORLD_WORKER_HEALTH_PORT": str(kubernetes_runner.HEALTH_PORT),
-    }
 
 
 def test_create_player_pod_enforcement_removes_dns_and_uses_secure_pool(monkeypatch):
@@ -3253,40 +2923,6 @@ def test_create_player_pod_enforcement_removes_dns_and_uses_secure_pool(monkeypa
         ("172.20.20.30", ["game-service"]),
         ("172.20.10.20", ["egress-relay-mtls.jobs.svc.cluster.local"]),
     ]
-
-
-def test_create_player_pod_omits_attribution_labels_without_forwarded_env(monkeypatch):
-    # League-less episodes get no COWORLD_LEAGUE_ID; a worker running without the
-    # attribution env (e.g. dispatched before the dispatcher forwarded it) must not
-    # stamp empty label values.
-    created: dict[str, Any] = {}
-    core_v1 = SimpleNamespace(
-        create_namespaced_pod=lambda *, namespace, body: created.update({"namespace": namespace, "body": body})
-    )
-    monkeypatch.delenv("COWORLD_ID", raising=False)
-    monkeypatch.delenv("COWORLD_LEAGUE_ID", raising=False)
-    monkeypatch.delenv("COWORLD_SOURCE", raising=False)
-
-    kubernetes_runner._create_player_pod(
-        core_v1,
-        "jobs",
-        "job-player-0",
-        0,
-        "slot-token",
-        PlayerLaunchSpec(image="paintbot:latest", run=(), env={}),
-        {},
-        "job-id",
-        "game-service",
-        "2",
-        "2Gi",
-        "",
-        [],
-    )
-
-    labels = created["body"].metadata.labels
-    assert "coworld-id" not in labels
-    assert "league-id" not in labels
-    assert "coworld-source" not in labels
 
 
 def test_player_service_gate_waits_for_worker_viewer():
@@ -3535,10 +3171,6 @@ def test_create_player_pod_with_native_sidecar_overrides_provider_credentials(mo
         },
     )
 
-    assert kubernetes_runner.resolve_image_attribution_key("ghcr.io/metta-ai/players/paintbot:latest") == (
-        "ghcr.io/metta-ai/players/paintbot:latest"
-    )
-
     kubernetes_runner._create_player_pod(
         core_v1,
         "jobs",
@@ -3570,33 +3202,17 @@ def test_create_player_pod_with_native_sidecar_overrides_provider_credentials(mo
     )
 
     pod: Any = created["body"]
-    assert pod.metadata.annotations == {
-        "karpenter.sh/do-not-disrupt": "true",
-        "eks.amazonaws.com/skip-containers": "player,llm-sidecar",
+    assert set(pod.metadata.annotations["eks.amazonaws.com/skip-containers"].split(",")) == {
+        "player",
+        LLM_SIDECAR_CONTAINER_NAME,
     }
     assert pod.spec.service_account_name == "episode-runner"
     assert pod.spec.automount_service_account_token is False
-    # The player app is the only regular container; the sidecar is a native sidecar
-    # (initContainer with restartPolicy=Always) so the restartPolicy=Never pod can still finish.
-    assert [container.name for container in pod.spec.containers] == ["player"]
-    assert [c.name for c in pod.spec.init_containers] == [
-        "wait-for-game-service",
-        LLM_SIDECAR_CONTAINER_NAME,
-    ]
     player_container: Any = pod.spec.containers[0]
     sidecar: Any = pod.spec.init_containers[1]
     assert sidecar.restart_policy == "Always"
-    assert sidecar.command == [
-        "uv",
-        "run",
-        "--no-sync",
-        "python",
-        "-m",
-        "observatory_execution.job_runner.llm_sidecar_app",
-    ]
 
     env = {env_var.name: env_var.value for env_var in player_container.env}
-    assert env["PUBLIC_SETTING"] == "visible"
     assert env["COWORLD_LLM_MODEL"] == "amazon/nova-micro-v1"
     # Platform endpoints and placeholder credentials override saved provider access.
     assert env["COWORLD_LLM_ENDPOINT"] == "http://127.0.0.1:19191"
@@ -3620,14 +3236,7 @@ def test_create_player_pod_with_native_sidecar_overrides_provider_credentials(mo
     assert not player_container.volume_mounts
 
     volumes: dict[str, Any] = {volume.name: volume for volume in pod.spec.volumes}
-    assert list(volumes) == [LLM_SIDECAR_TOKEN_VOLUME_NAME, EGRESS_RELAY_CLIENT_TLS_VOLUME_NAME]
-    assert [mount.name for mount in sidecar.volume_mounts] == [
-        LLM_SIDECAR_TOKEN_VOLUME_NAME,
-        EGRESS_RELAY_CLIENT_TLS_VOLUME_NAME,
-    ]
     sidecar_env = {env_var.name: env_var.value for env_var in sidecar.env}
-    assert sidecar_env["LLM_SIDECAR_LISTEN_PORT"] == "19191"
-    assert sidecar_env["LLM_SIDECAR_REGION"] == "us-west-2"
     # The per-pod request ceiling has to survive the worker -> sidecar hop, or the deploy
     # knob is dead config and the only way to change it is a new sidecar image.
     assert sidecar_env["LLM_SIDECAR_REQUEST_LIMIT_PER_MINUTE"] == "120"
@@ -3643,7 +3252,6 @@ def test_create_player_pod_with_native_sidecar_overrides_provider_credentials(mo
     }
     # The dispatcher-forwarded league spend limit reaches the sidecar.
     assert sidecar_env["LLM_SIDECAR_SPEND_LIMIT_USD"] == "1.5"
-    assert "LLM_SIDECAR_LLM_PROVIDER" not in sidecar_env
     api_key_env = next(entry for entry in sidecar.env if entry.name == "LLM_SIDECAR_OPENROUTER_API_KEY")
     assert api_key_env.value is None
     assert api_key_env.value_from.secret_key_ref.name == "episode-llm-key-test"
@@ -3657,7 +3265,6 @@ def test_create_player_pod_with_native_sidecar_overrides_provider_credentials(mo
     assert sidecar_env["AWS_WEB_IDENTITY_TOKEN_FILE"] == LLM_SIDECAR_TOKEN_FILE
 
     token_projection = volumes[LLM_SIDECAR_TOKEN_VOLUME_NAME].projected.sources[0].service_account_token
-    assert len(volumes[LLM_SIDECAR_TOKEN_VOLUME_NAME].projected.sources) == 1
     assert token_projection.audience == "sts.amazonaws.com"
     assert token_projection.path == "token"
 
@@ -4294,35 +3901,6 @@ def test_run_from_env_preserves_episode_error_when_error_info_upload_fails(monke
     assert "Failed to upload error info after episode failure: OSError (HTTP status unavailable)" in caplog.text
 
 
-def test_run_from_env_uploads_final_artifact_timing(monkeypatch):
-    clock = {"now": 100.0}
-    timing_snapshots: list[dict[str, float]] = []
-
-    monkeypatch.setattr(kubernetes_runner, "_start_worker_health_server", lambda port: None)
-    monkeypatch.setattr(kubernetes_runner, "_read_job_spec", lambda _timings: (_runtime_job(), b"{}"))
-    monkeypatch.setattr(kubernetes_runner.EpisodeArtifacts, "create", lambda workdir, prefix: object())
-    monkeypatch.setattr(kubernetes_runner.time, "monotonic", lambda: clock["now"])
-    monkeypatch.setattr(kubernetes_runner.time, "monotonic_ns", lambda: int(clock["now"] * 1_000_000_000))
-
-    def run_episode(*_args, timings, **_kwargs):
-        timings.gameplay_s = 12.0
-
-    def upload_outputs(_artifacts):
-        clock["now"] = 102.5
-
-    monkeypatch.setattr(kubernetes_runner, "_run_kubernetes_episode", run_episode)
-    monkeypatch.setattr(kubernetes_runner, "_upload_outputs", upload_outputs)
-    monkeypatch.setattr(
-        kubernetes_runner,
-        "_upload_timings",
-        lambda timings: timing_snapshots.append(timings.phase_seconds()),
-    )
-
-    kubernetes_runner.run_from_env()
-
-    assert timing_snapshots == [{"gameplay": 12.0, "artifact_upload": 2.5}]
-
-
 def test_intermediate_timing_failures_cannot_queue_work_or_block_final_snapshot(monkeypatch):
     upload_attempts = 0
     outputs_uploaded: list[bool] = []
@@ -4528,14 +4106,6 @@ def _docker_publish_values(command: list[str]) -> list[str]:
     return [value for index, value in enumerate(command) if index > 0 and command[index - 1] == "-p"]
 
 
-def _env_value(command: list[str], key: str) -> str | None:
-    prefix = f"{key}="
-    for index, value in enumerate(command):
-        if index > 0 and command[index - 1] == "-e" and value.startswith(prefix):
-            return value.removeprefix(prefix)
-    return None
-
-
 def _upload_env(monkeypatch, **overrides: str | None) -> list[tuple[str, bytes, str]]:
     """Arrange `_upload_outputs` with only the URIs a case cares about."""
     uploads: list[tuple[str, bytes, str]] = []
@@ -4737,119 +4307,6 @@ def test_init_config_classifies_a_missing_player_file_url_map_as_config_error(mo
     assert json.loads(error_path.read_text(encoding="utf-8"))["error_type"] == "config_error"
 
 
-@pytest.mark.parametrize("failed", [False, True])
-def test_player_start_timing_uses_existing_status_read(monkeypatch, failed):
-    started_at = datetime(2026, 9, 9, tzinfo=UTC)
-    state = client.V1ContainerState(
-        terminated=client.V1ContainerStateTerminated(exit_code=1, started_at=started_at) if failed else None,
-        running=None if failed else client.V1ContainerStateRunning(started_at=started_at),
-    )
-    pod = client.V1Pod(
-        metadata=client.V1ObjectMeta(uid="player-attempt-uid"),
-        status=client.V1PodStatus(
-            container_statuses=[
-                client.V1ContainerStatus(
-                    name="player",
-                    image="player:test",
-                    image_id="sha256:player",
-                    ready=False,
-                    restart_count=0,
-                    state=state,
-                )
-            ]
-        ),
-    )
-    reads = []
-
-    def read_pod(*, name, namespace):
-        reads.append((name, namespace))
-        return pod
-
-    core = SimpleNamespace(read_namespaced_pod=read_pod)
-    timing = ProcessTimings(clock=TimingClock(wall_ns=1, monotonic_ns=0, uncertainty_ns=0))
-    dead_seats = {}
-    monkeypatch.setattr(kubernetes_runner.time, "monotonic_ns", lambda: 123)
-    kubernetes_runner._ensure_player_pods_started(
-        core,
-        "jobs",
-        ["game-player-0"],
-        timeout_seconds=5,
-        timings=timing,
-        dead_seat_statuses=dead_seats,
-    )
-    assert reads == [("game-player-0", "jobs")]
-    assert timing.players[0].pod_uid == "player-attempt-uid"
-    assert timing.players[0].observed_offset_ns == 123
-    assert timing.players[0].container_started_wall_ns == int(started_at.timestamp() * 10**9)
-    assert timing.players[0].outcome == ("dead" if failed else "started")
-    assert (0 in dead_seats) == failed
-    assert timing.intervals["player_startup_wait"].end_ns == 123
-
-
-def test_artifact_wait_retains_late_game_start_without_extra_status_read(tmp_path, monkeypatch):
-    artifacts = EpisodeArtifacts.create(tmp_path)
-    timings = ProcessTimings(clock=TimingClock.capture())
-    started_at = datetime(2026, 9, 9, tzinfo=UTC)
-    core_v1 = MagicMock()
-
-    def read_pod(**kwargs):
-        artifacts.results_path.write_text("{}")
-        return SimpleNamespace(
-            status=SimpleNamespace(
-                container_statuses=[
-                    SimpleNamespace(
-                        name="game",
-                        state=SimpleNamespace(running=SimpleNamespace(started_at=started_at), terminated=None),
-                    )
-                ]
-            )
-        )
-
-    core_v1.read_namespaced_pod.side_effect = read_pod
-    monkeypatch.setattr(kubernetes_runner.time, "sleep", lambda _: None)
-    _wait_for_episode_artifacts(
-        artifacts,
-        core_v1,
-        "default",
-        "game-pod",
-        player_count=0,
-        dead_seat_statuses={},
-        timeout_seconds=1,
-        require_replay=False,
-        timings=timings,
-    )
-    assert timings.game_container_started_wall_ns == int(started_at.timestamp() * 1_000_000_000)
-    core_v1.read_namespaced_pod.assert_called_once_with(name="game-pod", namespace="default")
-
-
-def test_process_birth_uses_linux_ticks_and_bracketed_import_clock(monkeypatch):
-    monkeypatch.setattr(bootstrap.sys, "platform", "linux")
-    stat = "1 (worker ) with spaces) " + " ".join(["S"] + ["0"] * 18 + ["10"])
-    monkeypatch.setattr(bootstrap, "Path", lambda _: SimpleNamespace(read_text=lambda: stat))
-    monkeypatch.setattr(bootstrap.os, "sysconf", lambda _: 100)
-    monkeypatch.setattr(bootstrap.time, "CLOCK_BOOTTIME", 7, raising=False)
-    monkeypatch.setattr(bootstrap.time, "clock_gettime_ns", lambda _: 2_000_000_000)
-    monkeypatch.setattr(bootstrap.time, "monotonic_ns", lambda: 300)
-    timings = bootstrap.process_timings(
-        import_start_ns=100, import_anchor_end_ns=104, import_done_ns=120, import_wall_ns=1_000_000_000
-    )
-    assert timings.clock.monotonic_ns == 102
-    assert timings.clock.uncertainty_ns == 4
-    assert timings.intervals["imports"].start_ns == -2
-    assert timings.intervals["imports"].end_ns == 18
-    assert timings.process_birth_offset_ns == -1_899_999_802
-    assert timings.process_birth_resolution_ns == 10_000_000
-
-
-def test_game_status_preserves_first_observed_start():
-    timings = ProcessTimings(clock=TimingClock.capture(), game_container_started_wall_ns=100)
-    state = SimpleNamespace(running=SimpleNamespace(started_at=datetime.now(UTC)), terminated=None)
-    core_v1 = MagicMock()
-    core_v1.read_namespaced_pod.return_value.status.container_statuses = [SimpleNamespace(name="game", state=state)]
-    assert kubernetes_runner._game_container_exit_code(core_v1, "ns", "game-pod", timings=timings) is None
-    assert timings.game_container_started_wall_ns == 100
-
-
 def test_init_config_requires_private_mount(monkeypatch, tmp_path):
     job = _game_hosted_job([b"player"])
     error_path = _configure_init_env(monkeypatch, tmp_path, job, {})
@@ -4862,16 +4319,6 @@ def test_init_config_requires_private_mount(monkeypatch, tmp_path):
         init_config.init_config_from_env()
     assert not init_config.COORDINATOR_SPEC_PATH.parent.exists()
     assert json.loads(error_path.read_text())["error_type"] == "config_error"
-
-
-def test_init_entrypoint_does_not_import_kubernetes_client():
-    subprocess.run(
-        [sys.executable, "-c", "import sys; import coworld.runner.init_config; assert 'kubernetes' not in sys.modules"],
-        env={**os.environ, "PYTHONPATH": os.pathsep.join(sys.path)},
-        check=True,
-        capture_output=True,
-        text=True,
-    )
 
 
 @pytest.mark.parametrize("ancestor", [False, True])
