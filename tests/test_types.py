@@ -465,6 +465,8 @@ def test_game_hosted_runner_metadata_preserves_phase_duration_meanings() -> None
         "stage_s": 2.5,
         "count": 2,
         "bytes_total": 123,
+        "cache_hits": 0,
+        "cache_misses": 0,
     }
     assert timings.player_artifact_oversize_count == 2
 

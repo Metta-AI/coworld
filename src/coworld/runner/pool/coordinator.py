@@ -168,6 +168,8 @@ def run_assignment(client: PoolClient, assignment: Assignment, profile: Executio
         "COWORLD_TIMEOUT_SECONDS": str(prepared.timeout_seconds),
         "COWORLD_ERROR_INFO_PATH": str(PRIVATE / "error-info.json"),
         "COWORLD_POOL_ASSIGNMENT": key,
+        "XP_POOL_CACHE_DIR": os.environ["XP_POOL_CACHE_DIR"],
+        "XP_POOL_CACHE_MAX_BYTES": os.environ["XP_POOL_CACHE_MAX_BYTES"],
     }
     # Initialization writes fixed paths before untrusted code can create files or links.
     _clear_directory(WORKDIR)

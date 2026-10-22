@@ -486,6 +486,16 @@ destinations use the existing renewable artifact-target format. Publication comp
 files and reports the terminal outcome. Game logs come from the current child process rather than the reusable
 container's cumulative log.
 
+Pool initialization reuses verified player bytes from a coordinator-only volume. Each assignment first obtains its
+authorized artifact capabilities; the cache stores only bytes keyed by SHA-256, never URLs or credentials. Reads verify
+both the declared size and digest, including cache hits. Corruption fails preparation with `player_file_mismatch`.
+Episode inputs are independent copies, so game writes and cache eviction cannot change another assignment's inputs.
+
+The sequential worker retains up to 512 MiB and 1,024 entries, evicting least recently used files before admission.
+Larger files execute without entering the cache. The private volume reserves 1 GiB of ephemeral storage; it disappears
+with the Pod. `XP_POOL_CACHE_DIR` and `XP_POOL_CACHE_MAX_BYTES` configure the trusted initializer. Player staging
+timings report cache hits, misses and downloaded bytes separately from the bytes copied into episode inputs.
+
 Cleanup kills and reaps processes throughout the game PID namespace, including detached descendants. Workspace,
 temporary files and shared-memory files are removed before another assignment. Kernel IPC and user keyring operations
 are denied. Cleanup uncertainty drains the worker. A restarted coordinator also drains a supervisor with prior execution

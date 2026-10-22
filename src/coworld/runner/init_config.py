@@ -12,6 +12,7 @@ _IMPORT_ANCHOR_END_NS = time.monotonic_ns()
 import json
 import logging
 import os
+from pathlib import Path
 from typing import cast
 
 from pydantic import TypeAdapter
@@ -27,6 +28,7 @@ from coworld.runner.bootstrap import read_job_spec as _read_job_spec
 from coworld.runner.bootstrap import write_error_info as _write_error_info
 from coworld.runner.io import RunnerEpisodeError, exception_summary, is_retryable_relay_error, read_data, upload_data
 from coworld.runner.phase_timings import PlayerFileStageTiming, TimingClock
+from coworld.runner.pool.cache import PlayerFileCache
 from coworld.runner.runner import (
     EpisodeArtifacts,
     coworld_game_config,
@@ -72,6 +74,14 @@ def init_config_from_env() -> None:
                     error_type="config_error",
                 )
 
+            cache = (
+                PlayerFileCache(
+                    Path(os.environ["XP_POOL_CACHE_DIR"]), max_bytes=int(os.environ["XP_POOL_CACHE_MAX_BYTES"])
+                )
+                if "COWORLD_POOL_ASSIGNMENT" in os.environ
+                else None
+            )
+
             def read_player_file(slot: int) -> bytes:
                 try:
                     return read_data(player_file_urls[slot])
@@ -86,7 +96,9 @@ def init_config_from_env() -> None:
             artifacts = EpisodeArtifacts.create(WORKDIR, prefix="coworld-job-")
             bytes_total = stage_player_files(
                 cast(list[CoworldPlayerFileSpec | CoworldHumanPlayerSpec], job.players),
-                read_player_file,
+                (lambda slot: cache.read(player_files[slot], lambda: read_player_file(slot)))
+                if cache is not None
+                else read_player_file,
                 artifacts,
                 player_seats_schema=TypeAdapter(CoworldPlayerSeatsSchema).validate_python(
                     job.game_runnable.env.get("COGAME_PLAYER_SEATS_SCHEMA", "coworld-player-seats/1")
@@ -97,6 +109,9 @@ def init_config_from_env() -> None:
                     stage_s=timings.record("player_files", stage_start),
                     count=len(player_files),
                     bytes_total=bytes_total,
+                    cache_hits=cache.hits if cache is not None else 0,
+                    cache_misses=cache.misses if cache is not None else 0,
+                    download_bytes=cache.download_bytes if cache is not None else bytes_total,
                 ).model_dump_json(),
                 encoding="utf-8",
             )

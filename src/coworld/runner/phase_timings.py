@@ -111,6 +111,9 @@ class PlayerFileStageTiming(BaseModel):
     stage_s: float = Field(ge=0, le=_MAX_TIMING_INT)
     count: int = Field(ge=0, le=_MAX_TIMING_INT)
     bytes_total: int = Field(ge=0, le=_MAX_TIMING_INT)
+    cache_hits: int = Field(default=0, ge=0, le=_MAX_TIMING_INT)
+    cache_misses: int = Field(default=0, ge=0, le=_MAX_TIMING_INT)
+    download_bytes: int | None = Field(default=None, ge=0, le=_MAX_TIMING_INT)
 
 
 class EpisodePhaseTimings(BaseModel):
