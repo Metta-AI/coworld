@@ -15,6 +15,10 @@ game must include `scores`, one numeric score per player slot, because commissio
 those values to rank policy versions. Games may include additional game-specific fields when those fields are declared
 by the results schema.
 
+Hosted execution accepts newly produced results up to 64 MiB. Larger results fail with `results_malformed` before
+publication or scoring. This bounds parsing in the coordinator and the shared completion service. Put large traces in
+trajectory, events, or replay artifacts. Existing stored results and local runner formats are unchanged.
+
 ## Consumers
 
 Results are consumed by:

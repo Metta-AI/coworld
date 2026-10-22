@@ -30,6 +30,7 @@ from collections import Counter
 from collections.abc import Callable
 from concurrent.futures import Future, ThreadPoolExecutor
 from contextlib import ExitStack
+from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any, BinaryIO, Mapping, cast
@@ -239,6 +240,30 @@ def _read_game_authored_file(path: Path, max_bytes: int | None) -> bytes | None:
         return None
     with file:
         return file.read() if max_bytes is None else file.read(max_bytes + 1)
+
+
+# Results are parsed in both the isolated coordinator and the shared completion worker.
+_HOSTED_RESULTS_MAX_BYTES = 64 * 1024 * 1024
+_HOSTED_OUTPUT_MAX_BYTES = 32 * 1024 * 1024 * 1024
+
+
+def _read_hosted_results(path: Path) -> bytes | None:
+    contents = _read_game_authored_file(path, _HOSTED_RESULTS_MAX_BYTES)
+    if contents is not None and len(contents) > _HOSTED_RESULTS_MAX_BYTES:
+        raise RunnerEpisodeError("results.json exceeds the hosted 64 MiB budget", error_type="results_malformed")
+    return contents
+
+
+@dataclass
+class _OutputBudget:
+    remaining: int = _HOSTED_OUTPUT_MAX_BYTES
+
+    def consume(self, size: int) -> None:
+        if size > self.remaining:
+            raise RunnerEpisodeError(
+                "Game output exceeds the hosted 32 GiB publication budget", error_type="game_contract_violation"
+            )
+        self.remaining -= size
 
 
 def _read_player_log(path: Path) -> bytes | None:
@@ -619,7 +644,7 @@ def _upload_debug_logs(artifacts: EpisodeArtifacts) -> None:
 
     debug_uri = os.environ.get("DEBUG_URI")
     if debug_uri is not None and artifacts.logs_dir.exists() and any(artifacts.logs_dir.iterdir()):
-        _upload_debug_archive(debug_uri, artifacts.logs_dir, artifacts.policy_log_messages)
+        _upload_debug_archive(debug_uri, artifacts.logs_dir, artifacts.policy_log_messages, budget=_OutputBudget())
 
     policy_log_urls = os.environ.get("POLICY_LOG_URLS")
     if policy_log_urls is not None:
@@ -655,10 +680,12 @@ def _upload_player_status(artifacts: EpisodeArtifacts) -> None:
 
 
 def _upload_outputs(artifacts: EpisodeArtifacts) -> None:
+    budget = _OutputBudget()
     with ExitStack() as opened_files:
         # Validate the replay before publishing results so incomplete output never reaches scoring.
         replay_uri = os.environ.get("REPLAY_URI")
         replay_file = None
+        replay_size = 0
         if replay_uri is not None:
             replay_file = _open_game_authored_file(artifacts.replay_path)
             if replay_file is None:
@@ -668,6 +695,33 @@ def _upload_outputs(artifacts: EpisodeArtifacts) -> None:
                 )
 
             opened_files.enter_context(replay_file)
+            replay_size = os.fstat(replay_file.fileno()).st_size
+            budget.consume(replay_size)
+
+        # Hold safe descriptors and their lengths so growing files cannot expand this publication.
+        streams: list[tuple[str, BinaryIO, int, str]] = []
+        for env_name, path, content_type in (
+            ("EVENTS_URI", artifacts.events_path, "application/json"),
+            ("TRAJECTORY_URI", artifacts.trajectory_path, "application/x-ndjson"),
+        ):
+            uri = os.environ.get(env_name)
+            if uri is not None:
+                file = _open_game_authored_file(path)
+                if file is not None:
+                    opened_files.enter_context(file)
+                    size = os.fstat(file.fileno()).st_size
+                    budget.consume(size)
+                    streams.append((uri, file, size, content_type))
+
+        results_uri = os.environ.get("RESULTS_URI")
+        results = None
+        if results_uri is not None:
+            results = _read_hosted_results(artifacts.results_path)
+            if results is None:
+                raise RunnerEpisodeError(
+                    "Required results disappeared before publication", error_type="results_missing"
+                )
+            budget.consume(len(results))
 
         _upload_player_status(artifacts)
 
@@ -682,38 +736,18 @@ def _upload_outputs(artifacts: EpisodeArtifacts) -> None:
                 content_type="application/json",
             )
 
-        results_uri = os.environ.get("RESULTS_URI")
-        if results_uri is not None:
-            contents = _read_game_authored_file(artifacts.results_path, None)
-            if contents is None:
-                raise RunnerEpisodeError(
-                    "Required results disappeared before publication", error_type="results_missing"
-                )
-            upload_data(results_uri, contents, content_type="application/json")
+        if results_uri is not None and results is not None:
+            upload_data(results_uri, results, content_type="application/json")
 
         if replay_uri is not None and replay_file is not None:
-            upload_file(
-                replay_uri,
-                replay_file,
-                size=os.fstat(replay_file.fileno()).st_size,
-                content_type="application/octet-stream",
-            )
+            upload_file(replay_uri, replay_file, size=replay_size, content_type="application/octet-stream")
 
-        # Optional streams may be absent or empty after a successful episode.
-        for env_name, path, content_type in (
-            ("EVENTS_URI", artifacts.events_path, "application/json"),
-            ("TRAJECTORY_URI", artifacts.trajectory_path, "application/x-ndjson"),
-        ):
-            uri = os.environ.get(env_name)
-            if uri is not None:
-                file = _open_game_authored_file(path)
-                if file is not None:
-                    with file:
-                        upload_file(uri, file, size=os.fstat(file.fileno()).st_size, content_type=content_type)
+        for uri, file, size, content_type in streams:
+            upload_file(uri, file, size=size, content_type=content_type)
 
         debug_uri = os.environ.get("DEBUG_URI")
         if debug_uri is not None:
-            _upload_debug_archive(debug_uri, artifacts.logs_dir, artifacts.policy_log_messages)
+            _upload_debug_archive(debug_uri, artifacts.logs_dir, artifacts.policy_log_messages, budget=budget)
 
         policy_log_urls = os.environ.get("POLICY_LOG_URLS")
         if policy_log_urls is not None:
@@ -814,7 +848,10 @@ def _upload_player_artifacts(artifacts: EpisodeArtifacts) -> int:
     return oversize_count
 
 
-def _upload_debug_archive(uri: str, logs_dir: Path, policy_log_messages: dict[str, str]) -> None:
+def _upload_debug_archive(
+    uri: str, logs_dir: Path, policy_log_messages: dict[str, str], *, budget: _OutputBudget | None = None
+) -> None:
+    budget = budget if budget is not None else _OutputBudget()
     # Charge the archive to the same bounded volume as its source logs.
     with tempfile.NamedTemporaryFile(dir=logs_dir.parent) as archive:
         with zipfile.ZipFile(archive, "w", zipfile.ZIP_DEFLATED) as zf:
@@ -823,7 +860,9 @@ def _upload_debug_archive(uri: str, logs_dir: Path, policy_log_messages: dict[st
                     # Player logs are capped at _PLAYER_LOG_MAX_BYTES, so holding one is bounded.
                     contents = _read_player_log(path)
                     if contents is not None:
-                        zf.writestr(path.name, policy_log_messages.get(path.name, "").encode() + contents)
+                        contents = policy_log_messages.get(path.name, "").encode() + contents
+                        budget.consume(len(contents))
+                        zf.writestr(path.name, contents)
                     continue
                 file = _open_game_authored_file(path)
                 if file is None:
@@ -831,6 +870,7 @@ def _upload_debug_archive(uri: str, logs_dir: Path, policy_log_messages: dict[st
                 # Snapshot the length so a game still writing cannot extend archiving indefinitely.
                 with file, zf.open(path.name, "w", force_zip64=True) as entry:
                     remaining = os.fstat(file.fileno()).st_size
+                    budget.consume(remaining)
                     while remaining:
                         chunk = file.read(min(remaining, 1024 * 1024))
                         if not chunk:
@@ -1163,7 +1203,7 @@ def _run_kubernetes_episode(
         timings.gameplay_s = worker_timings.record("artifact_wait", gameplay_start, gameplay_done)
         upload_timings(timings)
         validation_start = time.monotonic_ns()
-        results = _read_game_authored_file(artifacts.results_path, None)
+        results = _read_hosted_results(artifacts.results_path)
         if results is None:
             raise RunnerEpisodeError("results.json is not a regular file", error_type="results_malformed")
         _validate_results_file(artifacts.results_path, job.results_schema, contents=results)
@@ -1285,7 +1325,7 @@ def _run_game_hosted_episode(
         timings.gameplay_s = worker_timings.record("artifact_wait", gameplay_start, gameplay_done)
         upload_timings(timings)
         validation_start = time.monotonic_ns()
-        results = _read_game_authored_file(artifacts.results_path, None)
+        results = _read_hosted_results(artifacts.results_path)
         if results is None:
             raise RunnerEpisodeError("results.json is not a regular file", error_type="results_malformed")
         _validate_results_file(artifacts.results_path, job.results_schema, contents=results)

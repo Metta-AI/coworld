@@ -74,3 +74,8 @@ request must remain schedulable.
 ```bash
 nix develop -c uv run metta pytest packages/coworld/tests/test_hosted_artifact_resources_system.py -v -n 0 -p no:importnb
 ```
+
+The same proof config can provide `oversized_coworlds`, mapping `results_malformed` and `game_contract_violation` to
+owned local game fixtures. The first emits results larger than 64 MiB; the second emits bulk files exceeding 32 GiB in
+total. Sparse files let the latter verify publication rejection without filling the local disk. The failure proof
+requires terminal failures with no scores. Run it only in the isolated local namespace.

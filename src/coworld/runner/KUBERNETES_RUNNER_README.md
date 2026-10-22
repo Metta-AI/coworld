@@ -473,6 +473,22 @@ the game. Missing or mismatched final-log receipts record incomplete coverage. S
 once-at-commit ingestion; cleanup does not repeat the potentially large read. Job deletion and finalizer release remain
 independent of ingestion failures.
 
+## Output publication budgets
+
+New hosted results are read with a 64 MiB ceiling before validation and publication. Oversized results fail with
+`results_malformed`; they never reach scoring. Existing stored artifacts are unchanged.
+
+Replay, events, trajectory, results, and uncompressed diagnostic logs share a 32 GiB publication allowance. The worker
+opens bulk streams safely and fixes their lengths before uploading. Growing files cannot extend those uploads. Exceeding
+the allowance fails with `game_contract_violation`, without infrastructure retries. Failure handling retains its
+separately bounded diagnostic attempt and the existing player-log, artifact and scratchpad limits. ZIP framing and
+separately capped metadata are outside the bulk allowance.
+
+This publication check complements the existing 32 GiB work volume and container memory limits. It is not a filesystem
+write quota: Kubernetes volume eviction remains asynchronous. Persistent workspaces and existing resource requests are
+unchanged. Deployment verification should check an ordinary large-output episode and an owned oversized fixture; never
+run exhaustion probes against shared production jobs.
+
 ## Dark XP pool runtime
 
 The XP pool runtime starts a static supervisor in the unchanged game image. An init container copies the executable from
