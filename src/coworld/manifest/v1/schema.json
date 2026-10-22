@@ -792,7 +792,7 @@
             }
           ],
           "default": null,
-          "description": "Dedicated NVIDIA GPUs for a player. Omit for CPU execution; currently one GPU is supported.",
+          "description": "Dedicated NVIDIA GPUs for a game or player. Omit for CPU execution; one GPU is supported.",
           "title": "Gpu"
         },
         "instance-type": {
@@ -806,7 +806,7 @@
             }
           ],
           "default": null,
-          "description": "EC2 instance type for hosted player placement, e.g. g6.xlarge. Does not reserve a GPU.",
+          "description": "EC2 instance type for hosted game or player placement, e.g. g6.xlarge. Does not reserve a GPU.",
           "title": "Instance-Type"
         },
         "ephemeral-storage": {

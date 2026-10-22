@@ -923,10 +923,8 @@ def test_manifest_rejects_invalid_achievement_catalogs(achievements: list[dict[s
         {"startup": {"port": 8080}},
     ],
 )
-def test_model_compute_requires_a_player_container(compute: dict[str, Any]) -> None:
+def test_model_compute_requires_an_image_container(compute: dict[str, Any]) -> None:
     CoworldRunnableSpec.model_validate({"type": "player", "image": "model:latest", **compute})
-    with pytest.raises(ValidationError, match="Only player containers"):
-        CoworldRunnableSpec.model_validate({"type": "game", "image": "game:latest", **compute})
     with pytest.raises(ValidationError, match="File players cannot"):
         CoworldManifestRoleSpec.model_validate(
             {"type": "player", "file": "player.bin", "id": "p", "name": "Player", "description": "File", **compute}

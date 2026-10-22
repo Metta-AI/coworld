@@ -40,3 +40,7 @@
   kind: compatible
   summary: Allow explicit episode budgets up to 24 hours for long-running native agent evaluations; keep the 20-minute default.
   fixture: packages/coworld/tests/manifest_versions/v1/extended_episode_timeout_manifest.json
+- schema_hash: f8e91ece2899514451127d89b2ac903d165a97e9e595d7ff7c9c40e5b672941e
+  kind: compatible
+  summary: Allow dedicated GPUs and instance selection for game containers; preserve player readiness and existing stored manifests.
+  fixture: packages/coworld/tests/manifest_versions/v1/gpu_game_manifest.json

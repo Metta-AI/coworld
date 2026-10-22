@@ -105,6 +105,22 @@ Publish the declaration atomically (for a file URI, write a temporary file and r
 not also finalize normal results or replay output for that failure. If every required success artifact is already
 complete, the runner treats the episode as successful and ignores a stale or racing declaration.
 
+## GPU allocation
+
+GPU simulations declare `game.runnable.resources.requests.gpu: 1`. Hosted execution reserves one NVIDIA GPU for the game
+container in episodes, hosted play, and container-backed replays, with matching Kubernetes requests and limits. The game
+Pod tolerates the NVIDIA GPU node taint. Player GPU requests remain independent allocations in their own child Pods; a
+GPU game does not give its players a GPU. An optional `instance-type` request selects an EC2 node type while retaining
+the platform workload selectors.
+
+Local Docker episodes pass the same GPU request to Docker's `--gpus` option. Both paths need a configured NVIDIA
+container runtime and a compatible driver. CPU hosts cannot qualify GPU execution. Match the game image's CUDA and
+architecture support to the available GPU. Resource allocation does not establish historical hardware timing
+equivalence.
+
+GPU requests belong to the game runnable, so every variant in that Coworld reserves the GPU. Separate a GPU-only
+companion from a CPU variant collection when reserving a GPU for all variants would waste resources.
+
 ## Local extra ports
 
 Local Docker runners always publish the Coworld HTTP/WebSocket port as `127.0.0.1:<random>:8080`. A game that also needs

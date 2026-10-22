@@ -80,13 +80,13 @@ class CoworldResourceRequests(BaseModel):
         ge=1,
         le=1,
         strict=True,
-        description="Dedicated NVIDIA GPUs for a player. Omit for CPU execution; currently one GPU is supported.",
+        description="Dedicated NVIDIA GPUs for a game or player. Omit for CPU execution; one GPU is supported.",
     )
     instance_type: str | None = Field(
         default=None,
         alias="instance-type",
         pattern=r"^[a-z][a-z0-9-]*\.[a-z0-9-]+$",
-        description="EC2 instance type for hosted player placement, e.g. g6.xlarge. Does not reserve a GPU.",
+        description="EC2 instance type for hosted game or player placement, e.g. g6.xlarge. Does not reserve a GPU.",
     )
     ephemeral_storage: str | None = Field(
         default=None,
@@ -175,11 +175,13 @@ class CoworldRunnableSpec(BaseModel):
     )
 
     @model_validator(mode="after")
-    def validate_player_compute(self) -> "CoworldRunnableSpec":
+    def validate_compute(self) -> "CoworldRunnableSpec":
         gpu = self.resources.requests.gpu if self.resources is not None else None
         instance_type = self.resources.requests.instance_type if self.resources is not None else None
-        if self.type != "player" and (self.startup is not None or gpu is not None or instance_type is not None):
-            raise ValueError("Only player containers may declare GPU requests, instance types, or startup readiness")
+        if self.type != "player" and self.startup is not None:
+            raise ValueError("Only player containers may declare startup readiness")
+        if self.type not in {"game", "player"} and (gpu is not None or instance_type is not None):
+            raise ValueError("Only game and player containers may declare GPU requests or instance types")
         return self
 
     def as_runnable_spec(self) -> CoworldRunnableSpec:
