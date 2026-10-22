@@ -12,6 +12,7 @@ _IMPORT_ANCHOR_END_NS = time.monotonic_ns()
 import json
 import logging
 import os
+from typing import cast
 
 from pydantic import TypeAdapter
 
@@ -33,7 +34,7 @@ from coworld.runner.runner import (
     generate_tokens,
     stage_player_files,
 )
-from coworld.types import CoworldPlayerFileSpec, CoworldPlayerSeatsSchema
+from coworld.types import CoworldHumanPlayerSpec, CoworldPlayerFileSpec, CoworldPlayerSeatsSchema
 
 _IMPORT_DONE_NS = time.monotonic_ns()
 logger = logging.getLogger(__name__)
@@ -84,7 +85,7 @@ def init_config_from_env() -> None:
 
             artifacts = EpisodeArtifacts.create(WORKDIR, prefix="coworld-job-")
             bytes_total = stage_player_files(
-                job.players,
+                cast(list[CoworldPlayerFileSpec | CoworldHumanPlayerSpec], job.players),
                 read_player_file,
                 artifacts,
                 player_seats_schema=TypeAdapter(CoworldPlayerSeatsSchema).validate_python(

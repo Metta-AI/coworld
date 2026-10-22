@@ -82,5 +82,8 @@ def write_error_info(exc: Exception, *, default_error_type: RunnerErrorType = "c
     error_type_path = os.environ.get("COWORLD_ERROR_TYPE_PATH")
     if error_type_path is not None:
         Path(error_type_path).write_text(runner_error.error_type, encoding="utf-8")
+    error_info_path = os.environ.get("COWORLD_ERROR_INFO_PATH")
+    if error_info_path is not None:
+        Path(error_info_path).write_text(runner_error.model_dump_json(), encoding="utf-8")
     if error_info_uri is not None:
         upload_data(error_info_uri, runner_error.model_dump_json(), content_type="application/json")

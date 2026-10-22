@@ -472,3 +472,39 @@ Bounded game inference sidecars start graceful draining from a `preStop` hook, b
 the game. Missing or mismatched final-log receipts record incomplete coverage. Scratchpads retain their existing
 once-at-commit ingestion; cleanup does not repeat the potentially large read. Job deletion and finalizer release remain
 independent of ingestion failures.
+
+## Dark XP pool runtime
+
+The XP pool runtime starts a static supervisor in the unchanged game image. An init container copies the executable from
+the coordinator image into a read-only mount. Each assignment starts the resolved image command as UID 65532, with its
+own environment, configuration and verified player files. The supervisor remains root in a private PID namespace. Its
+root-only Unix socket is shared with the trusted coordinator; game children cannot access it.
+
+The coordinator loop runs initialization and the existing episode coordinator in fresh subprocesses. Platform
+credentials stay in the parent; subprocesses receive assignment artifact capabilities on private mounts. Upload
+destinations use the existing renewable artifact-target format. Publication completes before the loop clears episode
+files and reports the terminal outcome. Game logs come from the current child process rather than the reusable
+container's cumulative log.
+
+Cleanup kills and reaps processes throughout the game PID namespace, including detached descendants. Workspace,
+temporary files and shared-memory files are removed before another assignment. Kernel IPC and user keyring operations
+are denied. Cleanup uncertainty drains the worker. A restarted coordinator also drains a supervisor with prior execution
+state rather than restarting its assignment. The supervisor independently enforces episode deadlines and idle expiry.
+The deadline also stops descendants of a game whose leader has exited, preserving the leader's exit code. Trusted
+inspect requests renew idle expiry before claims and during preparation; they do not extend game deadlines.
+
+This first Job builder is restricted to local qualification of game-hosted images without inference sidecars. Production
+routing remains off. Production provisioning, confirmed Pod retirement, and inference/egress qualification are separate
+controller and rollout work. Images requiring root or incompatible writable paths need fresh-container execution.
+
+Run the manual isolation qualification after changes to the supervisor or its container boundary. It uses prebuilt
+images and sits outside pytest and normal CI. The game image must expose an unprivileged `python` executable:
+
+```bash
+python packages/coworld/scripts/qualify_pool_supervisor.py \
+  --coordinator-image <coordinator-image> --game-image <game-image>
+```
+
+For bounded idle-keepalive qualification, use a local supervisor image with its 600-second idle window shortened to four
+seconds. The command keeps the supervisor alive across that window before starting games. Deployed images retain the
+600-second window.

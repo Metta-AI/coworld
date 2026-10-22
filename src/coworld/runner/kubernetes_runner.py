@@ -105,6 +105,7 @@ from coworld.runner.player_artifacts import (
     PlayerArtifactCapture,
     upload_captured_player_artifact,
 )
+from coworld.runner.pool.control import CONTROL_DIR, control, require_clean_pool_outputs
 from coworld.runner.relay_client import egress_relay_ssl_context
 from coworld.runner.resource_quantity import parse_resource_quantity
 from coworld.runner.runner import (
@@ -729,6 +730,8 @@ def _prepare_game_hosted_outputs(
     artifacts: EpisodeArtifacts,
     timings: EpisodePhaseTimings,
 ) -> None:
+    if "COWORLD_POOL_ASSIGNMENT" in os.environ:
+        require_clean_pool_outputs(artifacts.workspace)
     timings.player_status_invalid_count = 0
     player_status = _read_game_authored_file(artifacts.player_status_path, _PLAYER_STATUS_MAX_BYTES)
     if player_status is not None:
@@ -1024,6 +1027,19 @@ def _run_kubernetes_episode(
     worker_start = time.monotonic_ns()
     worker_timings = timings.worker
     egress_enforcement_enabled = os.environ.get("COWORLD_EGRESS_ENFORCEMENT_ENABLED") == "true"
+    if "COWORLD_POOL_ASSIGNMENT" in os.environ:
+        _run_game_hosted_episode(
+            job,
+            artifacts,
+            core_v1=None,
+            namespace="pool",
+            pod_name="pool",
+            worker_start=worker_start,
+            timeout_seconds=timeout_seconds,
+            timings=timings,
+            upload_timings=upload_timings,
+        )
+        return
     api_client = _load_incluster_config(egress_enforcement_enabled=egress_enforcement_enabled)
     core_v1 = client.CoreV1Api(api_client)
     namespace = os.environ["JOB_NAMESPACE"]
@@ -1280,11 +1296,15 @@ def _run_game_hosted_episode(
             # The game pod owns its Service; Kubernetes removes it with the pod.
             # A Service delete failure must not prevent completed results uploading.
             logs_start = time.monotonic_ns()
-            with _load_incluster_config(
-                egress_enforcement_enabled=os.environ.get("COWORLD_EGRESS_ENFORCEMENT_ENABLED") == "true",
-                retry_count=0,
-            ) as diagnostic_api:
-                _collect_game_log(client.CoreV1Api(diagnostic_api), namespace, pod_name, artifacts)
+            if "COWORLD_POOL_ASSIGNMENT" in os.environ:
+                control(os.environ["COWORLD_POOL_ASSIGNMENT"], 3)
+                _collect_game_log(None, namespace, pod_name, artifacts)
+            else:
+                with _load_incluster_config(
+                    egress_enforcement_enabled=os.environ.get("COWORLD_EGRESS_ENFORCEMENT_ENABLED") == "true",
+                    retry_count=0,
+                ) as diagnostic_api:
+                    _collect_game_log(client.CoreV1Api(diagnostic_api), namespace, pod_name, artifacts)
             worker_timings.record("logs_collect", logs_start)
         finally:
             if episode_failure is not None:
@@ -2175,6 +2195,11 @@ def _wait_for_players_to_complete(
 def _game_container_exit_code(
     core_v1, namespace: str, pod_name: str, *, timings: ProcessTimings | None = None
 ) -> int | None:
+    if "COWORLD_POOL_ASSIGNMENT" in os.environ:
+        status = control(os.environ["COWORLD_POOL_ASSIGNMENT"], 2)
+        if status.state == 3 and status.exit_code == 124:
+            raise RunnerEpisodeError("Game process exceeded its deadline", error_type="episode_timeout")
+        return status.exit_code if status.state in (2, 3) else None
     pod = core_v1.read_namespaced_pod(name=pod_name, namespace=namespace)
     for status in pod.status.container_statuses or []:
         if status.name != "game":
@@ -2286,6 +2311,11 @@ def _collect_logs(
 
 
 def _collect_game_log(core_v1: Any, namespace: str, pod_name: str, artifacts: EpisodeArtifacts) -> None:
+    if "COWORLD_POOL_ASSIGNMENT" in os.environ:
+        require_clean_pool_outputs(artifacts.workspace)
+        artifacts.game_stdout_path.write_bytes((CONTROL_DIR / "stdout").read_bytes())
+        artifacts.game_stderr_path.write_bytes((CONTROL_DIR / "stderr").read_bytes())
+        return
     game_log = _read_pod_log(core_v1, namespace, pod_name, "game")
     if game_log is None:
         game_log = _log_unavailable(pod_name, "game", "the pod was gone before log collection")
