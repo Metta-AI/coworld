@@ -11,9 +11,9 @@ import httpx
 from pydantic import BaseModel, ConfigDict, Field, TypeAdapter, computed_field
 
 from coworld.config import list_page_payload
-from softmax import auth as softmax_auth
-from softmax.agent import user_agent
-from softmax.rate_limits import RateLimitTransport
+from softmax_client import credentials as softmax_credentials
+from softmax_client.agent import user_agent
+from softmax_client.rate_limits import RateLimitTransport
 
 
 def _query_params(**values: str | int | UUID | list[str] | None) -> dict[str, str | int | list[str]]:
@@ -120,7 +120,7 @@ class LeagueLockSettings(CoworldAPIModel):
     following whichever Coworld row is canonical for its game.
 
     Hand-maintained mirror of ``LeagueLockSettings`` in
-    ``workspaces/observatory/platform/api/src/observatory_api/routes/app/v2/league_submissions/service.py`` — change both together.
+    ``observatory_api.routes.app.v2.league_submissions.service``; change both together.
     OpenAPI marks all five required (nullable, but never absent), so none carry a default
     here: a server-side rename should fail loudly rather than silently read as None.
     """
@@ -975,7 +975,7 @@ class CoworldApiClient:
 
     @classmethod
     def from_login(cls, *, server_url: str) -> Self:
-        token = softmax_auth.load_current_token(server=server_url)
+        token = softmax_credentials.load_current_token(server=server_url)
         if token is None:
             raise RuntimeError(f"Not authenticated. Run: uv run softmax login --server {server_url}")
         return cls(server_url=server_url, token=token)

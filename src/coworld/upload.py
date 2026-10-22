@@ -47,10 +47,10 @@ from coworld.player_files import player_file_bytes, resolve_player_file
 from coworld.replay_viewer import source_replay_viewer_bundle
 from coworld.runner.runner import assert_docker_image_reachable
 from coworld.types import MANIFEST_ROLE_SECTIONS, CoworldPlayerStartup, CoworldRunnableResources
-from softmax import auth as softmax_auth
-from softmax.agent import user_agent
 from softmax.docs import DOCS_AGENT_INDEX_URL, DOCS_AGENT_SKILL_URL
-from softmax.rate_limits import RateLimitTransport
+from softmax_client import credentials as softmax_credentials
+from softmax_client.agent import user_agent
+from softmax_client.rate_limits import RateLimitTransport
 
 _LOCAL_TAG_SEPARATOR_RE = re.compile(r"[^a-z0-9._-]+")
 _IMAGE_ID_RE = re.compile(r"^img_[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$")
@@ -465,7 +465,7 @@ class CoworldUploadClient:
 
     @classmethod
     def from_login(cls, *, server_url: str) -> Self:
-        token = softmax_auth.load_current_token(server=server_url)
+        token = softmax_credentials.load_current_token(server=server_url)
         if token is None:
             raise RuntimeError(f"Not authenticated. Run: uv run softmax login --server {server_url}")
         return cls(server_url=server_url, token=token)

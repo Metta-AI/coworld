@@ -26,7 +26,7 @@ from coworld.api_client import CoworldApiClient, LeaderboardEntryPublic, PolicyS
 from coworld.cli import app
 from coworld.upload import CoworldUploadClient
 from coworld.upload import _raise_for_status as _raise_for_upload_status
-from softmax import auth
+from softmax_client import credentials
 
 
 @pytest.fixture
@@ -287,7 +287,7 @@ def test_visibility_command_uses_elevated_user_and_returns_followups(httpserver,
         headers={"Authorization": "Bearer user-token", "X-Use-Elevated-Privileges": "true"},
         json={"visibility": "public"},
     ).respond_with_json(payload)
-    monkeypatch.setattr(auth, "load_current_token", lambda **_kwargs: "user-token")
+    monkeypatch.setattr(credentials, "load_current_token", lambda **_kwargs: "user-token")
     monkeypatch.setattr(CoworldApiClient, "_elevated", False)
     result = CliRunner().invoke(
         app, ["--elevated", "visibility", "sample", "public", "--server", httpserver.url_for("")]

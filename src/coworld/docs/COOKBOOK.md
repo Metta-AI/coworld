@@ -198,7 +198,7 @@ Python API clients load the same login token:
 
 ```python
 from coworld.api_client import CoworldApiClient
-from softmax.auth import get_api_server
+from softmax_client.auth import get_api_server
 
 
 with CoworldApiClient.from_login(server_url=get_api_server()) as client:
@@ -253,7 +253,7 @@ from pathlib import Path
 
 from coworld.api_client import CoworldApiClient
 from coworld.upload import download_coworld
-from softmax.auth import get_api_server
+from softmax_client.auth import get_api_server
 
 
 server = get_api_server()
@@ -800,7 +800,7 @@ from uuid import UUID
 
 from coworld.api_client import CoworldApiClient
 from coworld.upload import CoworldUploadClient
-from softmax.auth import get_api_server
+from softmax_client.auth import get_api_server
 
 
 server = get_api_server()
@@ -844,7 +844,7 @@ Useful statuses:
 
 ```python
 from coworld.api_client import CoworldApiClient
-from softmax.auth import get_api_server
+from softmax_client.auth import get_api_server
 
 
 with CoworldApiClient.from_login(server_url=get_api_server()) as client:
@@ -891,7 +891,7 @@ specific policy name, policy version suffix, or policy version UUID.
 
 ```python
 from coworld.api_client import CoworldApiClient
-from softmax.auth import get_api_server
+from softmax_client.auth import get_api_server
 
 
 with CoworldApiClient.from_login(server_url=get_api_server()) as client:
@@ -948,7 +948,7 @@ policy version as the state key. Children start `pending` and are dispatched asy
 import json
 
 from coworld.api_client import CoworldApiClient
-from softmax.auth import get_api_server
+from softmax_client.auth import get_api_server
 
 
 body = json.loads(open("body.json").read())
@@ -1073,7 +1073,7 @@ job completes), and `live_url` while it is running:
 
 ```python
 from coworld.api_client import CoworldApiClient
-from softmax.auth import get_api_server
+from softmax_client.auth import get_api_server
 
 
 with CoworldApiClient.from_login(server_url=get_api_server()) as client:
@@ -1281,7 +1281,7 @@ from pathlib import Path
 from coworld.bundle import build_coworld_manifest
 from coworld.certifier import certify_coworld
 from coworld.upload import upload_coworld
-from softmax.auth import get_api_server
+from softmax_client.auth import get_api_server
 
 
 manifest_path = build_coworld_manifest(
@@ -1308,7 +1308,7 @@ For read-heavy automation, use `CoworldApiClient` instead of hand-written HTTP:
 
 ```python
 from coworld.api_client import CoworldApiClient
-from softmax.auth import get_api_server
+from softmax_client.auth import get_api_server
 
 
 with CoworldApiClient.from_login(server_url=get_api_server()) as client:

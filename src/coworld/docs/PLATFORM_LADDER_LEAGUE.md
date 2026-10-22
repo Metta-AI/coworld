@@ -571,7 +571,7 @@ Hard rules when editing:
 
 ```bash
 # Softmax team token (seeds, settings, topology, pause, trigger)
-TOKEN=$(uv run python -c "from softmax.auth import load_user_token; print(load_user_token(server='https://softmax.com/api'))")
+TOKEN=$(uv run python -c "from softmax_client.credentials import load_user_token; print(load_user_token(server='https://softmax.com/api'))")
 BASE=https://softmax.com/api/observatory/v2
 
 curl -sS -H "Authorization: Bearer $TOKEN" -H "X-Use-Elevated-Privileges: true" \

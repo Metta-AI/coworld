@@ -15,8 +15,8 @@ LEAGUE_ID = "league_00000000-0000-0000-0000-000000000041"
 
 @pytest.fixture(autouse=True)
 def _fake_softmax_token(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr("softmax.auth.load_current_token", lambda *, server: "token")
-    monkeypatch.setattr("softmax.auth.load_user_token", lambda *, server: "token")
+    monkeypatch.setattr("softmax_client.credentials.load_current_token", lambda *, server: "token")
+    monkeypatch.setattr("softmax_client.credentials.load_user_token", lambda *, server: "token")
 
 
 def test_submit_policy_to_league_posts_v2_submission(
@@ -24,8 +24,8 @@ def test_submit_policy_to_league_posts_v2_submission(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     opened: list[str] = []
-    monkeypatch.setattr("softmax.auth.load_current_token", lambda *, server: "player-token")
-    monkeypatch.setattr("softmax.auth.load_user_token", lambda *, server: pytest.fail("used user token"))
+    monkeypatch.setattr("softmax_client.credentials.load_current_token", lambda *, server: "player-token")
+    monkeypatch.setattr("softmax_client.credentials.load_user_token", lambda *, server: pytest.fail("used user token"))
     monkeypatch.setattr("coworld.submit.webbrowser.open", lambda url: opened.append(url) or True)
     _expect_policy_versions(httpserver, [_policy_version(version=3)], token="player-token")
     _expect_league(httpserver)

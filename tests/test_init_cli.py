@@ -12,7 +12,7 @@ def test_init_copies_packaged_player_and_explicit_guidance(tmp_path, monkeypatch
     monkeypatch.chdir(tmp_path)
     monkeypatch.setenv("COWORLD_AGENT_GUIDANCE", "0")
     monkeypatch.setattr("coworld.agent_guidance.detect_coding_agent", lambda: None)
-    monkeypatch.setattr("softmax.auth.load_current_token", lambda *, server: None)
+    monkeypatch.setattr("softmax_client.credentials.load_current_token", lambda *, server: None)
     if target == "empty":
         (tmp_path / target).mkdir()
     args = ["init", "player"] + ([] if target == "." else [target])

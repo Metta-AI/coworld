@@ -25,7 +25,7 @@ from coworld.api_client import AddFeedPostRequest, CoworldApiClient, FeedHat, Fe
 from coworld.config import DEFAULT_SUBMIT_SERVER
 from coworld.feed_hats import NO_INSTRUCTIONS, hat_template, render_hat_prompt
 from coworld.upload import _coworld_cache_path, _load_string_cache, _write_string_cache
-from softmax import auth as softmax_auth
+from softmax_client import credentials as softmax_credentials
 
 VISIBLE_WORDS = 350
 MAX_REPORT_BYTES = 262144
@@ -111,7 +111,7 @@ def print_feed_hello_pointer(*, server: str) -> None:
 
     A caller who is not logged in prints nothing, since only a logged-in human's feed is on.
     """
-    token = softmax_auth.load_current_token(server=server)
+    token = softmax_credentials.load_current_token(server=server)
     if token is None:
         return
     with CoworldApiClient(server_url=server, token=token) as client:

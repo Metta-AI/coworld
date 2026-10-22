@@ -55,8 +55,8 @@ from coworld.upload import (
 @pytest.fixture(autouse=True)
 def _fake_softmax_token(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
     monkeypatch.setenv("XDG_CACHE_HOME", str(tmp_path / "cache"))
-    monkeypatch.setattr("softmax.auth.load_current_token", lambda *, server: "token")
-    monkeypatch.setattr("softmax.auth.load_user_token", lambda *, server: "token")
+    monkeypatch.setattr("softmax_client.credentials.load_current_token", lambda *, server: "token")
+    monkeypatch.setattr("softmax_client.credentials.load_user_token", lambda *, server: "token")
 
 
 @pytest.fixture(autouse=True)
@@ -108,7 +108,7 @@ def test_upload_client_token_lookup_uses_server_url(monkeypatch: pytest.MonkeyPa
         requested_servers.append(server)
         return "token"
 
-    monkeypatch.setattr("softmax.auth.load_current_token", fake_load_current_token)
+    monkeypatch.setattr("softmax_client.credentials.load_current_token", fake_load_current_token)
 
     with CoworldUploadClient.from_login(server_url="http://localhost:3102/api"):
         pass
@@ -1163,8 +1163,8 @@ def test_upload_policy_command_creates_docker_image_policy(
     startup = {"port": 8080, "path": "/healthz", "timeout_seconds": 1200}
     softmax_image_uri = "123456789012.dkr.ecr.us-east-1.amazonaws.com/coworld/user/unit-test-policy@sha256:digest"
 
-    monkeypatch.setattr("softmax.auth.load_current_token", lambda *, server: "player-token")
-    monkeypatch.setattr("softmax.auth.load_user_token", lambda *, server: pytest.fail("used user token"))
+    monkeypatch.setattr("softmax_client.credentials.load_current_token", lambda *, server: "player-token")
+    monkeypatch.setattr("softmax_client.credentials.load_user_token", lambda *, server: pytest.fail("used user token"))
     monkeypatch.setattr("coworld.upload.assert_docker_image_reachable", lambda *_args, **_kwargs: None)
     monkeypatch.setattr("coworld.upload._local_image_client_hash", lambda image: "sha256:client-hash")
     monkeypatch.setattr("coworld.upload._push_container_image", lambda source_image, push_info: None)

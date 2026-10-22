@@ -52,7 +52,7 @@ paths below (`/v2/...`, `/jobs/...`) are used as-is. `hdr` carries the bearer/`X
 ### Plain httpx with the token
 
 ```python
-from softmax.auth import load_current_cogames_token
+from softmax_client.auth import load_current_cogames_token
 token = load_current_cogames_token()   # header: X-Auth-Token: <token>
 ```
 

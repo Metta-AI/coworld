@@ -43,7 +43,7 @@ pattern (from `monitor.py`):
 
 ```python
 import time, json, sys, httpx
-from softmax.auth import get_api_server, load_current_cogames_token
+from softmax_client.auth import get_api_server, load_current_cogames_token
 
 def snapshot():
     server = get_api_server()

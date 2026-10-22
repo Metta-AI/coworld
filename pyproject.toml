@@ -25,6 +25,7 @@ dependencies = [
   "requests>=2.32",
   "rich>=13.7.0",
   "softmax-cli==0.26.39",
+  "softmax-client==0.1.0",
   "tenacity>=9.0.0",
   "typer>=0.19.2",
   "websockets>=15.0.1",
@@ -97,6 +98,7 @@ markers = ["slow: marks tests as slow"]
 
 [tool.uv.sources]
 softmax-cli = { workspace = true }
+softmax-client = { workspace = true }
 
 [tool.ruff]
 extend = "../../.ruff.toml"

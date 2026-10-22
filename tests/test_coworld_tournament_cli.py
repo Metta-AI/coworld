@@ -44,7 +44,7 @@ def _coworld_manifest(
 
 @pytest.fixture(autouse=True)
 def _fake_softmax_token(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr("softmax.auth.load_current_token", lambda *, server: "token")
+    monkeypatch.setattr("softmax_client.credentials.load_current_token", lambda *, server: "token")
 
 
 def test_api_client_token_lookup_uses_server_url(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -54,7 +54,7 @@ def test_api_client_token_lookup_uses_server_url(monkeypatch: pytest.MonkeyPatch
         requested_servers.append(server)
         return "token"
 
-    monkeypatch.setattr("softmax.auth.load_current_token", fake_load_current_token)
+    monkeypatch.setattr("softmax_client.credentials.load_current_token", fake_load_current_token)
 
     with CoworldApiClient.from_login(server_url="http://localhost:3102/api"):
         pass
@@ -62,7 +62,7 @@ def test_api_client_token_lookup_uses_server_url(monkeypatch: pytest.MonkeyPatch
 
 
 def test_api_client_auth_error_mentions_server_url(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr("softmax.auth.load_current_token", lambda *, server: None)
+    monkeypatch.setattr("softmax_client.credentials.load_current_token", lambda *, server: None)
 
     with pytest.raises(RuntimeError) as exc_info:
         CoworldApiClient.from_login(server_url="http://localhost:3102/api")
@@ -1099,7 +1099,7 @@ def test_leagues_list_points_at_the_participation_guide(httpserver: HTTPServer) 
 
 
 def test_leagues_list_works_without_a_login(httpserver: HTTPServer, monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr("softmax.auth.load_current_token", lambda *, server: None)
+    monkeypatch.setattr("softmax_client.credentials.load_current_token", lambda *, server: None)
     httpserver.expect_request("/observatory/v2/leagues", method="GET").respond_with_json([_league()])
 
     result = CliRunner().invoke(app, ["leagues", "--server", httpserver.url_for("")])

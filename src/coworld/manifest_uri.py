@@ -13,7 +13,7 @@ import httpx
 from pydantic import BaseModel, ConfigDict, Field
 
 from coworld.schema_validation import JsonObject
-from softmax.agent import user_agent
+from softmax_client.agent import user_agent
 
 
 class RemoteCoworldManifestResponse(BaseModel):

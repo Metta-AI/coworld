@@ -14,8 +14,8 @@ def project(tmp_path, monkeypatch):
     monkeypatch.delenv("COWORLD_AGENT_GUIDANCE", raising=False)
     monkeypatch.setattr("coworld.agent_guidance.detect_coding_agent", lambda: "codex")
     monkeypatch.setattr("coworld.cli.active_docker_context", lambda: "test")
-    monkeypatch.setattr("softmax.auth.load_current_token", lambda **_: "test")
-    monkeypatch.setattr("softmax.auth.load_user_token", lambda **_: "test")
+    monkeypatch.setattr("softmax_client.credentials.load_current_token", lambda **_: "test")
+    monkeypatch.setattr("softmax_client.credentials.load_user_token", lambda **_: "test")
     monkeypatch.setattr("coworld.cli.print_feed_hello_pointer", lambda *, server: None)
     (tmp_path / ".coworld-project").write_text("player\n")
     return tmp_path

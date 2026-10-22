@@ -11,7 +11,7 @@ from pytest_httpserver import HTTPServer
 from typer.testing import CliRunner
 
 from coworld.cli import app
-from softmax.auth import load_current_token
+from softmax_client.credentials import load_current_token
 
 PLAYER_ALPHA = {
     "id": "ply_00000000-0000-0000-0000-0000000000a1",
@@ -28,7 +28,7 @@ PLAYER_ALPHA = {
 def _sandbox_credentials(monkeypatch: pytest.MonkeyPatch, tmp_path) -> None:
     # Isolate ~/.softmax/credentials.yaml under tmp.
     monkeypatch.setenv("HOME", str(tmp_path))
-    monkeypatch.setattr("softmax.auth.load_user_token", lambda *, server: "user-token")
+    monkeypatch.setattr("softmax_client.credentials.load_user_token", lambda *, server: "user-token")
 
 
 def test_player_commands_are_mounted() -> None:

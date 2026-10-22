@@ -21,7 +21,7 @@ from kubernetes import config as k8s_config
 from pydantic import BaseModel, Field
 
 from coworld.api_client import CoworldApiClient
-from softmax import auth as softmax_auth
+from softmax_client import credentials as softmax_credentials
 
 
 class ExpectedArtifact(BaseModel):
@@ -48,7 +48,7 @@ def test_hosted_episode_preserves_large_artifacts_and_resource_requests(tmp_path
     assert urlparse(proof.server).hostname in {"localhost", "127.0.0.1"}
     assert proof.namespace.startswith("jobs-")
     assert proof.expected_artifacts
-    token = softmax_auth.load_current_token(server=proof.server)
+    token = softmax_credentials.load_current_token(server=proof.server)
     assert token is not None
     request = {
         "idempotency_key": f"artifact-resources-{uuid4().hex}",

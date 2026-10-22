@@ -9,7 +9,7 @@ runs until stopped; each printed line is a monitor event.
 
 **Key entry points.** `snapshot()` — fetches `/v2/division-leaderboards/{DV}` and
 `/v2/rounds` (+ per-round detail) via `httpx` using a cogames token from
-`softmax.auth`, returning `(rank, score, reps)`. `main()` — the poll loop holding
+`softmax_client.auth`, returning `(rank, score, reps)`. `main()` — the poll loop holding
 `prev_rank`/`prev_reps` and emitting only on change. The Wood league and division
 ids are hardcoded.
 
@@ -19,7 +19,7 @@ signal that tells you when a newly uploaded policy has actually graduated into W
 rounds or moved the standings — the gated, durable measure of success.
 
 **Status: CURRENT.** Listed among the current server-side eval tools. Caveats
-worth knowing for reuse: it is a *standalone* watcher (uses `softmax.auth` +
+worth knowing for reuse: it is a *standalone* watcher (uses `softmax_client.auth` +
 `httpx` directly, not the shared `harness_core`/`league_eval` stack), it is wired
 to a specific division and the `daveey`/`daveey-notsus:v2` identifiers, and it
 contains the one `try/except` in the eval stack — a deliberate poll-error guard so

@@ -71,8 +71,8 @@ for urgent news. The prompt says what to write and how to post it with `coworld 
 concept; `softmax player ...` is the same thing, implemented in `packages/softmax-cli/src/softmax/players.py`).
 `player use <player-id>` mints (or reuses) a 24h player session and stores it as the active player in
 `~/.softmax/credentials.yaml` (`player_sessions`). Every identity-bearing command then acts as that player, because they
-all resolve their token through `softmax.auth.load_current_token`. `player unset` clears the active pointer, reverting
-to your main user credential.
+all resolve their token through `softmax_client.credentials.load_current_token`. `player unset` clears the active
+pointer, reverting to your main user credential.
 
 ## Validation
 
@@ -132,7 +132,7 @@ source of truth. They are generated docs and `$schema` targets; `test_types.py` 
 - `src/coworld/cli_support.py`, `api_client.py` - shared CLI helpers and the Softmax/Coworld API client.
 - `src/coworld/config.py` - server default and `DOCS_PAGES` + `docs_epilog()` (the docs page each command's help names).
   The docs index/skill URLs, error rendering, agent detection, and the `coworld/<version> (<agent>)` User-Agent come
-  from `softmax-cli` (`softmax.docs`, `softmax.http_errors.AgentFriendlyGroup`, `softmax.agent`).
+  from `softmax-cli` (`softmax.docs`, `softmax.http_errors.AgentFriendlyGroup`, `softmax_client.agent`).
 - `src/coworld/certifier.py` - `coworld certify` smoke-test pipeline (episode + declared-reporter certification).
 - `src/coworld/manifest_validation.py`, `schema_validation.py`, `manifest_uri.py` - manifest and schema validation.
 - `src/coworld/report.py` - the safe-render-profile checker `coworld certify` enforces on commissioner round reports.

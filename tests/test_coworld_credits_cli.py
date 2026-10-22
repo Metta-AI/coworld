@@ -12,7 +12,7 @@ from coworld.cli import app
 def test_credits_uses_active_identity(
     httpserver: HTTPServer, monkeypatch: pytest.MonkeyPatch, token: str, json_output: bool
 ) -> None:
-    monkeypatch.setattr("softmax.auth.load_current_token", lambda *, server: token)
+    monkeypatch.setattr("softmax_client.credentials.load_current_token", lambda *, server: token)
     payload = {
         "status": {
             "balance_credits": 123.5,

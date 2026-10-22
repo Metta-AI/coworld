@@ -4,7 +4,7 @@ from pathlib import Path
 
 import typer
 
-from softmax.agent import detect_coding_agent
+from softmax_client.agent import detect_coding_agent
 
 BEGIN = "<!-- BEGIN:coworld-agent-rules -->"
 END = "<!-- END:coworld-agent-rules -->"

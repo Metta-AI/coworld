@@ -18,7 +18,7 @@ NOW = "2026-09-24T12:00:00Z"
 
 @pytest.fixture(autouse=True)
 def login(monkeypatch):
-    monkeypatch.setattr("softmax.auth.load_current_token", lambda **kwargs: "private-api-token")
+    monkeypatch.setattr("softmax_client.credentials.load_current_token", lambda **kwargs: "private-api-token")
 
 
 def test_bulk_jsonl_streams_pages_without_individual_episode_reads(httpserver: HTTPServer):

@@ -49,7 +49,7 @@ from coworld.manifest import read_downloaded_manifest
 from coworld.play import ReplaySession, replay_coworld
 from coworld.submit import parse_policy_identifier
 from coworld.upload import download_coworld, downloaded_coworld_manifest_path, pull_and_tag_image
-from softmax import auth as softmax_auth
+from softmax_client import credentials as softmax_credentials
 
 _UUID_RE = re.compile(r"^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$")
 _XP_REQUEST_HELP = (
@@ -362,7 +362,9 @@ def register_tournament_commands(app: typer.Typer) -> None:
     ) -> None:
         if league_id is None:
             # The listing is a public read; a stored login only adds the caller's own private leagues.
-            with CoworldApiClient(server_url=server, token=softmax_auth.load_current_token(server=server)) as client:
+            with CoworldApiClient(
+                server_url=server, token=softmax_credentials.load_current_token(server=server)
+            ) as client:
                 rows = client.list_leagues()
             if json_output:
                 emit_json(_dump_models(rows))

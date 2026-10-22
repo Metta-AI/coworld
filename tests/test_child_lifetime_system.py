@@ -21,7 +21,7 @@ from kubernetes import client, config
 from pydantic import BaseModel
 
 from coworld.api_client import CoworldApiClient
-from softmax.auth import load_current_token
+from softmax_client.credentials import load_current_token
 
 
 class ChildLifetimeProof(BaseModel):

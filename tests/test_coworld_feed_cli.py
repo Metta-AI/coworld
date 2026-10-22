@@ -21,7 +21,7 @@ CHECK_PATH = "/observatory/v2/coworlds/paintarena/feed-posts/check"
 
 @pytest.fixture(autouse=True)
 def _fake_softmax_token(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr("softmax.auth.load_current_token", lambda *, server: "token")
+    monkeypatch.setattr("softmax_client.credentials.load_current_token", lambda *, server: "token")
 
 
 def _post(link_url: str | None = None, link_kind: str | None = None) -> dict[str, object]:

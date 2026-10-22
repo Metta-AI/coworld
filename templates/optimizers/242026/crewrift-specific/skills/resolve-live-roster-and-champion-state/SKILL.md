@@ -47,7 +47,7 @@ client = CoworldApiClient.from_login(server_url="https://softmax.com/api")
 http, hdr = client._http_client, client._headers()   # raw HTTP; base_url = {server}/observatory
 ```
 
-…or plain `httpx` with `X-Auth-Token` from `softmax.auth.load_current_cogames_token()`
+…or plain `httpx` with `X-Auth-Token` from `softmax_client.auth.load_current_cogames_token()`
 (the pattern `watch_v5.py` uses). Hit raw routes via `http.get("/v2/...", headers=hdr)`.
 
 ## Step 1 — Re-resolve live pvids (drives the `league_roster` tool)
