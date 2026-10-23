@@ -44,3 +44,7 @@
   kind: compatible
   summary: Allow dedicated GPUs and instance selection for game containers; preserve player readiness and existing stored manifests.
   fixture: packages/coworld/tests/manifest_versions/v0/gpu_game_manifest.json
+- schema_hash: b57998f7bbd2efdb2b99966b5005b69d3a6078664e6d3bf7d0b6dae7e96c752d
+  kind: compatible
+  summary: Optional episode-owned task environments with admitted resources, network phases, and coding isolation.
+  fixture: packages/coworld/tests/manifest_versions/v0/task_environments_manifest.json

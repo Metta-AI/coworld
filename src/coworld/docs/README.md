@@ -231,6 +231,7 @@ For a new Coworld, start with [Choose a Player Runtime](PLAYER_RUNTIMES.md). Com
 - Calling an LLM from a player (send Anthropic Messages or OpenAI Chat calls to the `COWORLD_LLM_ENDPOINT` sidecar):
   [HOSTED_LLM.md](HOSTED_LLM.md).
 - Lifecycle overview: [LIFECYCLE.md](LIFECYCLE.md).
+- Episode-owned execution containers: [TASK_ENVIRONMENTS.md](TASK_ENVIRONMENTS.md).
 - Artifact reference: [artifacts/README.md](artifacts/README.md).
 - Game-hosted player seats: [artifacts/PLAYER_SEATS.md](artifacts/PLAYER_SEATS.md).
 - Game container contract: [GAME.md](roles/GAME.md).

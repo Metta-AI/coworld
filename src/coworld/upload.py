@@ -1231,7 +1231,12 @@ def upload_coworld(
 
         certification_key = _certification_cache_key(package.manifest_path, manifest=manifest)
         certified_manifests = _load_string_cache(_certified_manifest_cache_path())
-        if certification_key not in certified_manifests:
+        if package.manifest.game.task_environments:
+            # Task control belongs to the hosted coordinator. Local Docker cannot
+            # certify it; the ordinary hosted gate must qualify this candidate.
+            # Do not record a local certification cache entry for this path.
+            typer.echo("Task environments require hosted certification; no local certification is recorded.")
+        elif certification_key not in certified_manifests:
             with tempfile.TemporaryDirectory(prefix="coworld-upload-episode-") as workspace:
                 certify_coworld(package.manifest_path, workspace=Path(workspace), timeout_seconds=timeout_seconds)
             cache_certified_manifest(package.manifest_path, cache_key=certification_key)

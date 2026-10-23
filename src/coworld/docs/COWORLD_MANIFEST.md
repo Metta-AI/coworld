@@ -212,6 +212,55 @@ container or a human at a seat:
 - `coworld certify` and `coworld run-episode` image or `--run` overrides for players;
 - baseline image analysis for file-backed bundled players.
 
+## Episode-owned task environments
+
+`game.task_environments` declares execution environments that the game controls during hosted episodes. Each task runs
+in a separate pod with a pinned image, explicit resources, and the episode's absolute expiry. Tasks are not player
+seats. The game owns prompts, scoring, and replay; task programs receive no game credentials or Kubernetes credentials.
+
+For example, this fragment requests an offline coding evaluator:
+
+```json
+{
+  "task_environments": {
+    "evalplus": {
+      "image": "registry.example/evaluator@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "isolation": "coding",
+      "cpu_millis": 2000,
+      "memory_mib": 8192,
+      "storage_mib": 1024,
+      "max_instances": 1,
+      "network": "no-network"
+    }
+  }
+}
+```
+
+The `general` isolation default supports single-container Linux tasks and declared public/offline network transitions.
+The `coding` profile requires a configured coding execution pool and shared admission quota. It selects a non-root user,
+no capabilities, a read-only root, 1 GiB writable scratch, an 8 GiB stack limit, and a 256-process pod limit. The
+process budget includes platform supervision. Coding tasks must remain offline and declare at least 1 GiB memory so
+Kubernetes does not shrink their scratch mount. CPU and memory are explicit declarations; qualification must establish
+that native workloads fit their full budgets.
+
+The game receives `COWORLD_TASK_ENDPOINT` and `COWORLD_TASK_TOKEN`. Python games use
+`coworld.task_environment.TaskEnvironmentClient` to create tasks, execute commands, transfer files, and close tasks.
+Creation returns the resolved image digest and expiry. Reusing a live task key returns the same task; closed or failed
+keys cannot create a fresh instance. `max_instances` counts lifetime creations, including failed and closed tasks.
+
+Command responses have bounded stdout and stderr. Use file transfer for larger outputs; each transferred file is limited
+to 200 MiB. Retain inputs, command receipts, native output, and cleanup evidence before publishing scores. Always close
+successfully created tasks in `finally`. Closing the Python client alone closes only its HTTP connection.
+
+Commands are never automatically retried. Treat an uncertain response, timeout, or infrastructure failure as a failed
+evaluation, not a candidate score. Task startup uses its own declared budget; command time starts after the pod is
+running. Both remain capped by episode expiry. Keep enough episode time for complete native grading and evidence
+capture.
+
+These declarations require hosted certification on a deployment that enables the requested profile. Local Docker
+certification, Compose tasks, and task GPUs are unsupported. Uploading a declaration does not provision its execution
+pool or establish native benchmark correctness.
+
 ## Hosted Episode Game Secrets
 
 Manifest runnable `env` is public by default: uploaded manifests are visible to users, and downloaded Coworld packages

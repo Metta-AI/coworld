@@ -203,6 +203,17 @@
     "CoworldGameManifest": {
       "additionalProperties": false,
       "properties": {
+        "task_environments": {
+          "description": "Episode-owned execution environments available only to the game. Resources apply per instance.",
+          "maxProperties": 2,
+          "patternProperties": {
+            "^[A-Za-z0-9_-]{1,64}$": {
+              "$ref": "#/$defs/CoworldTaskEnvironment"
+            }
+          },
+          "title": "Task Environments",
+          "type": "object"
+        },
         "name": {
           "description": "Short Coworld name.",
           "minLength": 1,
@@ -919,6 +930,81 @@
       },
       "required": ["type", "image"],
       "title": "CoworldRunnableSpec",
+      "type": "object"
+    },
+    "CoworldTaskEnvironment": {
+      "additionalProperties": false,
+      "description": "An admitted, episode-owned CPU sandbox; never a scored player.",
+      "properties": {
+        "isolation": {
+          "default": "general",
+          "description": "Coding selects the dedicated PID-limited pool, non-root execution, read-only root, and 1 GiB scratch.",
+          "enum": ["general", "coding"],
+          "title": "Isolation",
+          "type": "string"
+        },
+        "image": {
+          "description": "Registered image ID or digest-pinned container image.",
+          "minLength": 1,
+          "title": "Image",
+          "type": "string"
+        },
+        "cpu_millis": {
+          "description": "CPU reservation and limit, in thousandths of a core.",
+          "maximum": 8000,
+          "minimum": 100,
+          "title": "Cpu Millis",
+          "type": "integer"
+        },
+        "memory_mib": {
+          "description": "Memory reservation and limit per instance, in MiB.",
+          "maximum": 32768,
+          "minimum": 64,
+          "title": "Memory Mib",
+          "type": "integer"
+        },
+        "storage_mib": {
+          "description": "Ephemeral storage reservation and limit per instance, in MiB.",
+          "maximum": 65536,
+          "minimum": 64,
+          "title": "Storage Mib",
+          "type": "integer"
+        },
+        "max_instances": {
+          "description": "Lifetime creation budget, including closed and failed instances.",
+          "maximum": 2,
+          "minimum": 1,
+          "title": "Max Instances",
+          "type": "integer"
+        },
+        "startup_timeout_seconds": {
+          "default": 300,
+          "description": "Startup budget before commands run, capped by the episode deadline.",
+          "maximum": 1200,
+          "minimum": 1,
+          "title": "Startup Timeout Seconds",
+          "type": "integer"
+        },
+        "network": {
+          "default": "no-network",
+          "description": "Initial network phase: offline or public IPv4 excluding private networks.",
+          "enum": ["no-network", "public"],
+          "title": "Network",
+          "type": "string"
+        },
+        "network_transitions": {
+          "description": "Ordered network phases that the game may enter after startup.",
+          "items": {
+            "enum": ["no-network", "public"],
+            "type": "string"
+          },
+          "maxItems": 8,
+          "title": "Network Transitions",
+          "type": "array"
+        }
+      },
+      "required": ["image", "cpu_millis", "memory_mib", "storage_mib", "max_instances"],
+      "title": "CoworldTaskEnvironment",
       "type": "object"
     },
     "CoworldTextDoc": {

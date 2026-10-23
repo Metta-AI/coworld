@@ -573,8 +573,54 @@ class CoworldMemory(BaseModel):
     protocol: Literal["append-v1"] = Field(description="Private append-only policy memory protocol.")
 
 
+class CoworldTaskEnvironment(BaseModel):
+    """An admitted, episode-owned CPU sandbox; never a scored player."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    isolation: Literal["general", "coding"] = Field(
+        default="general",
+        description=(
+            "Coding selects the dedicated PID-limited pool, non-root execution, read-only root, and 1 GiB scratch."
+        ),
+    )
+    image: str = Field(min_length=1, description="Registered image ID or digest-pinned container image.")
+    cpu_millis: int = Field(ge=100, le=8000, description="CPU reservation and limit, in thousandths of a core.")
+    memory_mib: int = Field(ge=64, le=32768, description="Memory reservation and limit per instance, in MiB.")
+    storage_mib: int = Field(
+        ge=64, le=65536, description="Ephemeral storage reservation and limit per instance, in MiB."
+    )
+    max_instances: int = Field(
+        ge=1, le=2, description="Lifetime creation budget, including closed and failed instances."
+    )
+    startup_timeout_seconds: int = Field(
+        default=300, ge=1, le=1200, description="Startup budget before commands run, capped by the episode deadline."
+    )
+    network: Literal["no-network", "public"] = Field(
+        default="no-network", description="Initial network phase: offline or public IPv4 excluding private networks."
+    )
+    network_transitions: list[Literal["no-network", "public"]] = Field(
+        default_factory=list, max_length=8, description="Ordered network phases that the game may enter after startup."
+    )
+
+    @model_validator(mode="after")
+    def validate_coding_isolation(self) -> CoworldTaskEnvironment:
+        if self.isolation == "coding":
+            if self.network != "no-network" or self.network_transitions:
+                raise ValueError("Coding task environments must remain offline")
+            if self.memory_mib < 1024:
+                raise ValueError("Coding task environments require at least 1024 MiB to retain the full scratch mount")
+        return self
+
+
 class CoworldGameManifest(BaseModel):
     model_config = ConfigDict(extra="forbid")
+
+    task_environments: dict[Annotated[str, Field(pattern=r"^[A-Za-z0-9_-]{1,64}$")], CoworldTaskEnvironment] = Field(
+        default_factory=dict,
+        max_length=2,
+        description="Episode-owned execution environments available only to the game. Resources apply per instance.",
+    )
 
     name: str = Field(min_length=1, description="Short Coworld name.")
     version: str = Field(

@@ -643,7 +643,7 @@ def _upload_debug_logs(artifacts: EpisodeArtifacts) -> None:
     _upload_player_status(artifacts)
 
     debug_uri = os.environ.get("DEBUG_URI")
-    if debug_uri is not None and artifacts.logs_dir.exists() and any(artifacts.logs_dir.iterdir()):
+    if debug_uri is not None:
         _upload_debug_archive(debug_uri, artifacts.logs_dir, artifacts.policy_log_messages, budget=_OutputBudget())
 
     policy_log_urls = os.environ.get("POLICY_LOG_URLS")
@@ -848,6 +848,25 @@ def _upload_player_artifacts(artifacts: EpisodeArtifacts) -> int:
     return oversize_count
 
 
+def _close_task_environments(job: CoworldEpisodeJobSpec) -> None:
+    if job.manifest.game.task_environments:
+        response = httpx.delete(
+            os.environ["COWORLD_TASK_ENDPOINT"] + "/tasks",
+            headers={"Authorization": "Bearer " + os.environ["COWORLD_TASK_TOKEN"]},
+            timeout=60,
+        )
+        response.raise_for_status()
+        _raise_if_task_failure()
+
+
+def _raise_if_task_failure() -> None:
+    failure = Path("/var/run/coworld-tasks/evidence/failure.json")
+    if failure.is_file():
+        raise RunnerEpisodeError(
+            "Task environment did not complete: " + failure.read_text()[:1000], error_type="worker_error"
+        )
+
+
 def _upload_debug_archive(
     uri: str, logs_dir: Path, policy_log_messages: dict[str, str], *, budget: _OutputBudget | None = None
 ) -> None:
@@ -855,7 +874,14 @@ def _upload_debug_archive(
     # Charge the archive to the same bounded volume as its source logs.
     with tempfile.NamedTemporaryFile(dir=logs_dir.parent) as archive:
         with zipfile.ZipFile(archive, "w", zipfile.ZIP_DEFLATED) as zf:
-            for path in logs_dir.iterdir():
+            task_evidence = Path("/var/run/coworld-tasks/evidence")
+            if task_evidence.is_dir():
+                for path in sorted(task_evidence.iterdir()):
+                    budget.consume(path.stat().st_size)
+                    zf.write(path, f"tasks/{path.name}")
+            # The game writes its own diagnostic archive in the shared workspace,
+            # separate from runner-owned policy logs and task-control evidence.
+            for path in [*logs_dir.iterdir(), logs_dir.parent / "game-debug.zip"]:
                 if path.name.startswith("policy_agent_"):
                     # Player logs are capped at _PLAYER_LOG_MAX_BYTES, so holding one is bounded.
                     contents = _read_player_log(path)
@@ -1228,19 +1254,22 @@ def _run_kubernetes_episode(
         try:
             players_ready.clear()
             try:
-                logs_start = time.monotonic_ns()
-                with _load_incluster_config(
-                    egress_enforcement_enabled=egress_enforcement_enabled, retry_count=0
-                ) as diagnostic_api:
-                    _collect_logs(
-                        client.CoreV1Api(diagnostic_api),
-                        namespace,
-                        pod_name,
-                        child_names,
-                        artifacts,
-                        dead_seat_statuses=dead_seat_statuses,
-                    )
-                worker_timings.record("logs_collect", logs_start)
+                try:
+                    _close_task_environments(job)
+                finally:
+                    logs_start = time.monotonic_ns()
+                    with _load_incluster_config(
+                        egress_enforcement_enabled=egress_enforcement_enabled, retry_count=0
+                    ) as diagnostic_api:
+                        _collect_logs(
+                            client.CoreV1Api(diagnostic_api),
+                            namespace,
+                            pod_name,
+                            child_names,
+                            artifacts,
+                            dead_seat_statuses=dead_seat_statuses,
+                        )
+                    worker_timings.record("logs_collect", logs_start)
             finally:
                 try:
                     delete_start = time.monotonic_ns()
@@ -1333,19 +1362,22 @@ def _run_game_hosted_episode(
     finally:
         episode_failure = sys.exception()
         try:
-            # The game pod owns its Service; Kubernetes removes it with the pod.
-            # A Service delete failure must not prevent completed results uploading.
-            logs_start = time.monotonic_ns()
-            if "COWORLD_POOL_ASSIGNMENT" in os.environ:
-                control(os.environ["COWORLD_POOL_ASSIGNMENT"], 3)
-                _collect_game_log(None, namespace, pod_name, artifacts)
-            else:
-                with _load_incluster_config(
-                    egress_enforcement_enabled=os.environ.get("COWORLD_EGRESS_ENFORCEMENT_ENABLED") == "true",
-                    retry_count=0,
-                ) as diagnostic_api:
-                    _collect_game_log(client.CoreV1Api(diagnostic_api), namespace, pod_name, artifacts)
-            worker_timings.record("logs_collect", logs_start)
+            try:
+                _close_task_environments(job)
+            finally:
+                # The game pod owns its Service; Kubernetes removes it with the pod.
+                # A Service delete failure must not prevent completed results uploading.
+                logs_start = time.monotonic_ns()
+                if "COWORLD_POOL_ASSIGNMENT" in os.environ:
+                    control(os.environ["COWORLD_POOL_ASSIGNMENT"], 3)
+                    _collect_game_log(None, namespace, pod_name, artifacts)
+                else:
+                    with _load_incluster_config(
+                        egress_enforcement_enabled=os.environ.get("COWORLD_EGRESS_ENFORCEMENT_ENABLED") == "true",
+                        retry_count=0,
+                    ) as diagnostic_api:
+                        _collect_game_log(client.CoreV1Api(diagnostic_api), namespace, pod_name, artifacts)
+                worker_timings.record("logs_collect", logs_start)
         finally:
             if episode_failure is not None:
                 raise episode_failure
@@ -1845,6 +1877,7 @@ def _wait_for_episode_artifacts(
         )
 
     while time.monotonic() < deadline:
+        _raise_if_task_failure()
         missing = [path for path in expected if not path.exists()]
 
         if not missing:

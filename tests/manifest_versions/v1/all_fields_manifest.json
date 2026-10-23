@@ -111,6 +111,17 @@
     },
     "memory": {
       "protocol": "append-v1"
+    },
+    "task_environments": {
+      "agent": {
+        "image": "example/task@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "cpu_millis": 1000,
+        "memory_mib": 4096,
+        "storage_mib": 10240,
+        "max_instances": 2,
+        "network": "public",
+        "network_transitions": ["no-network", "public"]
+      }
     }
   },
   "player": [

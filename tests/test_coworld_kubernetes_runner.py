@@ -277,7 +277,7 @@ def _runtime_job(player_runtime: str = "platform-hosted", players: list[object] 
     return cast(
         CoworldEpisodeJobSpec,
         SimpleNamespace(
-            manifest=SimpleNamespace(game=SimpleNamespace(player_runtime=player_runtime)),
+            manifest=SimpleNamespace(game=SimpleNamespace(player_runtime=player_runtime, task_environments={})),
             players=players or [],
             episode_tags={},
             results_schema={},
@@ -2440,7 +2440,7 @@ def test_run_kubernetes_episode_waits_for_player_artifact_finalization(
     job = cast(
         CoworldEpisodeJobSpec,
         SimpleNamespace(
-            manifest=SimpleNamespace(game=SimpleNamespace(player_runtime="platform-hosted")),
+            manifest=SimpleNamespace(game=SimpleNamespace(player_runtime="platform-hosted", task_environments={})),
             players=[
                 CoworldHumanPlayerSpec(type="human", token="private-browser-seat-token"),
                 CoworldRunnableSpec(type="player", image="paintbot:latest"),

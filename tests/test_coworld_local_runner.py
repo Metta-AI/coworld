@@ -32,6 +32,7 @@ def _game_hosted_job(contents: list[bytes]) -> CoworldEpisodeJobSpec:
             manifest=SimpleNamespace(
                 game=SimpleNamespace(
                     player_runtime="game-hosted",
+                    task_environments={},
                     replay_viewer=None,
                     version="1.0",
                     name="test-game",

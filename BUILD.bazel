@@ -117,6 +117,7 @@ _CORE_SRCS = [
     "src/coworld/runner/resource_quantity.py",
     "src/coworld/schema_validation.py",
     "src/coworld/stats.py",
+    "src/coworld/task_environment.py",
     "src/coworld/trajectory.py",
     "src/coworld/types.py",
 ]
@@ -275,6 +276,7 @@ py_library(
         "@pypi//referencing",
         "@pypi//requests",
         "@pypi//rich",
+        "@pypi//starlette",
         "@pypi//typer",
         "@pypi//uvicorn",
         "@pypi//websockets",

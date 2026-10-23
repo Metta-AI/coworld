@@ -34,6 +34,7 @@ dependencies = [
 [project.optional-dependencies]
 auth = ["softmax-cli==0.26.39"]
 examples = ["fastapi>=0.115.0", "pyarrow>=16.1.0", "uvicorn>=0.34.0"]
+task-environments = ["fastapi>=0.115.0", "starlette>=0.47.2", "uvicorn>=0.34.0"]
 test = [
   "fastapi>=0.115.0",
   "numpy>=2.3.0",
@@ -72,6 +73,7 @@ coworld = [
   "transcripts/*.md",
   "runner/*.md",
   "runner/pool/*.c",
+  "runner/task_environments/*.c",
   "runner/conductor/*",
   "runner/conductor/examples/*",
   "wit/**/*.wit",

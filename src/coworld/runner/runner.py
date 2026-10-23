@@ -368,6 +368,8 @@ def run_coworld_episode(
     game_sandbox: LocalGameSandbox | None = None,
 ) -> None:
     """Run locally; per-slot private env overrides shared secrets without entering the job artifact."""
+    if job.manifest.game.task_environments:
+        raise ValueError("Task environments require hosted Kubernetes episodes; upload and use hosted certification")
     if any(isinstance(player, CoworldHumanPlayerSpec) for player in job.players):
         raise ValueError("Human player seats require the hosted Kubernetes episode runner")
     if resource_admission is not None and resource_admission.root.is_relative_to(artifacts.workspace.resolve()):
@@ -516,7 +518,11 @@ def stage_player_files(
                 else None
             ),
         }
-        seats.append(CoworldPlayPolicySeat(**seat_fields) if mixed else CoworldPlayerSeat(**seat_fields))
+        seats.append(
+            CoworldPlayPolicySeat.model_validate(seat_fields)
+            if mixed
+            else CoworldPlayerSeat.model_validate(seat_fields)
+        )
     artifacts.player_seats_path.write_text(
         CoworldPlayerSeats(
             schema="coworld-play-seats/1" if mixed else player_seats_schema,

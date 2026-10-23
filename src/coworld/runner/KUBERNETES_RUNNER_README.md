@@ -541,3 +541,7 @@ python packages/coworld/scripts/qualify_pool_supervisor.py \
 For bounded idle-keepalive qualification, use a local supervisor image with its 600-second idle window shortened to four
 seconds. The command keeps the supervisor alive across that window before starting games. Deployed images retain the
 600-second window.
+
+Games may write `/coworld/game-debug.zip` for diagnostic files. The runner includes it as `game-debug.zip` in the debug
+artifact on success or failure, under the existing artifact byte budget. Games must not write the runner-owned `logs/`
+directory. Task-control evidence is archived separately under `tasks/`.
