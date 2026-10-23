@@ -106,6 +106,7 @@ _CORE_SRCS = [
     "src/coworld/runner/llm_metadata.py",
     "src/coworld/runner/external_llm.py",
     "src/coworld/runner/https_egress.py",
+    "src/coworld/runner/gpu_resources.py",
     "src/coworld/runner/local_admission.py",
     "src/coworld/runner/local_control.py",
     "src/coworld/runner/local_game_sandbox.py",
