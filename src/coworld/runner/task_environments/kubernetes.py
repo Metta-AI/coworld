@@ -192,7 +192,12 @@ class TaskPods:
                 pod = self.core.create_namespaced_pod(
                     self.namespace,
                     client.V1Pod(
-                        metadata=metadata,
+                        metadata=client.V1ObjectMeta(
+                            name=name,
+                            labels=labels,
+                            owner_references=[self.owner],
+                            annotations={"karpenter.sh/do-not-disrupt": "true"},
+                        ),
                         spec=client.V1PodSpec(
                             restart_policy="Never",
                             priority_class_name="coworld-coding-task" if coding else None,

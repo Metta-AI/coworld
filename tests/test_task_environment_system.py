@@ -173,6 +173,10 @@ def test_fresh_environment_and_cleanup(control):
     request = {"definition": "native", "key": "agent"}
     first = http.post("/tasks", json=request)
     first.raise_for_status()
+    pod = core.read_namespaced_pod(first.json()["pod_name"], namespace)
+    assert pod.metadata.annotations["karpenter.sh/do-not-disrupt"] == "true"
+    assert pod.spec.active_deadline_seconds > 0
+    assert pod.metadata.owner_references[0].name == "coordinator"
     assert http.post("/tasks", json=request).json() == first.json()
     assert run(http, "agent", "echo agent > /tmp/agent-sentinel; echo ready")["stdout"] == "ready\n"
     assert http.delete("/tasks/agent").status_code == 200
