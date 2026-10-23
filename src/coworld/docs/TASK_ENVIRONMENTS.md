@@ -12,7 +12,8 @@ capability is undergoing hosted qualification; code availability does not establ
       "cpu_millis": 1000,
       "memory_mib": 4096,
       "storage_mib": 10240,
-      "max_instances": 2,
+      "max_instances": 131,
+      "max_concurrent_instances": 1,
       "startup_timeout_seconds": 1200,
       "network": "public",
       "network_transitions": ["no-network", "public"]
@@ -60,3 +61,9 @@ as scored players.
 The initial profile supports single-container CPU Linux tasks. Compose, GPU, persistent runtimes, and local Docker
 execution through this interface are not supported. Native benchmark releases must qualify their own task shapes,
 network transitions, filesystem transfers, and grading semantics before activation.
+
+`max_instances` is the lifetime creation budget (up to 1024), including failed and closed tasks.
+`max_concurrent_instances` limits simultaneous pods (one or two, default two); terminating pods still count. For full
+benchmark panels, declare the complete creation budget and close each sandbox before creating the next. A rejected
+create with `concurrency_budget_exhausted` creates no instance; retry creation after the previous pod is removed. Closed
+task keys remain closed, and uncertain commands must never be repeated as fresh scoring executions.

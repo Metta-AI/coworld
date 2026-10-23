@@ -120,6 +120,12 @@ class TaskPods:
                     raise TaskRejection("coding_quota_deleting")
             if sum(handle.definition == definition for handle in self.handles.values()) >= declared.max_instances:
                 raise TaskRejection("instance_budget_exhausted")
+            definition_pods = {handle.pod_name for handle in self.handles.values() if handle.definition == definition}
+            pods = self.core.list_namespaced_pod(
+                self.namespace, label_selector=f"{TASK_LABEL}={self.owner_uid}", _request_timeout=API_TIMEOUT
+            ).items
+            if sum(pod.metadata.name in definition_pods for pod in pods) >= declared.max_concurrent_instances:
+                raise TaskRejection("concurrency_budget_exhausted")
             if not re.fullmatch(r".+@sha256:[a-f0-9]{64}", declared.image):
                 raise TaskRejection("unresolved_task_image")
             lifetime = math.floor((self.expires_at - datetime.now(UTC)).total_seconds())

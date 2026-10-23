@@ -48,3 +48,7 @@
   kind: compatible
   summary: Optional episode-owned task environments with admitted resources, network phases, and coding isolation.
   fixture: packages/coworld/tests/manifest_versions/v1/task_environments_manifest.json
+- schema_hash: f13b0e8e3b72b976c4203a9a92b2c66325b8296257c982de2f2aeabb868e26a8
+  kind: compatible
+  summary: Allow full-panel lifetime task budgets with a separate concurrent-pod limit.
+  fixture: packages/coworld/tests/manifest_versions/v1/serial_task_environments_manifest.json

@@ -1170,9 +1170,17 @@
         },
         "max_instances": {
           "description": "Lifetime creation budget, including closed and failed instances.",
-          "maximum": 2,
+          "maximum": 1024,
           "minimum": 1,
           "title": "Max Instances",
+          "type": "integer"
+        },
+        "max_concurrent_instances": {
+          "default": 2,
+          "description": "Maximum simultaneous pods, including pods still terminating.",
+          "maximum": 2,
+          "minimum": 1,
+          "title": "Max Concurrent Instances",
           "type": "integer"
         },
         "startup_timeout_seconds": {

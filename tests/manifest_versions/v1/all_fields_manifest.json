@@ -120,7 +120,8 @@
         "storage_mib": 10240,
         "max_instances": 2,
         "network": "public",
-        "network_transitions": ["no-network", "public"]
+        "network_transitions": ["no-network", "public"],
+        "max_concurrent_instances": 2
       }
     }
   },

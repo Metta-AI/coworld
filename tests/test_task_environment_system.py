@@ -104,7 +104,8 @@ def control(tmp_path: Path, request: pytest.FixtureRequest):
                         "cpu_millis": 100,
                         "memory_mib": 1024 if coding else 128,
                         "storage_mib": 1024,
-                        "max_instances": 2,
+                        "max_instances": 3 if request.param == "serial" else 2,
+                        "max_concurrent_instances": 1 if request.param == "serial" else 2,
                     },
                     "unavailable": {
                         "image": "localhost:1/unavailable@sha256:" + "0" * 64,
@@ -185,6 +186,32 @@ def test_fresh_environment_and_cleanup(control):
     }
     assert run(http, "verifier", "yes flood", output_limit=1024)["kind"] == "output_limit"
     assert run(http, "verifier", "echo cannot-reuse")["kind"] == "closed"
+
+
+@pytest.mark.parametrize("control", ["serial"], indirect=True)
+def test_fresh_serial_tasks_preserve_creation_and_concurrency_limits(control):
+    http, process, core, namespace = control
+    pod_names = set()
+    for index in range(3):
+        key = f"problem-{index}"
+        response = http.post("/tasks", json={"definition": "native", "key": key})
+        response.raise_for_status()
+        pod_names.add(response.json()["pod_name"])
+        assert run(http, key, "test ! -e /tmp/solution && echo clean; echo code > /tmp/solution")["stdout"] == "clean\n"
+        if index < 2:
+            assert http.post("/tasks", json={"definition": "native", "key": "overlap"}).json() == {
+                "kind": "concurrency_budget_exhausted",
+            }
+        assert http.delete(f"/tasks/{key}").status_code == 200
+        assert http.post("/tasks", json={"definition": "native", "key": key}).json() == {"kind": "task_closed"}
+        until = time.monotonic() + 20
+        while core.list_namespaced_pod(namespace, label_selector="coworld-component=task").items:
+            assert time.monotonic() < until, "closed task pod was not removed"
+            time.sleep(0.2)
+    assert len(pod_names) == 3
+    assert http.post("/tasks", json={"definition": "native", "key": "fourth"}).json() == {
+        "kind": "instance_budget_exhausted",
+    }
 
 
 def test_coordinator_death_has_independent_deadline(control):

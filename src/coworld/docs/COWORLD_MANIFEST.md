@@ -246,7 +246,9 @@ that native workloads fit their full budgets.
 The game receives `COWORLD_TASK_ENDPOINT` and `COWORLD_TASK_TOKEN`. Python games use
 `coworld.task_environment.TaskEnvironmentClient` to create tasks, execute commands, transfer files, and close tasks.
 Creation returns the resolved image digest and expiry. Reusing a live task key returns the same task; closed or failed
-keys cannot create a fresh instance. `max_instances` counts lifetime creations, including failed and closed tasks.
+keys cannot create a fresh instance. `max_instances` counts lifetime creations, including failed and closed tasks, up
+to 1024. `max_concurrent_instances` separately caps simultaneous pods at one or two (default two), including terminating
+pods.
 
 Command responses have bounded stdout and stderr. Use file transfer for larger outputs; each transferred file is limited
 to 200 MiB. Retain inputs, command receipts, native output, and cleanup evidence before publishing scores. Always close

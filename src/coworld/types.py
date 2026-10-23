@@ -591,7 +591,10 @@ class CoworldTaskEnvironment(BaseModel):
         ge=64, le=65536, description="Ephemeral storage reservation and limit per instance, in MiB."
     )
     max_instances: int = Field(
-        ge=1, le=2, description="Lifetime creation budget, including closed and failed instances."
+        ge=1, le=1024, description="Lifetime creation budget, including closed and failed instances."
+    )
+    max_concurrent_instances: int = Field(
+        default=2, ge=1, le=2, description="Maximum simultaneous pods, including pods still terminating."
     )
     startup_timeout_seconds: int = Field(
         default=300, ge=1, le=1200, description="Startup budget before commands run, capped by the episode deadline."
