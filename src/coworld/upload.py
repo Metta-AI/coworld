@@ -2006,19 +2006,15 @@ def _is_uploaded_image_id(image: str) -> bool:
     return _IMAGE_ID_RE.match(image) is not None
 
 
-def _manifest_image_fields(value: object) -> list[dict[str, Any]]:
-    fields: list[dict[str, Any]] = []
-    if isinstance(value, list):
-        for item in value:
-            fields.extend(_manifest_image_fields(item))
-    if isinstance(value, dict):
-        image = value.get("image")
-        if image is not None:
-            if not isinstance(image, str):
-                raise TypeError("Coworld runnable image must be a string")
-            fields.append(value)
-        for item in value.values():
-            fields.extend(_manifest_image_fields(item))
+def _manifest_image_fields(value: dict[str, Any]) -> list[dict[str, Any]]:
+    """Select declared container slots, leaving game configs and schemas opaque."""
+    game = value["game"]
+    fields = [game["runnable"]]
+    if "task_environments" in game:
+        fields.extend(game["task_environments"].values())
+    for section in MANIFEST_ROLE_SECTIONS:
+        if section in value:
+            fields.extend(row for row in value[section] if "image" in row and row["image"] is not None)
     return fields
 
 
