@@ -121,7 +121,7 @@ consume them):
 | `seat_rungs` / `rotate_seat_rungs` / `episodes_per_round`                                 | `scaling_roster`                                                            | Ascending legal headcounts; optionally cycle one headcount per round; copies per round (default 1)                                                                                      |
 | `seat_count` / `episodes_per_entrant` / `clone_score_aggregation`                         | `clone_fill`                                                                | Seat override; episodes per champion; mean/sum fold of clone seats                                                                                                                      |
 | `team_count` / `team_layout` / `matchmaking` / `matchmaking_temperature` / `allied_teams` | `team_n`                                                                    | Team count; seat-dealing geometry (`interleaved` default / `blocks`, matching the game's slot→team map); `random` or `elo_softmax` sampling; ally partition                             |
-| `variant_rotation`                                                                        | fixed-seat strategies                                                       | Ordered Coworld variant ids cycled per episode (the live map pool). Repeats weight the mix. League owners may write this field; Elo / topology / qualification stay Softmax-team-owned. |
+| `variant_rotation`                                                                        | fixed-seat strategies                                                       | Ordered Coworld variant ids cycled per episode (the live map pool). Repeats weight the mix. Owners may write this field; custom Elo / topology / qualification stay Softmax-team-owned. |
 | `variant_rotation_by_seat_count`                                                          | `variable_seat`, `scaling_roster`                                           | Per-seat-count variant lists. Same owner write path as `variant_rotation`.                                                                                                              |
 
 For a mixed-size rotation, set `rotate_seat_rungs: true`, `roster_overflow: sample`, `episodes_per_round: 1`, and
@@ -316,7 +316,36 @@ What changes, compared with the default `round_trigger: "interval"`:
 Certification is independent of league ownership. Prefer a certified Coworld before opening a public league
 (`coworld certify` / `coworld upload-coworld`).
 
-## Create a new platform league
+## Create a league for Softmax review
+
+Canonical Coworld owners can create a league seed:
+
+```bash
+coworld league create my_game default "My Game"
+```
+
+Creation does not configure divisions or enable the ladder. New leagues await Softmax review before accepting
+competition submissions or scheduling rounds. Share the printed league ID with Softmax. Reusing a seed preserves
+existing competition. `league create --json` returns the seed object. The owner does not need team privileges to create
+the seed.
+
+## Softmax team: approve head-to-head setup
+
+```bash
+coworld --elevated league setup league_...
+```
+
+Review the game and displayed proposal, then confirm (default: no). This creates one visible Competition division, Swiss
+neighbor scheduling, and Elo ranking for two opposing seats. Other game shapes require custom setup below. Ownership
+alone does not grant approval access; certification is evidence for review, not automatic approval.
+
+`--preview` and `--json` are read-only. Scripts approve a reviewed preview with `--approve --revision HASH`. Changed
+proposals require a fresh review. Approval preserves budgets and pauses; the default cadence is 288 minutes. Retries
+preserve existing ladders. Setup does not allocate funds; scheduling requires budget and submitted players.
+
+## Team-managed custom setup
+
+These topology and ladder-settings steps require Softmax team credentials.
 
 Greenfield sequence. Keep the league paused (or ladder disabled) until topology and the ladder document look right.
 
@@ -350,9 +379,9 @@ Notes:
   ten days of the current budget.
 - Softmax team members can override this with `PUT /v2/leagues/{league_id}/reward-pool/drip`. A positive value sets a
   fixed allocation, zero disables funding, and `null` restores the league-budget default.
-- Platform seeds do **not** auto-create Qualifiers / Competition divisions. You declare topology next. Until you do —
-  and until `ladder.enabled` is true — the league schedules **nothing**; reconcile logs a warning saying exactly that
-  when it creates the league.
+- Platform seeds do **not** auto-create Qualifiers / Competition divisions. Use team preview and approval above or
+  declare custom topology next. Until you do — and until `ladder.enabled` is true — the league schedules **nothing**;
+  reconcile logs a warning saying exactly that when it creates the league.
 - You do **not** need a commissioner runnable in the Coworld manifest for platform ownership. Omit
   `commissioner_runnable_id` unless you intentionally keep a container path around for something else.
 
@@ -555,7 +584,7 @@ Hard rules when editing:
 | Mistake                                                         | What happens                                                   |
 | --------------------------------------------------------------- | -------------------------------------------------------------- |
 | Seed created with `commissioner_key: container`                 | Reconcile expects a commissioner runnable; no Temporal ladder  |
-| New platform league left at step 1 (no divisions, no ladder)    | League exists and schedules nothing — finish steps 2 and 3     |
+| New platform league left at step 1 (no divisions, no ladder)    | League schedules nothing — ask Softmax to approve setup        |
 | Ladder written while seed is still `container`                  | Document stores, but the container scheduler still owns rounds |
 | `commissioner_key=platform` but `ladder.enabled=false`          | No Temporal parent; league sits idle                           |
 | Expecting all competing policy versions to seat                 | Only champions seat (one per player)                           |

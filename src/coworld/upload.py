@@ -256,6 +256,29 @@ class ContainerImagePage(BaseModel):
     next_cursor: str | None
 
 
+class LeagueSetupRequest(BaseModel):
+    approve: bool = False
+    revision: str | None = None
+
+
+class LeagueSetupProposal(BaseModel):
+    coworld_id: str
+    manifest_hash: str
+    certified: bool
+    variant_id: str
+    players_per_user: int | None
+
+
+class LeagueSetupResponse(BaseModel):
+    league_id: str
+    status: Literal["ready_for_approval", "configured", "already_configured"]
+    division_id: str | None
+    proposal: LeagueSetupProposal | None = None
+    revision: str | None = None
+    daily_budget_usd: float
+    round_interval_minutes: int | None
+
+
 class CoworldLeagueSeedResponse(BaseModel):
     id: str
     coworld_name: str
@@ -800,6 +823,22 @@ class CoworldUploadClient:
         )
         _raise_for_status(response)
         return CoworldLeagueSeedResponse.model_validate(response.json())
+
+    def setup_league(
+        self,
+        league_id: str,
+        *,
+        approve: bool = False,
+        revision: str | None = None,
+    ) -> LeagueSetupResponse:
+        response = self._http_client.post(
+            f"/v2/leagues/{league_id}/setup",
+            headers=self._headers(),
+            json=LeagueSetupRequest(approve=approve, revision=revision).model_dump(mode="json"),
+            timeout=60.0,
+        )
+        _raise_for_status(response)
+        return LeagueSetupResponse.model_validate(response.json())
 
     def list_league_seeds(self) -> list[CoworldLeagueSeedResponse]:
         response = self._http_client.get(

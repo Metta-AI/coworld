@@ -4,6 +4,7 @@ import json
 import os
 import shlex
 import shutil
+import sys
 import time
 import uuid
 import webbrowser
@@ -523,7 +524,60 @@ def lobby_end(
     _print_lobby(server, lobby, json_output=json_output)
 
 
-@league_app.command("create", help="Create a league seed for a Coworld.")
+@league_app.command("setup", help="Review league setup and confirm approval; Softmax team only.")
+def league_setup(
+    league_id: Annotated[str, typer.Argument(help="League id (league_...).")],
+    approve: Annotated[
+        bool, typer.Option("--approve", help="Apply a previously reviewed --revision without an interactive prompt.")
+    ] = False,
+    revision: Annotated[
+        str | None, typer.Option("--revision", help="Reviewed preview revision; required when approving new setup.")
+    ] = None,
+    preview: Annotated[
+        bool, typer.Option("--preview", help="Show the proposal without prompting for approval.")
+    ] = False,
+    server: Annotated[str, typer.Option("--server", help="Observatory API server URL.")] = DEFAULT_SUBMIT_SERVER,
+    json_output: Annotated[bool, typer.Option("--json", help="Print setup result JSON.")] = False,
+) -> None:
+    if preview and approve:
+        raise typer.BadParameter("Use either --preview or --approve.")
+    with CoworldUploadClient.from_login(server_url=server) as client:
+        result = client.setup_league(league_id, approve=approve, revision=revision)
+    if json_output:
+        emit_json(result.model_dump(mode="json"))
+        return
+    console.print(f"[green]League {result.status.replace('_', ' ')}[/green]: {result.league_id}")
+    console.print(f"[dim]Existing daily budget:[/dim] ${result.daily_budget_usd:g} (unchanged)")
+    console.print(f"[dim]Round interval (minutes):[/dim] {result.round_interval_minutes}")
+    if result.proposal is not None:
+        proposal = result.proposal
+        console.print(f"[dim]Coworld:[/dim] {proposal.coworld_id}, variant {proposal.variant_id}")
+        console.print(f"[dim]Manifest hash:[/dim] {proposal.manifest_hash}")
+        console.print(f"[dim]Certified:[/dim] {proposal.certified}")
+        player_limit = "platform default" if proposal.players_per_user is None else str(proposal.players_per_user)
+        console.print(f"Head-to-head: Swiss neighbor scheduling, Elo ranking; players per user: {player_limit}")
+    if result.status == "ready_for_approval":
+        if preview or not (sys.stdin.isatty() and console.is_terminal):
+            console.print("Preview only. After review, approve with:")
+            console.print(
+                f"coworld --elevated league setup {league_id} --approve --revision {result.revision} --server {server}",
+                markup=False,
+            )
+            return
+        if not typer.confirm("Approve this setup and enable scheduling?", default=False):
+            console.print("No changes made.")
+            return
+        with CoworldUploadClient.from_login(server_url=server) as client:
+            result = client.setup_league(league_id, approve=True, revision=result.revision)
+        console.print(f"[green]League {result.status.replace('_', ' ')}[/green]: {result.league_id}")
+    if result.status == "already_configured":
+        console.print("Existing settings, including pause and ladder enablement, were preserved.")
+    else:
+        console.print(f"[dim]Competition division:[/dim] {result.division_id}")
+        console.print("Submit players to Competition. Rounds require enough entrants and available budget.")
+
+
+@league_app.command("create", help="Create a league seed. Competition setup requires Softmax team approval.")
 def league_create(
     coworld_name: Annotated[str, typer.Argument(help="Canonical coworld name to promote into a league.")],
     league_key: Annotated[str, typer.Argument(help="Stable key for this league within the Coworld.")],
@@ -551,7 +605,7 @@ def league_create(
         typer.Option("--set", help="Override KEY=VALUE (VALUE parsed as JSON when possible). Repeatable."),
     ] = None,
     server: Annotated[str, typer.Option("--server", help="Observatory API server URL.")] = DEFAULT_SUBMIT_SERVER,
-    json_output: Annotated[bool, typer.Option("--json", help="Print raw JSON.")] = False,
+    json_output: Annotated[bool, typer.Option("--json", help="Print seed JSON.")] = False,
 ) -> None:
     override_map = dict(_parse_override(item) for item in overrides) if overrides else None
     with CoworldUploadClient.from_login(server_url=server) as client:
@@ -567,7 +621,7 @@ def league_create(
         emit_json(seed.model_dump(mode="json"))
         return
     console.print(
-        f"[green]Created league seed[/green] [bold]{seed.league_name}[/bold] "
+        f"[green]Created or reused league seed[/green] [bold]{seed.league_name}[/bold] "
         f"({seed.coworld_name}/{seed.league_key}, default variant: {seed.default_variant_id or 'manifest first'})"
     )
     if seed.league_id is not None:
@@ -579,11 +633,12 @@ def league_create(
             "[yellow]No league materialized yet; reconcile creates it once the coworld is canonical.[/yellow]"
         )
     if (seed.overrides or {}).get("commissioner_key") == "platform":
+        console.print("New league competition awaits Softmax review. Creation leaves existing competition unchanged.")
+        console.print("Share this league ID with Softmax. Team preview command:")
         console.print(
-            "[yellow]Platform ladder league — it schedules nothing yet.[/yellow] Declare divisions "
-            "(PUT /v2/leagues/{league_id}/divisions), then POST /v2/leagues/{league_id}/settings "
-            "with ladder.enabled = true."
+            f"coworld --elevated league setup {seed.league_id or 'LEAGUE_ID'} --server {server}", markup=False
         )
+        console.print("The team reviews the proposal and confirms approval in the setup command.")
 
 
 @league_app.command("list", help="List league seeds.")
