@@ -60,6 +60,7 @@ from coworld.runner.bootstrap import (
 from coworld.runner.bootstrap import read_job_spec as _read_job_spec
 from coworld.runner.bootstrap import write_error_info as _write_error_info
 from coworld.runner.external_llm import EXTERNAL_LLM_SECRET_KEY, ExternalLlmRoute
+from coworld.runner.gpu_resources import GPU_ALLOCATION_LABEL, GPU_FEATURED_TAINT, GPU_POOL_LABEL, gpu_host_vcpus
 from coworld.runner.https_egress import HTTPS_HOSTS_SECRET_KEY, HttpsHosts
 from coworld.runner.io import (
     PlayerRuntimeStatus,
@@ -1732,6 +1733,16 @@ def _create_player_pod(
                 hostnames=[relay_host],
             ),
         ]
+    node_selector = _workload_node_selector() or {}
+    tolerations = _workload_tolerations() or []
+    if instance_type is not None:
+        node_selector["node.kubernetes.io/instance-type"] = instance_type
+    if gpu is not None:
+        node_selector[GPU_POOL_LABEL] = os.environ["COWORLD_GPU_POOL"]
+        node_selector["eks.amazonaws.com/instance-cpu"] = str(gpu_host_vcpus(player.resources.requests, role="player"))
+        tolerations.append(client.V1Toleration(key="nvidia.com/gpu", operator="Exists", effect="NoSchedule"))
+        if os.environ["COWORLD_GPU_POOL"] == "featured":
+            tolerations.append(client.V1Toleration(key=GPU_FEATURED_TAINT, operator="Exists", effect="NoSchedule"))
     pod = client.V1Pod(
         metadata=client.V1ObjectMeta(
             name=name,
@@ -1749,6 +1760,7 @@ def _create_player_pod(
                 "softmax.com/job-id": job_id,
                 "coworld-component": "player",
                 "coworld-player-slot": str(slot),
+                **({GPU_ALLOCATION_LABEL: os.environ["COWORLD_GPU_ALLOCATION"]} if gpu is not None else {}),
                 **({COWORLD_EGRESS_ENFORCED_LABEL: "true"} if enforced else {}),
                 # coworld-id / league-id / coworld-source are AWS cost-attribution labels, forwarded by the
                 # dispatcher through the worker env so player pods carry the same identity
@@ -1771,14 +1783,8 @@ def _create_player_pod(
             service_account_name=_LLM_SERVICE_ACCOUNT if uses_sidecar else None,
             automount_service_account_token=False,
             host_aliases=host_aliases,
-            node_selector=(_workload_node_selector() or {})
-            | ({"node.kubernetes.io/instance-type": instance_type} if instance_type is not None else {}),
-            tolerations=(_workload_tolerations() or [])
-            + (
-                [client.V1Toleration(key="nvidia.com/gpu", operator="Exists", effect="NoSchedule")]
-                if gpu is not None
-                else []
-            ),
+            node_selector=node_selector,
+            tolerations=tolerations,
             volumes=pod_volumes,
             init_containers=init_containers,
             containers=containers,

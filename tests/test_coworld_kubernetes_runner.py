@@ -4633,6 +4633,8 @@ def test_player_pod_rejects_wrong_runtime_identity(monkeypatch, source, slot):
 @pytest.mark.parametrize("gpu,instance_type", [(None, None), (None, "m7i.2xlarge"), (1, None), (1, "g6.xlarge")])
 def test_player_warms_before_game_and_keeps_normal_pod_ownership(monkeypatch, gpu, instance_type):
     monkeypatch.setenv("COWORLD_WORKLOAD_TYPE", "coworld-secure")
+    monkeypatch.setenv("COWORLD_GPU_POOL", "batch")
+    monkeypatch.setenv("COWORLD_GPU_ALLOCATION", "game")
     created = {}
     core = SimpleNamespace(create_namespaced_pod=lambda *, namespace, body: created.update(body=body))
     player = PlayerLaunchSpec(
@@ -4664,8 +4666,10 @@ def test_player_warms_before_game_and_keeps_normal_pod_ownership(monkeypatch, gp
     assert container.readiness_probe.http_get.port == 8080
     assert pod.spec.init_containers == []
     assert pod.metadata.owner_references == owners
-    assert pod.spec.node_selector == {"workload-type": "coworld-secure"} | (
-        {"node.kubernetes.io/instance-type": instance_type} if instance_type is not None else {}
+    assert pod.spec.node_selector == (
+        {"workload-type": "coworld-secure"}
+        | ({"node.kubernetes.io/instance-type": instance_type} if instance_type is not None else {})
+        | ({"softmax.com/gpu-pool": "batch", "eks.amazonaws.com/instance-cpu": "4"} if gpu is not None else {})
     )
     assert any(t.key == "nvidia.com/gpu" for t in pod.spec.tolerations) == (gpu is not None)
     assert pod.spec.affinity is None
