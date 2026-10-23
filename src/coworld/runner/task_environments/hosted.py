@@ -35,32 +35,34 @@ async def stream_proxy(api: client.ApiClient):
     )
     limit = asyncio.Semaphore(2)
     connections: set[asyncio.Task] = set()
-    async with asyncio.TaskGroup() as group:
+    upstream = urlsplit(api.configuration.host)
+    target = f"{upstream.hostname}:{upstream.port or 443}"
 
-        def connected(reader, writer):
-            task = group.create_task(
-                _handle(
-                    reader,
-                    writer,
-                    relay_host=relay_host,
-                    relay_port=relay_port,
-                    allowed_targets=frozenset({"kubernetes.default.svc:443"}),
-                    tls_context=tls,
-                    connection_limit=limit,
-                )
+    def connected(reader, writer):
+        task = asyncio.create_task(
+            _handle(
+                reader,
+                writer,
+                relay_host=relay_host,
+                relay_port=relay_port,
+                allowed_targets=frozenset({target}),
+                tls_context=tls,
+                connection_limit=limit,
             )
-            connections.add(task)
-            task.add_done_callback(connections.discard)
+        )
+        connections.add(task)
+        task.add_done_callback(connections.discard)
 
-        server = await asyncio.start_server(connected, "127.0.0.1", 0)
-        async with server:
-            api.configuration.proxy = f"http://127.0.0.1:{server.sockets[0].getsockname()[1]}"
-            try:
-                yield
-            finally:
-                server.close()
-                for task in connections:
-                    task.cancel()
+    server = await asyncio.start_server(connected, "127.0.0.1", 0)
+    async with server:
+        api.configuration.proxy = f"http://127.0.0.1:{server.sockets[0].getsockname()[1]}"
+        try:
+            yield
+        finally:
+            server.close()
+            for task in connections:
+                task.cancel()
+            await asyncio.gather(*connections, return_exceptions=True)
 
 
 async def run() -> None:

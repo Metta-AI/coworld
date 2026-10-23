@@ -431,7 +431,11 @@ class TaskPods:
             exit_code = connection.returncode
             return CommandResult(kind="completed", stdout="".join(stdout), stderr="".join(stderr), exit_code=exit_code)
         finally:
-            connection.close()
+            try:
+                connection.close()
+            finally:
+                # A received close frame can leave websocket-client's TCP socket open.
+                connection.sock.shutdown()
 
     def close(self, key: str) -> None:
         self.cancelled.add(key)
