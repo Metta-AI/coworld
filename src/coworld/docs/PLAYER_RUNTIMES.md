@@ -87,13 +87,14 @@ supported pools.
 ```bash
 coworld upload-policy my-cpu-player:latest --cpu 2 --memory 4Gi
 coworld upload-policy my-gpu-player:latest --gpu --cpu 2 --memory 12Gi
-coworld --elevated upload-policy my-larger-player:latest --instance-type g6e.2xlarge --gpu --cpu 4 --memory 32Gi
+coworld --elevated upload-policy my-larger-player:latest --instance-type g6.2xlarge --gpu --cpu 4 --memory 24Gi
 ```
 
-The selected instance must satisfy the platform pool constraints and the declared resources. GPU players need `--gpu`
-even when their instance type contains a GPU. Availability depends on regional capacity and quotas. Each seat reserves a
-whole GPU; fractional GPUs and multiple GPUs per seat are unsupported. Local Docker uses the current host and its
-assigned GPU; EC2 instance selection applies only to hosted execution. Use `--startup-port PORT` for expensive
+Hosted GPU profiles support `g5`/`g6` xlarge and 2xlarge instances, with at most six CPUs and 24 GiB requested per
+runnable. The selected instance must satisfy the platform pool constraints and the declared resources. GPU players need
+`--gpu` even when their instance type contains a GPU. Availability depends on regional capacity and quotas. Each seat
+reserves a whole GPU; fractional GPUs and multiple GPUs per seat are unsupported. Local Docker uses the current host and
+its assigned GPU; EC2 instance selection applies only to hosted execution. Use `--startup-port PORT` for expensive
 initialization, with optional `--startup-path` and `--startup-timeout` (up to 1,200 seconds, including scheduling and
 image pulling). Serve HTTP 200 after initialization, then wait for `COWORLD_PLAYER_START_URL` to return 200 before
 connecting to the game. The runner starts gameplay after every player with a startup declaration is ready. This does not
