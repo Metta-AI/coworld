@@ -24,15 +24,14 @@ dependencies = [
   "referencing>=0.36.2",
   "requests>=2.32",
   "rich>=13.7.0",
-  "softmax-cli==0.26.39",
-  "softmax-client==0.1.0",
+  "softmax-cli==0.26.40",
   "tenacity>=9.0.0",
   "typer>=0.19.2",
   "websockets>=15.0.1",
 ]
 
 [project.optional-dependencies]
-auth = ["softmax-cli==0.26.39"]
+auth = ["softmax-cli==0.26.40"]
 examples = ["fastapi>=0.115.0", "pyarrow>=16.1.0", "uvicorn>=0.34.0"]
 task-environments = ["fastapi>=0.115.0", "starlette>=0.47.2", "uvicorn>=0.34.0"]
 test = [
@@ -100,7 +99,6 @@ markers = ["slow: marks tests as slow"]
 
 [tool.uv.sources]
 softmax-cli = { workspace = true }
-softmax-client = { workspace = true }
 
 [tool.ruff]
 extend = "../../.ruff.toml"

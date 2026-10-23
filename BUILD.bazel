@@ -263,7 +263,6 @@ py_library(
         ":llm_sidecar_wiring",
         ":self_hosted_inference",
         "//workspaces/softmax/cli:softmax",
-        "//workspaces/softmax/client/python:softmax_client",
         "@pypi//cogsguard",
         "@pypi//fastapi",
         "@pypi//httpx",
