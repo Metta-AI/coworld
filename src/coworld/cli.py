@@ -308,7 +308,7 @@ def counterfactual_create(
         emit_json(result)
         return
     cf_id = result["id"]
-    detail_url = observatory_web_url(server, f"/observatory/v2?detail=counterfactual-eval:{cf_id}")
+    detail_url = observatory_web_url(server, f"/admin/operations/checks/{cf_id}")
     console.print(f"[green]Created[/green] {cf_id}  status={result.get('status')}")
     console.print(f"[dim]candidate[/dim] {candidate_id}")
     console.print(f"[dim]baseline[/dim]  {baseline_id}")
@@ -335,7 +335,7 @@ def counterfactual_get(
         console.print(f"[yellow]skip[/yellow] {result['skip_reason']}")
     if result.get("error"):
         console.print(f"[red]error[/red] {result['error']}")
-    detail_url = observatory_web_url(server, f"/observatory/v2?detail=counterfactual-eval:{result['id']}")
+    detail_url = observatory_web_url(server, f"/admin/operations/checks/{result['id']}")
     console.print(f"[dim]UI[/dim] {detail_url}", soft_wrap=True)
 
 
@@ -571,7 +571,7 @@ def league_create(
         f"({seed.coworld_name}/{seed.league_key}, default variant: {seed.default_variant_id or 'manifest first'})"
     )
     if seed.league_id is not None:
-        league_url = observatory_web_url(server, f"/observatory/v2?detail=league:{seed.league_id}")
+        league_url = observatory_web_url(server, f"/watch?league={seed.league_id}")
         console.print(f"[dim]League:[/dim] {seed.league_id}")
         console.print(f"[dim]League page:[/dim] {league_url}", soft_wrap=True)
     else:
