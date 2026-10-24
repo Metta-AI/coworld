@@ -25,6 +25,11 @@ PRIVATE_IPV4 = (
 
 
 def apply_network(mode: Literal["public", "no-network"]) -> None:
+    # External IPv6 is unsupported. Remove its configured addresses so libc's
+    # AI_ADDRCONFIG does not select IPv6 for IPv4-only localhost services.
+    # Keep host-scope ::1 available for explicit IPv6 loopback traffic.
+    for scope in ("global", "link"):
+        subprocess.run(["ip", "-6", "address", "flush", "scope", scope], check=True, timeout=10)
     rules = [
         "*filter",
         ":INPUT DROP [0:0]",

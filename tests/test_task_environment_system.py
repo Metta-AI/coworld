@@ -273,6 +273,34 @@ def test_task_network_isolation(control):
     assert result["stdout"].strip() != "0", "task can reach the Kubernetes API despite no-network policy"
 
 
+@pytest.mark.parametrize("control", [True], indirect=True)
+def test_localhost_services_survive_network_phase_changes(control):
+    http, process, core, namespace = control
+    response = http.post("/tasks", json={"definition": "native", "key": "agent"})
+    response.raise_for_status()
+    script = """
+import socket
+for family, host, address in [(socket.AF_INET, 'localhost', '127.0.0.1'), (socket.AF_INET6, '::1', '::1')]:
+    with socket.socket(family) as server:
+        server.bind((address, 0))
+        server.listen()
+        hints = socket.AI_ADDRCONFIG if host == 'localhost' else 0
+        resolved = socket.getaddrinfo(host, server.getsockname()[1], type=socket.SOCK_STREAM, flags=hints)[0]
+        with socket.socket(resolved[0], resolved[1], resolved[2]) as connection:
+            connection.settimeout(2)
+            connection.connect(resolved[4])
+        print(host, 'connected')
+"""
+    for mode in ("public", "no-network", "public"):
+        phase = http.post("/tasks/agent/network", json={"mode": mode})
+        phase.raise_for_status()
+        result = http.post("/tasks/agent/exec", json={"command": ["python", "-c", script], "timeout_seconds": 10})
+        result.raise_for_status()
+        assert result.json()["exit_code"] == 0, result.json()
+        assert result.json()["stdout"].splitlines() == ["localhost connected", "::1 connected"]
+    assert http.delete("/tasks/agent").status_code == 200
+
+
 def test_close_interrupts_active_command(control):
     http, process, core, namespace = control
     response = http.post("/tasks", json={"definition": "native", "key": "agent"})

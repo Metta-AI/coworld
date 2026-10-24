@@ -47,7 +47,8 @@ reuses the agent's filesystem. Startup and command budgets are separate and both
 
 The only network modes are public IPv4 and offline. Public access excludes private, reserved, loopback, and metadata
 addresses outside the container's own loopback. IPv6 is blocked except loopback. Phase changes must follow the declared
-sequence. The trusted guard enforces outbound restrictions independently of task commands.
+sequence. The trusted guard enforces outbound restrictions independently of task commands. It removes non-loopback IPv6
+addresses so address-family discovery matches the supported IPv4 network, while retaining explicit IPv6 loopback.
 
 Task execution runs in separate Pods, allowing offline task phases while the game continues communicating with players.
 A loopback task-control sidecar owns creation, execution, evidence, and deletion. Task processes have no Docker socket,
