@@ -472,7 +472,7 @@ class TaskPods:
             ).items
             self.closed.update(self.handles)
             # Submit every deletion before observing failures. The executor waits
-            # for all attempts even when one result raises (including a GC race).
+            # for all attempts even when one result raises.
             with ThreadPoolExecutor(max_workers=4) as cleanup:
                 deletions = [cleanup.submit(self._delete_pod, pod) for pod in pods]
                 for deletion in deletions:
@@ -483,9 +483,12 @@ class TaskPods:
         try:
             self._record(handle, "closing", pod)
         finally:
-            self.core.delete_namespaced_pod(
-                pod.metadata.name,
+            # Collection deletion succeeds if a prior close or GC already removed
+            # the pod. Select exactly this owner/name and retain the UID guard.
+            self.core.delete_collection_namespaced_pod(
                 self.namespace,
+                field_selector=f"metadata.name={pod.metadata.name}",
+                label_selector=f"{TASK_LABEL}={self.owner_uid}",
                 body=client.V1DeleteOptions(preconditions=client.V1Preconditions(uid=pod.metadata.uid)),
                 _request_timeout=API_TIMEOUT,
             )

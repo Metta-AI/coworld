@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import fcntl
 import json
 import os
 import secrets
@@ -334,6 +335,42 @@ def test_shutdown_closes_all_environments(control):
     while core.list_namespaced_pod(namespace, label_selector="coworld-component=task").items:
         assert time.monotonic() < until, "tasks survived coordinator shutdown"
         time.sleep(0.2)
+
+
+@pytest.mark.skipif(sys.platform != "linux", reason="uses Linux FIFO capacity and process descriptors as a race gate")
+def test_cleanup_survives_pod_removal_after_inventory(control, tmp_path: Path):
+    http, process, core, namespace = control
+    response = http.post("/tasks", json={"definition": "native", "key": "agent"})
+    response.raise_for_status()
+    assert run(http, "agent", "echo ready")["stdout"] == "ready\n"
+    pod_name = response.json()["pod_name"]
+    evidence = tmp_path / "evidence" / f"{pod_name}.jsonl"
+    evidence.rename(evidence.with_suffix(".before-close.jsonl"))
+    os.mkfifo(evidence)
+    gate = os.open(evidence, os.O_RDWR | os.O_NONBLOCK)
+    try:
+        capacity = fcntl.fcntl(gate, fcntl.F_GETPIPE_SZ)
+        assert os.write(gate, b"x" * capacity) == capacity
+        with ThreadPoolExecutor(max_workers=1) as requests:
+            closing = requests.submit(http.delete, "/tasks")
+            try:
+                until = time.monotonic() + 15
+                while not any(path.resolve() == evidence for path in Path(f"/proc/{process.pid}/fd").iterdir()):
+                    assert time.monotonic() < until, "cleanup did not reach its post-inventory evidence write"
+                    time.sleep(0.05)
+                # Cleanup has inventoried the real pod and is blocked writing its
+                # evidence. Remove that pod before allowing its deletion request.
+                core.delete_namespaced_pod(pod_name, namespace, grace_period_seconds=0)
+                while core.list_namespaced_pod(namespace, field_selector=f"metadata.name={pod_name}").items:
+                    assert time.monotonic() < until, "external deletion did not complete"
+                    time.sleep(0.1)
+            finally:
+                assert len(os.read(gate, capacity)) == capacity
+            assert closing.result(timeout=20).status_code == 200
+            assert http.delete("/tasks").status_code == 200
+            assert not core.list_namespaced_pod(namespace, label_selector="coworld-component=task").items
+    finally:
+        os.close(gate)
 
 
 def test_startup_timeout_is_not_command_timeout(control):
