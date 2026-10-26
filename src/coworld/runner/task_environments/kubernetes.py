@@ -413,12 +413,17 @@ class TaskPods:
         stdout: list[str] = []
         stderr: list[str] = []
         size = 0
+        next_ping = time.monotonic() + 5
         try:
             while connection.is_open():
                 if not self.accepting or key in self.cancelled:
                     return CommandResult(kind="closed", stdout="".join(stdout), stderr="".join(stderr))
                 if time.monotonic() >= deadline:
                     return CommandResult(kind="timeout", stdout="".join(stdout), stderr="".join(stderr))
+                if time.monotonic() >= next_ping:
+                    # Silent commands must keep the relay tunnel active without changing their output.
+                    connection.sock.ping()
+                    next_ping = time.monotonic() + 5
                 if source is not None:
                     chunk = source.read(65536)
                     if chunk:
