@@ -121,6 +121,15 @@ equivalence.
 GPU requests belong to the game runnable, so every variant in that Coworld reserves the GPU. Separate a GPU-only
 companion from a CPU variant collection when reserving a GPU for all variants would waste resources.
 
+### On-demand placement
+
+Set `game.runnable.resources.requests["capacity-type"]` to `"on-demand"` for a hosted episode that must avoid Spot
+reclamation. Player containers can set the same field in their own resource requests. Each setting applies only to that
+runnable. Omitting the field preserves platform placement, including existing stored manifests. This does not change
+CPU, memory, GPU or episode budgets, and does not provide checkpoint recovery from other failures. Local clusters ignore
+capacity selection unless production-style workload scheduling is enabled. Publish a new manifest version to change a
+previously published evaluation's placement.
+
 ## Local extra ports
 
 Local Docker runners always publish the Coworld HTTP/WebSocket port as `127.0.0.1:<random>:8080`. A game that also needs

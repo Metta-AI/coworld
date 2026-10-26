@@ -52,3 +52,7 @@
   kind: compatible
   summary: Allow full-panel lifetime task budgets with a separate concurrent-pod limit.
   fixture: packages/coworld/tests/manifest_versions/v0/serial_task_environments_manifest.json
+- schema_hash: 9cd39937da653808bea540dc415fe19d1cb0a526ea1817019b60c057b67d99cb
+  kind: compatible
+  summary: Optional on-demand placement for game and player containers; omitted capacity retains platform scheduling.
+  fixture: packages/coworld/tests/manifest_versions/v0/on_demand_capacity_manifest.json

@@ -46,7 +46,8 @@
           "memory": "4Gi",
           "ephemeral-storage": "10Gi",
           "gpu": null,
-          "instance-type": null
+          "instance-type": null,
+          "capacity-type": "on-demand"
         },
         "limits": {
           "cpu": "4",
@@ -141,7 +142,8 @@
           "memory": "1Gi",
           "ephemeral-storage": "2Gi",
           "gpu": 1,
-          "instance-type": "g6.xlarge"
+          "instance-type": "g6.xlarge",
+          "capacity-type": "on-demand"
         },
         "limits": {
           "cpu": "2"

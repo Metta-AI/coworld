@@ -1510,6 +1510,7 @@ def _create_player_pod(
         player_env["COWORLD_PLAYER_START_URL"] = f"http://{service_name}:{HEALTH_PORT}/players-ready"
     gpu = player.resources.requests.gpu if player.resources is not None else None
     instance_type = player.resources.requests.instance_type if player.resources is not None else None
+    capacity_type = player.resources.requests.capacity_type if player.resources is not None else None
     requests = {"cpu": player_cpu_request, "memory": player_memory_request}
     # Admitted requests remain usable when the deployment default is lowered.
     memory_limit = max(
@@ -1735,6 +1736,8 @@ def _create_player_pod(
         ]
     node_selector = _workload_node_selector() or {}
     tolerations = _workload_tolerations() or []
+    if capacity_type is not None and os.environ.get("COWORLD_WORKLOAD_TYPE"):
+        node_selector["karpenter.sh/capacity-type"] = capacity_type
     if instance_type is not None:
         node_selector["node.kubernetes.io/instance-type"] = instance_type
     if gpu is not None:

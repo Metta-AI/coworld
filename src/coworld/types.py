@@ -88,6 +88,14 @@ class CoworldResourceRequests(BaseModel):
         pattern=r"^[a-z][a-z0-9-]*\.[a-z0-9-]+$",
         description="EC2 instance type for hosted game or player placement, e.g. g6.xlarge. Does not reserve a GPU.",
     )
+    capacity_type: Literal["on-demand"] | None = Field(
+        default=None,
+        alias="capacity-type",
+        description=(
+            "Require on-demand capacity for this hosted game or player. Omit to inherit platform placement. "
+            "This avoids Spot reclamation; it does not guarantee recovery from other node failures."
+        ),
+    )
     ephemeral_storage: str | None = Field(
         default=None,
         alias="ephemeral-storage",
@@ -178,10 +186,15 @@ class CoworldRunnableSpec(BaseModel):
     def validate_compute(self) -> "CoworldRunnableSpec":
         gpu = self.resources.requests.gpu if self.resources is not None else None
         instance_type = self.resources.requests.instance_type if self.resources is not None else None
+        capacity_type = self.resources.requests.capacity_type if self.resources is not None else None
         if self.type != "player" and self.startup is not None:
             raise ValueError("Only player containers may declare startup readiness")
-        if self.type not in {"game", "player"} and (gpu is not None or instance_type is not None):
-            raise ValueError("Only game and player containers may declare GPU requests or instance types")
+        if self.type not in {"game", "player"} and (
+            gpu is not None or instance_type is not None or capacity_type is not None
+        ):
+            raise ValueError(
+                "Only game and player containers may declare GPU requests, instance types, or capacity types"
+            )
         return self
 
     def as_runnable_spec(self) -> CoworldRunnableSpec:
@@ -224,9 +237,15 @@ class CoworldManifestRoleSpec(CoworldRunnableSpec):
         if self.file is not None:
             if self.startup is not None or (
                 self.resources is not None
-                and (self.resources.requests.gpu is not None or self.resources.requests.instance_type is not None)
+                and (
+                    self.resources.requests.gpu is not None
+                    or self.resources.requests.instance_type is not None
+                    or self.resources.requests.capacity_type is not None
+                )
             ):
-                raise ValueError("File players cannot declare GPU requests, instance types, or startup readiness")
+                raise ValueError(
+                    "File players cannot declare GPU requests, instance types, capacity types, or startup readiness"
+                )
             if self.type != "player":
                 raise ValueError("file is supported only for player roles")
             if not re.fullmatch(REPLAY_VIEWER_BUNDLE_DIGEST_PATTERN, self.file):

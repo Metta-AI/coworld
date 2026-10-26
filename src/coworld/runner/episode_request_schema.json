@@ -1018,6 +1018,20 @@
           "description": "EC2 instance type for hosted game or player placement, e.g. g6.xlarge. Does not reserve a GPU.",
           "title": "Instance-Type"
         },
+        "capacity-type": {
+          "anyOf": [
+            {
+              "const": "on-demand",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Require on-demand capacity for this hosted game or player. Omit to inherit platform placement. This avoids Spot reclamation; it does not guarantee recovery from other node failures.",
+          "title": "Capacity-Type"
+        },
         "ephemeral-storage": {
           "anyOf": [
             {
