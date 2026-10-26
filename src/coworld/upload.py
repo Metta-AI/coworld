@@ -1441,7 +1441,8 @@ def get_hosted_smoke_episode_statuses(
     rows = client.list_coworld_episode_requests(
         coworld_id,
         source=_HOSTED_SMOKE_EPISODE_SOURCE,
-        limit=100,
+        # Each attempt atomically creates five requests; this endpoint returns newest first.
+        limit=5,
     )
     for row in rows:
         if row.get("status") in _HOSTED_SMOKE_TERMINAL_STATUSES - _HOSTED_SMOKE_SUCCESS_STATUSES:

@@ -522,7 +522,7 @@ def test_upload_coworld_command_waits_for_hosted_smoke_success(httpserver: HTTPS
     httpserver.expect_request(
         f"/observatory/v2/coworlds/{new_coworld_id}/episode-requests",
         method="GET",
-        query_string="limit=100&source=coworld_upload",
+        query_string="limit=5&source=coworld_upload",
     ).respond_with_json(
         {
             "entries": [
@@ -571,7 +571,7 @@ def test_upload_coworld_command_fails_on_hosted_smoke_failure(httpserver: HTTPSe
     httpserver.expect_request(
         f"/observatory/v2/coworlds/{new_coworld_id}/episode-requests",
         method="GET",
-        query_string="limit=100&source=coworld_upload",
+        query_string="limit=5&source=coworld_upload",
     ).respond_with_json(
         {
             "entries": [
@@ -755,7 +755,7 @@ def test_coworld_status_command_waits_for_hosted_smoke_success(httpserver: HTTPS
     httpserver.expect_request(
         f"/observatory/v2/coworlds/{coworld_id}/episode-requests",
         method="GET",
-        query_string="limit=100&source=coworld_upload",
+        query_string="limit=5&source=coworld_upload",
     ).respond_with_json(
         {
             "entries": [
@@ -801,7 +801,7 @@ def test_coworld_status_command_prints_pending_hosted_smoke(httpserver: HTTPServ
     httpserver.expect_request(
         f"/observatory/v2/coworlds/{coworld_id}/episode-requests",
         method="GET",
-        query_string="limit=100&source=coworld_upload",
+        query_string="limit=5&source=coworld_upload",
     ).respond_with_json(
         {"entries": [_episode_request("ereq_00000000-0000-0000-0000-000000000001", coworld_id, "running")]}
     )
