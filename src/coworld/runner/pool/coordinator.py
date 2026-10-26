@@ -274,6 +274,7 @@ def run_assignment(client: PoolClient, assignment: Assignment, profile: Executio
 def main() -> None:
     profile = ExecutionProfile.model_validate_json(Path(os.environ["XP_POOL_PROFILE_PATH"]).read_bytes())
     client = PoolClient(os.environ["XP_POOL_API_URL"], Path(os.environ["XP_POOL_TOKEN_PATH"]).read_text().strip())
+    max_age_seconds = int(os.environ["XP_POOL_MAX_AGE_SECONDS"])
     started = time.monotonic()
     episodes = 0
     last_assignment = started
@@ -285,7 +286,9 @@ def main() -> None:
         # A restarted coordinator cannot prove publication/cleanup of an earlier process.
         assert control("", 0).state == 0, "Supervisor has prior execution state; retire for recovery"
         # Retire unused capacity while keeping preparation independent of supervisor idle expiry.
-        while episodes < 50 and time.monotonic() - started < 6 * 3600 and time.monotonic() - last_assignment < 540:
+        while (
+            episodes < 50 and time.monotonic() - started < max_age_seconds and time.monotonic() - last_assignment < 540
+        ):
             control("", 0)
             response = CLAIM_RESPONSE.validate_json(client.post("claim", {}).content)
             if isinstance(response, Retired):
