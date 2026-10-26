@@ -123,6 +123,10 @@ companion from a CPU variant collection when reserving a GPU for all variants wo
 
 ### On-demand placement
 
+Explicit `capacity-type` overrides require an elevated Softmax employee session when publishing a manifest or
+registering a player. Platform workers apply approved stored placement; ordinary callers cannot author or republish this
+override.
+
 Set `game.runnable.resources.requests["capacity-type"]` to `"on-demand"` for a hosted episode that must avoid Spot
 reclamation. Player containers can set the same field in their own resource requests. Each setting applies only to that
 runnable. Omitting the field preserves platform placement, including existing stored manifests. This does not change
