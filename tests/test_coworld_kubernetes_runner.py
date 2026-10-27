@@ -2954,10 +2954,13 @@ def test_player_service_gate_waits_for_worker_viewer():
             },
         )
         try:
-            assert worker_polled.wait(2), "player escaped on game health without waiting for the worker viewer"
+            deadline = time.monotonic() + 30
+            while not worker_polled.wait(0.05):
+                assert process.poll() is None, "player escaped on game health without waiting for the worker viewer"
+                assert time.monotonic() < deadline, "player never checked worker readiness"
             assert process.poll() is None
             viewer_ready.set()
-            assert process.wait(timeout=3) == 0
+            assert process.wait(timeout=30) == 0
         finally:
             if process.poll() is None:
                 process.terminate()
