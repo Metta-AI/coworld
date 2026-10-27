@@ -258,6 +258,32 @@ def test_command_timeout_destroys_environment(control):
         time.sleep(0.2)
 
 
+def test_exec_transport_failure_preserves_status_and_closes_task(control, tmp_path: Path):
+    http, process, core, namespace = control
+    created = http.post("/tasks", json={"definition": "native", "key": "agent"})
+    created.raise_for_status()
+    assert run(http, "agent", "echo ready")["exit_code"] == 0
+    assert run(http, "agent", "exit 7")["exit_code"] == 7
+    response = http.post(
+        "/tasks/agent/exec",
+        json={"command": ["/coworld-missing-executable"], "timeout_seconds": 20},
+    )
+    response.raise_for_status()
+    result = response.json()
+    assert result["kind"] == "completion_unknown"
+    assert result["exit_code"] is None
+    status = json.loads(result["stderr"])
+    assert status["status"] == "Failure"
+    assert status["reason"] != "NonZeroExitCode"
+    assert "/coworld-missing-executable" in result["stderr"]
+    assert json.loads((tmp_path / "evidence/failure.json").read_text()) == result
+    assert run(http, "agent", "echo cannot-reuse")["kind"] == "closed"
+    until = time.monotonic() + 20
+    while core.list_namespaced_pod(namespace, label_selector="coworld-component=task").items:
+        assert time.monotonic() < until, "failed exec retained its task pod"
+        time.sleep(0.2)
+
+
 def test_task_network_isolation(control):
     http, process, core, namespace = control
     response = http.post("/tasks", json={"definition": "native", "key": "agent"})

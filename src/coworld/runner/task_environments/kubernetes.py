@@ -16,12 +16,12 @@ from contextlib import ExitStack
 from datetime import UTC, datetime
 from pathlib import Path
 from threading import RLock
-from typing import Literal
+from typing import Annotated, Literal
 
 from kubernetes import client
 from kubernetes.stream import stream
 from kubernetes.stream.ws_client import ERROR_CHANNEL
-from pydantic import BaseModel
+from pydantic import BaseModel, Field, Json, TypeAdapter
 
 from coworld.runner.task_environments.network import PRIVATE_IPV4
 from coworld.task_environment import CommandResult, TaskHandle
@@ -29,6 +29,24 @@ from coworld.types import CoworldTaskEnvironment
 
 TASK_LABEL = "coworld-task-owner"
 API_TIMEOUT = (5, 15)
+
+
+class ExecStatusCause(BaseModel):
+    reason: Literal["ExitCode"]
+    message: int
+
+
+class ExecStatusDetails(BaseModel):
+    causes: list[ExecStatusCause] = Field(default_factory=list)
+
+
+class ExecStatus(BaseModel):
+    status: Literal["Success", "Failure"]
+    reason: str = ""
+    details: ExecStatusDetails = Field(default_factory=ExecStatusDetails)
+
+
+_EXEC_STATUS_ADAPTER = TypeAdapter(Annotated[Json[ExecStatus] | str, Field(union_mode="left_to_right")])
 
 
 class TaskRejection(ValueError):
@@ -442,9 +460,26 @@ class TaskPods:
                         target.write(value)
                     else:
                         chunks.append(value.decode("utf-8", errors="replace"))
-            if not connection.peek_channel(ERROR_CHANNEL, timeout=0):
+            status_payload = connection.read_channel(ERROR_CHANNEL, timeout=0)
+            if not status_payload:
                 return CommandResult(kind="completion_unknown", stdout="".join(stdout), stderr="".join(stderr))
-            exit_code = connection.returncode
+            status_text = status_payload.decode("utf-8", errors="replace")
+            status = _EXEC_STATUS_ADAPTER.validate_python(status_text)
+            if isinstance(status, ExecStatus) and status.status == "Success":
+                exit_code = 0
+            elif (
+                isinstance(status, ExecStatus)
+                and status.reason == "NonZeroExitCode"
+                and len(status.details.causes) == 1
+            ):
+                exit_code = status.details.causes[0].message
+            else:
+                # API/kubelet failures carry text causes, not process exit codes.
+                return CommandResult(
+                    kind="completion_unknown",
+                    stdout="".join(stdout),
+                    stderr="".join(stderr) + status_text,
+                )
             return CommandResult(kind="completed", stdout="".join(stdout), stderr="".join(stderr), exit_code=exit_code)
         finally:
             try:
