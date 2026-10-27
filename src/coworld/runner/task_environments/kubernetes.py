@@ -33,7 +33,7 @@ API_TIMEOUT = (5, 15)
 
 class ExecStatusCause(BaseModel):
     reason: Literal["ExitCode"]
-    message: int
+    message: int = Field(gt=0, le=255)
 
 
 class ExecStatusDetails(BaseModel):
