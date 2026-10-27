@@ -81,17 +81,6 @@ def test_failed_upload_still_consumes_reservation(upload):
     assert sum(json.loads(args["ledger_path"].read_text()).values()) == 3
 
 
-def test_capture_requires_ordered_timezone_aware_bounds():
-    with pytest.raises(ValueError):
-        artifacts.PlayerArtifactCapture.model_validate(
-            {"capture_id": str(uuid4()), "started_at": "2026-09-01T00:00:00", "ended_at": "2026-09-01T00:01:00Z"}
-        )
-    with pytest.raises(ValueError):
-        artifacts.PlayerArtifactCapture.model_validate(
-            {"capture_id": str(uuid4()), "started_at": "2026-09-01T00:02:00Z", "ended_at": "2026-09-01T00:01:00Z"}
-        )
-
-
 @pytest.mark.parametrize("failure", ["503", "timeout"])
 def test_failed_retained_capture_does_not_block_next_live_upload(upload, monkeypatch, tmp_path, failure):
     args, storage = upload

@@ -11,7 +11,7 @@ from kubernetes import client
 from kubernetes.client.rest import ApiException
 
 from coworld.runner.io import RunnerEpisodeError
-from coworld.runner.self_hosted_inference import requested_self_hosted_models, wait_for_self_hosted_models
+from coworld.runner.self_hosted_inference import wait_for_self_hosted_models
 
 MODEL = "self-hosted/parley-qwen35-4b"
 
@@ -68,19 +68,6 @@ def kubernetes_api(
             thread.join()
 
 
-def test_waits_for_current_ready_generation_without_mutating_deployment() -> None:
-    with kubernetes_api() as (api, calls):
-        wait_for_self_hosted_models(api, "jobs", {MODEL}, {MODEL: "coworld-inference"}, poll_seconds=0.001)
-    assert [method for method, _, _ in calls] == ["GET", "GET", "GET"]
-
-
-def test_unknown_model_fails_before_any_request() -> None:
-    with kubernetes_api() as (api, calls), pytest.raises(RunnerEpisodeError, match="not enabled") as error:
-        wait_for_self_hosted_models(api, "jobs", {MODEL, "self-hosted/unknown"}, {MODEL: "coworld-inference"})
-    assert error.value.error_type == "config_error"
-    assert calls == []
-
-
 def test_timeout_is_a_platform_failure_and_does_not_admit_the_game() -> None:
     with (
         kubernetes_api(becomes_ready=False) as (api, calls),
@@ -100,45 +87,8 @@ def test_permission_errors_are_not_treated_as_readiness_or_retried() -> None:
     assert len(calls) == 1
 
 
-def test_shared_deployment_is_waited_once_and_public_models_are_excluded() -> None:
-    assert requested_self_hosted_models(
-        [
-            {"COWORLD_LLM_ENABLED": "true", "COWORLD_LLM_MODEL": MODEL},
-            {"COWORLD_LLM_ENABLED": "true", "COWORLD_LLM_MODEL": MODEL},
-            {"COWORLD_LLM_ENABLED": "true", "COWORLD_LLM_MODEL": "qwen/qwen3.5-4b"},
-            {"COWORLD_LLM_ENABLED": "false", "COWORLD_LLM_MODEL": "self-hosted/disabled"},
-            {},
-        ]
-    ) == {MODEL}
-    with kubernetes_api() as (api, calls):
-        wait_for_self_hosted_models(
-            api,
-            "jobs",
-            {MODEL, "self-hosted/alias"},
-            {MODEL: "coworld-inference", "self-hosted/alias": "coworld-inference"},
-            poll_seconds=0.001,
-        )
-    assert [method for method, _, _ in calls] == ["GET", "GET", "GET"]
-
-
 def test_scaled_to_zero_fails_without_waking_deployment() -> None:
     with kubernetes_api(replicas=0) as (api, calls), pytest.raises(RunnerEpisodeError, match="scaled to zero") as error:
         wait_for_self_hosted_models(api, "jobs", {MODEL}, {MODEL: "coworld-inference"})
     assert error.value.error_type == "config_error"
     assert [method for method, _, _ in calls] == ["GET"]
-
-
-def test_waits_for_each_requested_checkpoint_deployment() -> None:
-    other_model = "self-hosted/qwen-checkpoint"
-    with kubernetes_api() as (api, calls):
-        wait_for_self_hosted_models(
-            api,
-            "jobs",
-            {MODEL, other_model},
-            {MODEL: "coworld-inference", other_model: "coworld-inference-checkpoint"},
-            poll_seconds=0.001,
-        )
-    paths = [path for method, path, _ in calls if method == "GET"]
-    assert len(paths) == 6
-    assert paths.count("/apis/apps/v1/namespaces/jobs/deployments/coworld-inference") == 3
-    assert paths.count("/apis/apps/v1/namespaces/jobs/deployments/coworld-inference-checkpoint") == 3

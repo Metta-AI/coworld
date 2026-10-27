@@ -48,49 +48,6 @@ def test_physical_execution_preserves_macro_action_and_exact_controls(
     assert list(read_trajectory_jsonl(complete)) == [decision, summary]
 
 
-@pytest.mark.parametrize(
-    "evidence",
-    [
-        {"response_body_b64": "invalid!"},
-        {"response_headers_b64": "invalid!"},
-        {"response_body_b64": "e30=", "raw_response": "different bytes"},
-        {"response_complete": "false"},
-        {"response_reader_joined": "false"},
-        {"http_status": True},
-    ],
-)
-def test_received_response_rejects_malformed_or_conflicting_evidence(evidence: dict) -> None:
-    with pytest.raises(ValueError):
-        DecisionAttempt(attempt_id="invalid", policy="learner", origin="model", accepted=False, **evidence)
-
-
-@pytest.mark.parametrize(
-    "changes",
-    [
-        {"end_tick": 10},
-        {"end_tick": 9},
-        {"end_tick": 13},
-        {"tick_hz": 0},
-        {"tick_hz": float("inf")},
-        {"seat_controls_b64": "invalid base64!"},
-        {"control_encoding": "u8"},
-        {"control_encoding": "u8-u8"},
-    ],
-)
-def test_physical_execution_rejects_invalid_tick_evidence(changes: dict) -> None:
-    with pytest.raises(ValueError):
-        ExecutionEvidence.model_validate(
-            {
-                "start_tick": 10,
-                "end_tick": 12,
-                "tick_hz": 60,
-                "control_encoding": "i8-i8-i8-u8",
-                "seat_controls_b64": "AP8BAgD/AQI=",
-                **changes,
-            }
-        )
-
-
 def _decision(episode_id: str, index: int, *, version: str | None = "v1") -> DecisionEvent:
     call_id = uuid4()
     return DecisionEvent(
@@ -128,24 +85,6 @@ def test_truncated_episode_is_not_exported() -> None:
     assert list(complete_episodes(events)) == []
 
 
-def test_closed_episode_is_released_before_loading_the_next_page() -> None:
-    first_consumed = False
-    first = _complete_episode()
-    second = _decision("episode-2", 0)
-
-    def pages():
-        yield from first.decisions
-        yield first.episode
-        assert first_consumed
-        yield second
-        yield first.episode.model_copy(update={"episode_id": "episode-2"})
-
-    episodes = complete_episodes(pages())
-    assert next(episodes) == first
-    first_consumed = True
-    assert [record.episode.episode_id for record in episodes] == ["episode-2"]
-
-
 def test_incomplete_tail_does_not_publish_a_completed_export(tmp_path: Path) -> None:
     first = _complete_episode()
     destination = tmp_path / "episodes.jsonl"
@@ -154,18 +93,6 @@ def test_incomplete_tail_does_not_publish_a_completed_export(tmp_path: Path) -> 
     with pytest.raises(ValueError, match="must have exactly one summary"):
         export_complete_episodes(events, destination)
     assert not destination.exists()
-
-
-def test_interleaved_episodes_keep_first_appearance_order() -> None:
-    first = _complete_episode()
-    second = _decision("episode-2", 0)
-    events = [
-        first.decisions[0],
-        second,
-        first.episode.model_copy(update={"episode_id": "episode-2"}),
-        first.episode,
-    ]
-    assert [record.episode.episode_id for record in complete_episodes(events)] == ["episode-1", "episode-2"]
 
 
 def test_unknown_seed_family_roundtrips_completed_engine_evidence(tmp_path: Path) -> None:

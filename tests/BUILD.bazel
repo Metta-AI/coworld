@@ -52,13 +52,8 @@ pyproject_test(
     ],
     long_timeout = ["test_child_lifetime_system", "test_task_environment_system"],
     per_test = {
-        "test_init_cli": {"data": ["//packages/coworld:docs_files"]},
-        "test_docs_cli": {"data": ["//packages/coworld:docs_files"]},
-        "test_coworld_tournament_cli": {"data": [":manifest_version_fixtures"]},
         "test_coworld_kubernetes_runner": {"data": [":manifest_version_fixtures"]},
         "test_manifest_versions": {"data": [":manifest_version_fixtures"]},
-        "test_training_provenance": {"data": [":manifest_version_fixtures"]},
-        "test_log_richness": {"data": [":manifest_version_fixtures"]},
         "test_paintarena_static_replay": {"data": ["//packages/coworld:paintarena_static_replay_files"]},
         "test_types": {"data": ["//packages/coworld:generated_schema_files"]},
         "test_stats_system": {"data": ["//packages/coworld:generated_schema_files"]},
