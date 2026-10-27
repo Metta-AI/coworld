@@ -36,7 +36,7 @@ class Assignment(BaseModel):
 
 class Wait(BaseModel):
     kind: Literal["wait"]
-    retry_after_seconds: int = Field(gt=0)
+    retry_after_seconds: int = Field(ge=0)
 
 
 class Retired(BaseModel):
@@ -67,7 +67,12 @@ class PoolClient:
         reraise=True,
     )
     def post(self, operation: str, body: dict[str, Any]) -> httpx.Response:
-        response = self.http.post(operation, json=body)
+        response = self.http.post(
+            operation,
+            json=body,
+            params={"wait_seconds": 15} if operation == "claim" else None,
+            timeout=20 if operation == "claim" else 5,
+        )
         response.raise_for_status()
         return response
 
