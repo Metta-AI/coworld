@@ -55,8 +55,8 @@ Upload this project's image as a new policy version and move your prompt to `PAR
 records private captures; changing its format or generation settings changes training comparability.
 
 Set `PARLEY_DECODING=legal-actions` for an explicitly constrained player variant. The endpoint must support JSON Schema
-decoding. Each native window supplies the shot menu and side-action allowances used to build its grammar. The player
-still generates the full action; the game validates it. Unsupported legacy windows fail explicitly. The default,
+decoding. Each native window supplies the game-owned `actionSchema`, also used by native prompt seats. The player passes
+that schema unchanged to the endpoint. Windows without a game-owned schema fail explicitly. The default,
 `PARLEY_DECODING=model`, keeps ordinary JSON-object generation. Compare the variants separately and retain the request
 grammar in private captures; constrained captures are evaluation-only for the model-only training importer.
 

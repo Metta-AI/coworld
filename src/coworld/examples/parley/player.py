@@ -55,50 +55,6 @@ class Observation(Packet):
     actionSchema: dict[str, JsonValue] | None = None
     extras: dict[str, JsonValue]
 
-    def legal_action_schema(self) -> dict[str, JsonValue]:
-        """Project the current game menu, including optional side actions, into a decoding grammar."""
-        properties: dict[str, JsonValue] = {"say": {"type": "string"}}
-        for name in ("whisper", "reveal", "give", "pledge"):
-            allowance = TypeAdapter(dict[str, JsonValue]).validate_python(self.extras[name])
-            targets = TypeAdapter(list[str]).validate_python(allowance["to"])
-            if not targets:
-                continue
-            target: dict[str, JsonValue] = {"enum": targets}
-            if name in {"give", "pledge"}:
-                properties[name] = target
-            else:
-                field = "text" if name == "whisper" else "card"
-                properties[name] = {
-                    "type": "object",
-                    "properties": {
-                        "to": target,
-                        field: {"type": "string", "minLength": 1}
-                        if name == "whisper"
-                        else {"enum": allowance["cards"]},
-                    },
-                    "required": ["to", field],
-                    "additionalProperties": False,
-                }
-        if self.phase == "reaction":
-            return {"type": "object", "properties": properties, "required": ["say"], "additionalProperties": False}
-        if not self.legalActions:
-            raise ValueError("Shot window has no legal actions")
-        return {
-            "anyOf": [
-                {
-                    "type": "object",
-                    "properties": {
-                        **properties,
-                        "shoot": {"const": action.shoot},
-                        "aim": {"const": action.aim} if action.aim is not None else {"enum": ["head", "hip"]},
-                    },
-                    "required": ["say", "shoot", "aim"] if action.aim == "hip" else ["say", "shoot"],
-                    "additionalProperties": False,
-                }
-                for action in self.legalActions
-            ]
-        }
-
 
 class Transport(Packet):
     budget_ms: StrictInt = Field(gt=0)
@@ -270,7 +226,11 @@ class Player:
                 raise ValueError("Legal-action decoding requires a native observation and JSON output")
             request["response_format"] = {
                 "type": "json_schema",
-                "json_schema": {"name": "parley_action", "schema": view.legal_action_schema()},
+                "json_schema": {
+                    "name": "parley_action",
+                    "strict": True,
+                    "schema": TypeAdapter(dict[str, JsonValue]).validate_python(view.actionSchema),
+                },
             }
         decoder = {key: value for key, value in request.items() if key not in {"model", "messages"}}
         attempt = PrivateAttempt(
