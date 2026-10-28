@@ -41,7 +41,7 @@ class ExecutionProfile(BaseModel):
     resources: PoolResources
     # Profiles are explicitly qualified. Sidecars with episode state require their own reset protocol.
     sidecar_policy: Literal["none"] = "none"
-    network_policy: Literal["local-development"] = "local-development"
+    network_policy: Literal["local-development", "restricted-egress-no-inference"] = "local-development"
 
     def content_hash(self) -> str:
         canonical = json.dumps(self.model_dump(mode="json"), sort_keys=True, separators=(",", ":"))
