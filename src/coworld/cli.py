@@ -4,6 +4,7 @@ import json
 import os
 import shlex
 import shutil
+import subprocess
 import sys
 import time
 import uuid
@@ -11,6 +12,7 @@ import webbrowser
 from contextlib import contextmanager
 from importlib.resources import as_file, files
 from pathlib import Path
+from tempfile import TemporaryDirectory
 from typing import Annotated, Iterator, Literal, cast
 from urllib.parse import urlparse
 
@@ -1445,20 +1447,81 @@ def download(
     )
 
 
+@app.command("build-policy", help="Build a linux/amd64 policy image archive from a worktree using BuildKit.")
+def build_policy(
+    output: Annotated[Path, typer.Option("--output", "-o", help="OCI image archive outside the build context.")],
+    directory: Annotated[
+        Path, typer.Argument(exists=True, file_okay=False, help="Build context; honors .dockerignore.")
+    ] = Path("."),
+    dockerfile: Annotated[
+        str, typer.Option("--dockerfile", "-f", help="Dockerfile path relative to the context.")
+    ] = "Dockerfile",
+    build_arg: Annotated[
+        list[str] | None, typer.Option("--build-arg", help="Dockerfile argument KEY=VALUE; repeatable.")
+    ] = None,
+) -> None:
+    context = directory.resolve()
+    output = output.resolve()
+    if output.is_relative_to(context):
+        raise typer.BadParameter("Place --output outside the build context, for example /tmp/player.tar")
+    command = [
+        "buildctl",
+        "build",
+        "--frontend",
+        "dockerfile.v0",
+        "--local",
+        f"context={context}",
+        "--local",
+        f"dockerfile={context}",
+        "--opt",
+        f"filename={dockerfile}",
+        "--opt",
+        "platform=linux/amd64",
+    ]
+    for argument in build_arg or []:
+        command.extend(["--opt", f"build-arg:{argument}"])
+    output.parent.mkdir(parents=True, exist_ok=True)
+    output.unlink(missing_ok=True)
+    with TemporaryDirectory(prefix="coworld-build-", dir=output.parent) as temporary:
+        archive = Path(temporary) / "image.tar"
+        command.extend(
+            [
+                "--opt",
+                "build-arg:SOURCE_DATE_EPOCH=0",
+                "--output",
+                f"type=oci,rewrite-timestamp=true,dest={archive}",
+            ]
+        )
+        result = subprocess.run(command)
+        if result.returncode:
+            raise typer.Exit(result.returncode)
+        archive.replace(output)
+    typer.echo(f"Built policy image: {output}")
+    typer.echo(f"Upload with: coworld upload-policy --image-archive {output}")
+
+
 @app.command(
     "upload-policy",
-    cls=_DockerCommand,
     help="Upload a policy version (a player image or game-hosted file) under your identity.",
     epilog=docs_epilog("upload-and-evaluate"),
 )
 def upload_policy(
     image: Annotated[
         str | None,
-        typer.Argument(help="Local Docker image to upload as a Coworld policy. Omit when using --file."),
+        typer.Argument(help="Local Docker image to upload. Omit with --file or --image-archive."),
     ] = None,
     player_file: Annotated[
         Path | None,
         typer.Option("--file", help="File or directory to upload as a game-hosted player policy."),
+    ] = None,
+    image_archive: Annotated[
+        Path | None,
+        typer.Option(
+            "--image-archive",
+            exists=True,
+            dir_okay=False,
+            help="OCI image archive from BuildKit; no Docker daemon required.",
+        ),
     ] = None,
     name: Annotated[
         str | None,
@@ -1560,8 +1623,8 @@ def upload_policy(
     ] = None,
     server: Annotated[str, typer.Option("--server", help="Observatory API server URL.")] = DEFAULT_SUBMIT_SERVER,
 ) -> None:
-    if (image is None) == (player_file is None):
-        raise typer.BadParameter("Provide exactly one of IMAGE or --file")
+    if sum(value is not None for value in (image, player_file, image_archive)) != 1:
+        raise typer.BadParameter("Provide exactly one of IMAGE, --image-archive, or --file")
     resources = None
     if cpu is not None or memory is not None or cpu_limit is not None or gpu or instance_type is not None:
         resources = CoworldRunnableResources(
@@ -1634,7 +1697,7 @@ def upload_policy(
     print_feed_hello_pointer(server=server)
 
     upload_policy_cmd(
-        image,
+        image_archive if image_archive is not None else image,
         name,
         run=run,
         resources=resources,

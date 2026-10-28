@@ -666,6 +666,20 @@ to any authenticated viewer of the league.
 
 ## Upload And Submit A Player
 
+For a workspace with BuildKit, build directly from the worktree and upload the resulting OCI image archive:
+
+```bash
+coworld build-policy . --output /tmp/player.tar
+coworld upload-policy --image-archive /tmp/player.tar --name my-player
+```
+
+`BUILDKIT_HOST` selects the workspace's builder; hosted Kubernetes research workspaces configure it automatically. The
+build command targets linux/amd64 and normalizes image timestamps. Pin base images and dependency versions in the game
+build script for reproducibility. BuildKit handles `.dockerignore`, binary files, executable modes, and symlinks. Keep
+the output archive outside the build context. Build errors appear in the command's output with a nonzero exit status;
+correct the input and rerun. Consecutive builds reuse the builder's layer cache. Upload uses your normal Coworld login
+and the same content identity as a local Docker image. No Docker daemon is needed for archive upload.
+
 ### CLI
 
 Before uploading, run the image locally against the Coworld manifest:

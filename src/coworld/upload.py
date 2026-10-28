@@ -1771,7 +1771,7 @@ def upload_coworld_cmd(
 
 
 def upload_policy_cmd(
-    image: str | None,
+    image: str | Path | None,
     name: str | None,
     *,
     player_file: Path | None = None,
@@ -2092,18 +2092,34 @@ def _manifest_with_local_images(
     return local_manifest
 
 
-def _upload_container_image(client: CoworldUploadClient, image: str) -> ContainerImageResponse:
-    if (
-        is_digest_pinned_image_ref(image)
-        and subprocess.run(["docker", "image", "inspect", image], capture_output=True, check=False).returncode != 0
-    ):
-        pull_and_tag_image(image, f"coworld-upload:{image.rsplit(':', 1)[1][:16]}")
-    assert_docker_image_reachable(image, require_linux_amd64=True)
-    client_hash = _local_image_client_hash(image)
-    response = client.request_image_upload(name=_image_upload_name(image), client_hash=client_hash)
+def _upload_container_image(client: CoworldUploadClient, image: str | Path) -> ContainerImageResponse:
+    selected: tuple[bytes, _OciImageManifest] | None = None
+    if isinstance(image, Path):
+        # A seekable OCI archive skips layer bodies while reading metadata. Retain the
+        # selected manifest for the push instead of streaming the archive again.
+        with tarfile.open(image) as archive:
+            index_file = archive.extractfile("index.json")
+            assert index_file is not None
+            selected = _select_oci_image_manifest(archive, _OciImageIndex.model_validate_json(index_file.read()))
+            _, manifest = selected
+            platform = _OciPlatform.model_validate_json(_read_oci_descriptor(archive, manifest.config))
+        if (platform.os, platform.architecture) != _OCI_TARGET_PLATFORM:
+            raise ValueError("Policy image must target linux/amd64")
+        client_hash = manifest.config.digest
+        upload_name = image.stem
+    else:
+        if (
+            is_digest_pinned_image_ref(image)
+            and subprocess.run(["docker", "image", "inspect", image], capture_output=True, check=False).returncode != 0
+        ):
+            pull_and_tag_image(image, f"coworld-upload:{image.rsplit(':', 1)[1][:16]}")
+        assert_docker_image_reachable(image, require_linux_amd64=True)
+        client_hash = _local_image_client_hash(image)
+        upload_name = _image_upload_name(image)
+    response = client.request_image_upload(name=upload_name, client_hash=client_hash)
 
     if response.pre_signed_info is not None:
-        _push_container_image(image, response.pre_signed_info)
+        _push_container_image(image, response.pre_signed_info, selected)
         completed = client.complete_image_upload(response.image.id)
     else:
         completed = response.image
@@ -2348,7 +2364,9 @@ class _RegistryBearerToken(BaseModel):
     token: str
 
 
-def _push_container_image(source_image: str, push_info: EcrPushInfo) -> None:
+def _push_container_image(
+    source_image: str | Path, push_info: EcrPushInfo, selected: tuple[bytes, _OciImageManifest] | None = None
+) -> None:
     auth_header = push_info.authorization_token
     if push_info.endpoint_url is not None:
         scheme = "http" if push_info.endpoint_url.startswith("http://") else "https"
@@ -2361,8 +2379,8 @@ def _push_container_image(source_image: str, push_info: EcrPushInfo) -> None:
     repository = f"{prefix}/{push_info.repository}" if prefix else push_info.repository
     base_url = f"{scheme}://{host}/v2/{repository}"
 
-    with _DockerImageArchive(source_image) as archive:
-        _push_archive_to_registry(archive, base_url, push_info.tag, auth_header, source_image)
+    with source_image.open("rb") if isinstance(source_image, Path) else _DockerImageArchive(source_image) as archive:
+        _push_archive_to_registry(archive, base_url, push_info.tag, auth_header, str(source_image), selected)
 
 
 class _DockerImageArchive:
@@ -2464,15 +2482,23 @@ def _image_archive_metadata(archive: Any) -> Iterator[tarfile.TarFile]:
             yield result
 
 
-def _push_archive_to_registry(archive: Any, base_url: str, tag: str, auth_header: str, source_image: str) -> None:
+def _push_archive_to_registry(
+    archive: Any,
+    base_url: str,
+    tag: str,
+    auth_header: str,
+    source_image: str,
+    selected: tuple[bytes, _OciImageManifest] | None = None,
+) -> None:
     """Stream image blobs; stage at most one compressed layer plus OCI metadata."""
     headers = {"Authorization": f"Basic {auth_header}"}
-    with _image_archive_metadata(archive) as metadata, httpx.Client(timeout=_REGISTRY_UPLOAD_TIMEOUT) as client:
-        index_file = metadata.extractfile("index.json")
-        assert index_file is not None
-        manifest_bytes, manifest = _select_oci_image_manifest(
-            metadata, _OciImageIndex.model_validate_json(index_file.read())
-        )
+    if selected is None:
+        with _image_archive_metadata(archive) as metadata:
+            index_file = metadata.extractfile("index.json")
+            assert index_file is not None
+            selected = _select_oci_image_manifest(metadata, _OciImageIndex.model_validate_json(index_file.read()))
+    manifest_bytes, manifest = selected
+    with httpx.Client(timeout=_REGISTRY_UPLOAD_TIMEOUT) as client:
         pending = {_archive_blob_name(d.digest): d for d in [*manifest.layers, manifest.config]}
         uploaded: dict[str, _OciDescriptor] = {}
         archive.seek(0)
