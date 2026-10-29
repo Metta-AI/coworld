@@ -1500,6 +1500,20 @@ def build_policy(
     typer.echo(f"Upload with: coworld upload-policy --image-archive {output}")
 
 
+@app.command("policy-lookup")
+def policy_lookup_command(
+    inputs: Path = typer.Argument(..., help="Saved upload-input JSON, or - for stdin."),
+    server: str = typer.Option(DEFAULT_SUBMIT_SERVER, "--server"),
+) -> None:
+    """Read the matching published version from saved upload-input JSON; never upload."""
+
+    with CoworldUploadClient.from_login(server_url=server) as client:
+        policy = client.lookup_policy_upload(json.loads(sys.stdin.read() if str(inputs) == "-" else inputs.read_text()))
+    typer.echo(
+        json.dumps({"kind": "ok", "policy": policy.model_dump(mode="json")} if policy else {"kind": "not_found"})
+    )
+
+
 @app.command(
     "upload-policy",
     help="Upload a policy version (a player image or game-hosted file) under your identity.",

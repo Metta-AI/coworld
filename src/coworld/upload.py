@@ -1065,6 +1065,17 @@ class CoworldUploadClient:
         _raise_for_status(response)
         return PolicyVersionResponse.model_validate(response.json())
 
+    def lookup_policy_upload(self, inputs: dict[str, Any]) -> PolicyVersionResponse | None:
+        response = self._http_client.post(
+            "/stats/policies/lookup",
+            headers=self._headers(),
+            json=inputs,
+            timeout=30.0,
+        )
+        _raise_for_status(response)
+        value = response.json()
+        return PolicyVersionResponse.model_validate(value) if value is not None else None
+
     def request_player_file_upload(
         self,
         *,
@@ -2774,3 +2785,16 @@ def _absolute_registry_upload_url(base_url: str, upload_url: str) -> str:
 def _image_upload_name(image: str) -> str:
     name = image.rsplit("/", 1)[-1].split("@", 1)[0].split(":", 1)[0]
     return name or "coworld-image"
+
+
+def policy_upload_inputs(*, artifact: Path, name: str, player_id: str, image_archive: bool) -> dict[str, Any]:
+    """Describe the existing upload path's default inputs without a network request."""
+    identity: dict[str, Any] = {"name": name, "player_id": player_id}
+    if image_archive:
+        with tarfile.open(artifact) as archive:
+            index_file = archive.extractfile("index.json")
+            assert index_file is not None
+            _, manifest = _select_oci_image_manifest(archive, _OciImageIndex.model_validate_json(index_file.read()))
+        return identity | {"image_client_hash": manifest.config.digest, "attributes": {"kind": "docker-img"}}
+    contents = player_file_bytes(artifact)
+    return identity | {"file_hash": hashlib.sha256(contents).hexdigest(), "file_size": len(contents), "attributes": {}}

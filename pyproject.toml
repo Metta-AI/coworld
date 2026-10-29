@@ -86,7 +86,7 @@ coworld = ["**/__pycache__/*", "**/*.pyc"]
 tag_regex = "^coworld-v(?P<version>\\d+\\.\\d+\\.\\d+(?:\\.\\d+)?)$"
 version_scheme = "no-guess-dev"
 local_scheme = "no-local-version"
-root = "../.."
+root = "."
 fallback_version = "0.0.0"
 git_describe_command = ["git", "describe", "--dirty", "--tags", "--long", "--match", "coworld-v*"]
 
@@ -97,7 +97,7 @@ testpaths = ["tests"]
 markers = ["slow: marks tests as slow"]
 
 [tool.uv.sources]
-softmax-cli = { workspace = true }
+softmax-cli = {git = "https://github.com/Metta-AI/softmax-cli.git"}
 
 [tool.ruff]
 extend = "../../.ruff.toml"
